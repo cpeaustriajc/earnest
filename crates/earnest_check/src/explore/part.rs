@@ -1,6 +1,6 @@
 use super::encode::{encode_next, with_updates};
 use super::{STATES_BETWEEN_CLOCK_READS, Search};
-use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
+use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors, same_words};
 use crate::store::{SHARD_COUNT, Store, shard_of};
 use earnest_value::Value;
 use hashbrown::HashTable;
@@ -64,10 +64,6 @@ struct PartSink<'a> {
     part: Part,
 }
 
-fn same_row(one: &[u64], other: &[u64]) -> bool {
-    one.len() == other.len() && one.iter().zip(other).all(|(left, right)| left == right)
-}
-
 impl PartSink<'_> {
     fn push(&mut self, action: usize, target: Target) {
         self.part.entries.push(Entry {
@@ -92,7 +88,7 @@ impl PartSink<'_> {
         let (rows, hashes) = (&self.part.rows, &self.part.hashes);
         let met = self.kit.met.entry(
             hash,
-            |at| same_row(row_at(rows, words, *at), row),
+            |at| same_words(row_at(rows, words, *at), row),
             |at| hashes.get(*at).copied().unwrap_or(0),
         );
         match met {
@@ -118,7 +114,7 @@ impl PartSink<'_> {
         let (rows, hashes) = (&self.part.rows, &self.part.hashes);
         let met = self.kit.met.entry(
             hash,
-            |at| same_row(row_at(rows, words, *at), row),
+            |at| same_words(row_at(rows, words, *at), row),
             |at| hashes.get(*at).copied().unwrap_or(0),
         );
         let hashbrown::hash_table::Entry::Vacant(vacant) = met else {

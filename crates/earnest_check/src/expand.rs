@@ -230,7 +230,7 @@ fn told_apart_from_earlier(action: &Action, told: &[Vec<bool>], input: usize) ->
     })
 }
 
-fn same_words(one: &[u64], other: &[u64]) -> bool {
+pub(crate) fn same_words(one: &[u64], other: &[u64]) -> bool {
     one.len() == other.len() && one.iter().zip(other).all(|(left, right)| left == right)
 }
 
@@ -349,8 +349,8 @@ struct Expansion<'s, 'f, S> {
 impl<S: Successors> Expansion<'_, '_, S> {
     fn action(&mut self, position: usize, each: &Move<'_>) {
         if each.repeats() {
-            self.every_input(position, each);
-        } else if each.combinations == 1 && self.may_go_on() {
+            self.every_input_told_apart(position, each);
+        } else if each.combinations == 1 && self.may_go_on_noting_a_time_stop() {
             if !each.action.inputs.is_empty() {
                 set_inputs(each.action, 0, &mut self.frame);
             }
@@ -358,11 +358,11 @@ impl<S: Successors> Expansion<'_, '_, S> {
         }
     }
 
-    fn every_input(&mut self, position: usize, each: &Move<'_>) {
+    fn every_input_told_apart(&mut self, position: usize, each: &Move<'_>) {
         self.scratch.seen.forget();
         let skipping = each.skipping();
         for input in 0..each.combinations {
-            if !self.may_go_on() {
+            if !self.may_go_on_noting_a_time_stop() {
                 break;
             }
             if let Some(told) = skipping
@@ -376,7 +376,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
     }
 
     #[inline]
-    fn may_go_on(&mut self) -> bool {
+    fn may_go_on_noting_a_time_stop(&mut self) -> bool {
         if self.frame.out_of_time() {
             self.found.clock = Clock::Stopped;
             return false;
