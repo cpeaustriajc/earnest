@@ -18,6 +18,7 @@ const HALF_WORD: u32 = 32;
 pub struct RowLayout {
     places: Vec<Place>,
     numbers: Vec<Option<NumberSlot>>,
+    truths: Vec<Option<NumberSlot>>,
     words: usize,
     stride: usize,
 }
@@ -121,6 +122,7 @@ impl RowLayout {
     pub(super) fn of(domains: &[&Domain], widths: &[u32]) -> Self {
         let mut places = Vec::with_capacity(widths.len());
         let mut numbers = Vec::with_capacity(widths.len());
+        let mut truths = Vec::with_capacity(widths.len());
         let mut word = 0;
         let mut used = 0;
         for (domain, width) in domains.iter().zip(widths) {
@@ -143,6 +145,13 @@ impl RowLayout {
                 }),
                 _ => None,
             });
+            truths.push(matches!(domain, Domain::Bool).then_some(NumberSlot {
+                word,
+                shift: used,
+                width: *width,
+                offset: 0,
+                highest: 1,
+            }));
             used += width;
         }
         let words = if used > 0 { word + 1 } else { word };
@@ -151,6 +160,7 @@ impl RowLayout {
         Self {
             places,
             numbers,
+            truths,
             words,
             stride,
         }
@@ -168,6 +178,13 @@ impl RowLayout {
     #[must_use]
     pub fn number(&self, position: usize) -> Option<NumberSlot> {
         self.numbers.get(position).copied().flatten()
+    }
+
+    /// The place of the field at `position` when it is a boolean, as a slot that holds 1 for
+    /// true and 0 for false; `None` for a field of another kind.
+    #[must_use]
+    pub fn truth(&self, position: usize) -> Option<NumberSlot> {
+        self.truths.get(position).copied().flatten()
     }
 
     /// The hash the search files the state with this `row` under. Give it all
@@ -289,6 +306,22 @@ mod tests {
             None,
             "outside the domain"
         );
+    }
+
+    #[test]
+    fn a_boolean_field_is_a_slot_of_one_bit_that_holds_one_for_true() {
+        let mixed = layout(&[Domain::Int { lo: 0, hi: 9 }, Domain::Bool]);
+        assert!(mixed.truth(0).is_none(), "a number is no boolean");
+        assert!(mixed.number(1).is_none(), "a boolean is no number");
+        let flag = mixed.truth(1).expect("a boolean field");
+        assert_eq!((flag.word, flag.shift, flag.width), (0, 4, 1));
+        let mut row = vec![3; mixed.words()];
+        let hash = mixed.hash(&row);
+        let changed = mixed.hash_with(&row, hash, flag, 1);
+        assert!(flag.write(&mut row, 1), "true fits");
+        assert_eq!(row, [3 | 1 << 4], "the bit after the number");
+        assert_eq!(changed, Some(mixed.hash(&row)), "and the hash follows");
+        assert_eq!(mixed.hash_with(&row, hash, flag, 2), None, "only 0 and 1");
     }
 
     #[test]

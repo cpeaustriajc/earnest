@@ -1,6 +1,6 @@
 use super::encode::{encode_next, with_updates};
 use super::{STATES_BETWEEN_CLOCK_READS, Search};
-use crate::expand::{Asked, Clock, Mark, Scratch, Successors};
+use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
 use crate::store::{SHARD_COUNT, Store, shard_of};
 use earnest_value::Value;
 use hashbrown::HashTable;
@@ -44,11 +44,11 @@ pub(super) struct Kit {
     fresh_per_state: (usize, usize),
     scratch: Scratch,
     state: Vec<Value>,
+    base: Vec<u64>,
 }
 
 #[derive(Default)]
 struct RowKit {
-    base: Vec<u64>,
     row: Vec<u64>,
     met: HashTable<usize>,
     met_words: HashTable<u64>,
@@ -58,7 +58,6 @@ struct RowKit {
 struct PartSink<'a> {
     store: &'a Store,
     graph: bool,
-    base_is_row: bool,
     from: usize,
     counted: usize,
     kit: &'a mut RowKit,
@@ -154,10 +153,18 @@ impl Successors for PartSink<'_> {
         &mut self,
         action: usize,
         _: usize,
-        state: &[Value],
+        base: Base<'_>,
         updates: &[(usize, Value)],
     ) -> bool {
-        let counted = self.offer_unless_met(action, state, updates);
+        let counted = self.offer_unless_met(action, base, updates);
+        self.counted += usize::from(counted);
+        counted
+    }
+
+    fn offer_row(&mut self, action: usize, _: usize, row: &[u64], hash: u64) -> bool {
+        self.kit.row.clear();
+        self.kit.row.extend_from_slice(row);
+        let counted = self.offer_encoded(action, hash);
         self.counted += usize::from(counted);
         counted
     }
@@ -167,12 +174,17 @@ impl PartSink<'_> {
     fn offer_unless_met(
         &mut self,
         action: usize,
-        state: &[Value],
+        base: Base<'_>,
         updates: &[(usize, Value)],
     ) -> bool {
-        let base = self.base_is_row.then_some(self.kit.base.as_slice());
-        if !encode_next(self.store, base, &mut self.kit.row, state, updates) {
-            let next = with_updates(state, updates);
+        if !encode_next(
+            self.store,
+            base.row,
+            &mut self.kit.row,
+            base.values,
+            updates,
+        ) {
+            let next = with_updates(base.values, updates);
             if let Some(to) = self.store.find_values(&next) {
                 if self.graph {
                     self.push(action, Target::Known(to));
@@ -189,6 +201,10 @@ impl PartSink<'_> {
             return first;
         }
         let hash = self.store.layout().hash(&self.kit.row);
+        self.offer_encoded(action, hash)
+    }
+
+    fn offer_encoded(&mut self, action: usize, hash: u64) -> bool {
         if !self.graph {
             return self.offer_unseen(action, hash);
         }
@@ -272,7 +288,6 @@ impl Search<'_> {
         let mut sink = PartSink {
             store: &self.store,
             graph: self.limits.keep_graph,
-            base_is_row: false,
             from: 0,
             counted: 0,
             kit: &mut kit.rows,
@@ -285,13 +300,15 @@ impl Search<'_> {
                 sink.part.stopped = true;
                 return sink.part;
             }
-            sink.base_is_row = self
-                .store
-                .read_state(id, &mut sink.kit.base, &mut kit.state);
-            let outside = self.store.outside(id, &sink.kit.base, &self.model.fields);
+            let is_row = self.store.read_state(id, &mut kit.base, &mut kit.state);
+            let outside = self.store.outside(id, &kit.base, &self.model.fields);
             sink.from = id;
             sink.counted = 0;
-            let mark = expand.state(&kit.state, outside, &mut sink, &mut kit.scratch);
+            let base = Base {
+                values: &kit.state,
+                row: is_row.then_some(kit.base.as_slice()),
+            };
+            let mark = expand.state(base, outside, &mut sink, &mut kit.scratch);
             if mark.clock == Clock::Stopped {
                 sink.part.stopped = true;
                 return sink.part;

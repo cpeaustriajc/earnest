@@ -98,6 +98,13 @@ impl Store {
         values
     }
 
+    pub(crate) fn values_of(&self, row: &[u64]) -> Box<[Value]> {
+        self.codecs
+            .iter()
+            .map(|codec| codec.value(codec.read(row)))
+            .collect()
+    }
+
     pub(crate) fn read_state(
         &self,
         id: usize,

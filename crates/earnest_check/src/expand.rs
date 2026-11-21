@@ -1,3 +1,4 @@
+use crate::store::{NumberSlot, RowLayout};
 use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
@@ -93,14 +94,22 @@ struct Stopping {
     unsure: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct Base<'s> {
+    pub(crate) values: &'s [Value],
+    pub(crate) row: Option<&'s [u64]>,
+}
+
 pub(crate) trait Successors {
     fn offer(
         &mut self,
         action: usize,
         input: usize,
-        state: &[Value],
+        base: Base<'_>,
         updates: &[(usize, Value)],
     ) -> bool;
+
+    fn offer_row(&mut self, action: usize, input: usize, row: &[u64], hash: u64) -> bool;
 
     fn done(&self) -> bool {
         false
@@ -110,6 +119,7 @@ pub(crate) trait Successors {
 #[derive(Debug, Default)]
 pub(crate) struct Scratch {
     updates: Vec<(usize, Value)>,
+    next: Vec<u64>,
     seen: Seen,
 }
 
@@ -117,12 +127,22 @@ pub(crate) struct Scratch {
 struct Seen {
     values: Vec<Value>,
     at: HashTable<usize>,
+    rows: Vec<u64>,
+    row_at: HashTable<(usize, u64)>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Write<'a> {
+    code: &'a Code,
+    slot: NumberSlot,
+    truth: bool,
 }
 
 #[derive(Debug)]
 pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
+    writes: Option<Vec<Write<'a>>>,
     combinations: usize,
     tried: Tried,
 }
@@ -135,15 +155,15 @@ enum Tried {
 }
 
 impl<'a> Move<'a> {
-    pub(crate) fn all(model: &'a Model) -> Vec<Self> {
+    pub(crate) fn all(model: &'a Model, layout: &RowLayout) -> Vec<Self> {
         model
             .actions
             .iter()
-            .map(|action| Self::of(action, model.fields.len()))
+            .map(|action| Self::of(action, model.fields.len(), layout))
             .collect()
     }
 
-    fn of(action: &'a Action, fields: usize) -> Self {
+    fn of(action: &'a Action, fields: usize, layout: &RowLayout) -> Self {
         let combinations = input_count(action);
         let tried = if combinations <= 1 {
             Tried::Once
@@ -161,10 +181,22 @@ impl<'a> Move<'a> {
             .take(fields)
             .enumerate()
             .filter_map(|(position, update)| Some((position, update.as_ref()?)))
+            .collect::<Vec<_>>();
+        let writes = updates
+            .iter()
+            .map(|(position, code)| {
+                let (slot, truth) = match (layout.number(*position), layout.truth(*position)) {
+                    (Some(slot), _) => (slot, false),
+                    (None, Some(slot)) => (slot, true),
+                    (None, None) => return None,
+                };
+                Some(Write { code, slot, truth })
+            })
             .collect();
         Self {
             action,
             updates,
+            writes,
             combinations,
             tried,
         }
@@ -226,9 +258,28 @@ impl Seen {
         }
     }
 
+    fn first_row(&mut self, row: &[u64], hash: u64) -> bool {
+        let width = row.len();
+        let rows = &self.rows;
+        let earlier = |at: usize| rows.get(at..at.saturating_add(width)).unwrap_or(&[]);
+        match self
+            .row_at
+            .entry(hash, |(at, _)| earlier(*at) == row, |(_, hash)| *hash)
+        {
+            hashbrown::hash_table::Entry::Occupied(_) => false,
+            hashbrown::hash_table::Entry::Vacant(vacant) => {
+                vacant.insert((self.rows.len(), hash));
+                self.rows.extend_from_slice(row);
+                true
+            }
+        }
+    }
+
     fn forget(&mut self) {
         self.at.clear();
         self.values.clear();
+        self.row_at.clear();
+        self.rows.clear();
     }
 }
 
@@ -272,8 +323,32 @@ fn next_updates(
     Ok(())
 }
 
+fn next_row(
+    writes: &[Write<'_>],
+    layout: &RowLayout,
+    row: &[u64],
+    frame: &mut Frame<'_>,
+    next: &mut Vec<u64>,
+) -> Result<Option<u64>, Fault> {
+    next.clear();
+    next.extend_from_slice(row);
+    for write in writes {
+        let value = write.code.eval(frame)?;
+        let number = match (write.truth, value) {
+            (false, Value::Int(number)) => number,
+            (true, Value::Bool(flag)) => i64::from(flag),
+            _ => return Ok(None),
+        };
+        if !write.slot.write(next, number) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(layout.hash(next)))
+}
+
 struct Expansion<'s, 'f, S> {
-    state: &'s [Value],
+    base: Base<'s>,
+    layout: &'s RowLayout,
     frame: Frame<'f>,
     found: Mark,
     budget: Budget,
@@ -317,12 +392,41 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 }
             }
             stopping.enabled = true;
-            match next_updates(each, self.state, &mut self.frame, &mut self.scratch.updates) {
+            if let (Some(writes), Some(row)) = (&each.writes, self.base.row) {
+                match next_row(
+                    writes,
+                    self.layout,
+                    row,
+                    &mut self.frame,
+                    &mut self.scratch.next,
+                ) {
+                    Ok(Some(hash)) => {
+                        let next = &self.scratch.next;
+                        if (!repeats || self.scratch.seen.first_row(next, hash))
+                            && self.sink.offer_row(position, input, next, hash)
+                        {
+                            self.offered = self.offered.saturating_add(1);
+                        }
+                        continue;
+                    }
+                    Ok(None) => {}
+                    Err(fault) => {
+                        self.found.note(Whence::Update(position), fault);
+                        continue;
+                    }
+                }
+            }
+            match next_updates(
+                each,
+                self.base.values,
+                &mut self.frame,
+                &mut self.scratch.updates,
+            ) {
                 Ok(()) => {
                     if (!repeats || self.scratch.seen.first_time(&self.scratch.updates))
                         && self
                             .sink
-                            .offer(position, input, self.state, &self.scratch.updates)
+                            .offer(position, input, self.base, &self.scratch.updates)
                     {
                         self.offered = self.offered.saturating_add(1);
                     }
@@ -352,6 +456,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
 pub(crate) struct Expand<'a> {
     pub(crate) model: &'a Model,
     pub(crate) moves: &'a [Move<'a>],
+    pub(crate) layout: &'a RowLayout,
     pub(crate) only_rule: Option<&'a str>,
     pub(crate) slots: usize,
     pub(crate) asked: Asked,
@@ -361,7 +466,7 @@ pub(crate) struct Expand<'a> {
 impl Expand<'_> {
     pub(crate) fn state<S: Successors>(
         &self,
-        state: &[Value],
+        base: Base<'_>,
         outside: Option<usize>,
         sink: &mut S,
         scratch: &mut Scratch,
@@ -375,7 +480,7 @@ impl Expand<'_> {
             found.cut_short = true;
             return found;
         }
-        let mut frame = Frame::new(state, self.slots).until(self.budget.deadline);
+        let mut frame = Frame::new(base.values, self.slots).until(self.budget.deadline);
         for (position, rule) in model.rules.iter().enumerate() {
             if self.only_rule.is_some_and(|wanted| wanted != rule.id) {
                 continue;
@@ -394,7 +499,8 @@ impl Expand<'_> {
             return found;
         }
         let mut expansion = Expansion {
-            state,
+            base,
+            layout: self.layout,
             frame,
             found,
             budget: self.budget,
@@ -426,7 +532,7 @@ impl Expand<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{chosen, input_count, told_apart_from_earlier};
+    use super::{Seen, chosen, input_count, told_apart_from_earlier};
     use earnest_ir::{Action, Expr, Input};
     use earnest_value::{Domain, Value};
 
@@ -453,6 +559,19 @@ mod tests {
 
     fn numbers(all: &[i64]) -> Vec<Value> {
         all.iter().copied().map(Value::Int).collect()
+    }
+
+    #[test]
+    fn a_row_is_new_once_until_the_seen_rows_are_forgotten() {
+        let mut seen = Seen::default();
+        assert!(seen.first_row(&[7, 1], 3), "the first time");
+        assert!(
+            seen.first_row(&[7, 2], 3),
+            "another row under the same hash"
+        );
+        assert!(!seen.first_row(&[7, 1], 3), "met before");
+        seen.forget();
+        assert!(seen.first_row(&[7, 1], 3), "new again once forgotten");
     }
 
     #[test]

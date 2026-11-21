@@ -9,7 +9,7 @@ mod workers;
 use crate::expand::{Asked, Budget, Expand, Mark, Move, Whence, Width};
 use crate::limits::{Limits, TIME_LIMIT_REASON};
 use crate::outcome::Outcome;
-use crate::store::{Lookup, Placed, Store};
+use crate::store::{Lookup, Placed, RowLayout, Store};
 use earnest_ir::{Fault, Model};
 use starts::Starts;
 use std::ops::Range;
@@ -37,6 +37,7 @@ pub(crate) struct Search<'a> {
     pub(crate) limits: &'a Limits,
     slots: usize,
     moves: Vec<Move<'a>>,
+    layout: RowLayout,
     pub(crate) store: Store,
     pub(crate) notes: Vec<Note>,
     pub(crate) arrows: Vec<Arrow>,
@@ -70,20 +71,22 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         .chain(model.ends.iter().map(|end| end.slots))
         .max()
         .unwrap_or(0);
+    let store = Store::new(
+        &model.fields,
+        limits.max_states,
+        if limits.keep_graph {
+            Lookup::Id
+        } else {
+            Lookup::Presence
+        },
+    );
     let mut search = Search {
         model,
         limits,
         slots,
-        moves: Move::all(model),
-        store: Store::new(
-            &model.fields,
-            limits.max_states,
-            if limits.keep_graph {
-                Lookup::Id
-            } else {
-                Lookup::Presence
-            },
-        ),
+        moves: Move::all(model, store.layout()),
+        layout: store.layout().clone(),
+        store,
         notes: Vec::new(),
         arrows: Vec::new(),
         first_broken: vec![None; model.rules.len()],
@@ -161,6 +164,7 @@ impl Search<'_> {
         Expand {
             model: self.model,
             moves: &self.moves,
+            layout: &self.layout,
             only_rule: self.limits.only_rule.as_deref(),
             slots: self.slots,
             asked,

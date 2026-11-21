@@ -1,6 +1,6 @@
 use super::encode::{encode_next, with_updates};
 use super::{Arrow, STATES_BETWEEN_CLOCK_READS, Search};
-use crate::expand::{Asked, Budget, Clock, Expand, Mark, Scratch, Successors};
+use crate::expand::{Asked, Base, Budget, Clock, Expand, Mark, Scratch, Successors};
 use crate::helpers::Helpers;
 use crate::store::{Placed, Store};
 use earnest_value::Value;
@@ -12,8 +12,6 @@ struct HereSink<'a> {
     store: &'a mut Store,
     arrows: &'a mut Vec<Arrow>,
     graph: bool,
-    base: Vec<u64>,
-    base_is_row: bool,
     from: usize,
     most: usize,
     full: bool,
@@ -21,40 +19,20 @@ struct HereSink<'a> {
     after_full: FxHashSet<Box<[Value]>>,
 }
 
-impl Successors for HereSink<'_> {
-    fn offer(
+impl HereSink<'_> {
+    fn settle(
         &mut self,
         action: usize,
-        _: usize,
-        state: &[Value],
-        updates: &[(usize, Value)],
+        placed: Placed,
+        next: impl FnOnce(&Store) -> Box<[Value]>,
     ) -> bool {
-        let base = self.base_is_row.then_some(self.base.as_slice());
-        let encoded = encode_next(self.store, base, &mut self.row, state, updates);
-        if self.full {
-            let next = with_updates(state, updates);
-            let known = if encoded {
-                let hash = self.store.layout().hash(&self.row);
-                self.store.find(&self.row, hash).is_some()
-            } else {
-                self.store.find_values(&next).is_some()
-            };
-            return !known && self.after_full.insert(next);
-        }
-        let parent = Some(self.from);
-        let placed = if encoded {
-            let hash = self.store.layout().hash(&self.row);
-            self.store.place(&self.row, hash, parent, self.most)
-        } else {
-            self.store
-                .place_values(with_updates(state, updates), parent, self.most)
-        };
         let (to, counted) = match placed {
             Placed::Known(found) => (found.id, false),
             Placed::New(to) => (Some(to), true),
             Placed::Full => {
                 self.full = true;
-                self.after_full.insert(with_updates(state, updates));
+                let next = next(self.store);
+                self.after_full.insert(next);
                 return true;
             }
         };
@@ -68,6 +46,44 @@ impl Successors for HereSink<'_> {
             });
         }
         counted
+    }
+
+    fn place_row(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
+        if self.full {
+            let known = self.store.find(row, hash).is_some();
+            return !known && self.after_full.insert(self.store.values_of(row));
+        }
+        let placed = self.store.place(row, hash, Some(self.from), self.most);
+        self.settle(action, placed, |store| store.values_of(row))
+    }
+}
+
+impl Successors for HereSink<'_> {
+    fn offer(
+        &mut self,
+        action: usize,
+        _: usize,
+        base: Base<'_>,
+        updates: &[(usize, Value)],
+    ) -> bool {
+        let mut row = std::mem::take(&mut self.row);
+        let counted = if encode_next(self.store, base.row, &mut row, base.values, updates) {
+            let hash = self.store.layout().hash(&row);
+            self.place_row(action, &row, hash)
+        } else if self.full {
+            let next = with_updates(base.values, updates);
+            self.store.find_values(&next).is_none() && self.after_full.insert(next)
+        } else {
+            let next = with_updates(base.values, updates);
+            let placed = self.store.place_values(next, Some(self.from), self.most);
+            self.settle(action, placed, |_| with_updates(base.values, updates))
+        };
+        self.row = row;
+        counted
+    }
+
+    fn offer_row(&mut self, action: usize, _: usize, row: &[u64], hash: u64) -> bool {
+        self.place_row(action, row, hash)
     }
 }
 
@@ -90,6 +106,7 @@ impl Search<'_> {
         let expand = Expand {
             model: self.model,
             moves: &self.moves,
+            layout: &self.layout,
             only_rule: self.limits.only_rule.as_deref(),
             slots: self.slots,
             asked,
@@ -109,8 +126,6 @@ impl Search<'_> {
             store: &mut self.store,
             arrows: &mut self.arrows,
             graph: self.limits.keep_graph,
-            base: Vec::new(),
-            base_is_row: false,
             from: 0,
             most: self.limits.max_states,
             full: false,
@@ -119,6 +134,7 @@ impl Search<'_> {
         };
         let mut scratch = Scratch::default();
         let mut state = Vec::new();
+        let mut row = Vec::new();
         for (position, id) in frontier.enumerate() {
             let clock_due = position.is_multiple_of(STATES_BETWEEN_CLOCK_READS);
             let late = deadline.is_some_and(|limit| Instant::now() >= limit);
@@ -131,10 +147,14 @@ impl Search<'_> {
                 here.handed = true;
                 break;
             }
-            sink.base_is_row = sink.store.read_state(id, &mut sink.base, &mut state);
-            let outside = sink.store.outside(id, &sink.base, &self.model.fields);
+            let is_row = sink.store.read_state(id, &mut row, &mut state);
+            let outside = sink.store.outside(id, &row, &self.model.fields);
             sink.from = id;
-            let mark = expand.state(&state, outside, &mut sink, &mut scratch);
+            let base = Base {
+                values: &state,
+                row: is_row.then_some(row.as_slice()),
+            };
+            let mark = expand.state(base, outside, &mut sink, &mut scratch);
             if mark.clock == Clock::Stopped {
                 here.stopped = true;
                 break;
