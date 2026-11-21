@@ -1,4 +1,4 @@
-use earnest_ir::{Action, Fault, Frame, Model};
+use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxHasher;
@@ -111,7 +111,6 @@ pub(crate) trait Successors {
 pub(crate) struct Scratch {
     updates: Vec<(usize, Value)>,
     seen: Seen,
-    tried: Trials,
 }
 
 #[derive(Debug, Default)]
@@ -120,41 +119,65 @@ struct Seen {
     at: HashTable<usize>,
 }
 
-#[derive(Debug, Default)]
-struct Trials {
-    of_action: Vec<Option<Tried>>,
-}
-
-impl Trials {
-    fn skipping(&mut self, position: usize, action: &Action) -> Option<&[Vec<bool>]> {
-        if self.of_action.len() <= position {
-            self.of_action
-                .resize_with(position.saturating_add(1), || None);
-        }
-        match self
-            .of_action
-            .get_mut(position)?
-            .get_or_insert_with(|| Tried::of(action))
-        {
-            Tried::Every => None,
-            Tried::FirstOfEach(told) => Some(told),
-        }
-    }
+#[derive(Debug)]
+pub(crate) struct Move<'a> {
+    action: &'a Action,
+    updates: Vec<(usize, &'a Code)>,
+    combinations: usize,
+    tried: Tried,
 }
 
 #[derive(Debug)]
 enum Tried {
+    Once,
     Every,
     FirstOfEach(Vec<Vec<bool>>),
 }
 
-impl Tried {
-    fn of(action: &Action) -> Self {
-        let told = action.told_apart();
-        if told.iter().flatten().all(|apart| *apart) {
-            Self::Every
+impl<'a> Move<'a> {
+    pub(crate) fn all(model: &'a Model) -> Vec<Self> {
+        model
+            .actions
+            .iter()
+            .map(|action| Self::of(action, model.fields.len()))
+            .collect()
+    }
+
+    fn of(action: &'a Action, fields: usize) -> Self {
+        let combinations = input_count(action);
+        let tried = if combinations <= 1 {
+            Tried::Once
         } else {
-            Self::FirstOfEach(told)
+            let told = action.told_apart();
+            if told.iter().flatten().all(|apart| *apart) {
+                Tried::Every
+            } else {
+                Tried::FirstOfEach(told)
+            }
+        };
+        let updates = action
+            .updates
+            .iter()
+            .take(fields)
+            .enumerate()
+            .filter_map(|(position, update)| Some((position, update.as_ref()?)))
+            .collect();
+        Self {
+            action,
+            updates,
+            combinations,
+            tried,
+        }
+    }
+
+    fn repeats(&self) -> bool {
+        !matches!(self.tried, Tried::Once)
+    }
+
+    fn skipping(&self) -> Option<&[Vec<bool>]> {
+        match &self.tried {
+            Tried::FirstOfEach(told) => Some(told),
+            Tried::Once | Tried::Every => None,
         }
     }
 }
@@ -234,16 +257,17 @@ fn set_inputs(action: &Action, input: usize, frame: &mut Frame<'_>) {
 }
 
 fn next_updates(
-    action: &Action,
+    each: &Move<'_>,
     state: &[Value],
     frame: &mut Frame<'_>,
     updates: &mut Vec<(usize, Value)>,
 ) -> Result<(), Fault> {
     updates.clear();
-    for (position, update) in action.updates.iter().take(state.len()).enumerate() {
-        if let Some(expr) = update {
-            updates.push((position, expr.eval(frame)?));
+    for (position, code) in &each.updates {
+        if *position >= state.len() {
+            break;
         }
+        updates.push((*position, code.eval(frame)?));
     }
     Ok(())
 }
@@ -259,17 +283,15 @@ struct Expansion<'s, 'f, S> {
 }
 
 impl<S: Successors> Expansion<'_, '_, S> {
-    fn action(&mut self, position: usize, action: &Action) -> Stopping {
+    fn action(&mut self, position: usize, each: &Move<'_>) -> Stopping {
         let mut stopping = Stopping::default();
-        let combinations = input_count(action);
-        let repeats = combinations > 1;
-        self.scratch.seen.forget();
-        let skipping = if repeats {
-            self.scratch.tried.skipping(position, action)
-        } else {
-            None
-        };
-        for input in 0..combinations {
+        let action = each.action;
+        let repeats = each.repeats();
+        if repeats {
+            self.scratch.seen.forget();
+        }
+        let skipping = each.skipping();
+        for input in 0..each.combinations {
             if self.frame.out_of_time() {
                 self.found.clock = Clock::Stopped;
                 break;
@@ -282,7 +304,9 @@ impl<S: Successors> Expansion<'_, '_, S> {
             {
                 continue;
             }
-            set_inputs(action, input, &mut self.frame);
+            if !action.inputs.is_empty() {
+                set_inputs(action, input, &mut self.frame);
+            }
             match action.guard.truth(&mut self.frame) {
                 Ok(true) => {}
                 Ok(false) => continue,
@@ -293,12 +317,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 }
             }
             stopping.enabled = true;
-            match next_updates(
-                action,
-                self.state,
-                &mut self.frame,
-                &mut self.scratch.updates,
-            ) {
+            match next_updates(each, self.state, &mut self.frame, &mut self.scratch.updates) {
                 Ok(()) => {
                     if (!repeats || self.scratch.seen.first_time(&self.scratch.updates))
                         && self
@@ -332,6 +351,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
 
 pub(crate) struct Expand<'a> {
     pub(crate) model: &'a Model,
+    pub(crate) moves: &'a [Move<'a>],
     pub(crate) only_rule: Option<&'a str>,
     pub(crate) slots: usize,
     pub(crate) asked: Asked,
@@ -383,8 +403,8 @@ impl Expand<'_> {
             scratch,
         };
         let mut moving = Stopping::default();
-        for (position, action) in model.actions.iter().enumerate() {
-            let each = expansion.action(position, action);
+        for (position, each) in self.moves.iter().enumerate() {
+            let each = expansion.action(position, each);
             moving.enabled |= each.enabled;
             moving.unsure |= each.unsure;
             if expansion.found.clock == Clock::Stopped {

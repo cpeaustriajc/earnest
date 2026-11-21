@@ -89,6 +89,7 @@ impl Search<'_> {
     ) -> Here {
         let expand = Expand {
             model: self.model,
+            moves: &self.moves,
             only_rule: self.limits.only_rule.as_deref(),
             slots: self.slots,
             asked,
