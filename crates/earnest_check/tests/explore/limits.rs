@@ -706,6 +706,25 @@ fn a_fault_behind_two_actions_that_reach_one_state(first: i64, last: i64) -> Mod
     sketch.model()
 }
 
+fn a_fault_behind_a_return_to_a_state_the_store_holds(first: i64, last: i64) -> Model {
+    let mut sketch = Sketch::new();
+    let x = sketch.number("x", 0, 9, &[0]);
+    let y = sketch.number("y", 0, 9, &[0]);
+    sketch.action_with(
+        "one of several",
+        &[("p", numbers(first..=last))],
+        below(&y, 2),
+        &[(&x, Expr::Local(0))],
+    );
+    sketch.action(
+        "back to the first of them",
+        below(&y, 2),
+        &[(&x, int(first))],
+    );
+    nine_divided_by_x_in_y(&mut sketch, &x, &y);
+    sketch.model()
+}
+
 #[test]
 fn once_the_store_is_full_every_new_successor_uses_up_the_room_of_the_state_that_offers_it() {
     let model = a_fault_behind_a_fan_of_successors(0, 9);
@@ -813,6 +832,61 @@ fn once_the_store_is_full_a_new_state_out_of_range_offered_twice_uses_up_the_roo
             [FindingKind::OutOfRange, FindingKind::Fault],
             "x = 13 is offered by two actions but is one state: it uses up the room once, so \
              the action that divides by zero is tried and 9 / x divides by zero at x = 0: {case}"
+        );
+    }
+}
+
+#[test]
+fn once_the_store_is_full_a_successor_the_store_already_holds_uses_up_no_room() {
+    let model = a_fault_behind_a_return_to_a_state_the_store_holds(1, 3);
+    for (case, outcome) in every_worker_count(&model, 3) {
+        assert_eq!(
+            outcome.status,
+            Status::Fail,
+            "x = 1 is already in the store, so going back to it is no new state and uses up \
+             no room: the action that divides by zero is tried and its fault is found: {case}"
+        );
+        assert_eq!(
+            outcome.states, 3,
+            "the start state and x = 1 and x = 2 fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 3"),
+            "x = 3 did not fit, so the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [FindingKind::Fault],
+            "9 / x divides by zero in the start state: {case}"
+        );
+    }
+}
+
+#[test]
+fn once_the_store_is_full_a_state_out_of_range_the_store_already_holds_uses_up_no_room() {
+    let model = a_fault_behind_a_return_to_a_state_the_store_holds(11, 13);
+    for (case, outcome) in every_worker_count(&model, 3) {
+        assert_eq!(
+            outcome.status,
+            Status::Fail,
+            "x = 11 is a state out of range and a finding: {case}"
+        );
+        assert_eq!(
+            outcome.states, 3,
+            "the start state and x = 11 and x = 12 fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 3"),
+            "x = 13 did not fit, so the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [FindingKind::OutOfRange, FindingKind::Fault],
+            "x = 11 is already in the store, so going back to it is no new state and uses up \
+             no room: the action that divides by zero is tried and 9 / x divides by zero at \
+             x = 0: {case}"
         );
     }
 }
