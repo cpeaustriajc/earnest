@@ -1,4 +1,4 @@
-use crate::build::{Sketch, apply, below, counter, int, is, plus, steps, texts, yes};
+use crate::build::{Sketch, apply, below, counter, int, is, not, plus, steps, texts, yes};
 use earnest_check::{Finding, FindingKind, Outcome, Status, Verdict};
 use earnest_ir::{Expr, Math, Op, Order, SeqOp};
 use earnest_value::{Domain, IntType, Value};
@@ -105,6 +105,25 @@ fn counting_past_a_range_is_out_of_range_with_the_path_to_it() {
             "inc  n: 3 -> 4"
         ]
     );
+}
+
+#[test]
+fn an_update_that_fits_beside_one_that_leaves_its_range_still_ends_out_of_range() {
+    let mut sketch = Sketch::new();
+    let x = sketch.number("x", 0, 4, &[0]);
+    let y = sketch.number("y", 0, 2, &[0]);
+    let on = sketch.boolean("on", &[true]);
+    sketch.action("both", yes(), &[(&x, plus(&x, 1)), (&y, plus(&y, 1))]);
+    sketch.action("flip", on.clone(), &[(&on, not(&on))]);
+    let outcome = sketch.explored();
+    assert_eq!(outcome.states, 8, "x and y at 0 to 3, the flag on or off");
+    let finding = the_finding(&outcome);
+    assert_eq!(finding.kind, FindingKind::OutOfRange);
+    assert_eq!(
+        finding.message,
+        "the field `y` leaves the values it declares"
+    );
+    assert_eq!(steps(&finding.path).len(), 3, "a shortest path");
 }
 
 #[test]

@@ -1,68 +1,10 @@
-use earnest_ir::{Action, Fault, Frame, Model, eval, truth};
+use crate::store::{NumberSlot, RowLayout};
+use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
-use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use hashbrown::HashTable;
+use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::time::Instant;
-
-pub(crate) type State = Arc<[Value]>;
-
-#[derive(Clone, Debug)]
-pub(crate) struct Key {
-    hash: u64,
-    pub(crate) state: State,
-}
-
-impl Key {
-    pub(crate) fn new(state: State) -> Self {
-        let mut hasher = FxHasher::default();
-        state.hash(&mut hasher);
-        Self {
-            hash: hasher.finish(),
-            state,
-        }
-    }
-}
-
-impl Hash for Key {
-    fn hash<H: Hasher>(&self, hasher: &mut H) {
-        hasher.write_u64(self.hash);
-    }
-}
-
-impl PartialEq for Key {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash && self.state == other.state
-    }
-}
-
-impl Eq for Key {}
-
-pub(crate) type Index = FxHashMap<Key, usize>;
-
-#[derive(Debug)]
-pub(crate) struct Known<'a> {
-    pub(crate) index: &'a Index,
-    pub(crate) met: Option<FxHashSet<Key>>,
-}
-
-impl Known<'_> {
-    fn lookup(&mut self, key: &Key) -> Lookup {
-        if let Some(id) = self.index.get(key) {
-            return Lookup::Known(*id);
-        }
-        match self.met.as_mut().map(|met| met.insert(key.clone())) {
-            Some(false) => Lookup::MetBefore,
-            Some(true) | None => Lookup::New,
-        }
-    }
-}
-
-enum Lookup {
-    Known(usize),
-    MetBefore,
-    New,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Whence {
@@ -72,16 +14,8 @@ pub(crate) enum Whence {
     End(usize),
 }
 
-#[derive(Debug)]
-pub(crate) struct Successor {
-    pub(crate) action: usize,
-    pub(crate) input: usize,
-    pub(crate) next: Key,
-    pub(crate) known: Option<usize>,
-}
-
 #[derive(Debug, Default)]
-pub(crate) struct Expanded {
+pub(crate) struct Mark {
     pub(crate) broken: Vec<usize>,
     pub(crate) unjudged: Vec<usize>,
     pub(crate) outside: Option<usize>,
@@ -91,7 +25,6 @@ pub(crate) struct Expanded {
     pub(crate) cut_short: bool,
     pub(crate) clock: Clock,
     pub(crate) width: Width,
-    pub(crate) successors: Vec<Successor>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -124,7 +57,7 @@ impl Width {
     }
 }
 
-impl Expanded {
+impl Mark {
     fn note(&mut self, whence: Whence, fault: Fault) {
         if fault == Fault::Stopped {
             self.clock = Clock::Stopped;
@@ -134,6 +67,18 @@ impl Expanded {
         if self.trouble.is_none() {
             self.trouble = Some((whence, fault));
         }
+    }
+
+    pub(crate) fn is_plain(&self) -> bool {
+        self.broken.is_empty()
+            && self.unjudged.is_empty()
+            && self.outside.is_none()
+            && self.trouble.is_none()
+            && !self.ended
+            && !self.stuck
+            && !self.cut_short
+            && self.clock == Clock::Running
+            && self.width == Width::Narrow
     }
 }
 
@@ -147,6 +92,206 @@ pub(crate) enum Asked {
 struct Stopping {
     enabled: bool,
     unsure: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Base<'s> {
+    pub(crate) values: &'s [Value],
+    pub(crate) row: Option<&'s [u64]>,
+}
+
+pub(crate) trait Successors {
+    fn offer(
+        &mut self,
+        action: usize,
+        input: usize,
+        base: Base<'_>,
+        updates: &[(usize, Value)],
+    ) -> bool;
+
+    fn offer_row(&mut self, action: usize, input: usize, row: &[u64], hash: u64) -> bool;
+
+    fn done(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Scratch {
+    updates: Vec<(usize, Value)>,
+    next: Vec<u64>,
+    seen: Seen,
+}
+
+#[derive(Debug, Default)]
+struct Seen {
+    values: Vec<Value>,
+    at: HashTable<usize>,
+    rows: Vec<u64>,
+    row_at: HashTable<(usize, u64)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holds {
+    WholeNumber,
+    TrueOrFalse,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Write<'a> {
+    code: &'a Code,
+    slot: NumberSlot,
+    holds: Holds,
+}
+
+#[derive(Debug)]
+pub(crate) struct Move<'a> {
+    action: &'a Action,
+    updates: Vec<(usize, &'a Code)>,
+    writes: Option<Vec<Write<'a>>>,
+    combinations: usize,
+    tried: Tried,
+}
+
+#[derive(Debug)]
+enum Tried {
+    Once,
+    Every,
+    FirstOfEach(Vec<Vec<bool>>),
+}
+
+impl<'a> Move<'a> {
+    pub(crate) fn all(model: &'a Model, layout: &RowLayout) -> Vec<Self> {
+        model
+            .actions
+            .iter()
+            .map(|action| Self::of(action, model.fields.len(), layout))
+            .collect()
+    }
+
+    fn of(action: &'a Action, fields: usize, layout: &RowLayout) -> Self {
+        let combinations = input_count(action);
+        let tried = if combinations <= 1 {
+            Tried::Once
+        } else {
+            let told = action.told_apart();
+            if told.iter().flatten().all(|apart| *apart) {
+                Tried::Every
+            } else {
+                Tried::FirstOfEach(told)
+            }
+        };
+        let updates = action
+            .updates
+            .iter()
+            .take(fields)
+            .enumerate()
+            .filter_map(|(position, update)| Some((position, update.as_ref()?)))
+            .collect::<Vec<_>>();
+        let writes = updates
+            .iter()
+            .map(|(position, code)| {
+                let (slot, holds) = match (layout.number(*position), layout.truth(*position)) {
+                    (Some(slot), _) => (slot, Holds::WholeNumber),
+                    (None, Some(slot)) => (slot, Holds::TrueOrFalse),
+                    (None, None) => return None,
+                };
+                Some(Write { code, slot, holds })
+            })
+            .collect();
+        Self {
+            action,
+            updates,
+            writes,
+            combinations,
+            tried,
+        }
+    }
+
+    fn repeats(&self) -> bool {
+        !matches!(self.tried, Tried::Once)
+    }
+
+    fn skipping(&self) -> Option<&[Vec<bool>]> {
+        match &self.tried {
+            Tried::FirstOfEach(told) => Some(told),
+            Tried::Once | Tried::Every => None,
+        }
+    }
+}
+
+fn told_apart_from_earlier(action: &Action, told: &[Vec<bool>], input: usize) -> bool {
+    let mut rest = input;
+    action.inputs.iter().zip(told).all(|(each, apart)| {
+        let count = each.values.len();
+        let digit = rest.checked_rem(count);
+        rest = rest.checked_div(count).unwrap_or(0);
+        digit.and_then(|at| apart.get(at)).copied().unwrap_or(true)
+    })
+}
+
+fn same_words(one: &[u64], other: &[u64]) -> bool {
+    one.len() == other.len() && one.iter().zip(other).all(|(left, right)| left == right)
+}
+
+fn hash_values(values: &[Value]) -> u64 {
+    let mut hasher = FxHasher::default();
+    values.hash(&mut hasher);
+    hasher.finish()
+}
+
+impl Seen {
+    fn first_time(&mut self, updates: &[(usize, Value)]) -> bool {
+        let width = updates.len();
+        let start = self.values.len();
+        self.values
+            .extend(updates.iter().map(|(_, value)| value.clone()));
+        let (seen, values) = (&mut self.at, &self.values);
+        let tuple = |at: usize| values.get(at..at.saturating_add(width)).unwrap_or(&[]);
+        let Some(candidate) = values.get(start..) else {
+            return false;
+        };
+        let hash = hash_values(candidate);
+        match seen.entry(
+            hash,
+            |at| tuple(*at) == candidate,
+            |at| hash_values(tuple(*at)),
+        ) {
+            hashbrown::hash_table::Entry::Occupied(_) => {
+                self.values.truncate(start);
+                false
+            }
+            hashbrown::hash_table::Entry::Vacant(vacant) => {
+                vacant.insert(start);
+                true
+            }
+        }
+    }
+
+    fn first_row(&mut self, row: &[u64], hash: u64) -> bool {
+        let width = row.len();
+        let rows = &self.rows;
+        let earlier = |at: usize| rows.get(at..at.saturating_add(width)).unwrap_or(&[]);
+        match self.row_at.entry(
+            hash,
+            |(at, _)| same_words(earlier(*at), row),
+            |(_, hash)| *hash,
+        ) {
+            hashbrown::hash_table::Entry::Occupied(_) => false,
+            hashbrown::hash_table::Entry::Vacant(vacant) => {
+                vacant.insert((self.rows.len(), hash));
+                self.rows.extend_from_slice(row);
+                true
+            }
+        }
+    }
+
+    fn forget(&mut self) {
+        self.at.clear();
+        self.values.clear();
+        self.row_at.clear();
+        self.rows.clear();
+    }
 }
 
 pub(crate) fn chosen(action: &Action, input: usize) -> impl Iterator<Item = Option<&Value>> {
@@ -173,149 +318,231 @@ fn set_inputs(action: &Action, input: usize, frame: &mut Frame<'_>) {
     }
 }
 
-fn next_state(action: &Action, state: &[Value], frame: &mut Frame<'_>) -> Result<State, Fault> {
-    let mut next = Vec::with_capacity(state.len());
-    for (position, old) in state.iter().enumerate() {
-        next.push(match action.updates.get(position) {
-            Some(Some(expr)) => eval(expr, frame)?,
-            Some(None) | None => old.clone(),
-        });
-    }
-    Ok(Arc::from(next))
-}
-
-fn expand_action(
-    position: usize,
-    action: &Action,
+fn next_updates(
+    each: &Move<'_>,
     state: &[Value],
     frame: &mut Frame<'_>,
-    found: &mut Expanded,
+    updates: &mut Vec<(usize, Value)>,
+) -> Result<(), Fault> {
+    updates.clear();
+    for (position, code) in &each.updates {
+        if *position >= state.len() {
+            break;
+        }
+        updates.push((*position, code.eval(frame)?));
+    }
+    Ok(())
+}
+
+struct Expansion<'s, 'f, S> {
+    base: Base<'s>,
+    moving: Stopping,
+    layout: &'s RowLayout,
+    frame: Frame<'f>,
+    found: Mark,
     budget: Budget,
-    known: &mut Known<'_>,
-) -> Stopping {
-    let mut stopping = Stopping::default();
-    let mut seen: FxHashSet<Key> = FxHashSet::default();
-    let combinations = input_count(action);
-    let repeats = combinations > 1;
-    for input in 0..combinations {
-        if frame.out_of_time() {
-            found.clock = Clock::Stopped;
-            break;
+    offered: usize,
+    sink: &'s mut S,
+    scratch: &'s mut Scratch,
+}
+
+impl<S: Successors> Expansion<'_, '_, S> {
+    fn action(&mut self, position: usize, each: &Move<'_>) {
+        if each.repeats() {
+            self.every_input(position, each);
+        } else if each.combinations == 1 && self.may_go_on() {
+            if !each.action.inputs.is_empty() {
+                set_inputs(each.action, 0, &mut self.frame);
+            }
+            self.try_input::<false>(position, each, 0);
         }
-        if found.successors.len() > budget.successors {
-            break;
-        }
-        set_inputs(action, input, frame);
-        match truth(&action.guard, frame) {
-            Ok(true) => {}
-            Ok(false) => continue,
-            Err(fault) => {
-                found.note(Whence::Guard(position), fault);
-                stopping.unsure = true;
+    }
+
+    fn every_input(&mut self, position: usize, each: &Move<'_>) {
+        self.scratch.seen.forget();
+        let skipping = each.skipping();
+        for input in 0..each.combinations {
+            if !self.may_go_on() {
+                break;
+            }
+            if let Some(told) = skipping
+                && !told_apart_from_earlier(each.action, told, input)
+            {
                 continue;
             }
+            set_inputs(each.action, input, &mut self.frame);
+            self.try_input::<true>(position, each, input);
         }
-        stopping.enabled = true;
-        match next_state(action, state, frame) {
-            Ok(next) => {
-                let next = Key::new(next);
-                if !repeats || seen.insert(next.clone()) {
-                    let known = match known.lookup(&next) {
-                        Lookup::Known(id) => Some(id),
-                        Lookup::New => None,
-                        Lookup::MetBefore => continue,
-                    };
-                    found.successors.push(Successor {
-                        action: position,
-                        input,
-                        next,
-                        known,
-                    });
+    }
+
+    #[inline]
+    fn may_go_on(&mut self) -> bool {
+        if self.frame.out_of_time() {
+            self.found.clock = Clock::Stopped;
+            return false;
+        }
+        self.offered <= self.budget.successors && !self.sink.done()
+    }
+
+    #[inline]
+    fn try_input<const REPEATS: bool>(&mut self, position: usize, each: &Move<'_>, input: usize) {
+        match each.action.guard.truth(&mut self.frame) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(fault) => {
+                self.found.note(Whence::Guard(position), fault);
+                self.moving.unsure = true;
+                return;
+            }
+        }
+        self.moving.enabled = true;
+        if let (Some(writes), Some(row)) = (&each.writes, self.base.row) {
+            let next = &mut self.scratch.next;
+            next.clear();
+            next.extend_from_slice(row);
+            let mut fits = true;
+            for write in writes {
+                let number = match (write.holds, write.code.eval(&mut self.frame)) {
+                    (Holds::WholeNumber, Ok(Value::Int(number))) => number,
+                    (Holds::TrueOrFalse, Ok(Value::Bool(flag))) => i64::from(flag),
+                    (_, Err(fault)) => {
+                        self.found.note(Whence::Update(position), fault);
+                        return;
+                    }
+                    (_, Ok(_)) => {
+                        fits = false;
+                        break;
+                    }
+                };
+                if !write.slot.write(next, number) {
+                    fits = false;
+                    break;
                 }
             }
-            Err(fault) => found.note(Whence::Update(position), fault),
-        }
-    }
-    stopping
-}
-
-fn marked_end(model: &Model, frame: &mut Frame<'_>, found: &mut Expanded) -> Stopping {
-    let mut stopping = Stopping::default();
-    for (position, end) in model.ends.iter().enumerate() {
-        match truth(&end.when, frame) {
-            Ok(true) => stopping.enabled = true,
-            Ok(false) => {}
-            Err(fault) => {
-                found.note(Whence::End(position), fault);
-                stopping.unsure = true;
+            if fits {
+                let hash = self.layout.hash(next);
+                if (!REPEATS || self.scratch.seen.first_row(next, hash))
+                    && self.sink.offer_row(position, input, next, hash)
+                {
+                    self.offered = self.offered.saturating_add(1);
+                }
+                return;
             }
         }
-    }
-    stopping
-}
-
-pub(crate) fn expand_state(
-    model: &Model,
-    only_rule: Option<&str>,
-    slots: usize,
-    state: &[Value],
-    asked: Asked,
-    budget: Budget,
-    known: &mut Known<'_>,
-) -> Expanded {
-    let mut found = Expanded {
-        outside: model
-            .fields
-            .iter()
-            .zip(state)
-            .position(|(field, value)| !field.domain.contains(value)),
-        ..Expanded::default()
-    };
-    if found.outside.is_some() {
-        found.cut_short = true;
-        return found;
-    }
-    let mut frame = Frame::new(state, slots).until(budget.deadline);
-    for (position, rule) in model.rules.iter().enumerate() {
-        if only_rule.is_some_and(|wanted| wanted != rule.id) {
-            continue;
+        match next_updates(
+            each,
+            self.base.values,
+            &mut self.frame,
+            &mut self.scratch.updates,
+        ) {
+            Ok(()) => {
+                if (!REPEATS || self.scratch.seen.first_time(&self.scratch.updates))
+                    && self
+                        .sink
+                        .offer(position, input, self.base, &self.scratch.updates)
+                {
+                    self.offered = self.offered.saturating_add(1);
+                }
+            }
+            Err(fault) => self.found.note(Whence::Update(position), fault),
         }
-        match truth(&rule.holds, &mut frame) {
-            Ok(true) => {}
-            Ok(false) => found.broken.push(position),
-            Err(fault) => {
-                found.note(Whence::Rule(position), fault);
-                found.unjudged.push(position);
+    }
+
+    fn marked_end(&mut self, model: &Model) -> Stopping {
+        let mut stopping = Stopping::default();
+        for (position, end) in model.ends.iter().enumerate() {
+            match end.when.truth(&mut self.frame) {
+                Ok(true) => stopping.enabled = true,
+                Ok(false) => {}
+                Err(fault) => {
+                    self.found.note(Whence::End(position), fault);
+                    stopping.unsure = true;
+                }
             }
         }
+        stopping
     }
-    found.width = Width::of(&frame);
-    if asked == Asked::RulesOnly || found.clock == Clock::Stopped {
-        return found;
-    }
-    let mut moving = Stopping::default();
-    for (position, action) in model.actions.iter().enumerate() {
-        let each = expand_action(
-            position, action, state, &mut frame, &mut found, budget, known,
-        );
-        moving.enabled |= each.enabled;
-        moving.unsure |= each.unsure;
-        if found.clock == Clock::Stopped {
+}
+
+pub(crate) struct Expand<'a> {
+    pub(crate) model: &'a Model,
+    pub(crate) moves: &'a [Move<'a>],
+    pub(crate) layout: &'a RowLayout,
+    pub(crate) only_rule: Option<&'a str>,
+    pub(crate) slots: usize,
+    pub(crate) asked: Asked,
+    pub(crate) budget: Budget,
+}
+
+impl Expand<'_> {
+    pub(crate) fn state<S: Successors>(
+        &self,
+        base: Base<'_>,
+        outside: Option<usize>,
+        sink: &mut S,
+        scratch: &mut Scratch,
+    ) -> Mark {
+        let model = self.model;
+        let mut found = Mark {
+            outside,
+            ..Mark::default()
+        };
+        if found.outside.is_some() {
+            found.cut_short = true;
             return found;
         }
+        let mut frame = Frame::new(base.values, self.slots).until(self.budget.deadline);
+        for (position, rule) in model.rules.iter().enumerate() {
+            if self.only_rule.is_some_and(|wanted| wanted != rule.id) {
+                continue;
+            }
+            match rule.holds.truth(&mut frame) {
+                Ok(true) => {}
+                Ok(false) => found.broken.push(position),
+                Err(fault) => {
+                    found.note(Whence::Rule(position), fault);
+                    found.unjudged.push(position);
+                }
+            }
+        }
+        found.width = Width::of(&frame);
+        if self.asked == Asked::RulesOnly || found.clock == Clock::Stopped {
+            return found;
+        }
+        let mut expansion = Expansion {
+            base,
+            moving: Stopping::default(),
+            layout: self.layout,
+            frame,
+            found,
+            budget: self.budget,
+            offered: 0,
+            sink,
+            scratch,
+        };
+        for (position, each) in self.moves.iter().enumerate() {
+            expansion.action(position, each);
+            if expansion.found.clock == Clock::Stopped {
+                return expansion.found;
+            }
+            if expansion.sink.done() {
+                break;
+            }
+        }
+        let moving = expansion.moving;
+        if !moving.enabled {
+            let ending = expansion.marked_end(model);
+            expansion.found.ended = ending.enabled;
+            expansion.found.stuck = !ending.enabled && !ending.unsure && !moving.unsure;
+        }
+        expansion.found.width = Width::of(&expansion.frame);
+        expansion.found
     }
-    if !moving.enabled {
-        let ending = marked_end(model, &mut frame, &mut found);
-        found.ended = ending.enabled;
-        found.stuck = !ending.enabled && !ending.unsure && !moving.unsure;
-    }
-    found.width = Width::of(&frame);
-    found
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{chosen, input_count};
+    use super::{Seen, chosen, input_count, told_apart_from_earlier};
     use earnest_ir::{Action, Expr, Input};
     use earnest_value::{Domain, Value};
 
@@ -334,7 +561,7 @@ mod tests {
             label: "acts".to_owned(),
             line: 1,
             inputs,
-            guard: Expr::Const(Value::Bool(true)),
+            guard: Expr::Const(Value::Bool(true)).into(),
             updates: Vec::new(),
             slots: 2,
         }
@@ -342,6 +569,19 @@ mod tests {
 
     fn numbers(all: &[i64]) -> Vec<Value> {
         all.iter().copied().map(Value::Int).collect()
+    }
+
+    #[test]
+    fn a_row_is_new_once_until_the_seen_rows_are_forgotten() {
+        let mut seen = Seen::default();
+        assert!(seen.first_row(&[7, 1], 3), "the first time");
+        assert!(
+            seen.first_row(&[7, 2], 3),
+            "another row under the same hash"
+        );
+        assert!(!seen.first_row(&[7, 1], 3), "met before");
+        seen.forget();
+        assert!(seen.first_row(&[7, 1], 3), "new again once forgotten");
     }
 
     #[test]
@@ -382,5 +622,22 @@ mod tests {
             .map(|pair| numbers(pair))
             .collect();
         assert_eq!(all, expected);
+    }
+
+    #[test]
+    fn a_combination_is_tried_only_when_each_of_its_values_is_told_apart_from_earlier_ones() {
+        let two_by_three = action(vec![
+            input("a", 0, numbers(&[1, 2])),
+            input("b", 1, numbers(&[10, 20, 30])),
+        ]);
+        let told = [vec![true, true], vec![true, false, true]];
+        let tried: Vec<usize> = (0..6)
+            .filter(|combination| told_apart_from_earlier(&two_by_three, &told, *combination))
+            .collect();
+        assert_eq!(
+            tried,
+            vec![0, 1, 4, 5],
+            "the combinations with b at 20 repeat those with b at 10"
+        );
     }
 }
