@@ -145,10 +145,16 @@ struct Write<'a> {
 }
 
 #[derive(Debug)]
+enum InPlace<'a> {
+    Writes(Vec<Write<'a>>),
+    SomeUpdateHasNoSlot,
+}
+
+#[derive(Debug)]
 pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
-    writes: Option<Vec<Write<'a>>>,
+    in_place: InPlace<'a>,
     combinations: usize,
     tried: Tried,
 }
@@ -188,7 +194,7 @@ impl<'a> Move<'a> {
             .enumerate()
             .filter_map(|(position, update)| Some((position, update.as_ref()?)))
             .collect::<Vec<_>>();
-        let writes = updates
+        let in_place = updates
             .iter()
             .map(|(position, code)| {
                 let (slot, holds) = match (layout.number(*position), layout.truth(*position)) {
@@ -198,11 +204,12 @@ impl<'a> Move<'a> {
                 };
                 Some(Write { code, slot, holds })
             })
-            .collect();
+            .collect::<Option<Vec<_>>>()
+            .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
         Self {
             action,
             updates,
-            writes,
+            in_place,
             combinations,
             tried,
         }
@@ -396,7 +403,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
         }
         self.moving.enabled = true;
-        if let (Some(writes), Some(row)) = (&each.writes, self.base.row) {
+        if let (InPlace::Writes(writes), Some(row)) = (&each.in_place, self.base.row) {
             let next = &mut self.scratch.next;
             next.clear();
             next.extend_from_slice(row);
