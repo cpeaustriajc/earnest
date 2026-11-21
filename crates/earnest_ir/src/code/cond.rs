@@ -166,6 +166,21 @@ impl Cond {
 
     pub(super) fn eval(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
+            Self::All(parts) => {
+                for part in parts {
+                    if !part.leaf(frame)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            _ => self.leaf(frame),
+        }
+    }
+
+    #[inline]
+    fn leaf(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
+        match self {
             Self::FieldOrder {
                 order,
                 field,
@@ -175,14 +190,7 @@ impl Cond {
                 int_at(frame.state, *field).map_err(Stop::fault)?,
                 *number,
             )),
-            Self::All(parts) => {
-                for part in parts {
-                    if !part.eval(frame)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
+            Self::Const(flag) => Ok(*flag),
             _ => self.rest(frame),
         }
     }
@@ -190,7 +198,6 @@ impl Cond {
     #[inline(never)]
     fn rest(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
-            Self::Const(flag) => Ok(*flag),
             Self::Order { order, left, right } => {
                 let (first, second) = pair(left, right, frame)?;
                 Ok(compare(*order, first, second))
@@ -221,7 +228,7 @@ impl Cond {
             }
             Self::Read(place) => as_bool(place.find(frame)?),
             Self::Not(inner) => Ok(!inner.eval(frame)?),
-            Self::FieldOrder { .. } | Self::All(_) => self.eval(frame),
+            Self::FieldOrder { .. } | Self::All(_) | Self::Const(_) => self.eval(frame),
             Self::Any(parts) => {
                 for part in parts {
                     if part.eval(frame)? {
