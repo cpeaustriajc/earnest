@@ -1,14 +1,33 @@
 use super::part::{Entry, Part, Target, row_at};
 use super::workers::Crew;
 use super::{Arrow, Search};
+use crate::expand::Mark;
 use crate::store::{Found, Fresh, Placed};
 
+#[derive(Default)]
+pub(super) struct Judged {
+    pub(super) marks: Vec<(usize, Mark)>,
+    pub(super) through: usize,
+}
+
+impl Judged {
+    fn reach(&mut self, through: usize) {
+        self.through = self.through.max(through);
+    }
+}
+
 impl Search<'_> {
-    pub(super) fn merge_any(&mut self, parts: Vec<Part>) {
+    pub(super) fn merge_any(&mut self, parts: Vec<Part>) -> Judged {
         let simple = !self.limits.keep_graph && parts.iter().all(|part| part.raws.is_empty());
-        if !(simple && parts.len() > 1 && self.merge_spread(&parts)) {
-            self.merge(parts);
+        if simple && parts.len() > 1 && self.merge_spread(&parts) {
+            let mut judged = Judged::default();
+            for part in parts {
+                judged.marks.extend(part.marks);
+                judged.reach(part.first.saturating_add(part.expanded));
+            }
+            return judged;
         }
+        self.merge(parts)
     }
 
     fn merge_spread(&mut self, parts: &[Part]) -> bool {
@@ -27,19 +46,11 @@ impl Search<'_> {
             helpers: self.limits.helpers.as_ref(),
         };
         let most = self.limits.max_states;
-        if self.store.place_level(&fresh, &crew, most).is_none() {
-            return false;
-        }
-        for part in parts {
-            for (id, mark) in &part.marks {
-                self.record(*id, mark);
-            }
-            self.judged = self.judged.max(part.first.saturating_add(part.expanded));
-        }
-        true
+        self.store.place_level(&fresh, &crew, most).is_some()
     }
 
-    fn merge(&mut self, parts: Vec<Part>) {
+    fn merge(&mut self, parts: Vec<Part>) -> Judged {
+        let mut judged = Judged::default();
         let most = self.limits.max_states;
         let words = self.store.layout().words();
         let graph = self.limits.keep_graph;
@@ -64,10 +75,10 @@ impl Search<'_> {
                 })
             };
             while let Some(entry) = next() {
-                while let Some((id, mark)) = marks.next_if(|(id, _)| *id <= entry.from) {
-                    self.record(id, &mark);
-                }
-                self.judged = self.judged.max(entry.from.saturating_add(1));
+                judged.marks.extend(std::iter::from_fn(|| {
+                    marks.next_if(|(id, _)| *id <= entry.from)
+                }));
+                judged.reach(entry.from.saturating_add(1));
                 let parent = Some(entry.from);
                 let placed = match entry.target {
                     Target::Known(to) => Placed::Known(Found { id: Some(to) }),
@@ -88,7 +99,7 @@ impl Search<'_> {
                     Placed::New(to) => Some(to),
                     Placed::Full => {
                         self.reason = Some(self.limit_reason());
-                        return;
+                        return judged;
                     }
                 };
                 if graph && let Some(to) = to {
@@ -99,10 +110,9 @@ impl Search<'_> {
                     });
                 }
             }
-            for (id, mark) in marks {
-                self.record(id, &mark);
-            }
-            self.judged = self.judged.max(part.first.saturating_add(part.expanded));
+            judged.marks.extend(marks);
+            judged.reach(part.first.saturating_add(part.expanded));
         }
+        judged
     }
 }

@@ -224,6 +224,10 @@ impl PartSink<'_> {
 }
 
 impl Part {
+    pub(super) fn kept_rows(&self) -> usize {
+        self.hashes.len().saturating_add(self.raws.len())
+    }
+
     fn file_by_shard(&mut self) {
         let mut starts = vec![0; SHARD_COUNT + 1];
         for hash in &self.hashes {

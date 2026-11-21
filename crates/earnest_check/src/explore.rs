@@ -11,6 +11,8 @@ use crate::limits::{Limits, TIME_LIMIT_REASON};
 use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, RowLayout, Store};
 use earnest_ir::{Fault, Model};
+use merge::Judged;
+use part::Part;
 use starts::Starts;
 use std::ops::Range;
 use std::time::{Duration, Instant};
@@ -50,6 +52,16 @@ pub(crate) struct Search<'a> {
     pub(crate) wide: bool,
     pub(crate) cut_short: bool,
     judged: usize,
+    last_spread_merge: SpreadMerge,
+}
+
+const FEWEST_STATES_OF_A_ROUND: usize = 1;
+const ROUND_GROWTH: usize = 2;
+
+#[derive(Clone, Copy, Default)]
+struct SpreadMerge {
+    kept: usize,
+    new: usize,
 }
 
 /// Visits every state `model` can reach from its start states, breadth first, and says what
@@ -98,6 +110,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         wide: false,
         cut_short: false,
         judged: 0,
+        last_spread_merge: SpreadMerge::default(),
     };
     search.run();
     search.outcome()
@@ -183,23 +196,54 @@ impl Search<'_> {
         per_state: Duration,
     ) -> Ran {
         let mut helpers = self.limits.helpers.as_ref();
-        match self.spread_level(&frontier, deadline, asked, per_state) {
-            Some(expansion) if expansion.crowded => helpers = None,
-            Some(expansion) => {
-                let ran = Ran {
-                    stopped: expansion.stopped,
-                    workers: expansion.workers,
-                };
-                if !(ran.stopped && asked == Asked::Everything) {
-                    self.merge_any(expansion.parts);
-                }
-                return ran;
-            }
-            None => {}
-        }
-        let mut marks = Vec::new();
+        let mut judged = Judged::default();
         let mut rest = frontier.clone();
+        let mut spread =
+            self.spread_level(&rest, deadline, asked, per_state, FEWEST_STATES_OF_A_ROUND);
         loop {
+            match spread.take() {
+                Some(expansion) if expansion.crowded => helpers = None,
+                Some(expansion) => {
+                    if expansion.stopped && asked == Asked::Everything {
+                        self.undo_level(&frontier);
+                        return Ran {
+                            stopped: true,
+                            workers: expansion.workers,
+                        };
+                    }
+                    let before = self.store.len();
+                    let kept = expansion.parts.iter().map(Part::kept_rows).sum();
+                    let merged = self.merge_any(expansion.parts);
+                    self.last_spread_merge = SpreadMerge {
+                        kept,
+                        new: self.store.len().saturating_sub(before),
+                    };
+                    judged.marks.extend(merged.marks);
+                    judged.through = judged.through.max(merged.through);
+                    match expansion.left_over {
+                        Some(left) if self.reason.is_none() => {
+                            let taken = left.start.saturating_sub(rest.start);
+                            rest = left;
+                            spread = self.spread_level(
+                                &rest,
+                                deadline,
+                                asked,
+                                per_state,
+                                taken.saturating_mul(ROUND_GROWTH),
+                            );
+                            continue;
+                        }
+                        _ => {
+                            self.record_all(&judged.marks, judged.through);
+                            return Ran {
+                                stopped: expansion.stopped,
+                                workers: expansion.workers,
+                            };
+                        }
+                    }
+                }
+                None => {}
+            }
             let here = self.expand_here(rest.clone(), deadline, asked, helpers);
             if here.stopped && asked == Asked::Everything {
                 self.undo_level(&frontier);
@@ -208,39 +252,24 @@ impl Search<'_> {
                     workers: 1,
                 };
             }
-            marks.extend(here.marks);
+            judged.marks.extend(here.marks);
+            judged.through = judged.through.max(here.through);
             rest.start = here.through;
-            let spread = if here.handed {
-                self.spread_level(&rest, deadline, asked, per_state)
-            } else {
-                None
-            };
-            let Some(expansion) = spread.filter(|expansion| !expansion.crowded) else {
-                if here.handed {
+            if here.handed {
+                spread =
+                    self.spread_level(&rest, deadline, asked, per_state, FEWEST_STATES_OF_A_ROUND);
+                if spread.is_none() {
                     helpers = None;
-                    continue;
                 }
-                self.record_all(&marks, here.through);
-                if here.full {
-                    self.reason = Some(self.limit_reason());
-                }
-                return Ran {
-                    stopped: here.stopped,
-                    workers: 1,
-                };
-            };
-            if expansion.stopped && asked == Asked::Everything {
-                self.undo_level(&frontier);
-                return Ran {
-                    stopped: true,
-                    workers: expansion.workers,
-                };
+                continue;
             }
-            self.record_all(&marks, rest.start);
-            self.merge_any(expansion.parts);
+            self.record_all(&judged.marks, judged.through);
+            if here.full {
+                self.reason = Some(self.limit_reason());
+            }
             return Ran {
-                stopped: expansion.stopped,
-                workers: expansion.workers,
+                stopped: here.stopped,
+                workers: 1,
             };
         }
     }

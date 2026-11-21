@@ -1,5 +1,5 @@
-use super::Search;
 use super::part::{Kit, Part};
+use super::{Search, SpreadMerge};
 use crate::cut::cut_points;
 use crate::expand::Asked;
 use crate::helpers::{Helpers, Loan};
@@ -22,6 +22,7 @@ pub(super) struct Expansion {
     pub(super) stopped: bool,
     pub(super) crowded: bool,
     pub(super) workers: usize,
+    pub(super) left_over: Option<Range<usize>>,
 }
 
 struct Level {
@@ -29,6 +30,8 @@ struct Level {
     cuts: Vec<usize>,
     deadline: Option<Instant>,
     asked: Asked,
+    kept_rows_that_fit: Option<usize>,
+    fewest_states: usize,
 }
 
 #[derive(Default)]
@@ -37,17 +40,72 @@ struct Shared {
     stopped: AtomicBool,
     running: AtomicUsize,
     peak: AtomicUsize,
+    kept_rows: AtomicUsize,
+    helpers_taken_up: AtomicUsize,
     done: Mutex<Vec<(usize, Part)>>,
     panic: Mutex<Option<Box<dyn Any + Send>>>,
 }
 
+impl Shared {
+    fn holds_back(&self, level: &Level) -> bool {
+        self.holds_back_at(level, self.next.load(Ordering::SeqCst))
+    }
+
+    fn holds_back_at(&self, level: &Level, part: usize) -> bool {
+        let taken = level.cuts.get(part).copied().unwrap_or(usize::MAX);
+        taken >= level.fewest_states
+            && level
+                .kept_rows_that_fit
+                .is_some_and(|fit| self.kept_rows.load(Ordering::SeqCst) > fit)
+    }
+}
+
+impl Shared {
+    fn take_part(&self, level: &Level, parts: usize) -> Option<usize> {
+        let mut part = self.next.load(Ordering::SeqCst);
+        loop {
+            if part >= parts
+                || self.stopped.load(Ordering::SeqCst)
+                || self.holds_back_at(level, part)
+            {
+                return None;
+            }
+            match self.next.compare_exchange(
+                part,
+                part.saturating_add(1),
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return Some(part),
+                Err(now) => part = now,
+            }
+        }
+    }
+}
+
 impl Search<'_> {
+    fn estimated_kept_rows_that_fit(&self) -> usize {
+        let room = self.limits.max_states.saturating_sub(self.store.len());
+        let SpreadMerge { kept, new } = self.last_spread_merge;
+        if kept == 0 {
+            return room;
+        }
+        let wide = |count: usize| u128::try_from(count).unwrap_or(u128::MAX);
+        wide(room)
+            .saturating_mul(wide(kept))
+            .checked_div(wide(new))
+            .map_or(usize::MAX, |scaled| {
+                usize::try_from(scaled).unwrap_or(usize::MAX)
+            })
+    }
+
     pub(super) fn spread_level(
         &self,
         frontier: &Range<usize>,
         deadline: Option<Instant>,
         asked: Asked,
         per_state: Duration,
+        fewest_states: usize,
     ) -> Option<Expansion> {
         let states = u32::try_from(frontier.len()).unwrap_or(u32::MAX);
         let worth_spreading = frontier.len() >= SMALLEST_SHARED_LEVEL
@@ -63,6 +121,9 @@ impl Search<'_> {
             cuts: cut_points(frontier.len(), frontier.len().div_ceil(MOST_PARTS)),
             deadline,
             asked,
+            kept_rows_that_fit: (asked == Asked::Everything)
+                .then(|| self.estimated_kept_rows_that_fit()),
+            fewest_states: fewest_states.max(1),
         };
         let parts = level.cuts.len().saturating_sub(1);
         if parts <= 1 {
@@ -101,6 +162,7 @@ impl Search<'_> {
             stopped: false,
             crowded: finished.iter().any(|(_, part)| part.crowded),
             workers: shared.peak.into_inner(),
+            left_over: None,
         };
         for (expected, (index, part)) in finished.into_iter().enumerate() {
             if index != expected {
@@ -113,6 +175,13 @@ impl Search<'_> {
                 expansion.stopped = true;
                 break;
             }
+        }
+        if !expansion.stopped {
+            expansion.left_over = level
+                .cuts
+                .get(expansion.parts.len())
+                .filter(|_| (1..parts).contains(&expansion.parts.len()))
+                .map(|cut| frontier.start.saturating_add(*cut)..frontier.end);
         }
         Some(expansion)
     }
@@ -167,10 +236,9 @@ impl Search<'_> {
         let mut kit = Kit::default();
         loop {
             self.take_up_idle_threads(scope, level, shared, parts);
-            let part = shared.next.fetch_add(1, Ordering::SeqCst);
-            if part >= parts || shared.stopped.load(Ordering::SeqCst) {
+            let Some(part) = shared.take_part(level, parts) else {
                 return;
-            }
+            };
             let ids = level
                 .cuts
                 .get(part)
@@ -186,6 +254,9 @@ impl Search<'_> {
             if expansion.stopped {
                 shared.stopped.store(true, Ordering::SeqCst);
             }
+            shared
+                .kept_rows
+                .fetch_add(expansion.kept_rows(), Ordering::SeqCst);
             shared
                 .done
                 .lock()
@@ -205,6 +276,8 @@ impl Search<'_> {
             return;
         };
         while helpers.idle() > 0
+            && !shared.holds_back(level)
+            && shared.helpers_taken_up.load(Ordering::SeqCst) < parts
             && shared.running.load(Ordering::SeqCst)
                 < parts.saturating_sub(shared.next.load(Ordering::SeqCst))
         {
@@ -212,6 +285,7 @@ impl Search<'_> {
             if loan.threads() == 0 {
                 return;
             }
+            shared.helpers_taken_up.fetch_add(1, Ordering::SeqCst);
             self.start_worker(scope, level, shared, Some(loan));
         }
     }

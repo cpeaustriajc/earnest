@@ -1,7 +1,7 @@
 use crate::build::{
     Sketch, apply, below, both, counter, int, is, is_not, not, plus, steps, texts, yes,
 };
-use earnest_check::{FindingKind, Limits, Outcome, Status, Verdict, explore};
+use earnest_check::{FindingKind, Helpers, Limits, Outcome, Status, Verdict, explore};
 use earnest_ir::{Expr, Math, Model, Op, Order, Shelf, Sweep};
 use earnest_value::{Domain, Value};
 use std::time::{Duration, Instant};
@@ -203,6 +203,124 @@ fn the_state_limit_gives_the_same_outcome_on_one_thread_and_on_four() {
     assert_eq!(single.states, 3000);
     assert_eq!(single.reason.as_deref(), Some("state limit of 3000"));
     assert_eq!(explore(&model, &limited(4)), single);
+}
+
+const CUBE_STATES: usize = 27_000;
+const CUBE_STATES_THROUGH_SUM_43: usize = 13_500;
+const CUBE_STATES_THROUGH_SUM_42: usize = 12_825;
+
+fn cube_with_a_late_rule() -> Model {
+    let mut sketch = Sketch::new();
+    let axes: Vec<Expr> = ["x", "y", "z"]
+        .iter()
+        .map(|name| sketch.number(name, 0, 29, &[0]))
+        .collect();
+    for (name, axis) in ["moveX", "moveY", "moveZ"].iter().zip(&axes) {
+        sketch.action(name, below(axis, 29), &[(axis, plus(axis, 1))]);
+    }
+    let at = |x: i64, y: i64, z: i64| both(is(&axes[0], x), both(is(&axes[1], y), is(&axes[2], z)));
+    sketch.end("corner", at(29, 29, 29));
+    sketch.rule("notEarly", not(&at(10, 20, 5)));
+    sketch.rule("notAtSum43", not(&at(20, 20, 3)));
+    sketch.rule("notAtSum44", not(&at(20, 20, 4)));
+    sketch.model()
+}
+
+const IDLE_HELPERS: usize = 3;
+
+fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[usize]) -> Outcome {
+    let with = |jobs: usize, helpers: Option<Helpers>, keep_graph: bool| Limits {
+        jobs,
+        helpers,
+        keep_graph,
+        ..base.clone()
+    };
+    let single = explore(model, &with(1, None, true));
+    for keep_graph in [true, false] {
+        let alone = explore(model, &with(1, None, keep_graph));
+        for jobs in worker_counts {
+            assert_eq!(
+                explore(model, &with(*jobs, None, keep_graph)),
+                alone,
+                "{jobs} workers, graph kept: {keep_graph}"
+            );
+        }
+        assert_eq!(
+            explore(
+                model,
+                &with(1, Some(Helpers::new(IDLE_HELPERS)), keep_graph)
+            ),
+            alone,
+            "one worker and {IDLE_HELPERS} helpers, graph kept: {keep_graph}"
+        );
+    }
+    single
+}
+
+fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outcome {
+    let limits = Limits {
+        max_states,
+        ..Limits::default()
+    };
+    same_outcome_with_every_crew(model, &limits, &[2, 4, 10])
+}
+
+#[test]
+fn a_state_limit_at_the_end_of_a_level_gives_the_same_outcome_on_every_worker_count() {
+    let outcome =
+        same_outcome_on_every_worker_count(&cube_with_a_late_rule(), CUBE_STATES_THROUGH_SUM_43);
+    assert_eq!(outcome.states, CUBE_STATES_THROUGH_SUM_43);
+    assert_eq!(outcome.reason.as_deref(), Some("state limit of 13500"));
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(
+        verdicts,
+        [Verdict::Broken, Verdict::Broken, Verdict::Unknown]
+    );
+}
+
+#[test]
+fn a_state_limit_inside_a_level_gives_the_same_outcome_on_every_worker_count() {
+    let inside = CUBE_STATES_THROUGH_SUM_42 + 300;
+    let outcome = same_outcome_on_every_worker_count(&cube_with_a_late_rule(), inside);
+    assert_eq!(outcome.states, inside);
+    assert_eq!(outcome.status, Status::Fail);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+    assert_eq!(outcome.rules[2].verdict, Verdict::Unknown);
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_model_gives_the_same_outcome_on_every_worker_count() {
+    let outcome = same_outcome_on_every_worker_count(&cube_with_a_late_rule(), CUBE_STATES + 1);
+    assert_eq!(outcome.states, CUBE_STATES);
+    assert_eq!(outcome.reason, None);
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(verdicts, [Verdict::Broken; 3]);
+}
+
+const STARTS_OF_A_LEVEL_OF_KNOWN_STEPS: usize = 2000;
+
+fn a_level_whose_steps_mostly_reach_known_states() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..2000).collect();
+    let n = sketch.number("n", 0, 1999, &every_start);
+    let flipped = sketch.boolean("flipped", &[false]);
+    sketch.action("step", below(&n, 1999), &[(&n, plus(&n, 1))]);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    sketch.end("any", yes());
+    sketch.rule("not1234", not(&both(flipped, is(&n, 1234))));
+    sketch.model()
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_wide_level_of_known_steps_is_never_reached() {
+    let states = 2 * STARTS_OF_A_LEVEL_OF_KNOWN_STEPS;
+    let outcome = same_outcome_on_every_worker_count(
+        &a_level_whose_steps_mostly_reach_known_states(),
+        states + 1,
+    );
+    assert_eq!(outcome.states, states);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
 }
 
 fn start_states_zero_to_four() -> Model {
@@ -889,4 +1007,125 @@ fn once_the_store_is_full_a_state_out_of_range_the_store_already_holds_uses_up_n
              x = 0: {case}"
         );
     }
+}
+
+const STATES_TO_A_SLOW_GUARD: i64 = 2000;
+const SLOW_STATE: i64 = STATES_TO_A_SLOW_GUARD - 1;
+const HALF_OF_THE_STARTS: i64 = STATES_TO_A_SLOW_GUARD / 2;
+const STUCK_START: i64 = 5;
+
+fn a_level_whose_last_state_takes_billions_of_steps() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..STATES_TO_A_SLOW_GUARD).collect();
+    let n = sketch.number("n", 0, SLOW_STATE, &every_start);
+    let flipped = sketch.boolean("flipped", &[false]);
+    let low = both(below(&n, HALF_OF_THE_STARTS), is_not(&n, STUCK_START));
+    sketch.action("flipLow", both(not(&flipped), low), &[(&flipped, yes())]);
+    sketch.action(
+        "flipHigh",
+        both(not(&flipped), not(&below(&n, HALF_OF_THE_STARTS))),
+        &[(&flipped, yes()), (&n, plus(&n, -HALF_OF_THE_STARTS))],
+    );
+    sketch.action(
+        "back",
+        both(
+            not(&flipped),
+            both(not(&is(&n, 0)), is_not(&n, STUCK_START)),
+        ),
+        &[(&n, plus(&n, -1))],
+    );
+    sketch.action(
+        "slow",
+        both(
+            is(&n, SLOW_STATE),
+            every_of(2000, every_of(2000, every_of(2000, yes()))),
+        ),
+        &[(&flipped, yes())],
+    );
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("neverFlippedTen", not(&both(flipped, is(&n, 10))));
+    sketch.model()
+}
+
+#[test]
+fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() {
+    let model = a_level_whose_last_state_takes_billions_of_steps();
+    let starts = usize::try_from(STATES_TO_A_SLOW_GUARD).unwrap_or(0);
+    let flipped = usize::try_from(HALF_OF_THE_STARTS).unwrap_or(0);
+    let limits = Limits {
+        max_states: starts + flipped + 1,
+        time_limit: Some(Duration::from_secs(1)),
+        ..Limits::default()
+    };
+    let began = Instant::now();
+    let outcome = same_outcome_with_every_crew(&model, &limits, &[4]);
+    assert!(
+        began.elapsed() < Duration::from_secs(60),
+        "each search stops near its limit of 1 s: {:?}",
+        began.elapsed()
+    );
+    assert_eq!(outcome.status, Status::Unfinished, "{:?}", outcome.findings);
+    assert_eq!(outcome.reason.as_deref(), Some("time limit of 1 s"));
+    assert!(
+        outcome.findings.is_empty(),
+        "the stuck start state was expanded in the level the time stop undid: {:?}",
+        outcome.findings
+    );
+    let graph = outcome.graph.as_ref().expect("the graph is kept");
+    assert!(
+        graph.edges.is_empty(),
+        "no state of the undone level has arrows out: {:?}",
+        graph.edges
+    );
+}
+
+const STARTS_OF_UNIQUE_AND_SHARED_CHILDREN: i64 = 2000;
+const SHARED_CHILDREN: i64 = 500;
+
+fn starts_whose_first_half_share_children() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..STARTS_OF_UNIQUE_AND_SHARED_CHILDREN).collect();
+    let n = sketch.number(
+        "n",
+        0,
+        STARTS_OF_UNIQUE_AND_SHARED_CHILDREN - 1,
+        &every_start,
+    );
+    let flipped = sketch.boolean("flipped", &[false]);
+    let shared_up_to = 2 * SHARED_CHILDREN;
+    sketch.action(
+        "flipOwn",
+        both(not(&flipped), not(&below(&n, shared_up_to))),
+        &[(&flipped, yes())],
+    );
+    sketch.action(
+        "flipLow",
+        both(not(&flipped), below(&n, SHARED_CHILDREN)),
+        &[(&flipped, yes())],
+    );
+    sketch.action(
+        "flipHigh",
+        both(
+            not(&flipped),
+            both(not(&below(&n, SHARED_CHILDREN)), below(&n, shared_up_to)),
+        ),
+        &[(&flipped, yes()), (&n, plus(&n, -SHARED_CHILDREN))],
+    );
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("neverFlipped1990", not(&both(flipped, is(&n, 1990))));
+    sketch.model()
+}
+
+#[test]
+fn every_state_of_a_level_held_back_at_a_limit_never_reached_is_expanded() {
+    let starts = usize::try_from(STARTS_OF_UNIQUE_AND_SHARED_CHILDREN).unwrap_or(0);
+    let children =
+        usize::try_from(STARTS_OF_UNIQUE_AND_SHARED_CHILDREN - SHARED_CHILDREN).unwrap_or(0);
+    let outcome = same_outcome_on_every_worker_count(
+        &starts_whose_first_half_share_children(),
+        starts + children + 1,
+    );
+    assert_eq!(outcome.states, starts + children);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
 }
