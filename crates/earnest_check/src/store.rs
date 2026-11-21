@@ -9,7 +9,7 @@ use earnest_ir::Field;
 use earnest_value::{Domain, Value};
 use index::{Claim, Index};
 pub(crate) use index::{Found, Lookup, SHARD_COUNT, shard_of};
-pub use layout::{NumberSlot, RowLayout};
+pub use layout::{RangeSlot, RowLayout};
 use level::Level;
 pub(crate) use level::{Fresh, Spread};
 use rows::{Parents, Rows};

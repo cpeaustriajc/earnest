@@ -1,4 +1,4 @@
-use crate::store::{NumberSlot, RowLayout};
+use crate::store::{RangeSlot, RowLayout};
 use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
@@ -140,7 +140,7 @@ enum Holds {
 #[derive(Clone, Copy, Debug)]
 struct Write<'a> {
     code: &'a Code,
-    slot: NumberSlot,
+    slot: RangeSlot,
     holds: Holds,
 }
 

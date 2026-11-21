@@ -17,8 +17,8 @@ const HALF_WORD: u32 = 32;
 #[derive(Clone, Debug)]
 pub struct RowLayout {
     places: Vec<Place>,
-    numbers: Vec<Option<NumberSlot>>,
-    truths: Vec<Option<NumberSlot>>,
+    numbers: Vec<Option<RangeSlot>>,
+    truths: Vec<Option<RangeSlot>>,
     words: usize,
     stride: usize,
 }
@@ -30,35 +30,36 @@ pub(super) struct Place {
     pub(super) mask: u64,
 }
 
-/// The place of a whole-number field in a packed row: bits `shift .. shift + width` of word
-/// `word` hold the value minus `offset`.
+/// The place in a packed row of a field whose values are a range of whole numbers: a
+/// whole-number field, or a boolean field read as 0 for false and 1 for true. Bits
+/// `shift .. shift + width` of word `word` hold the value minus `offset`.
 ///
-/// Only values from the field's domain have a place; [`Self::code`] says which.
+/// Only values from the range have a place; [`Self::code`] says which.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NumberSlot {
+pub struct RangeSlot {
     /// Which word of the row holds the field, counted from 0. The field never reaches into the
     /// next word.
     pub word: usize,
     /// How many bits lie below the field in that word: shift the word right by this to read
     /// the field.
     pub shift: u32,
-    /// How many bits the field takes. A field whose domain has one value takes none.
+    /// How many bits the field takes. A field whose range has one value takes none.
     pub width: u32,
-    /// The lowest value of the domain, which is stored as 0.
+    /// The lowest value of the range, which is stored as 0.
     pub offset: i64,
     highest: i64,
 }
 
-impl NumberSlot {
+impl RangeSlot {
     /// The bits that stand for `value` before they are shifted into place, or `None` when
-    /// `value` is outside the field's domain and so cannot be written into the row.
+    /// `value` is outside the range and so cannot be written into the row.
     #[must_use]
     pub fn code(&self, value: i64) -> Option<u64> {
         (self.offset <= value && value <= self.highest).then(|| value.abs_diff(self.offset))
     }
 
     /// The value of the field in `row`. A row too short for this layout gives the lowest value
-    /// of the domain.
+    /// of the range.
     #[must_use]
     pub fn read(&self, row: &[u64]) -> i64 {
         let code = row.get(self.word).map_or(0, |word| {
@@ -67,7 +68,7 @@ impl NumberSlot {
         self.offset.saturating_add_unsigned(code)
     }
 
-    /// Writes `value` into `row` and says whether it could: a value outside the domain, or
+    /// Writes `value` into `row` and says whether it could: a value outside the range, or
     /// a row too short for this layout, leaves `row` as it was and gives `false`.
     pub fn write(&self, row: &mut [u64], value: i64) -> bool {
         let (Some(code), Some(word)) = (self.code(value), row.get_mut(self.word)) else {
@@ -136,7 +137,7 @@ impl RowLayout {
                 mask: mask_of(*width),
             });
             numbers.push(match domain {
-                Domain::Int { lo, hi } => Some(NumberSlot {
+                Domain::Int { lo, hi } => Some(RangeSlot {
                     word,
                     shift: used,
                     width: *width,
@@ -145,7 +146,7 @@ impl RowLayout {
                 }),
                 _ => None,
             });
-            truths.push(matches!(domain, Domain::Bool).then_some(NumberSlot {
+            truths.push(matches!(domain, Domain::Bool).then_some(RangeSlot {
                 word,
                 shift: used,
                 width: *width,
@@ -176,14 +177,14 @@ impl RowLayout {
     /// The place of the field at `position` when it is a whole number, `None` for a field of
     /// another kind and for a position past the last field.
     #[must_use]
-    pub fn number(&self, position: usize) -> Option<NumberSlot> {
+    pub fn number(&self, position: usize) -> Option<RangeSlot> {
         self.numbers.get(position).copied().flatten()
     }
 
     /// The place of the field at `position` when it is a boolean, as a slot that holds 1 for
     /// true and 0 for false; `None` for a field of another kind.
     #[must_use]
-    pub fn truth(&self, position: usize) -> Option<NumberSlot> {
+    pub fn truth(&self, position: usize) -> Option<RangeSlot> {
         self.truths.get(position).copied().flatten()
     }
 
@@ -196,12 +197,12 @@ impl RowLayout {
 
     /// The hash `row` would have with the field in `slot` set to `value`, given `hash`, the
     /// hash of `row` as it is. It costs the same however many words the row has. `None` when
-    /// `value` is outside the field's domain.
+    /// `value` is outside the range of `slot`.
     #[must_use]
-    pub fn hash_with(&self, row: &[u64], hash: u64, slot: NumberSlot, value: i64) -> Option<u64> {
+    pub fn hash_with(&self, row: &[u64], hash: u64, slot: RangeSlot, value: i64) -> Option<u64> {
         let old = *row.get(slot.word)?;
         let mut changed = [old];
-        let alone = NumberSlot { word: 0, ..slot };
+        let alone = RangeSlot { word: 0, ..slot };
         alone.write(&mut changed, value).then(|| {
             let [new] = changed;
             hash ^ mix(old, slot.word) ^ mix(new, slot.word)
