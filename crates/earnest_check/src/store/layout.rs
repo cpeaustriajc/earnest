@@ -197,7 +197,7 @@ impl RowLayout {
 
     /// The hash `row` would have with the field in `slot` set to `value`, given `hash`, the
     /// hash of `row` as it is. It costs the same however many words the row has. `None` when
-    /// `value` is outside the range of `slot`.
+    /// `value` is outside the range of `slot` or `row` is too short for `slot`.
     #[must_use]
     pub fn hash_with(&self, row: &[u64], hash: u64, slot: RangeSlot, value: i64) -> Option<u64> {
         let old = *row.get(slot.word)?;

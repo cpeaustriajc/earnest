@@ -49,7 +49,7 @@ pub(crate) struct Search<'a> {
     pub(crate) outside: Option<(usize, usize)>,
     pub(crate) trouble: Option<(usize, Whence, Fault)>,
     pub(crate) reason: Option<String>,
-    pub(crate) wide: bool,
+    pub(crate) computed_beyond_32_bits: bool,
     pub(crate) cut_short: bool,
     judged: usize,
     last_spread_merge: SpreadMerge,
@@ -107,7 +107,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         outside: None,
         trouble: None,
         reason: None,
-        wide: false,
+        computed_beyond_32_bits: false,
         cut_short: false,
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
@@ -288,7 +288,7 @@ impl Search<'_> {
 
     fn record(&mut self, id: usize, expanded: &Mark) {
         self.judged = self.judged.max(id.saturating_add(1));
-        self.wide |= expanded.width == Width::Beyond32Bits;
+        self.computed_beyond_32_bits |= expanded.width == Width::Beyond32Bits;
         self.cut_short |= expanded.cut_short;
         if let Some(field) = expanded.outside {
             self.outside.get_or_insert((id, field));

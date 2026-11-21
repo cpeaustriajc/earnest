@@ -89,7 +89,7 @@ pub(crate) enum Asked {
 }
 
 #[derive(Clone, Copy, Default)]
-struct Stopping {
+struct Enabling {
     enabled: bool,
     unsure: bool,
 }
@@ -248,7 +248,7 @@ fn hash_values(values: &[Value]) -> u64 {
 }
 
 impl Seen {
-    fn first_time(&mut self, updates: &[(usize, Value)]) -> bool {
+    fn first_updates(&mut self, updates: &[(usize, Value)]) -> bool {
         let width = updates.len();
         let start = self.values.len();
         self.values
@@ -343,7 +343,7 @@ fn next_updates(
 
 struct Expansion<'s, 'f, S> {
     base: Base<'s>,
-    moving: Stopping,
+    moving: Enabling,
     layout: &'s RowLayout,
     frame: Frame<'f>,
     found: Mark,
@@ -448,7 +448,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             &mut self.scratch.updates,
         ) {
             Ok(()) => {
-                if (!REPEATS || self.scratch.seen.first_time(&self.scratch.updates))
+                if (!REPEATS || self.scratch.seen.first_updates(&self.scratch.updates))
                     && self
                         .sink
                         .offer(position, input, self.base, &self.scratch.updates)
@@ -460,19 +460,19 @@ impl<S: Successors> Expansion<'_, '_, S> {
         }
     }
 
-    fn marked_end(&mut self, model: &Model) -> Stopping {
-        let mut stopping = Stopping::default();
+    fn marked_end(&mut self, model: &Model) -> Enabling {
+        let mut ending = Enabling::default();
         for (position, end) in model.ends.iter().enumerate() {
             match end.when.truth(&mut self.frame) {
-                Ok(true) => stopping.enabled = true,
+                Ok(true) => ending.enabled = true,
                 Ok(false) => {}
                 Err(fault) => {
                     self.found.note(Whence::End(position), fault);
-                    stopping.unsure = true;
+                    ending.unsure = true;
                 }
             }
         }
-        stopping
+        ending
     }
 }
 
@@ -523,7 +523,7 @@ impl Expand<'_> {
         }
         let mut expansion = Expansion {
             base,
-            moving: Stopping::default(),
+            moving: Enabling::default(),
             layout: self.layout,
             frame,
             found,
