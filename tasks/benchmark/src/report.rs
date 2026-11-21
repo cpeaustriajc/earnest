@@ -60,6 +60,13 @@ pub(crate) fn memory(peak_kib: Option<u64>) -> String {
     )
 }
 
+pub(crate) fn first_line(cores: usize, processor: Option<&str>, runs: usize) -> String {
+    let machine = processor.map_or_else(|| cores.to_string(), |name| format!("{cores} ({name})"));
+    format!(
+        "Cores: {machine}. Runs per model: {runs} after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.\n"
+    )
+}
+
 pub(crate) fn table(rows: &[Row]) -> String {
     let header = [
         "| Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |",
@@ -185,6 +192,24 @@ mod tests {
 
     fn millis(count: u64) -> Duration {
         Duration::from_millis(count)
+    }
+
+    #[test]
+    fn first_line_names_the_processor_when_it_is_known() {
+        assert_eq!(
+            first_line(4, Some("AMD EPYC 7763 64-Core Processor"), 5),
+            "Cores: 4 (AMD EPYC 7763 64-Core Processor). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.\n",
+            "with a name"
+        );
+    }
+
+    #[test]
+    fn first_line_has_only_the_core_count_when_the_processor_is_not_known() {
+        assert_eq!(
+            first_line(4, None, 5),
+            "Cores: 4. Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.\n",
+            "without a name"
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use models::{LARGEST, Language, R12_LARGE, SCALED};
 use report::{LargeTarget, Row};
-use run::{Job, run_once};
+use run::{Job, processor_name, run_once};
 
 const DEFAULT_RUNS: usize = 5;
 const USAGE: &str = "usage: benchmark [--runs <n>] [--binary <path>]";
@@ -170,6 +170,7 @@ fn benchmark(options: &Options) -> Result<Benchmarked, String> {
 
     let largest = models::scaled_path(&repository, LARGEST, Language::TypeScript);
     let cores = thread::available_parallelism().map_or(1, usize::from);
+    let processor = processor_name();
     let all = bench.measure(std::slice::from_ref(&largest), None)?;
     let one = bench.measure(std::slice::from_ref(&largest), Some(1))?;
     let target = bench.measure(std::slice::from_ref(&largest), Some(report::TARGET_WORKERS))?;
@@ -202,10 +203,7 @@ fn benchmark(options: &Options) -> Result<Benchmarked, String> {
     let target_line = report::target_line(LARGEST, target.median, target.peak_kib, cores);
     let speedup = report::speedup_line(LARGEST, one.median, all.median, cores);
     let text = [
-        format!(
-            "Cores: {cores}. Runs per model: {} after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.\n",
-            options.runs
-        ),
+        report::first_line(cores, processor.as_deref(), options.runs),
         "## Scaled models\n".to_owned(),
         report::table(&scaled),
         "## The 12 mixed models, each alone\n".to_owned(),

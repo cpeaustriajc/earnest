@@ -47,6 +47,33 @@ fn peak_of(process: u32) -> Option<u64> {
     peak_from_status(&status)
 }
 
+pub(crate) fn processor_name() -> Option<String> {
+    if cfg!(target_os = "linux") {
+        let cpuinfo = fs::read_to_string("/proc/cpuinfo").ok()?;
+        model_name_from_cpuinfo(&cpuinfo)
+    } else if cfg!(target_os = "macos") {
+        let output = Command::new("sysctl")
+            .args(["-n", "machdep.cpu.brand_string"])
+            .output()
+            .ok()?;
+        non_empty(String::from_utf8_lossy(&output.stdout).trim())
+    } else {
+        None
+    }
+}
+
+fn model_name_from_cpuinfo(cpuinfo: &str) -> Option<String> {
+    cpuinfo
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(key, _)| key.trim() == "model name")
+        .and_then(|(_, value)| non_empty(value.trim()))
+}
+
+fn non_empty(text: &str) -> Option<String> {
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
 pub(crate) fn parse_results(json: &str) -> Result<Vec<Seen>, String> {
     let value: Value =
         serde_json::from_str(json).map_err(|error| format!("the output is not JSON: {error}"))?;
@@ -142,6 +169,50 @@ pub(crate) fn run_once(job: &Job<'_>) -> Result<Sample, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const EPYC: &str = "AMD EPYC 7763 64-Core Processor";
+
+    #[test]
+    fn processor_name_is_the_first_model_name_of_a_two_processor_file() {
+        let cpuinfo = format!(
+            "processor\t: 0\nvendor_id\t: AuthenticAMD\nmodel name\t: {EPYC}\ncpu MHz\t\t: 2445.4\n\nprocessor\t: 1\nvendor_id\t: AuthenticAMD\nmodel name\t: Other Processor\n"
+        );
+        assert_eq!(
+            model_name_from_cpuinfo(&cpuinfo),
+            Some(EPYC.to_owned()),
+            "the first of two"
+        );
+    }
+
+    #[test]
+    fn processor_name_ignores_the_tabs_before_the_colon() {
+        assert_eq!(
+            model_name_from_cpuinfo(&format!("model name\t: {EPYC}")),
+            Some(EPYC.to_owned()),
+            "a tab before the colon, no newline at the end"
+        );
+    }
+
+    #[test]
+    fn processor_name_is_unknown_in_arm_style_text_without_a_model_name() {
+        let cpuinfo =
+            "processor\t: 0\nBogoMIPS\t: 50.00\nCPU implementer\t: 0x41\nCPU part\t: 0xd0c\n";
+        assert_eq!(model_name_from_cpuinfo(cpuinfo), None, "no model name line");
+    }
+
+    #[test]
+    fn processor_name_is_unknown_in_empty_text() {
+        assert_eq!(model_name_from_cpuinfo(""), None, "empty text");
+    }
+
+    #[test]
+    fn processor_name_is_unknown_when_the_model_name_has_no_value() {
+        assert_eq!(
+            model_name_from_cpuinfo("model name\t:  \nmodel name\t: Later\n"),
+            None,
+            "an empty value is not skipped for a later line"
+        );
+    }
 
     #[test]
     fn peak_is_read_from_the_status_file() {
