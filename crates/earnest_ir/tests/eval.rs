@@ -1483,3 +1483,67 @@ proptest! {
         }
     }
 }
+
+fn field_below(field: usize, number: i64) -> Expr {
+    apply(Op::Order(Order::Less), &[Expr::Field(field), int(number)])
+}
+
+fn all_three(first: Expr, second: Expr, third: Expr) -> Expr {
+    Expr::And(
+        Box::new(first),
+        Box::new(Expr::And(Box::new(second), Box::new(third))),
+    )
+}
+
+const FIELD_OF_NUMBER_FIVE: usize = 0;
+const FIELD_OF_NULL: usize = 1;
+
+fn five_then_null() -> Vec<Value> {
+    vec![Value::Int(5), Value::Null]
+}
+
+#[test]
+fn a_conjunction_of_three_field_orders_is_true_when_every_part_is() {
+    let all = all_three(
+        field_below(FIELD_OF_NUMBER_FIVE, 6),
+        field_below(FIELD_OF_NUMBER_FIVE, 7),
+        field_below(FIELD_OF_NUMBER_FIVE, 8),
+    );
+    assert_eq!(both_truths(&five_then_null(), &[], &all).answer, Ok(true));
+}
+
+#[test]
+fn a_field_order_that_faults_before_a_false_part_of_a_conjunction_is_the_answer() {
+    let all = all_three(
+        field_below(FIELD_OF_NUMBER_FIVE, 6),
+        field_below(FIELD_OF_NULL, 6),
+        field_below(FIELD_OF_NUMBER_FIVE, 1),
+    );
+    assert_eq!(
+        both_truths(&five_then_null(), &[], &all).answer,
+        Err(Fault::NullRead)
+    );
+}
+
+#[test]
+fn a_false_field_order_before_one_that_faults_ends_a_conjunction() {
+    let all = all_three(
+        field_below(FIELD_OF_NUMBER_FIVE, 6),
+        field_below(FIELD_OF_NUMBER_FIVE, 1),
+        field_below(FIELD_OF_NULL, 6),
+    );
+    assert_eq!(both_truths(&five_then_null(), &[], &all).answer, Ok(false));
+}
+
+#[test]
+fn a_field_order_that_faults_as_the_last_part_of_a_conjunction_is_the_answer() {
+    let all = all_three(
+        field_below(FIELD_OF_NUMBER_FIVE, 6),
+        field_below(FIELD_OF_NUMBER_FIVE, 7),
+        field_below(FIELD_OF_NULL, 6),
+    );
+    assert_eq!(
+        both_truths(&five_then_null(), &[], &all).answer,
+        Err(Fault::NullRead)
+    );
+}
