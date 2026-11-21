@@ -636,3 +636,183 @@ fn successors_an_earlier_state_of_the_level_found_never_use_up_the_room_of_a_lat
         }
     }
 }
+
+fn every_worker_count(model: &Model, max_states: usize) -> Vec<(String, Outcome)> {
+    let mut outcomes = Vec::new();
+    for keep_graph in [false, true] {
+        for jobs in [1, 2, 4, 10] {
+            let limits = Limits {
+                max_states,
+                jobs,
+                keep_graph,
+                ..Limits::default()
+            };
+            outcomes.push((
+                format!("{jobs} jobs, graph {keep_graph}"),
+                explore(model, &limits),
+            ));
+        }
+    }
+    outcomes
+}
+
+fn kinds_of(outcome: &Outcome) -> Vec<FindingKind> {
+    outcome.findings.iter().map(|found| found.kind).collect()
+}
+
+fn numbers(range: std::ops::RangeInclusive<i64>) -> Vec<Value> {
+    range.map(Value::Int).collect()
+}
+
+fn nine_divided_by_x_in_y(sketch: &mut Sketch, x: &Expr, y: &Expr) {
+    let divided = apply(Op::Math(Math::Divide), &int(9), x.clone());
+    sketch.action("fault", below(y, 2), &[(y, divided)]);
+}
+
+fn a_fault_behind_a_fan_of_successors(first: i64, last: i64) -> Model {
+    let mut sketch = Sketch::new();
+    let x = sketch.number("x", 0, 9, &[0]);
+    let y = sketch.number("y", 0, 9, &[0]);
+    let f = sketch.boolean("f", &[false]);
+    let p_above_four = apply(Op::Order(Order::Greater), &Expr::Local(0), int(4));
+    sketch.action_with(
+        "set",
+        &[
+            ("p", numbers(first..=last)),
+            ("q", vec![Value::Bool(false), Value::Bool(true)]),
+        ],
+        below(&y, 2),
+        &[
+            (&x, Expr::Local(0)),
+            (&f, both(Expr::Local(1), p_above_four)),
+        ],
+    );
+    nine_divided_by_x_in_y(&mut sketch, &x, &y);
+    sketch.model()
+}
+
+fn a_fault_behind_two_actions_that_reach_one_state(first: i64, last: i64) -> Model {
+    let mut sketch = Sketch::new();
+    let x = sketch.number("x", 0, 9, &[0]);
+    let y = sketch.number("y", 0, 9, &[0]);
+    sketch.action_with(
+        "one of several",
+        &[("p", numbers(first..=last))],
+        below(&y, 2),
+        &[(&x, Expr::Local(0))],
+    );
+    sketch.action("the last of them", below(&y, 2), &[(&x, int(last))]);
+    nine_divided_by_x_in_y(&mut sketch, &x, &y);
+    sketch.model()
+}
+
+#[test]
+fn once_the_store_is_full_every_new_successor_uses_up_the_room_of_the_state_that_offers_it() {
+    let model = a_fault_behind_a_fan_of_successors(0, 9);
+    for (case, outcome) in every_worker_count(&model, 2) {
+        assert_eq!(
+            outcome.status,
+            Status::Unfinished,
+            "the start state offers more new successors than the room of 2 allows, so the \
+             search stops trying its actions before the one that divides by zero and nothing \
+             is found broken: {case}"
+        );
+        assert_eq!(
+            outcome.states, 2,
+            "the start state and its first new successor fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 2"),
+            "the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [],
+            "the action that divides by zero is never tried, since the new successors of the \
+             action before it used up more room than the limit allows: {case}"
+        );
+    }
+}
+
+#[test]
+fn once_the_store_is_full_a_new_successor_offered_twice_uses_up_the_room_once() {
+    let model = a_fault_behind_two_actions_that_reach_one_state(1, 3);
+    for (case, outcome) in every_worker_count(&model, 3) {
+        assert_eq!(
+            outcome.status,
+            Status::Fail,
+            "x = 3 is offered by two actions but is one state: it uses up the room once, so \
+             the action that divides by zero is tried and its fault is found: {case}"
+        );
+        assert_eq!(
+            outcome.states, 3,
+            "the start state and x = 1 and x = 2 fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 3"),
+            "x = 3 did not fit, so the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [FindingKind::Fault],
+            "9 / x divides by zero in the start state: {case}"
+        );
+    }
+}
+
+#[test]
+fn once_the_store_is_full_every_new_state_out_of_range_uses_up_the_room_of_the_state_offering_it() {
+    let model = a_fault_behind_a_fan_of_successors(10, 19);
+    for (case, outcome) in every_worker_count(&model, 2) {
+        assert_eq!(
+            outcome.status,
+            Status::Fail,
+            "x = 10 is a state out of range and a finding: {case}"
+        );
+        assert_eq!(
+            outcome.states, 2,
+            "the start state and x = 10 fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 2"),
+            "x = 11 did not fit, so the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [FindingKind::OutOfRange],
+            "the start state offers more new states out of range than the room of 2 allows, so \
+             the search stops trying its actions before the one that divides by zero and finds \
+             no fault: {case}"
+        );
+    }
+}
+
+#[test]
+fn once_the_store_is_full_a_new_state_out_of_range_offered_twice_uses_up_the_room_once() {
+    let model = a_fault_behind_two_actions_that_reach_one_state(11, 13);
+    for (case, outcome) in every_worker_count(&model, 3) {
+        assert_eq!(
+            outcome.status,
+            Status::Fail,
+            "x = 11 is a state out of range and a finding: {case}"
+        );
+        assert_eq!(
+            outcome.states, 3,
+            "the start state and x = 11 and x = 12 fill the store: {case}"
+        );
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("state limit of 3"),
+            "x = 13 did not fit, so the store is full: {case}"
+        );
+        assert_eq!(
+            kinds_of(&outcome),
+            [FindingKind::OutOfRange, FindingKind::Fault],
+            "x = 13 is offered by two actions but is one state: it uses up the room once, so \
+             the action that divides by zero is tried and 9 / x divides by zero at x = 0: {case}"
+        );
+    }
+}
