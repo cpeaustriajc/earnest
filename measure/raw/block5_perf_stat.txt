@@ -1,0 +1,63 @@
+# perf version 6.8.12 (kernel is 6.18.44-fc-v726; the perf of the distribution's 6.8 tools package is the one that is installable)
+# loadavg_before=1.54 1.49 0.93 1/113 657
+### build=A
+      "status": "pass",
+      "states": 10000000,
+
+ Performance counter stats for '/tmp/earnest-A verify --no-cache --json --jobs 1 --max-states 20000000 tasks/benchmark/models/grid_10m.model.ts':
+
+   <not supported>      instructions                                                          
+   <not supported>      cycles                                                                
+   <not supported>      cache-misses                                                          
+   <not supported>      LLC-load-misses                                                       
+   <not supported>      dTLB-load-misses                                                      
+          10772.83 msec task-clock                       #    1.000 CPUs utilized             
+             56284      page-faults                      #    5.225 K/sec                     
+
+      10.774756520 seconds time elapsed
+
+      10.468627000 seconds user
+       0.122795000 seconds sys
+
+
+### build=B
+      "status": "pass",
+      "states": 10000000,
+
+ Performance counter stats for '/tmp/earnest-B verify --no-cache --json --jobs 1 --max-states 20000000 tasks/benchmark/models/grid_10m.model.ts':
+
+   <not supported>      instructions                                                          
+   <not supported>      cycles                                                                
+   <not supported>      cache-misses                                                          
+   <not supported>      LLC-load-misses                                                       
+   <not supported>      dTLB-load-misses                                                      
+           9404.53 msec task-clock                       #    1.000 CPUs utilized             
+             56285      page-faults                      #    5.985 K/sec                     
+
+       9.405966410 seconds time elapsed
+
+       9.249177000 seconds user
+       0.099727000 seconds sys
+
+
+### build=C
+      "status": "pass",
+      "states": 10000000,
+
+ Performance counter stats for '/tmp/earnest-C verify --no-cache --json --jobs 1 --max-states 20000000 tasks/benchmark/models/grid_10m.model.ts':
+
+   <not supported>      instructions                                                          
+   <not supported>      cycles                                                                
+   <not supported>      cache-misses                                                          
+   <not supported>      LLC-load-misses                                                       
+   <not supported>      dTLB-load-misses                                                      
+           6898.02 msec task-clock                       #    1.000 CPUs utilized             
+             56281      page-faults                      #    8.159 K/sec                     
+
+       6.899522985 seconds time elapsed
+
+       6.586164000 seconds user
+       0.102779000 seconds sys
+
+
+# loadavg_after=1.32 1.44 0.93 1/112 679

@@ -1,0 +1,91 @@
+# profile build=C jobs=1 event=cpu-clock -F 999 (the hardware event is not available on this machine)
+# loadavg_before=1.00 1.20 0.93 1/115 784
+# started=2026-11-21T15:40:30Z
+$ perf record -e cpu-clock -F 999 -o /tmp/C-j1.data /tmp/earnest-C verify --no-cache --json --jobs 1 --max-states 200000000 measure/grid_100m.model.ts
+{
+  "models": [
+    {
+      "name": "Grid100m",
+      "file": "measure/grid_100m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 100000000,
+      "milliseconds": 125393,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+[ perf record: Woken up 19 times to write data ]
+[ perf record: Captured and wrote 4.766 MB /tmp/C-j1.data (124895 samples) ]
+	Command being timed: "/usr/lib/linux-tools-6.8.0-151/perf record -e cpu-clock -F 999 -o /tmp/C-j1.data /tmp/earnest-C verify --no-cache --json --jobs 1 --max-states 200000000 measure/grid_100m.model.ts"
+	User time (seconds): 123.24
+	System time (seconds): 1.42
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:06.31
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1444604
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 520352
+	Voluntary context switches: 163
+	Involuntary context switches: 268
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 9968
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# loadavg_after=1.03 1.14 0.95 1/111 821
+# finished=2026-11-21T15:42:36Z
+$ perf report -i /tmp/C-j1.data --no-children --sort symbol --stdio --percent-limit 0.3
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 124K of event 'cpu-clock'
+# Event count (approx.): 125020019895
+#
+# Overhead  Symbol                                                                                                                                                                                          IPC   [IPC Coverage]
+# ........  ..............................................................................................................................................................................................  ....................
+#
+    69.83%  [.] _RNvMNtCsbNELigJprFy_13earnest_check5storeNtB2_5Store5place                                                                                                                                 -      -            
+     8.79%  [.] _RNvMNtNtCsbNELigJprFy_13earnest_check5store4rowsNtB2_4Rows6unpack                                                                                                                          -      -            
+     8.16%  [.] _RNvMNtCsbNELigJprFy_13earnest_check7exploreNtB2_6Search5level                                                                                                                              -      -            
+     3.00%  [.] _RNvMs_NtNtCs35bxwrR96G3_10earnest_ir4code4condNtB4_4Cond4eval.llvm.586355361143759734                                                                                                      -      -            
+     2.47%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                             -      -            
+     2.37%  [.] _RNvMs2_NtNtCs35bxwrR96G3_10earnest_ir4code3numNtB5_3Num4eval.llvm.586355361143759734                                                                                                       -      -            
+     1.71%  [.] _RNvMNtCsbNELigJprFy_13earnest_check5storeNtB2_5Store10read_state                                                                                                                           -      -            
+     1.40%  [.] _RNvMNtNtCsbNELigJprFy_13earnest_check7explore4hereNtB2_8HereSink9place_row                                                                                                                 -      -            
+     0.74%  [.] _RINvMs6_NtCs6RpvpIXDhib_9hashbrown3rawINtB6_8RawTableNtNtNtCsbNELigJprFy_13earnest_check5store5index9NarrowKeyE14reserve_rehashNCNCNvMs_NtBT_5levelINtBR_6ShardsBP_E11claim_level0s_0EBV_  -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

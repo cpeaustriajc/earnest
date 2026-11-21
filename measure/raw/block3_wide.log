@@ -1,0 +1,890 @@
+# block=block3_wide model=tasks/benchmark/models/wide.model.ts max_states=20000000 combos=A:4 B:4 C:4 warmup_rounds=0 measured_rounds=5
+# started=2026-11-21T15:34:50Z
+# loadavg_before=1.49 1.34 0.80 1/111 31625
+### run round=1 build=A jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 331,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-A verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.23
+	System time (seconds): 0.02
+	Percent of CPU this job got: 377%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.33
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7064
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 833
+	Voluntary context switches: 185
+	Involuntary context switches: 84
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=338434272
+### run round=1 build=B jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 346,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-B verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.26
+	System time (seconds): 0.00
+	Percent of CPU this job got: 365%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.34
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7156
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 820
+	Voluntary context switches: 175
+	Involuntary context switches: 97
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=353641729
+### run round=1 build=C jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 277,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-C verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.05
+	System time (seconds): 0.00
+	Percent of CPU this job got: 378%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.28
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7252
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 799
+	Voluntary context switches: 163
+	Involuntary context switches: 73
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=286331063
+### run round=2 build=A jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 353,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-A verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.33
+	System time (seconds): 0.01
+	Percent of CPU this job got: 377%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7320
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 843
+	Voluntary context switches: 177
+	Involuntary context switches: 97
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=362408527
+### run round=2 build=B jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 290,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-B verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.10
+	System time (seconds): 0.00
+	Percent of CPU this job got: 379%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.29
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7216
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 838
+	Voluntary context switches: 151
+	Involuntary context switches: 79
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=297926251
+### run round=2 build=C jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 254,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-C verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.90
+	System time (seconds): 0.03
+	Percent of CPU this job got: 366%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.25
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7532
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 897
+	Voluntary context switches: 182
+	Involuntary context switches: 81
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=262294445
+### run round=3 build=A jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 352,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-A verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.28
+	System time (seconds): 0.03
+	Percent of CPU this job got: 368%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.35
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7204
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 792
+	Voluntary context switches: 183
+	Involuntary context switches: 92
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=360613339
+### run round=3 build=B jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 291,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-B verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.09
+	System time (seconds): 0.00
+	Percent of CPU this job got: 373%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.29
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7124
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 824
+	Voluntary context switches: 165
+	Involuntary context switches: 88
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=298656777
+### run round=3 build=C jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 252,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-C verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.94
+	System time (seconds): 0.01
+	Percent of CPU this job got: 376%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.25
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7356
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 811
+	Voluntary context switches: 156
+	Involuntary context switches: 76
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=260103765
+### run round=4 build=A jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 260,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-A verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.97
+	System time (seconds): 0.02
+	Percent of CPU this job got: 378%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.26
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7164
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 937
+	Voluntary context switches: 181
+	Involuntary context switches: 72
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=267753331
+### run round=4 build=B jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 253,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-B verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.96
+	System time (seconds): 0.01
+	Percent of CPU this job got: 379%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.25
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7300
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 792
+	Voluntary context switches: 148
+	Involuntary context switches: 72
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=260657449
+### run round=4 build=C jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 215,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-C verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.81
+	System time (seconds): 0.00
+	Percent of CPU this job got: 376%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.21
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7404
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 831
+	Voluntary context switches: 166
+	Involuntary context switches: 64
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=222923762
+### run round=5 build=A jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 325,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-A verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 1.23
+	System time (seconds): 0.00
+	Percent of CPU this job got: 375%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.32
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7392
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 785
+	Voluntary context switches: 178
+	Involuntary context switches: 89
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=332475421
+### run round=5 build=B jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 264,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-B verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.98
+	System time (seconds): 0.02
+	Percent of CPU this job got: 376%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.26
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7308
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 779
+	Voluntary context switches: 139
+	Involuntary context switches: 71
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=271359772
+### run round=5 build=C jobs=4
+{
+  "models": [
+    {
+      "name": "Wide",
+      "file": "tasks/benchmark/models/wide.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000,
+      "milliseconds": 215,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "dials",
+          "says": "Both wheels stay on their dials",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/earnest-C verify --no-cache --json --jobs 4 --max-states 20000000 tasks/benchmark/models/wide.model.ts"
+	User time (seconds): 0.79
+	System time (seconds): 0.02
+	Percent of CPU this job got: 371%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.21
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 7228
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 821
+	Voluntary context switches: 145
+	Involuntary context switches: 65
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=222306965
+# loadavg_after=1.69 1.38 0.82 1/115 1240
+# finished=2026-11-21T15:34:54Z

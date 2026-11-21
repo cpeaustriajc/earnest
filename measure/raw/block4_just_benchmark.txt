@@ -1,0 +1,107 @@
+# just benchmark on build C (34c5d04), toolchain 1.97.0
+# loadavg_before=1.32 1.31 0.80 1/111 1265
+# loadavg_after=1.97 1.57 0.95 1/111 622
+cargo build --release --locked -p earnest-cli
+    Finished `release` profile [optimized] target(s) in 0.08s
+cargo run --release --locked -p earnest_benchmark -- --runs 5
+ Downloading crates ...
+  Downloaded getrandom v0.4.3
+  Downloaded errno v0.3.15
+  Downloaded once_cell v1.21.4
+  Downloaded tempfile v3.27.0
+  Downloaded rustix v1.1.6
+  Downloaded libc v0.2.191
+  Downloaded linux-raw-sys v0.12.1
+   Compiling libc v0.2.191
+   Compiling getrandom v0.4.3
+   Compiling serde_core v1.0.229
+   Compiling rustix v1.1.6
+   Compiling linux-raw-sys v0.12.1
+   Compiling bitflags v2.13.2
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling fastrand v2.5.0
+   Compiling serde_json v1.0.154
+   Compiling tempfile v3.27.0
+   Compiling earnest_benchmark v0.1.0 (~/earnest/tasks/benchmark)
+    Finished `release` profile [optimized] target(s) in 10.80s
+     Running `target/release/benchmark --runs 5`
+measuring grid_1k.model.ts with all worker(s)
+measuring grid_1k.rs with all worker(s)
+measuring ledger.model.ts with all worker(s)
+measuring ledger.rs with all worker(s)
+measuring wide.model.ts with all worker(s)
+measuring wide.rs with all worker(s)
+measuring grid_100k.model.ts with all worker(s)
+measuring grid_100k.rs with all worker(s)
+measuring grid_1m.model.ts with all worker(s)
+measuring grid_1m.rs with all worker(s)
+measuring grid_10m.model.ts with all worker(s)
+measuring grid_10m.rs with all worker(s)
+measuring counter100.model.ts traffic.model.ts plane.model.ts basket.model.ts mailbox4.model.ts trail3.model.ts shelf.model.ts seats.model.ts votes.model.ts pairs.model.ts ledger.model.ts wide.model.ts with all worker(s)
+measuring counter100.model.ts with all worker(s)
+measuring traffic.model.ts with all worker(s)
+measuring plane.model.ts with all worker(s)
+measuring basket.model.ts with all worker(s)
+measuring mailbox4.model.ts with all worker(s)
+measuring trail3.model.ts with all worker(s)
+measuring shelf.model.ts with all worker(s)
+measuring seats.model.ts with all worker(s)
+measuring votes.model.ts with all worker(s)
+measuring pairs.model.ts with all worker(s)
+measuring grid_10m.model.ts with 1 worker(s)
+measuring grid_10m.model.ts with 4 worker(s)
+measuring counter100.model.ts traffic.model.ts plane.model.ts basket.model.ts mailbox4.model.ts trail3.model.ts shelf.model.ts seats.model.ts votes.model.ts pairs.model.ts ledger.model.ts wide.model.ts grid_1m.model.ts with all worker(s)
+Cores: 4 (Intel(R) Xeon(R) Processor @ 2.10GHz). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.
+
+## Scaled models
+
+| Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
+|---|---|---:|---:|---:|---:|
+| Grid1k | TypeScript | 1,000 | 0.004 | 268,744 | 5.9 |
+| Grid1k | Rust | 1,000 | 0.004 | 273,822 | 6.4 |
+| Ledger | TypeScript | 36,400 | 0.055 | 664,779 | 7.5 |
+| Ledger | Rust | 36,400 | 0.052 | 693,676 | 8.1 |
+| Wide | TypeScript | 10,000 | 0.217 | 46,084 | 7.8 |
+| Wide | Rust | 10,000 | 0.240 | 41,635 | 8.2 |
+| Grid100k | TypeScript | 100,000 | 0.057 | 1,747,762 | 8.7 |
+| Grid100k | Rust | 100,000 | 0.057 | 1,765,256 | 9.3 |
+| Grid1m | TypeScript | 1,000,000 | 0.183 | 5,455,596 | 27.9 |
+| Grid1m | Rust | 1,000,000 | 0.187 | 5,348,394 | 28.9 |
+| Grid10m | TypeScript | 10,000,000 | 1.588 | 6,296,348 | 191.4 |
+| Grid10m | Rust | 10,000,000 | 1.544 | 6,476,759 | 191.7 |
+
+## The 12 mixed models, each alone
+
+| Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
+|---|---|---:|---:|---:|---:|
+| counter100 | TypeScript | 100 | 0.004 | 27,233 | 5.7 |
+| traffic | TypeScript | 30 | 0.004 | 8,154 | 5.8 |
+| plane | TypeScript | 400 | 0.004 | 107,933 | 5.8 |
+| basket | TypeScript | 16 | 0.004 | 4,428 | 5.7 |
+| mailbox4 | TypeScript | 31 | 0.004 | 8,396 | 5.9 |
+| trail3 | TypeScript | 40 | 0.004 | 11,204 | 5.7 |
+| shelf | TypeScript | 64 | 0.004 | 17,025 | 5.8 |
+| seats | TypeScript | 18 | 0.004 | 4,829 | 5.8 |
+| votes | TypeScript | 21 | 0.004 | 5,720 | 5.7 |
+| pairs | TypeScript | 120 | 0.004 | 32,635 | 5.8 |
+| ledger | TypeScript | 36,400 | 0.055 | 664,779 | 7.5 |
+| wide | TypeScript | 10,000 | 0.217 | 46,084 | 7.8 |
+
+## Spec targets
+
+- 12 models together: 0.242 s, target under 5 s (a stand-in: these benchmark models, not the first app's 12)
+- slowest model alone: 0.217 s, target under 10 s (a stand-in: these benchmark models, not the first app's)
+- the 12 models in that one run: 47,240 states, peak memory 8.6 MiB
+- grid_10m with 4 workers: 1.546 s, peak memory 191.1 MiB, target under 5 s on 4 cores and 16 GB (this machine has 4 cores, at least the 4 of the target)
+
+## One large model on one worker and on all cores
+
+- grid_10m: 1 worker 7.061 s, 4 workers (all cores) 1.588 s, speed-up 4.45x
+
+## R12: many models and one large model in one run
+
+- the 13 models in one run: 0.418 s; the large model (grid_1m) alone: 0.183 s; the slowest of the 12 alone (wide): 0.217 s
+- R12 asks for about as long as the largest model alone: the one run took 1.93x the longest of them alone (wide)
+- peak memory 31.9 MiB
+exit=0
