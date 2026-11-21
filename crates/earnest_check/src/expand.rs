@@ -131,11 +131,17 @@ struct Seen {
     row_at: HashTable<(usize, u64)>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Holds {
+    WholeNumber,
+    TrueOrFalse,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Write<'a> {
     code: &'a Code,
     slot: NumberSlot,
-    truth: bool,
+    holds: Holds,
 }
 
 #[derive(Debug)]
@@ -185,12 +191,12 @@ impl<'a> Move<'a> {
         let writes = updates
             .iter()
             .map(|(position, code)| {
-                let (slot, truth) = match (layout.number(*position), layout.truth(*position)) {
-                    (Some(slot), _) => (slot, false),
-                    (None, Some(slot)) => (slot, true),
+                let (slot, holds) = match (layout.number(*position), layout.truth(*position)) {
+                    (Some(slot), _) => (slot, Holds::WholeNumber),
+                    (None, Some(slot)) => (slot, Holds::TrueOrFalse),
                     (None, None) => return None,
                 };
-                Some(Write { code, slot, truth })
+                Some(Write { code, slot, holds })
             })
             .collect();
         Self {
@@ -222,6 +228,10 @@ fn told_apart_from_earlier(action: &Action, told: &[Vec<bool>], input: usize) ->
         rest = rest.checked_div(count).unwrap_or(0);
         digit.and_then(|at| apart.get(at)).copied().unwrap_or(true)
     })
+}
+
+fn same_words(one: &[u64], other: &[u64]) -> bool {
+    one.len() == other.len() && one.iter().zip(other).all(|(left, right)| left == right)
 }
 
 fn hash_values(values: &[Value]) -> u64 {
@@ -262,10 +272,11 @@ impl Seen {
         let width = row.len();
         let rows = &self.rows;
         let earlier = |at: usize| rows.get(at..at.saturating_add(width)).unwrap_or(&[]);
-        match self
-            .row_at
-            .entry(hash, |(at, _)| earlier(*at) == row, |(_, hash)| *hash)
-        {
+        match self.row_at.entry(
+            hash,
+            |(at, _)| same_words(earlier(*at), row),
+            |(_, hash)| *hash,
+        ) {
             hashbrown::hash_table::Entry::Occupied(_) => false,
             hashbrown::hash_table::Entry::Vacant(vacant) => {
                 vacant.insert((self.rows.len(), hash));
@@ -323,31 +334,9 @@ fn next_updates(
     Ok(())
 }
 
-fn next_row(
-    writes: &[Write<'_>],
-    layout: &RowLayout,
-    row: &[u64],
-    frame: &mut Frame<'_>,
-    next: &mut Vec<u64>,
-) -> Result<Option<u64>, Fault> {
-    next.clear();
-    next.extend_from_slice(row);
-    for write in writes {
-        let value = write.code.eval(frame)?;
-        let number = match (write.truth, value) {
-            (false, Value::Int(number)) => number,
-            (true, Value::Bool(flag)) => i64::from(flag),
-            _ => return Ok(None),
-        };
-        if !write.slot.write(next, number) {
-            return Ok(None);
-        }
-    }
-    Ok(Some(layout.hash(next)))
-}
-
 struct Expansion<'s, 'f, S> {
     base: Base<'s>,
+    moving: Stopping,
     layout: &'s RowLayout,
     frame: Frame<'f>,
     found: Mark,
@@ -358,83 +347,105 @@ struct Expansion<'s, 'f, S> {
 }
 
 impl<S: Successors> Expansion<'_, '_, S> {
-    fn action(&mut self, position: usize, each: &Move<'_>) -> Stopping {
-        let mut stopping = Stopping::default();
-        let action = each.action;
-        let repeats = each.repeats();
-        if repeats {
-            self.scratch.seen.forget();
+    fn action(&mut self, position: usize, each: &Move<'_>) {
+        if each.repeats() {
+            self.every_input(position, each);
+        } else if each.combinations == 1 && self.may_go_on() {
+            if !each.action.inputs.is_empty() {
+                set_inputs(each.action, 0, &mut self.frame);
+            }
+            self.try_input::<false>(position, each, 0);
         }
+    }
+
+    fn every_input(&mut self, position: usize, each: &Move<'_>) {
+        self.scratch.seen.forget();
         let skipping = each.skipping();
         for input in 0..each.combinations {
-            if self.frame.out_of_time() {
-                self.found.clock = Clock::Stopped;
-                break;
-            }
-            if self.offered > self.budget.successors || self.sink.done() {
+            if !self.may_go_on() {
                 break;
             }
             if let Some(told) = skipping
-                && !told_apart_from_earlier(action, told, input)
+                && !told_apart_from_earlier(each.action, told, input)
             {
                 continue;
             }
-            if !action.inputs.is_empty() {
-                set_inputs(action, input, &mut self.frame);
-            }
-            match action.guard.truth(&mut self.frame) {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(fault) => {
-                    self.found.note(Whence::Guard(position), fault);
-                    stopping.unsure = true;
-                    continue;
-                }
-            }
-            stopping.enabled = true;
-            if let (Some(writes), Some(row)) = (&each.writes, self.base.row) {
-                match next_row(
-                    writes,
-                    self.layout,
-                    row,
-                    &mut self.frame,
-                    &mut self.scratch.next,
-                ) {
-                    Ok(Some(hash)) => {
-                        let next = &self.scratch.next;
-                        if (!repeats || self.scratch.seen.first_row(next, hash))
-                            && self.sink.offer_row(position, input, next, hash)
-                        {
-                            self.offered = self.offered.saturating_add(1);
-                        }
-                        continue;
-                    }
-                    Ok(None) => {}
-                    Err(fault) => {
-                        self.found.note(Whence::Update(position), fault);
-                        continue;
-                    }
-                }
-            }
-            match next_updates(
-                each,
-                self.base.values,
-                &mut self.frame,
-                &mut self.scratch.updates,
-            ) {
-                Ok(()) => {
-                    if (!repeats || self.scratch.seen.first_time(&self.scratch.updates))
-                        && self
-                            .sink
-                            .offer(position, input, self.base, &self.scratch.updates)
-                    {
-                        self.offered = self.offered.saturating_add(1);
-                    }
-                }
-                Err(fault) => self.found.note(Whence::Update(position), fault),
+            set_inputs(each.action, input, &mut self.frame);
+            self.try_input::<true>(position, each, input);
+        }
+    }
+
+    #[inline]
+    fn may_go_on(&mut self) -> bool {
+        if self.frame.out_of_time() {
+            self.found.clock = Clock::Stopped;
+            return false;
+        }
+        self.offered <= self.budget.successors && !self.sink.done()
+    }
+
+    #[inline]
+    fn try_input<const REPEATS: bool>(&mut self, position: usize, each: &Move<'_>, input: usize) {
+        match each.action.guard.truth(&mut self.frame) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(fault) => {
+                self.found.note(Whence::Guard(position), fault);
+                self.moving.unsure = true;
+                return;
             }
         }
-        stopping
+        self.moving.enabled = true;
+        if let (Some(writes), Some(row)) = (&each.writes, self.base.row) {
+            let next = &mut self.scratch.next;
+            next.clear();
+            next.extend_from_slice(row);
+            let mut fits = true;
+            for write in writes {
+                let number = match (write.holds, write.code.eval(&mut self.frame)) {
+                    (Holds::WholeNumber, Ok(Value::Int(number))) => number,
+                    (Holds::TrueOrFalse, Ok(Value::Bool(flag))) => i64::from(flag),
+                    (_, Err(fault)) => {
+                        self.found.note(Whence::Update(position), fault);
+                        return;
+                    }
+                    (_, Ok(_)) => {
+                        fits = false;
+                        break;
+                    }
+                };
+                if !write.slot.write(next, number) {
+                    fits = false;
+                    break;
+                }
+            }
+            if fits {
+                let hash = self.layout.hash(next);
+                if (!REPEATS || self.scratch.seen.first_row(next, hash))
+                    && self.sink.offer_row(position, input, next, hash)
+                {
+                    self.offered = self.offered.saturating_add(1);
+                }
+                return;
+            }
+        }
+        match next_updates(
+            each,
+            self.base.values,
+            &mut self.frame,
+            &mut self.scratch.updates,
+        ) {
+            Ok(()) => {
+                if (!REPEATS || self.scratch.seen.first_time(&self.scratch.updates))
+                    && self
+                        .sink
+                        .offer(position, input, self.base, &self.scratch.updates)
+                {
+                    self.offered = self.offered.saturating_add(1);
+                }
+            }
+            Err(fault) => self.found.note(Whence::Update(position), fault),
+        }
     }
 
     fn marked_end(&mut self, model: &Model) -> Stopping {
@@ -500,6 +511,7 @@ impl Expand<'_> {
         }
         let mut expansion = Expansion {
             base,
+            moving: Stopping::default(),
             layout: self.layout,
             frame,
             found,
@@ -508,11 +520,8 @@ impl Expand<'_> {
             sink,
             scratch,
         };
-        let mut moving = Stopping::default();
         for (position, each) in self.moves.iter().enumerate() {
-            let each = expansion.action(position, each);
-            moving.enabled |= each.enabled;
-            moving.unsure |= each.unsure;
+            expansion.action(position, each);
             if expansion.found.clock == Clock::Stopped {
                 return expansion.found;
             }
@@ -520,6 +529,7 @@ impl Expand<'_> {
                 break;
             }
         }
+        let moving = expansion.moving;
         if !moving.enabled {
             let ending = expansion.marked_end(model);
             expansion.found.ended = ending.enabled;
