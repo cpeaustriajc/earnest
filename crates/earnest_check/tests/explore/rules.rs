@@ -1,4 +1,4 @@
-use crate::build::{Sketch, below, counter, int, is, is_not, steps, texts};
+use crate::build::{Sketch, apply, below, counter, int, is, is_not, steps, texts, yes};
 use earnest_check::{Limits, Outcome, Status, Verdict, explore};
 use earnest_ir::{Expr, Math, Op};
 use earnest_value::Value;
@@ -205,7 +205,7 @@ fn a_rule_that_is_left_out_is_not_evaluated() {
 fn an_action_of_one_input_reads_its_own_input_after_an_action_of_many() {
     let mut sketch = Sketch::new();
     let n = sketch.number("n", 0, 20, &[0]);
-    let add = |slot: usize| Expr::Apply(Op::Math(Math::Add), vec![n.clone(), Expr::Local(slot)]);
+    let add = |slot: usize| apply(Op::Math(Math::Add), &n, Expr::Local(slot));
     sketch.action_with(
         "many",
         &[("a", vec![Value::Int(1), Value::Int(2)])],
@@ -218,7 +218,7 @@ fn an_action_of_one_input_reads_its_own_input_after_an_action_of_many() {
         below(&n, 15),
         &[(&n, add(0))],
     );
-    sketch.end("any", yes_at_all());
+    sketch.end("any", yes());
     sketch.rule("neverFive", is_not(&n, 5));
     let outcome = sketch.explored();
     assert_eq!(
@@ -226,8 +226,4 @@ fn an_action_of_one_input_reads_its_own_input_after_an_action_of_many() {
         ["once  b = 5  n: 0 -> 5"],
         "`once` adds its own 5, not the 2 that `many` left in the slot"
     );
-}
-
-fn yes_at_all() -> Expr {
-    Expr::Const(Value::Bool(true))
 }
