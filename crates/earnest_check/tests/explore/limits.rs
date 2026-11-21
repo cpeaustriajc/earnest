@@ -205,6 +205,106 @@ fn the_state_limit_gives_the_same_outcome_on_one_thread_and_on_four() {
     assert_eq!(explore(&model, &limited(4)), single);
 }
 
+const CUBE_STATES: usize = 27_000;
+const CUBE_STATES_THROUGH_SUM_43: usize = 13_500;
+const CUBE_STATES_THROUGH_SUM_42: usize = 12_825;
+
+fn cube_with_a_late_rule() -> Model {
+    let mut sketch = Sketch::new();
+    let axes: Vec<Expr> = ["x", "y", "z"]
+        .iter()
+        .map(|name| sketch.number(name, 0, 29, &[0]))
+        .collect();
+    for (name, axis) in ["moveX", "moveY", "moveZ"].iter().zip(&axes) {
+        sketch.action(name, below(axis, 29), &[(axis, plus(axis, 1))]);
+    }
+    let at = |x: i64, y: i64, z: i64| both(is(&axes[0], x), both(is(&axes[1], y), is(&axes[2], z)));
+    sketch.end("corner", at(29, 29, 29));
+    sketch.rule("notEarly", not(&at(10, 20, 5)));
+    sketch.rule("notAtSum43", not(&at(20, 20, 3)));
+    sketch.rule("notAtSum44", not(&at(20, 20, 4)));
+    sketch.model()
+}
+
+fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outcome {
+    let limited = |jobs: usize, keep_graph: bool| Limits {
+        max_states,
+        jobs,
+        keep_graph,
+        ..Limits::default()
+    };
+    let single = explore(model, &limited(1, true));
+    for keep_graph in [true, false] {
+        let alone = explore(model, &limited(1, keep_graph));
+        for jobs in [2, 4, 10] {
+            assert_eq!(
+                explore(model, &limited(jobs, keep_graph)),
+                alone,
+                "{jobs} workers, graph kept: {keep_graph}"
+            );
+        }
+    }
+    single
+}
+
+#[test]
+fn a_state_limit_at_the_end_of_a_level_gives_the_same_outcome_on_every_worker_count() {
+    let outcome =
+        same_outcome_on_every_worker_count(&cube_with_a_late_rule(), CUBE_STATES_THROUGH_SUM_43);
+    assert_eq!(outcome.states, CUBE_STATES_THROUGH_SUM_43);
+    assert_eq!(outcome.reason.as_deref(), Some("state limit of 13500"));
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(
+        verdicts,
+        [Verdict::Broken, Verdict::Broken, Verdict::Unknown]
+    );
+}
+
+#[test]
+fn a_state_limit_inside_a_level_gives_the_same_outcome_on_every_worker_count() {
+    let inside = CUBE_STATES_THROUGH_SUM_42 + 300;
+    let outcome = same_outcome_on_every_worker_count(&cube_with_a_late_rule(), inside);
+    assert_eq!(outcome.states, inside);
+    assert_eq!(outcome.status, Status::Fail);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+    assert_eq!(outcome.rules[2].verdict, Verdict::Unknown);
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_model_gives_the_same_outcome_on_every_worker_count() {
+    let outcome = same_outcome_on_every_worker_count(&cube_with_a_late_rule(), CUBE_STATES + 1);
+    assert_eq!(outcome.states, CUBE_STATES);
+    assert_eq!(outcome.reason, None);
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(verdicts, [Verdict::Broken; 3]);
+}
+
+const STARTS_OF_A_LEVEL_OF_KNOWN_STEPS: usize = 2000;
+
+fn a_level_whose_steps_mostly_reach_known_states() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..2000).collect();
+    let n = sketch.number("n", 0, 1999, &every_start);
+    let flipped = sketch.boolean("flipped", &[false]);
+    sketch.action("step", below(&n, 1999), &[(&n, plus(&n, 1))]);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    sketch.end("any", yes());
+    sketch.rule("not1234", not(&both(flipped, is(&n, 1234))));
+    sketch.model()
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_wide_level_of_known_steps_is_never_reached() {
+    let states = 2 * STARTS_OF_A_LEVEL_OF_KNOWN_STEPS;
+    let outcome = same_outcome_on_every_worker_count(
+        &a_level_whose_steps_mostly_reach_known_states(),
+        states + 1,
+    );
+    assert_eq!(outcome.states, states);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+}
+
 fn start_states_zero_to_four() -> Model {
     let mut sketch = Sketch::new();
     let n = sketch.number("n", 0, 4, &[0, 1, 2, 3, 4]);

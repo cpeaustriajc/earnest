@@ -50,6 +50,13 @@ pub(crate) struct Search<'a> {
     pub(crate) wide: bool,
     pub(crate) cut_short: bool,
     judged: usize,
+    last_merge: Merged,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Merged {
+    found: usize,
+    new: usize,
 }
 
 /// Visits every state `model` can reach from its start states, breadth first, and says what
@@ -98,6 +105,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         wide: false,
         cut_short: false,
         judged: 0,
+        last_merge: Merged::default(),
     };
     search.run();
     search.outcome()
@@ -183,23 +191,48 @@ impl Search<'_> {
         per_state: Duration,
     ) -> Ran {
         let mut helpers = self.limits.helpers.as_ref();
-        match self.spread_level(&frontier, deadline, asked, per_state) {
-            Some(expansion) if expansion.crowded => helpers = None,
-            Some(expansion) => {
-                let ran = Ran {
-                    stopped: expansion.stopped,
-                    workers: expansion.workers,
-                };
-                if !(ran.stopped && asked == Asked::Everything) {
-                    self.merge_any(expansion.parts);
-                }
-                return ran;
-            }
-            None => {}
-        }
         let mut marks = Vec::new();
         let mut rest = frontier.clone();
+        let mut spread = self.spread_level(&rest, deadline, asked, per_state);
         loop {
+            match spread.take() {
+                Some(expansion) if expansion.crowded => helpers = None,
+                Some(expansion) => {
+                    if expansion.stopped && asked == Asked::Everything {
+                        self.undo_level(&frontier);
+                        return Ran {
+                            stopped: true,
+                            workers: expansion.workers,
+                        };
+                    }
+                    self.record_all(&marks, rest.start);
+                    marks.clear();
+                    let before = self.store.len();
+                    let found = expansion
+                        .parts
+                        .iter()
+                        .map(|part| part.hashes.len().saturating_add(part.raws.len()))
+                        .sum();
+                    self.merge_any(expansion.parts);
+                    self.last_merge = Merged {
+                        found,
+                        new: self.store.len().saturating_sub(before),
+                    };
+                    let ran = Ran {
+                        stopped: expansion.stopped,
+                        workers: expansion.workers,
+                    };
+                    match expansion.left_over {
+                        Some(left) if self.reason.is_none() => {
+                            rest = left;
+                            spread = self.spread_level(&rest, deadline, asked, per_state);
+                            continue;
+                        }
+                        _ => return ran,
+                    }
+                }
+                None => {}
+            }
             let here = self.expand_here(rest.clone(), deadline, asked, helpers);
             if here.stopped && asked == Asked::Everything {
                 self.undo_level(&frontier);
@@ -210,37 +243,20 @@ impl Search<'_> {
             }
             marks.extend(here.marks);
             rest.start = here.through;
-            let spread = if here.handed {
-                self.spread_level(&rest, deadline, asked, per_state)
-            } else {
-                None
-            };
-            let Some(expansion) = spread.filter(|expansion| !expansion.crowded) else {
-                if here.handed {
+            if here.handed {
+                spread = self.spread_level(&rest, deadline, asked, per_state);
+                if spread.is_none() {
                     helpers = None;
-                    continue;
                 }
-                self.record_all(&marks, here.through);
-                if here.full {
-                    self.reason = Some(self.limit_reason());
-                }
-                return Ran {
-                    stopped: here.stopped,
-                    workers: 1,
-                };
-            };
-            if expansion.stopped && asked == Asked::Everything {
-                self.undo_level(&frontier);
-                return Ran {
-                    stopped: true,
-                    workers: expansion.workers,
-                };
+                continue;
             }
-            self.record_all(&marks, rest.start);
-            self.merge_any(expansion.parts);
+            self.record_all(&marks, here.through);
+            if here.full {
+                self.reason = Some(self.limit_reason());
+            }
             return Ran {
-                stopped: expansion.stopped,
-                workers: expansion.workers,
+                stopped: here.stopped,
+                workers: 1,
             };
         }
     }

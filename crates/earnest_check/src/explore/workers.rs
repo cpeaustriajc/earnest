@@ -1,5 +1,5 @@
-use super::Search;
 use super::part::{Kit, Part};
+use super::{Merged, Search};
 use crate::cut::cut_points;
 use crate::expand::Asked;
 use crate::helpers::{Helpers, Loan};
@@ -22,6 +22,7 @@ pub(super) struct Expansion {
     pub(super) stopped: bool,
     pub(super) crowded: bool,
     pub(super) workers: usize,
+    pub(super) left_over: Option<Range<usize>>,
 }
 
 struct Level {
@@ -29,6 +30,7 @@ struct Level {
     cuts: Vec<usize>,
     deadline: Option<Instant>,
     asked: Asked,
+    room: Option<usize>,
 }
 
 #[derive(Default)]
@@ -37,11 +39,30 @@ struct Shared {
     stopped: AtomicBool,
     running: AtomicUsize,
     peak: AtomicUsize,
+    fresh: AtomicUsize,
     done: Mutex<Vec<(usize, Part)>>,
     panic: Mutex<Option<Box<dyn Any + Send>>>,
 }
 
+impl Shared {
+    fn outgrew(&self, level: &Level) -> bool {
+        level
+            .room
+            .is_some_and(|room| self.fresh.load(Ordering::SeqCst) > room)
+    }
+}
+
 impl Search<'_> {
+    fn rows_found_before_full(&self) -> usize {
+        let room = self.limits.max_states.saturating_sub(self.store.len());
+        let Merged { found, new } = self.last_merge;
+        let wide = |count: usize| u128::try_from(count).unwrap_or(u128::MAX);
+        wide(room)
+            .saturating_mul(wide(found))
+            .checked_div(wide(new))
+            .map_or(room, |scaled| usize::try_from(scaled).unwrap_or(usize::MAX))
+    }
+
     pub(super) fn spread_level(
         &self,
         frontier: &Range<usize>,
@@ -63,6 +84,7 @@ impl Search<'_> {
             cuts: cut_points(frontier.len(), frontier.len().div_ceil(MOST_PARTS)),
             deadline,
             asked,
+            room: (asked == Asked::Everything).then(|| self.rows_found_before_full()),
         };
         let parts = level.cuts.len().saturating_sub(1);
         if parts <= 1 {
@@ -101,6 +123,7 @@ impl Search<'_> {
             stopped: false,
             crowded: finished.iter().any(|(_, part)| part.crowded),
             workers: shared.peak.into_inner(),
+            left_over: None,
         };
         for (expected, (index, part)) in finished.into_iter().enumerate() {
             if index != expected {
@@ -113,6 +136,13 @@ impl Search<'_> {
                 expansion.stopped = true;
                 break;
             }
+        }
+        if !expansion.stopped {
+            expansion.left_over = level
+                .cuts
+                .get(expansion.parts.len())
+                .filter(|_| expansion.parts.len() < parts)
+                .map(|cut| frontier.start.saturating_add(*cut)..frontier.end);
         }
         Some(expansion)
     }
@@ -166,6 +196,9 @@ impl Search<'_> {
         let parts = level.cuts.len().saturating_sub(1);
         let mut kit = Kit::default();
         loop {
+            if shared.outgrew(level) {
+                return;
+            }
             self.take_up_idle_threads(scope, level, shared, parts);
             let part = shared.next.fetch_add(1, Ordering::SeqCst);
             if part >= parts || shared.stopped.load(Ordering::SeqCst) {
@@ -186,6 +219,10 @@ impl Search<'_> {
             if expansion.stopped {
                 shared.stopped.store(true, Ordering::SeqCst);
             }
+            shared.fresh.fetch_add(
+                expansion.hashes.len().saturating_add(expansion.raws.len()),
+                Ordering::SeqCst,
+            );
             shared
                 .done
                 .lock()
@@ -205,6 +242,7 @@ impl Search<'_> {
             return;
         };
         while helpers.idle() > 0
+            && !shared.outgrew(level)
             && shared.running.load(Ordering::SeqCst)
                 < parts.saturating_sub(shared.next.load(Ordering::SeqCst))
         {
