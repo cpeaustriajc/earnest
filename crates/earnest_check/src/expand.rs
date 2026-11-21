@@ -326,13 +326,13 @@ fn set_inputs(action: &Action, input: usize, frame: &mut Frame<'_>) {
 }
 
 fn next_updates(
-    each: &Move<'_>,
+    planned: &Move<'_>,
     state: &[Value],
     frame: &mut Frame<'_>,
     updates: &mut Vec<(usize, Value)>,
 ) -> Result<(), Fault> {
     updates.clear();
-    for (position, code) in &each.updates {
+    for (position, code) in &planned.updates {
         if *position >= state.len() {
             break;
         }
@@ -354,31 +354,31 @@ struct Expansion<'s, 'f, S> {
 }
 
 impl<S: Successors> Expansion<'_, '_, S> {
-    fn action(&mut self, position: usize, each: &Move<'_>) {
-        if each.repeats() {
-            self.every_input_told_apart(position, each);
-        } else if each.combinations == 1 && self.may_go_on_noting_a_time_stop() {
-            if !each.action.inputs.is_empty() {
-                set_inputs(each.action, 0, &mut self.frame);
+    fn action(&mut self, position: usize, planned: &Move<'_>) {
+        if planned.repeats() {
+            self.every_input_told_apart(position, planned);
+        } else if planned.combinations == 1 && self.may_go_on_noting_a_time_stop() {
+            if !planned.action.inputs.is_empty() {
+                set_inputs(planned.action, 0, &mut self.frame);
             }
-            self.try_input::<false>(position, each, 0);
+            self.try_input::<false>(position, planned, 0);
         }
     }
 
-    fn every_input_told_apart(&mut self, position: usize, each: &Move<'_>) {
+    fn every_input_told_apart(&mut self, position: usize, planned: &Move<'_>) {
         self.scratch.seen.forget();
-        let skipping = each.skipping();
-        for input in 0..each.combinations {
+        let skipping = planned.skipping();
+        for input in 0..planned.combinations {
             if !self.may_go_on_noting_a_time_stop() {
                 break;
             }
             if let Some(told) = skipping
-                && !told_apart_from_earlier(each.action, told, input)
+                && !told_apart_from_earlier(planned.action, told, input)
             {
                 continue;
             }
-            set_inputs(each.action, input, &mut self.frame);
-            self.try_input::<true>(position, each, input);
+            set_inputs(planned.action, input, &mut self.frame);
+            self.try_input::<true>(position, planned, input);
         }
     }
 
@@ -392,8 +392,13 @@ impl<S: Successors> Expansion<'_, '_, S> {
     }
 
     #[inline]
-    fn try_input<const REPEATS: bool>(&mut self, position: usize, each: &Move<'_>, input: usize) {
-        match each.action.guard.truth(&mut self.frame) {
+    fn try_input<const REPEATS: bool>(
+        &mut self,
+        position: usize,
+        planned: &Move<'_>,
+        input: usize,
+    ) {
+        match planned.action.guard.truth(&mut self.frame) {
             Ok(true) => {}
             Ok(false) => return,
             Err(fault) => {
@@ -403,7 +408,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
         }
         self.moving.enabled = true;
-        if let (InPlace::Writes(writes), Some(row)) = (&each.in_place, self.base.row) {
+        if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.base.row) {
             let next = &mut self.scratch.next;
             next.clear();
             next.extend_from_slice(row);
@@ -437,7 +442,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
         }
         match next_updates(
-            each,
+            planned,
             self.base.values,
             &mut self.frame,
             &mut self.scratch.updates,
@@ -527,8 +532,8 @@ impl Expand<'_> {
             sink,
             scratch,
         };
-        for (position, each) in self.moves.iter().enumerate() {
-            expansion.action(position, each);
+        for (position, planned) in self.moves.iter().enumerate() {
+            expansion.action(position, planned);
             if expansion.found.clock == Clock::Stopped {
                 return expansion.found;
             }
