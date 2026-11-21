@@ -1,7 +1,8 @@
 //! An action expanded the way the search expands it, once trying every combination with the
 //! reference walk and once skipping values not told apart with the prepared codes, must offer
 //! the same successors from the same combinations, note the same first fault and mark the same
-//! width.
+//! width. Fixed actions pin each rule by which values the table tells apart, and where a wrong
+//! table would make the search skip a value it must try, by the expansion that shows it.
 
 use earnest_ir::{Action, Code, Expr, Fault, Frame, Input, Math, Op, Order, SetOp, Shelf, Sweep};
 use earnest_value::{Domain, Sym, Symbols, Value};
@@ -13,15 +14,17 @@ const SLOTS: usize = 5;
 const NAMES: usize = 3;
 const FIELDS: usize = 3;
 
+fn name(position: usize) -> Sym {
+    let mut symbols = Symbols::default();
+    let mut named = symbols.intern("a");
+    for text in ["b", "c"].iter().take(position) {
+        named = symbols.intern(text);
+    }
+    named
+}
+
 fn any_name() -> impl Strategy<Value = Sym> {
-    (0..NAMES).prop_map(|position| {
-        let mut symbols = Symbols::default();
-        let mut named = symbols.intern("a");
-        for text in ["b", "c"].iter().take(position) {
-            named = symbols.intern(text);
-        }
-        named
-    })
+    (0..NAMES).prop_map(name)
 }
 
 fn small() -> impl Strategy<Value = Value> {
@@ -349,4 +352,278 @@ fn a_fair_share_of_the_generated_actions_skip_a_value() {
             >= usize::try_from(CASES).expect("the cases fit a count") * LEAST_SHARE_SKIPPING,
         "only {skipping} of {CASES} generated actions skip a value"
     );
+}
+
+fn record(fields: &[(usize, i64)]) -> Value {
+    Value::record(
+        fields
+            .iter()
+            .map(|(position, number)| (name(*position), Value::Int(*number)))
+            .collect(),
+    )
+}
+
+fn number(value: i64) -> Expr {
+    Expr::Const(Value::Int(value))
+}
+
+fn yes() -> Expr {
+    Expr::Const(Value::Bool(true))
+}
+
+fn read(slot: usize, field: usize) -> Expr {
+    Expr::Get(Box::new(Expr::Local(slot)), name(field))
+}
+
+fn equal(left: Expr, right: Expr) -> Expr {
+    Expr::Apply(Op::Equal, vec![left, right])
+}
+
+fn bind(slot: usize, value: Expr, body: Expr) -> Expr {
+    Expr::Bind {
+        slot,
+        value: Box::new(value),
+        body: Box::new(body),
+    }
+}
+
+fn some_of(expr: Expr) -> Expr {
+    Expr::Apply(Op::SomeOf, vec![expr])
+}
+
+fn lone_value() -> Vec<Value> {
+    vec![Value::Int(0)]
+}
+
+fn action_over(first_values: Vec<Value>, exprs: Vec<Expr>) -> (Action, Vec<Expr>) {
+    action_of([first_values, lone_value()], exprs)
+}
+
+fn told_for_first(first_values: Vec<Value>, exprs: Vec<Expr>) -> Vec<Vec<bool>> {
+    action_over(first_values, exprs).0.told_apart()
+}
+
+fn table(first: &[bool]) -> Vec<Vec<bool>> {
+    vec![first.to_vec(), vec![true]]
+}
+
+fn expansions_with(
+    first_values: Vec<Value>,
+    exprs: Vec<Expr>,
+    skipping: &[Vec<bool>],
+) -> (Expanded, Expanded) {
+    let (action, exprs) = action_over(first_values, exprs);
+    let state = vec![Value::Int(0); FIELDS];
+    let left_over = vec![Value::Null; SLOTS];
+    (
+        expanded(&action, &exprs, &state, &left_over, Walk::EveryCombination),
+        expanded(
+            &action,
+            &exprs,
+            &state,
+            &left_over,
+            Walk::SkippingValuesNotToldApart(skipping),
+        ),
+    )
+}
+
+fn assert_the_table_skips_safely(first_values: Vec<Value>, exprs: Vec<Expr>) {
+    let told = told_for_first(first_values.clone(), exprs.clone());
+    let (every, skipping) = expansions_with(first_values, exprs, &told);
+    assert_eq!(
+        every, skipping,
+        "skipping by the table sees what every combination sees"
+    );
+}
+
+fn assert_the_skip_is_seen(first_values: Vec<Value>, exprs: Vec<Expr>, skipping: &[Vec<bool>]) {
+    let (every, skipped) = expansions_with(first_values, exprs, skipping);
+    assert_ne!(
+        every, skipped,
+        "skipping by this table loses what a combination offers"
+    );
+}
+
+#[test]
+fn values_that_agree_on_every_field_read_are_tried_once() {
+    let values = vec![
+        record(&[(0, 1), (1, 1), (2, 1)]),
+        record(&[(0, 1), (1, 2), (2, 1)]),
+        record(&[(0, 2), (1, 1), (2, 1)]),
+        record(&[(0, 1), (1, 1), (2, 2)]),
+    ];
+    let guard = equal(read(0, 0), read(0, 1));
+    let told = told_for_first(values.clone(), vec![guard.clone()]);
+    assert_eq!(told, table(&[true, true, true, false]));
+    assert_the_table_skips_safely(values, vec![guard]);
+}
+
+#[test]
+fn a_field_read_only_by_an_update_still_tells_values_apart() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+        record(&[(0, 1), (1, 1)]),
+    ];
+    let told = told_for_first(values, vec![yes(), read(0, 1)]);
+    assert_eq!(told, table(&[true, true, false]));
+}
+
+#[test]
+fn reading_the_input_whole_tells_every_value_apart() {
+    let values = vec![record(&[(0, 1), (1, 1)]), record(&[(0, 1), (1, 2)])];
+    let exprs = vec![
+        equal(Expr::Local(0), Expr::Const(values[1].clone())),
+        number(7),
+    ];
+    assert_eq!(
+        told_for_first(values.clone(), exprs.clone()),
+        table(&[true, true])
+    );
+    assert_the_table_skips_safely(values.clone(), exprs.clone());
+    assert_the_skip_is_seen(values, exprs, &table(&[true, false]));
+}
+
+#[test]
+fn a_slot_bound_to_the_input_counts_as_the_input_for_a_field_read() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 2), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+    ];
+    let guard = bind(2, Expr::Local(0), equal(read(2, 0), number(1)));
+    let told = told_for_first(values.clone(), vec![guard.clone()]);
+    assert_eq!(told, table(&[true, true, false]));
+    assert_the_table_skips_safely(values, vec![guard]);
+}
+
+#[test]
+fn a_slot_bound_to_a_slot_bound_to_the_input_counts_as_the_input() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 2), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+    ];
+    let guard = bind(
+        3,
+        Expr::Local(0),
+        bind(2, Expr::Local(3), equal(read(2, 0), number(1))),
+    );
+    assert_eq!(
+        told_for_first(values, vec![guard]),
+        table(&[true, true, false])
+    );
+}
+
+#[test]
+fn reading_a_copy_of_the_input_whole_tells_every_value_apart() {
+    let values = vec![record(&[(0, 1), (1, 1)]), record(&[(0, 1), (1, 2)])];
+    let guard = bind(
+        2,
+        Expr::Local(0),
+        equal(Expr::Local(2), Expr::Const(values[1].clone())),
+    );
+    assert_eq!(told_for_first(values, vec![guard]), table(&[true, true]));
+}
+
+#[test]
+fn a_slot_bound_to_a_computed_value_is_no_copy_of_the_input() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 2), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+    ];
+    let guard = bind(2, read(0, 0), equal(Expr::Local(2), number(1)));
+    assert_eq!(
+        told_for_first(values, vec![guard]),
+        table(&[true, true, false])
+    );
+}
+
+#[test]
+fn what_the_value_of_a_computed_binding_reads_still_counts() {
+    let values = vec![record(&[(0, 1)]), record(&[(0, 2)])];
+    let exprs = vec![
+        bind(2, read(0, 0), equal(Expr::Local(2), number(2))),
+        number(7),
+    ];
+    assert_eq!(
+        told_for_first(values.clone(), exprs.clone()),
+        table(&[true, true])
+    );
+    assert_the_table_skips_safely(values.clone(), exprs.clone());
+    assert_the_skip_is_seen(values, exprs, &table(&[true, false]));
+}
+
+#[test]
+fn a_slot_read_outside_its_binder_tells_every_value_apart() {
+    let values = vec![record(&[(0, 1)]), record(&[(0, 2)]), record(&[(0, 1)])];
+    let exprs = vec![
+        Expr::Or(Box::new(equal(Expr::Local(2), number(99))), Box::new(yes())),
+        Expr::Choose(
+            Box::new(equal(Expr::Local(2), number(2))),
+            Box::new(number(100)),
+            Box::new(number(200)),
+        ),
+        bind(2, read(0, 0), number(0)),
+    ];
+    assert_eq!(
+        told_for_first(values.clone(), exprs.clone()),
+        table(&[true, true, true])
+    );
+    assert_the_table_skips_safely(values.clone(), exprs.clone());
+    assert_the_skip_is_seen(values, exprs, &table(&[true, true, false]));
+}
+
+#[test]
+fn an_input_whose_slot_the_action_binds_again_is_told_apart_in_every_value() {
+    let values = vec![record(&[(0, 1)]), record(&[(0, 2)])];
+    let guard = bind(0, number(1), yes());
+    assert_eq!(told_for_first(values, vec![guard]), table(&[true, true]));
+}
+
+#[test]
+fn a_field_read_through_an_optional_wrapper_counts_as_a_field_read() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 2), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+    ];
+    let guard = equal(
+        Expr::Get(Box::new(some_of(Expr::Local(0))), name(0)),
+        number(1),
+    );
+    assert_eq!(
+        told_for_first(values, vec![guard]),
+        table(&[true, true, false])
+    );
+}
+
+#[test]
+fn a_binding_of_the_input_through_an_optional_wrapper_is_a_copy() {
+    let values = vec![
+        record(&[(0, 1), (1, 1)]),
+        record(&[(0, 2), (1, 1)]),
+        record(&[(0, 1), (1, 2)]),
+    ];
+    let guard = bind(2, some_of(Expr::Local(0)), equal(read(2, 0), number(1)));
+    assert_eq!(
+        told_for_first(values, vec![guard]),
+        table(&[true, true, false])
+    );
+}
+
+#[test]
+fn values_on_which_a_read_field_faults_the_same_way_count_as_agreeing_on_it() {
+    let values = vec![
+        Value::Int(1),
+        Value::Int(2),
+        Value::Null,
+        record(&[(0, 1)]),
+        record(&[(1, 1)]),
+    ];
+    let guard = equal(read(0, 0), number(1));
+    let told = told_for_first(values.clone(), vec![guard.clone()]);
+    assert_eq!(told, table(&[true, false, true, true, false]));
+    assert_the_table_skips_safely(values, vec![guard]);
 }
