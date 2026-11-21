@@ -77,8 +77,9 @@ impl PartSink<'_> {
         });
     }
 
-    fn add_fresh(&mut self, action: usize, hash: u64) {
-        append_row(&mut self.part.rows, &self.kit.row);
+    #[inline]
+    fn add_fresh(&mut self, action: usize, row: &[u64], hash: u64) {
+        append_row(&mut self.part.rows, row);
         self.part.hashes.push(hash);
         self.part.froms.push(self.from);
         if self.graph {
@@ -86,9 +87,9 @@ impl PartSink<'_> {
         }
     }
 
-    fn offer_new_with_graph(&mut self, action: usize, hash: u64) -> bool {
+    fn offer_new_with_graph(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
         let words = self.store.layout().words();
-        let (rows, hashes, row) = (&self.part.rows, &self.part.hashes, &self.kit.row);
+        let (rows, hashes) = (&self.part.rows, &self.part.hashes);
         let met = self.kit.met.entry(
             hash,
             |at| same_row(row_at(rows, words, *at), row),
@@ -102,18 +103,19 @@ impl PartSink<'_> {
             }
             hashbrown::hash_table::Entry::Vacant(vacant) => {
                 vacant.insert(hashes.len());
-                self.add_fresh(action, hash);
+                self.add_fresh(action, row, hash);
                 true
             }
         }
     }
 
-    fn offer_unseen(&mut self, action: usize, hash: u64) -> bool {
-        if let [word] = self.kit.row.as_slice() {
+    #[inline]
+    fn offer_unseen(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
+        if let [word] = row {
             return self.offer_unseen_word(action, *word, hash);
         }
         let words = self.store.layout().words();
-        let (rows, hashes, row) = (&self.part.rows, &self.part.hashes, &self.kit.row);
+        let (rows, hashes) = (&self.part.rows, &self.part.hashes);
         let met = self.kit.met.entry(
             hash,
             |at| same_row(row_at(rows, words, *at), row),
@@ -126,12 +128,13 @@ impl PartSink<'_> {
             return false;
         }
         vacant.insert(hashes.len());
-        self.add_fresh(action, hash);
+        self.add_fresh(action, row, hash);
         true
     }
 }
 
 impl PartSink<'_> {
+    #[inline]
     fn offer_unseen_word(&mut self, action: usize, word: u64, hash: u64) -> bool {
         let layout = self.store.layout();
         let met = self.kit.met_words.entry(
@@ -143,7 +146,7 @@ impl PartSink<'_> {
             return false;
         };
         vacant.insert(word);
-        self.add_fresh(action, hash);
+        self.add_fresh(action, &[word], hash);
         true
     }
 }
@@ -162,9 +165,7 @@ impl Successors for PartSink<'_> {
     }
 
     fn offer_row(&mut self, action: usize, _: usize, row: &[u64], hash: u64) -> bool {
-        self.kit.row.clear();
-        self.kit.row.extend_from_slice(row);
-        let counted = self.offer_encoded(action, hash);
+        let counted = self.offer_encoded(action, row, hash);
         self.counted += usize::from(counted);
         counted
     }
@@ -200,21 +201,25 @@ impl PartSink<'_> {
             self.push(action, Target::Raw { fresh_before });
             return first;
         }
-        let hash = self.store.layout().hash(&self.kit.row);
-        self.offer_encoded(action, hash)
+        let row = std::mem::take(&mut self.kit.row);
+        let hash = self.store.layout().hash(&row);
+        let counted = self.offer_encoded(action, &row, hash);
+        self.kit.row = row;
+        counted
     }
 
-    fn offer_encoded(&mut self, action: usize, hash: u64) -> bool {
+    #[inline]
+    fn offer_encoded(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
         if !self.graph {
-            return self.offer_unseen(action, hash);
+            return self.offer_unseen(action, row, hash);
         }
-        if let Some(found) = self.store.find(&self.kit.row, hash) {
+        if let Some(found) = self.store.find(row, hash) {
             if let Some(to) = found.id {
                 self.push(action, Target::Known(to));
             }
             return false;
         }
-        self.offer_new_with_graph(action, hash)
+        self.offer_new_with_graph(action, row, hash)
     }
 }
 
