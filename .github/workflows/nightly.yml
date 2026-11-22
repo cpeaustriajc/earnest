@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/nightly.yml
+      - .github/homebrew/**
 
 permissions:
   contents: read
@@ -20,6 +21,7 @@ env:
   RUST_VERSION: 1.100.0
   RELEASE_TAG: nightly
   SMOKE_MODEL: tasks/benchmark/models/mixed/basket.model.ts
+  HOMEBREW_TAP: cpeaustriajc/homebrew-earnest
 
 jobs:
   decide:
@@ -177,3 +179,56 @@ jobs:
             --prerelease \
             --title "Nightly build of main" \
             --notes-file notes.md
+
+  homebrew:
+    needs: [build, publish]
+    if: >-
+      always() && needs.build.result == 'success' &&
+      (needs.publish.result == 'success' || github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TAP_KEY_SET: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: earnest
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write the formula
+        run: |
+          base=$(sed -n 's/^version = "\(.*\)"$/\1/p' earnest/Cargo.toml | head -n 1)
+          version="$base-nightly.$(date -u +%Y%m%d%H%M)"
+          download="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          earnest/.github/homebrew/formula.sh "$version" "$download" dist > earnest.rb
+          ruby -c earnest.rb
+          cat earnest.rb
+      - name: Say why the tap is not updated
+        if: env.PUSH == 'true' && env.TAP_KEY_SET != 'true'
+        run: echo "::warning::The secret HOMEBREW_TAP_DEPLOY_KEY is not set, so $HOMEBREW_TAP keeps its old formula."
+      - uses: actions/checkout@v4
+        if: env.PUSH == 'true' && env.TAP_KEY_SET == 'true'
+        with:
+          repository: ${{ env.HOMEBREW_TAP }}
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          persist-credentials: true
+          path: tap
+      - name: Push the formula to the tap
+        if: env.PUSH == 'true' && env.TAP_KEY_SET == 'true'
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          cp ../earnest.rb Formula/earnest.rb
+          git add Formula/earnest.rb
+          if git diff --cached --quiet; then
+            echo "The formula is unchanged."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet --message "Install the nightly build of earnest at $GITHUB_SHA"
+          git push origin HEAD
