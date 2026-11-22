@@ -1,0 +1,218 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - install.sh
+      - install.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.100.0
+  RELEASE_TAG: nightly
+  SMOKE_MODEL: tasks/benchmark/models/mixed/basket.model.ts
+
+jobs:
+  decide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          build=true
+          if [ "$EVENT" = schedule ] &&
+            published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null) &&
+            [ "$published" = "$GITHUB_SHA" ]; then
+            echo "The $RELEASE_TAG release already holds $GITHUB_SHA."
+            build=false
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64-gnu
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            binary: earnest
+            archive: earnest-linux-x64-gnu.tar.gz
+            runs_here: true
+          - platform: linux-arm64-gnu
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            binary: earnest
+            archive: earnest-linux-arm64-gnu.tar.gz
+            runs_here: true
+          - platform: darwin-arm64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+            binary: earnest
+            archive: earnest-darwin-arm64.tar.gz
+            runs_here: true
+          - platform: darwin-x64
+            target: x86_64-apple-darwin
+            runner: macos-latest
+            binary: earnest
+            archive: earnest-darwin-x64.tar.gz
+            runs_here: false
+          - platform: win32-x64-msvc
+            target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            binary: earnest.exe
+            archive: earnest-win32-x64-msvc.zip
+            runs_here: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      BINARY: ${{ matrix.binary }}
+      ARCHIVE: ${{ matrix.archive }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET" --no-self-update
+      - run: rustup default "$RUST_VERSION"
+      - run: cargo build --release --locked -p earnest-cli --target "$TARGET"
+      - name: Smoke test
+        if: matrix.runs_here
+        run: |
+          "target/$TARGET/release/$BINARY" --version
+          "target/$TARGET/release/$BINARY" verify --no-cache "$SMOKE_MODEL"
+      - name: Check the architecture of a binary this runner cannot run
+        if: ${{ !matrix.runs_here }}
+        run: lipo "target/$TARGET/release/$BINARY" -verify_arch x86_64
+      - name: Pack
+        run: |
+          mkdir -p stage dist
+          cp "target/$TARGET/release/$BINARY" stage/
+          case "$ARCHIVE" in
+            *.zip) pwsh -NoProfile -Command "Compress-Archive -Path 'stage/$BINARY' -DestinationPath 'dist/$ARCHIVE'" ;;
+            *) tar -czf "dist/$ARCHIVE" -C stage "$BINARY" ;;
+          esac
+      - name: Write the checksum
+        working-directory: dist
+        run: |
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          fi
+          cat "$ARCHIVE.sha256"
+      - name: Install from the archive with install.sh
+        if: matrix.runs_here && runner.os != 'Windows'
+        env:
+          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/dist
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
+        run: |
+          sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Check the downloaded files
+        working-directory: dist
+        run: sha256sum --check ./*.sha256
+      - name: Write the release notes
+        run: |
+          {
+            echo "The tip of \`main\` at commit $GITHUB_SHA ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA), built on $(date -u +%Y-%m-%d)."
+            cat <<'NOTES'
+
+          This is not a release: it is replaced every night that `main` has moved, and it has had no more checking than `main` itself.
+
+          Each archive holds one binary, `earnest` (`earnest.exe` on Windows), and has a `.sha256` file beside it. To check a download, keep both in one folder and run:
+
+          ```sh
+          sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256      # Linux
+          shasum -a 256 --check earnest-darwin-arm64.tar.gz.sha256   # macOS
+          ```
+
+          On Windows, compare `(Get-FileHash earnest-win32-x64-msvc.zip).Hash` in PowerShell with the first word of `earnest-win32-x64-msvc.zip.sha256`; case does not matter.
+          NOTES
+          } > notes.md
+      - name: Replace the nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release delete "$RELEASE_TAG" --cleanup-tag --yes
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --silent 2>/dev/null; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG"
+          fi
+          gh release create "$RELEASE_TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Nightly build of main" \
+            --notes-file notes.md
+
+
+  installed:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the published nightly with install.sh
+        if: runner.os != 'Windows'
+        env:
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
+        run: |
+          sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
+      - name: Install the published nightly with install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}\installed
+        run: |
+          ./install.ps1
+          & "$env:EARNEST_INSTALL_DIR\earnest.exe" verify --no-cache $env:SMOKE_MODEL
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

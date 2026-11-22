@@ -4,7 +4,9 @@ A model checker for models written in your app's own language. A coding agent st
 a change as a model in TypeScript or Rust, `earnest verify` visits every reachable state, and the
 result goes into the PR as a statechart and a report.
 
-Status: version 1 is built and passes its own checks, and is not yet proven. Six adversarial
+Status: early access. There is no release yet and nothing is on npm: the only builds are the
+nightly builds of `main`, and the model API and the command line can change from one night to the
+next. Earnest 0.1.0 is built and passes its own checks, and is not yet proven. Six adversarial
 passes each found models with a broken rule that were reported as passing, and no pass has come
 back clean. TLC 1.8.0 confirms the TLA+ export of every conformance model in CI. The spec is the
 Claude Doc "A formal verification suite for agents".
@@ -26,33 +28,41 @@ finds the same states and the same verdicts.
 
 ## Install
 
-In a project that holds models, from the package manager the project already uses:
+Early access ships as a nightly build of `main`. The install script downloads the archive for
+your machine, checks its SHA-256 against the `.sha256` file beside it, and installs `earnest` in
+`~/.local/bin`, or `%LOCALAPPDATA%\Programs\earnest` on Windows. Set `EARNEST_INSTALL_DIR` to
+install elsewhere. Run the script again to update to the newest night.
 
 ```sh
-npm install --save-dev @earnest/cli @earnest/model
-npx earnest verify
+curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | sh   # macOS, Linux
+irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex       # Windows
+earnest verify                                                                          # in a project with models
 ```
 
-`bun add -d` and `yarn add -D` do the same. `@earnest/cli` is one program: a small Node
-launcher and, in an optional dependency chosen by operating system and cpu, the binary
-(`@earnest/cli-linux-x64-gnu`, `-linux-arm64-gnu`, `-darwin-arm64`, `-darwin-x64` and
-`-win32-x64-msvc`). It has no install script and downloads nothing, so after the install
-`earnest` needs no network, no Java and no setup step on its first run. `@earnest/model` is the
-library a TypeScript model imports; it ships compiled JavaScript and declarations, so it runs in
-Node and type-checks under strict `tsc` from `node_modules`. See `packages/cli/README.md` and
-`packages/model/README.md`. A Rust model needs no npm package: it uses the `earnest` crate.
+There are builds for Linux on x64 and ARM64 with glibc 2.39 or newer, macOS on Apple silicon and
+Intel, and Windows on x64. Each night that `main` has moved, the `nightly` pre-release on the
+GitHub releases page is rebuilt from the tip of `main` and replaced; it is not a release. To check
+a download by hand, keep the archive and its `.sha256` file in one folder and run
+`sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256` (`shasum -a 256 --check` on macOS).
 
-To install the checker from source, with no npm and no registry:
+To build the checker from source instead:
 
 ```sh
 cargo install --git https://github.com/cpeaustriajc/earnest earnest-cli
 cargo install --path apps/earnest      # from a clone of this repository
 ```
 
-Either puts the program `earnest` in `~/.cargo/bin`. The checker never resolves the
-`@earnest/model` import on disk: it reads the file's text and never looks for the package, so
+Either puts the program `earnest` in `~/.cargo/bin`. A Rust model uses the `earnest` crate. A
+TypeScript model imports `m` from `@earnest/model`, which is not on npm yet. The checker never
+resolves that import on disk: it reads the file's text and never looks for the package, so
 `earnest verify` works with no `node_modules` at all. The import matters only to the editor, the
 type checker and Node, which need the package to find `m` and its types.
+
+When early access ends, the checker will also ship on npm, installed with the package manager the
+project already uses: `npm install --save-dev @earnest/cli @earnest/model`, then `npx earnest
+verify`. `@earnest/cli` is a small Node launcher and, in an optional dependency chosen by
+operating system and cpu, the binary. It has no install script and downloads nothing. See
+`packages/cli/README.md` and `packages/model/README.md`.
 
 ## Commands
 
