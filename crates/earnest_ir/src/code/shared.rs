@@ -1,5 +1,6 @@
 use crate::Expr;
 use crate::eval::NO_UNIT;
+use crate::parts::{Binder, Binders, Scope};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_UNIT: AtomicU64 = AtomicU64::new(NO_UNIT + 1);
@@ -20,14 +21,11 @@ pub(super) struct Shared {
 
 impl Shared {
     pub(super) fn of(exprs: &[Expr]) -> Self {
-        let mut survey = Survey::default();
-        for expr in exprs {
-            survey.walk(expr);
-        }
+        let binders = Binders::of(exprs);
         let mut shared = Self {
             unit: NEXT_UNIT.fetch_add(1, Ordering::Relaxed),
-            kinds: survey.kinds(),
-            repeated: survey.repeated(),
+            kinds: binders.of_slot().iter().map(|all| kind(all)).collect(),
+            repeated: binders.of_slot().iter().map(|all| repeated(all)).collect(),
         };
         let mut scope = Scope::default();
         while exprs.iter().any(|expr| shared.narrowed(expr, &mut scope)) {}
@@ -107,95 +105,26 @@ impl Shared {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Binder<'e> {
-    Unbound,
-    Same { value: &'e Expr, repeated: bool },
-    Mixed,
-}
-
-#[derive(Default)]
-struct Survey<'e> {
-    binders: Vec<Binder<'e>>,
-    sweeping: usize,
-}
-
-impl<'e> Survey<'e> {
-    fn binds(&mut self, slot: usize, value: Option<&'e Expr>) {
-        if self.binders.len() <= slot {
-            self.binders.resize(slot.saturating_add(1), Binder::Unbound);
+fn kind(all: &[Binder<'_>]) -> Kind {
+    match all {
+        [] => Kind::Unbound,
+        [Binder::Bind { value: first, .. }, ..]
+            if !holds_a_sweep(first)
+                && all.iter().all(
+                    |binder| matches!(binder, Binder::Bind { value, .. } if value == first),
+                ) =>
+        {
+            Kind::Steady
         }
-        let in_a_sweep = self.sweeping > 0;
-        if let Some(binder) = self.binders.get_mut(slot) {
-            *binder = match (*binder, value) {
-                (Binder::Unbound, Some(first)) if !holds_a_sweep(first) => Binder::Same {
-                    value: first,
-                    repeated: in_a_sweep,
-                },
-                (Binder::Same { value: first, .. }, Some(again)) if first == again => {
-                    Binder::Same {
-                        value: first,
-                        repeated: true,
-                    }
-                }
-                _ => Binder::Mixed,
-            };
-        }
-    }
-
-    fn walk(&mut self, expr: &'e Expr) {
-        match expr {
-            Expr::Bind { slot, value, .. } => self.binds(*slot, Some(value)),
-            Expr::Sweep {
-                slot, source, body, ..
-            } => {
-                self.binds(*slot, None);
-                self.walk(source);
-                self.sweeping = self.sweeping.saturating_add(1);
-                self.walk(body);
-                self.sweeping = self.sweeping.saturating_sub(1);
-                return;
-            }
-            _ => {}
-        }
-        expr.each_part(&mut |part| self.walk(part));
-    }
-
-    fn kinds(&self) -> Vec<Kind> {
-        self.binders
-            .iter()
-            .map(|binder| match binder {
-                Binder::Unbound => Kind::Unbound,
-                Binder::Same { .. } => Kind::Steady,
-                Binder::Mixed => Kind::Varied,
-            })
-            .collect()
-    }
-
-    fn repeated(&self) -> Vec<bool> {
-        self.binders
-            .iter()
-            .map(|binder| matches!(binder, Binder::Same { repeated: true, .. }))
-            .collect()
+        _ => Kind::Varied,
     }
 }
 
-#[derive(Default)]
-struct Scope {
-    open: Vec<usize>,
-}
-
-impl Scope {
-    fn open(&mut self, slot: usize) {
-        self.open.push(slot);
-    }
-
-    fn close(&mut self) {
-        self.open.pop();
-    }
-
-    fn holds(&self, slot: usize) -> bool {
-        self.open.contains(&slot)
+fn repeated(all: &[Binder<'_>]) -> bool {
+    match all {
+        [] => false,
+        [Binder::Bind { in_a_sweep, .. }] => *in_a_sweep,
+        _ => true,
     }
 }
 

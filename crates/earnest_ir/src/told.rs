@@ -1,4 +1,5 @@
 use crate::eval::field_of;
+use crate::parts::{Binder, Binders, Scope};
 use crate::{Action, Code, Expr, Fault};
 use earnest_value::{Sym, Value};
 use std::collections::HashSet;
@@ -19,10 +20,10 @@ impl Action {
             .chain(self.updates.iter().flatten())
             .map(Code::expr)
             .collect();
-        let binders = Binders::of(&exprs);
+        let binders = Binders::of(exprs.iter().copied());
         let scoped = exprs
             .iter()
-            .all(|expr| binders.in_scope(expr, &mut Vec::new()));
+            .all(|expr| binders.in_scope(expr, &mut Scope::default()));
         self.inputs
             .iter()
             .map(|input| {
@@ -40,57 +41,10 @@ impl Action {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Binder {
-    Copy(usize),
-    Other,
-}
-
-struct Binders {
-    of_slot: Vec<Vec<Binder>>,
-}
-
-impl Binders {
-    fn of(exprs: &[&Expr]) -> Self {
-        let mut binders = Self {
-            of_slot: Vec::new(),
-        };
-        for expr in exprs {
-            binders.gather(expr);
-        }
-        binders
-    }
-
-    fn gather(&mut self, expr: &Expr) {
-        let found = match expr {
-            Expr::Bind { slot, value, .. } => Some((
-                *slot,
-                match value.plain() {
-                    Expr::Local(source) => Binder::Copy(*source),
-                    _ => Binder::Other,
-                },
-            )),
-            Expr::Sweep { slot, .. } => Some((*slot, Binder::Other)),
-            _ => None,
-        };
-        if let Some((slot, binder)) = found {
-            if self.of_slot.len() <= slot {
-                self.of_slot.resize(slot.saturating_add(1), Vec::new());
-            }
-            if let Some(all) = self.of_slot.get_mut(slot) {
-                all.push(binder);
-            }
-        }
-        expr.each_part(&mut |part| self.gather(part));
-    }
-
-    fn bound(&self, slot: usize) -> bool {
-        self.of_slot.get(slot).is_some_and(|all| !all.is_empty())
-    }
-
-    fn in_scope(&self, expr: &Expr, open: &mut Vec<usize>) -> bool {
+impl Binders<'_> {
+    fn in_scope(&self, expr: &Expr, scope: &mut Scope) -> bool {
         match expr {
-            Expr::Local(slot) => !self.bound(*slot) || open.contains(slot),
+            Expr::Local(slot) => !self.bound(*slot) || scope.holds(*slot),
             Expr::Bind {
                 slot,
                 value: first,
@@ -102,35 +56,38 @@ impl Binders {
                 body: then,
                 ..
             } => {
-                if !self.in_scope(first, open) {
+                if !self.in_scope(first, scope) {
                     return false;
                 }
-                open.push(*slot);
-                let scoped = self.in_scope(then, open);
-                open.pop();
+                scope.open(*slot);
+                let scoped = self.in_scope(then, scope);
+                scope.close();
                 scoped
             }
             _ => {
                 let mut scoped = true;
-                expr.each_part(&mut |part| scoped &= self.in_scope(part, open));
+                expr.each_part(&mut |part| scoped &= self.in_scope(part, scope));
                 scoped
             }
         }
     }
 
     fn copies(&self, input: usize) -> Vec<bool> {
-        let mut copy = vec![false; self.of_slot.len().max(input.saturating_add(1))];
+        let mut copy = vec![false; self.of_slot().len().max(input.saturating_add(1))];
         if let Some(place) = copy.get_mut(input) {
             *place = true;
         }
         let mut grew = true;
         while grew {
             grew = false;
-            for (slot, all) in self.of_slot.iter().enumerate() {
+            for (slot, all) in self.of_slot().iter().enumerate() {
                 let from_copies = !all.is_empty()
                     && all.iter().all(|binder| match binder {
-                        Binder::Copy(source) => copy.get(*source).copied().unwrap_or(false),
-                        Binder::Other => false,
+                        Binder::Bind { value, .. } => match value.plain() {
+                            Expr::Local(source) => copy.get(*source).copied().unwrap_or(false),
+                            _ => false,
+                        },
+                        Binder::Sweep => false,
                     });
                 if let Some(place) = copy.get_mut(slot)
                     && from_copies
