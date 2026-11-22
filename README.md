@@ -40,9 +40,9 @@ earnest verify                                                                  
 ```
 
 There are builds for Linux on x64 and ARM64 with glibc 2.39 or newer, macOS on Apple silicon and
-Intel, and Windows on x64. Each night that `main` has moved, the `nightly` pre-release on the
-GitHub releases page is rebuilt from the tip of `main` and replaced; it is not a release. To check
-a download by hand, keep the archive and its `.sha256` file in one folder and run
+Intel, and Windows on x64. Each night that `main` has moved, the `v0.1.0-nightly` pre-release on
+the GitHub releases page is rebuilt from the tip of `main` and replaced; it is not a release. To
+check a download by hand, keep the archive and its `.sha256` file in one folder and run
 `sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256` (`shasum -a 256 --check` on macOS).
 
 To build the checker from source instead:
