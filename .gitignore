@@ -4,3 +4,4 @@
 /mutants.out
 node_modules
 /packages/*/dist
+/packages/*/.package.next.json
