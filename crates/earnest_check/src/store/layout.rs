@@ -1,5 +1,3 @@
-use super::codec::Codec;
-use earnest_ir::Field;
 use earnest_value::Domain;
 
 pub(super) const WORD_BITS: u32 = u64::BITS;
@@ -8,14 +6,8 @@ const SEAT_SPREAD: u64 = 0x9E37_79B9_7F4A_7C15;
 const MIX: u64 = 0xD6E8_FEB8_6659_FD93;
 const HALF_WORD: u32 = 32;
 
-/// Where each field of a model sits in the packed row of a state, and the hash of a row.
-///
-/// A row is a few `u64` words. Every field takes a run of bits in one word; a field never
-/// spans two words, and bits no field uses are 0. Two states are the same exactly when their
-/// rows are equal, so a caller that changes a row in place and hashes it with [`Self::hash`]
-/// or [`Self::hash_with`] gets the hash the search files the state under.
 #[derive(Clone, Debug)]
-pub struct RowLayout {
+pub(crate) struct RowLayout {
     places: Vec<Place>,
     numbers: Vec<Option<RangeSlot>>,
     truths: Vec<Option<RangeSlot>>,
@@ -30,47 +22,22 @@ pub(super) struct Place {
     pub(super) mask: u64,
 }
 
-/// The place in a packed row of a field whose values are a range of whole numbers: a
-/// whole-number field, or a boolean field read as 0 for false and 1 for true. Bits
-/// `shift .. shift + width` of word `word` hold the value minus `offset`.
-///
-/// Only values from the range have a place; [`Self::code`] says which.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RangeSlot {
-    /// Which word of the row holds the field, counted from 0. The field never reaches into the
-    /// next word.
-    pub word: usize,
-    /// How many bits lie below the field in that word: shift the word right by this to read
-    /// the field.
-    pub shift: u32,
-    /// How many bits the field takes. A field whose range has one value takes none.
-    pub width: u32,
-    /// The lowest value of the range, which is stored as 0.
-    pub offset: i64,
+pub(crate) struct RangeSlot {
+    pub(crate) word: usize,
+    pub(crate) shift: u32,
+    pub(crate) width: u32,
+    pub(crate) offset: i64,
     highest: i64,
 }
 
 impl RangeSlot {
-    /// The bits that stand for `value` before they are shifted into place, or `None` when
-    /// `value` is outside the range and so cannot be written into the row.
     #[must_use]
-    pub fn code(&self, value: i64) -> Option<u64> {
+    pub(crate) fn code(&self, value: i64) -> Option<u64> {
         (self.offset <= value && value <= self.highest).then(|| value.abs_diff(self.offset))
     }
 
-    /// The value of the field in `row`. A row too short for this layout gives the lowest value
-    /// of the range.
-    #[must_use]
-    pub fn read(&self, row: &[u64]) -> i64 {
-        let code = row.get(self.word).map_or(0, |word| {
-            word.checked_shr(self.shift).unwrap_or(0) & mask_of(self.width)
-        });
-        self.offset.saturating_add_unsigned(code)
-    }
-
-    /// Writes `value` into `row` and says whether it could: a value outside the range, or
-    /// a row too short for this layout, leaves `row` as it was and gives `false`.
-    pub fn write(&self, row: &mut [u64], value: i64) -> bool {
+    pub(crate) fn write(&self, row: &mut [u64], value: i64) -> bool {
         let (Some(code), Some(word)) = (self.code(value), row.get_mut(self.word)) else {
             return false;
         };
@@ -109,17 +76,6 @@ pub(super) fn hash_each(words: impl Iterator<Item = u64>) -> u64 {
 }
 
 impl RowLayout {
-    /// The layout the search uses for a model with `fields`, in the order of the fields.
-    #[must_use]
-    pub fn new(fields: &[Field]) -> Self {
-        let domains: Vec<&Domain> = fields.iter().map(|field| &field.domain).collect();
-        let widths: Vec<u32> = domains
-            .iter()
-            .map(|domain| Codec::kind_of(domain).1)
-            .collect();
-        Self::of(&domains, &widths)
-    }
-
     pub(super) fn of(domains: &[&Domain], widths: &[u32]) -> Self {
         let mut places = Vec::with_capacity(widths.len());
         let mut numbers = Vec::with_capacity(widths.len());
@@ -167,46 +123,25 @@ impl RowLayout {
         }
     }
 
-    /// The length of every row of this layout, in `u64` words: the length to give a buffer
-    /// that holds one row.
     #[must_use]
-    pub fn words(&self) -> usize {
+    pub(crate) fn words(&self) -> usize {
         self.words
     }
 
-    /// The place of the field at `position` when it is a whole number, `None` for a field of
-    /// another kind and for a position past the last field.
     #[must_use]
-    pub fn number(&self, position: usize) -> Option<RangeSlot> {
+    pub(crate) fn number(&self, position: usize) -> Option<RangeSlot> {
         self.numbers.get(position).copied().flatten()
     }
 
-    /// The place of the field at `position` when it is a boolean, as a slot that holds 1 for
-    /// true and 0 for false; `None` for a field of another kind.
     #[must_use]
-    pub fn truth(&self, position: usize) -> Option<RangeSlot> {
+    pub(crate) fn truth(&self, position: usize) -> Option<RangeSlot> {
         self.truths.get(position).copied().flatten()
     }
 
-    /// The hash the search files the state with this `row` under. Give it all
-    /// [`Self::words`] words of the row: the hash depends on every word and on its position.
     #[must_use]
-    pub fn hash(&self, row: &[u64]) -> u64 {
+    pub(crate) fn hash(&self, row: &[u64]) -> u64 {
+        debug_assert_eq!(row.len(), self.words, "a row has the words of its layout");
         hash_words(row)
-    }
-
-    /// The hash `row` would have with the field in `slot` set to `value`, given `hash`, the
-    /// hash of `row` as it is. It costs the same however many words the row has. `None` when
-    /// `value` is outside the range of `slot` or `row` is too short for `slot`.
-    #[must_use]
-    pub fn hash_with(&self, row: &[u64], hash: u64, slot: RangeSlot, value: i64) -> Option<u64> {
-        let old = *row.get(slot.word)?;
-        let mut changed = [old];
-        let alone = RangeSlot { word: 0, ..slot };
-        alone.write(&mut changed, value).then(|| {
-            let [new] = changed;
-            hash ^ mix(old, slot.word) ^ mix(new, slot.word)
-        })
     }
 
     pub(super) fn place(&self, position: usize) -> Option<Place> {
@@ -241,7 +176,7 @@ mod tests {
     fn layout(domains: &[Domain]) -> RowLayout {
         let widths: Vec<u32> = domains
             .iter()
-            .map(|domain| super::Codec::kind_of(domain).1)
+            .map(|domain| super::super::codec::Codec::kind_of(domain).1)
             .collect();
         RowLayout::of(&domains.iter().collect::<Vec<_>>(), &widths)
     }
@@ -258,7 +193,6 @@ mod tests {
         let mut row = vec![0; digits.words()];
         assert!(second.write(&mut row, -1), "a value of the domain");
         assert_eq!(row, [2 << 4], "two above the lowest value");
-        assert_eq!(second.read(&row), -1, "and read back");
         assert!(!second.write(&mut row, 4), "a value outside the domain");
         assert_eq!(row, [2 << 4], "is not written");
     }
@@ -279,37 +213,6 @@ mod tests {
     }
 
     #[test]
-    fn the_hash_with_one_field_changed_is_the_hash_of_the_changed_row() {
-        let wide = layout(&[
-            Domain::Int { lo: 0, hi: 1 << 40 },
-            Domain::Int { lo: 0, hi: 1 << 40 },
-            Domain::Int { lo: 5, hi: 9 },
-        ]);
-        let mut row = vec![0; wide.words()];
-        for (position, value) in [(0, 17), (1, 1 << 33), (2, 7)] {
-            let slot = wide.number(position).expect("a number field");
-            assert!(slot.write(&mut row, value), "{value} fits");
-        }
-        let hash = wide.hash(&row);
-        for (position, value) in [(0, 18), (1, 3), (2, 9), (2, 7)] {
-            let slot = wide.number(position).expect("a number field");
-            let mut changed = row.clone();
-            assert!(slot.write(&mut changed, value), "{value} fits");
-            assert_eq!(
-                wide.hash_with(&row, hash, slot, value),
-                Some(wide.hash(&changed)),
-                "field {position} set to {value}"
-            );
-        }
-        let last = wide.number(2).expect("a number field");
-        assert_eq!(
-            wide.hash_with(&row, hash, last, 10),
-            None,
-            "outside the domain"
-        );
-    }
-
-    #[test]
     fn a_boolean_field_is_a_slot_of_one_bit_that_holds_one_for_true() {
         let mixed = layout(&[Domain::Int { lo: 0, hi: 9 }, Domain::Bool]);
         assert!(mixed.truth(0).is_none(), "a number is no boolean");
@@ -317,12 +220,9 @@ mod tests {
         let flag = mixed.truth(1).expect("a boolean field");
         assert_eq!((flag.word, flag.shift, flag.width), (0, 4, 1));
         let mut row = vec![3; mixed.words()];
-        let hash = mixed.hash(&row);
-        let changed = mixed.hash_with(&row, hash, flag, 1);
         assert!(flag.write(&mut row, 1), "true fits");
         assert_eq!(row, [3 | 1 << 4], "the bit after the number");
-        assert_eq!(changed, Some(mixed.hash(&row)), "and the hash follows");
-        assert_eq!(mixed.hash_with(&row, hash, flag, 2), None, "only 0 and 1");
+        assert!(!flag.write(&mut row, 2), "only 0 and 1");
     }
 
     #[test]
