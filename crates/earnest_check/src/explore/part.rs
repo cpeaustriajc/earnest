@@ -137,11 +137,14 @@ impl PartSink<'_> {
     #[inline]
     fn add_fresh(&mut self, action: usize, row: &[u64], hash: u64) {
         let at = self.part.fresh;
-        if u32::try_from(at).is_err() {
+        let Some(fresh) = at
+            .checked_add(1)
+            .filter(|fresh| u32::try_from(*fresh).is_ok())
+        else {
             self.part.crowded = true;
             return;
-        }
-        self.part.fresh = at + 1;
+        };
+        self.part.fresh = fresh;
         append_row(&mut self.part.rows, row);
         self.part.hashes.push(hash);
         if self.graph {
@@ -476,8 +479,48 @@ impl Search<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Part, Spares};
-    use crate::store::SHARD_COUNT;
+    use super::{Part, PartSink, RowKit, Spares};
+    use crate::store::{Lookup, SHARD_COUNT, Store};
+    use earnest_ir::Field;
+    use earnest_value::{Domain, Symbols, Value};
+
+    #[test]
+    fn a_part_counts_its_fresh_rows_in_32_bits_and_is_crowded_past_them() {
+        let mut symbols = Symbols::default();
+        let fields = [Field {
+            name: "a".to_owned(),
+            sym: symbols.intern("a"),
+            domain: Domain::Int { lo: 0, hi: 9 },
+            starts: vec![Value::Int(0)],
+        }];
+        let store = Store::new(&fields, 100, Lookup::Presence);
+        let mut kit = RowKit::default();
+        let most = usize::try_from(u32::MAX).expect("a usize holds every u32");
+        let mut sink = PartSink {
+            store: &store,
+            graph: false,
+            from: 0,
+            from_offset: 0,
+            counted: 0,
+            kit: &mut kit,
+            part: Part {
+                fresh: most - 1,
+                ..Part::default()
+            },
+        };
+        sink.add_fresh(0, &[1], 1);
+        assert_eq!(
+            (sink.part.fresh, sink.part.crowded),
+            (most, false),
+            "the last count a u32 holds, so every place of a row still fits one"
+        );
+        sink.add_fresh(0, &[2], 2);
+        assert_eq!(
+            (sink.part.fresh, sink.part.crowded),
+            (most, true),
+            "one row more would make the end of the part's last shard 2^32, which no u32 holds"
+        );
+    }
 
     fn part_that_found_two_rows(first: usize) -> Part {
         Part {
