@@ -1,6 +1,6 @@
 use super::encode::{encode_next, with_updates};
 use super::merge::Judged;
-use super::{Arrow, Ran, Round, STATES_BETWEEN_CLOCK_READS, Search};
+use super::{Arrow, Ran, Round, STATES_BETWEEN_CLOCK_READS, Search, Work};
 use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
 use crate::helpers::Helpers;
 use crate::store::{Placed, Store, hash_words};
@@ -125,6 +125,8 @@ impl Search<'_> {
         let mut state = Vec::new();
         let mut row = Vec::new();
         let stops_at = deadline.filter(|_| asked == Asked::Everything);
+        let first = frontier.start;
+        let began = Instant::now();
         for (position, id) in frontier.enumerate() {
             let clock_due = position.is_multiple_of(STATES_BETWEEN_CLOCK_READS);
             if clock_due && stops_at.is_some_and(|limit| Instant::now() >= limit) {
@@ -157,7 +159,14 @@ impl Search<'_> {
                 break;
             }
         }
+        let work = Work {
+            states: here.through.saturating_sub(first),
+            took: began.elapsed(),
+        };
         judged.add(here.marks, here.through);
-        Ran { end: here.end }
+        Ran {
+            end: here.end,
+            work,
+        }
     }
 }

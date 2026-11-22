@@ -1,5 +1,5 @@
 use super::part::{Kit, Part};
-use super::{Round, Search, SpreadMerge};
+use super::{Round, Search, SpreadMerge, Work};
 use crate::cut::cut_points;
 use crate::expand::Asked;
 use crate::helpers::{Helpers, Loan};
@@ -11,14 +11,22 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::thread::Scope;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-const FEWEST_STATES_A_PART_PAYS_FOR: usize = 1024;
+const LEAST_TIME_OF_A_STATE: Duration = Duration::from_nanos(500);
+const TIME_A_PART_PAYS_FOR: Duration = Duration::from_micros(512);
 const MOST_PARTS: usize = 64;
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
 
-fn parts_of(states: usize) -> usize {
-    (states / FEWEST_STATES_A_PART_PAYS_FOR).clamp(1, MOST_PARTS)
+fn parts_of(states: usize, state_time: Duration) -> usize {
+    let wide = |count: usize| u128::try_from(count).unwrap_or(u128::MAX);
+    let work = wide(states).saturating_mul(state_time.max(LEAST_TIME_OF_A_STATE).as_nanos());
+    let parts = work / TIME_A_PART_PAYS_FOR.as_nanos().max(1);
+    usize::try_from(parts)
+        .unwrap_or(usize::MAX)
+        .min(MOST_PARTS)
+        .min(states)
+        .max(1)
 }
 
 struct Hands {
@@ -27,9 +35,9 @@ struct Hands {
 }
 
 impl Hands {
-    fn take_in_parts(&self, states: usize) -> bool {
+    fn take_in_parts(&self, states: usize, state_time: Duration) -> bool {
         if self.threads > 1 {
-            parts_of(states) > 1
+            parts_of(states, state_time) > 1
         } else {
             !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
         }
@@ -39,6 +47,7 @@ impl Hands {
 pub(super) struct Expansion {
     pub(super) parts: Vec<Part>,
     pub(super) end: Round,
+    pub(super) work: Work,
 }
 
 struct Level {
@@ -119,14 +128,16 @@ impl Search<'_> {
             threads: own.saturating_add(helpers.map_or(0, Helpers::idle)),
             keep_graph: self.limits.keep_graph,
         };
-        if !hands.take_in_parts(frontier.len()) {
+        if !hands.take_in_parts(frontier.len(), self.state_time) {
             return None;
         }
         let level = Level {
             frontier: frontier.clone(),
             cuts: cut_points(
                 frontier.len(),
-                frontier.len().div_ceil(parts_of(frontier.len())),
+                frontier
+                    .len()
+                    .div_ceil(parts_of(frontier.len(), self.state_time)),
             ),
             deadline,
             asked,
@@ -192,7 +203,15 @@ impl Search<'_> {
                     Round::RestFrom(frontier.start.saturating_add(*cut))
                 })
         };
-        Some(Expansion { parts: taken, end })
+        let work = Work {
+            states: taken.iter().map(|part| part.expanded).sum(),
+            took: taken.iter().map(|part| part.took).sum(),
+        };
+        Some(Expansion {
+            parts: taken,
+            end,
+            work,
+        })
     }
 
     fn start_worker<'scope, 'env>(
@@ -254,7 +273,9 @@ impl Search<'_> {
             let Some(ids) = ids else {
                 return;
             };
-            let expansion = self.expand_ids(ids, level.deadline, level.asked, &mut kit);
+            let began = Instant::now();
+            let mut expansion = self.expand_ids(ids, level.deadline, level.asked, &mut kit);
+            expansion.took = began.elapsed();
             if expansion.stopped {
                 shared.stopped.store(true, Ordering::SeqCst);
             }
@@ -331,14 +352,21 @@ impl Spread for Crew<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FEWEST_STATES_A_PART_PAYS_FOR, Hands, Level, MOST_PARTS,
-        SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, Shared, parts_of,
+        Hands, LEAST_TIME_OF_A_STATE, Level, MOST_PARTS,
+        SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, Shared, TIME_A_PART_PAYS_FOR, parts_of,
     };
     use crate::expand::Asked;
     use std::sync::atomic::Ordering;
+    use std::time::Duration;
 
     const LONE_LEVEL: usize = SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS;
-    const PART: usize = FEWEST_STATES_A_PART_PAYS_FOR;
+    const CHEAP: Duration = Duration::ZERO;
+    const SLOW_STATE: Duration = Duration::from_micros(65);
+
+    fn cheap_states_a_part_pays_for() -> usize {
+        let states = TIME_A_PART_PAYS_FOR.as_nanos() / LEAST_TIME_OF_A_STATE.as_nanos();
+        usize::try_from(states).unwrap_or(usize::MAX)
+    }
 
     #[test]
     fn a_lone_thread_that_keeps_no_graph_takes_a_level_in_parts_from_its_size_alone() {
@@ -346,9 +374,13 @@ mod tests {
             threads: 1,
             keep_graph: false,
         };
-        assert!(!lone.take_in_parts(LONE_LEVEL - 1), "just short");
-        assert!(lone.take_in_parts(LONE_LEVEL), "at the size");
-        assert!(lone.take_in_parts(10 * LONE_LEVEL), "far above");
+        assert!(!lone.take_in_parts(LONE_LEVEL - 1, CHEAP), "just short");
+        assert!(lone.take_in_parts(LONE_LEVEL, CHEAP), "at the size");
+        assert!(
+            !lone.take_in_parts(LONE_LEVEL - 1, SLOW_STATE),
+            "a slow level short of the size"
+        );
+        assert!(lone.take_in_parts(10 * LONE_LEVEL, CHEAP), "far above");
     }
 
     #[test]
@@ -357,38 +389,74 @@ mod tests {
             threads: 1,
             keep_graph: true,
         };
-        assert!(!lone.take_in_parts(10 * LONE_LEVEL));
+        assert!(!lone.take_in_parts(10 * LONE_LEVEL, SLOW_STATE));
     }
 
     #[test]
-    fn several_threads_take_a_level_in_parts_once_it_fills_two_parts() {
+    fn several_threads_take_a_level_of_cheap_states_in_parts_once_it_fills_two_parts() {
+        let part = cheap_states_a_part_pays_for();
+        assert_eq!(part, 1024, "the cheap states a part pays for");
         for keep_graph in [false, true] {
             let crew = Hands {
                 threads: 2,
                 keep_graph,
             };
             assert!(
-                !crew.take_in_parts(2 * PART - 1),
+                !crew.take_in_parts(2 * part - 1, CHEAP),
                 "short of two parts, graph kept: {keep_graph}"
             );
             assert!(
-                crew.take_in_parts(2 * PART),
+                crew.take_in_parts(2 * part, CHEAP),
                 "two parts, graph kept: {keep_graph}"
+            );
+            assert!(
+                crew.take_in_parts(2 * part, LEAST_TIME_OF_A_STATE / 2),
+                "states measured below the least time count at the least time, graph kept: \
+                 {keep_graph}"
             );
         }
     }
 
     #[test]
-    fn a_level_has_a_part_for_every_full_share_of_states_up_to_the_most_parts() {
-        assert_eq!(parts_of(0), 1, "an empty level");
-        assert_eq!(parts_of(PART - 1), 1, "short of one share");
-        assert_eq!(parts_of(3 * PART - 1), 2, "short of three shares");
-        assert_eq!(parts_of(3 * PART), 3, "three shares");
-        assert_eq!(parts_of(MOST_PARTS * PART), MOST_PARTS, "the most parts");
+    fn several_threads_take_a_narrow_level_of_slow_states_in_parts() {
+        let crew = Hands {
+            threads: 4,
+            keep_graph: false,
+        };
+        assert!(crew.take_in_parts(190, SLOW_STATE), "190 states of 65 µs");
+        assert!(!crew.take_in_parts(190, CHEAP), "190 cheap states");
+        assert!(
+            !crew.take_in_parts(1, Duration::from_secs(1)),
+            "a single state is one part however slow"
+        );
+    }
+
+    #[test]
+    fn a_level_has_a_part_for_every_share_of_work_a_part_pays_for_up_to_the_most_parts() {
+        let part = cheap_states_a_part_pays_for();
+        assert_eq!(parts_of(0, CHEAP), 1, "an empty level");
+        assert_eq!(parts_of(part - 1, CHEAP), 1, "short of one share");
+        assert_eq!(parts_of(3 * part - 1, CHEAP), 2, "short of three shares");
+        assert_eq!(parts_of(3 * part, CHEAP), 3, "three shares");
         assert_eq!(
-            parts_of(10 * MOST_PARTS * PART),
+            parts_of(MOST_PARTS * part, CHEAP),
+            MOST_PARTS,
+            "the most parts"
+        );
+        assert_eq!(
+            parts_of(10 * MOST_PARTS * part, CHEAP),
             MOST_PARTS,
             "far more shares than parts"
+        );
+        assert_eq!(
+            parts_of(190, SLOW_STATE),
+            24,
+            "190 states of 65 µs: 12.35 ms of work"
+        );
+        assert_eq!(
+            parts_of(10, Duration::from_secs(1)),
+            10,
+            "no more parts than states"
         );
     }
 
