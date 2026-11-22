@@ -292,6 +292,7 @@ impl Search<'_> {
 pub(super) struct Crew<'a> {
     pub(super) own: usize,
     pub(super) helpers: Option<&'a Helpers>,
+    pub(super) most_borrowed: usize,
 }
 
 impl Spread for Crew<'_> {
@@ -309,7 +310,8 @@ impl Spread for Crew<'_> {
         let own = self.own.min(tasks);
         let loan = self
             .helpers
-            .map(|helpers| helpers.borrow(tasks.saturating_sub(own)));
+            .filter(|_| self.most_borrowed > 0)
+            .map(|helpers| helpers.borrow(tasks.saturating_sub(own).min(self.most_borrowed)));
         let borrowed = loan.as_ref().map_or(0, Loan::threads);
         std::thread::scope(|scope| {
             for _ in 1..own.saturating_add(borrowed) {

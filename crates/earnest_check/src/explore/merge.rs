@@ -4,6 +4,23 @@ use super::{Arrow, Search};
 use crate::expand::Mark;
 use crate::store::{Found, Fresh, Placed};
 
+const ROWS_WORTH_A_MERGE_THREAD: usize = 4096;
+
+#[derive(Debug, PartialEq, Eq)]
+struct MergeThreads {
+    own: usize,
+    borrowed: usize,
+}
+
+fn merge_threads(rows: usize, jobs: usize) -> MergeThreads {
+    let worth = (rows / ROWS_WORTH_A_MERGE_THREAD).max(1);
+    let own = jobs.clamp(1, worth);
+    MergeThreads {
+        own,
+        borrowed: worth - own,
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Judged {
     pub(super) marks: Vec<(usize, Mark)>,
@@ -41,9 +58,12 @@ impl Search<'_> {
                 shard_starts: &part.shard_starts,
             })
             .collect();
+        let rows = parts.iter().map(|part| part.hashes.len()).sum();
+        let threads = merge_threads(rows, self.limits.jobs);
         let crew = Crew {
-            own: self.limits.jobs.max(1),
+            own: threads.own,
             helpers: self.limits.helpers.as_ref(),
+            most_borrowed: threads.borrowed,
         };
         let most = self.limits.max_states;
         self.store.place_level(&fresh, &crew, most).is_some()
@@ -113,5 +133,62 @@ impl Search<'_> {
             judged.add(marks, part.first.saturating_add(part.expanded));
         }
         judged
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MergeThreads, ROWS_WORTH_A_MERGE_THREAD, merge_threads};
+
+    const ROWS: usize = ROWS_WORTH_A_MERGE_THREAD;
+
+    fn threads(own: usize, borrowed: usize) -> MergeThreads {
+        MergeThreads { own, borrowed }
+    }
+
+    #[test]
+    fn a_level_of_fewer_rows_than_one_thread_is_worth_merges_on_one_thread() {
+        assert_eq!(merge_threads(0, 4), threads(1, 0), "no rows");
+        assert_eq!(merge_threads(600, 10), threads(1, 0), "a narrow level");
+        assert_eq!(
+            merge_threads(ROWS - 1, 10),
+            threads(1, 0),
+            "just short of one thread"
+        );
+        assert_eq!(
+            merge_threads(2 * ROWS - 1, 10),
+            threads(1, 0),
+            "just short of two threads"
+        );
+    }
+
+    #[test]
+    fn a_merge_takes_a_thread_for_every_full_share_of_rows_and_its_own_threads_first() {
+        assert_eq!(merge_threads(2 * ROWS, 10), threads(2, 0), "two shares");
+        assert_eq!(
+            merge_threads(10 * ROWS, 4),
+            threads(4, 6),
+            "more shares than workers"
+        );
+        assert_eq!(
+            merge_threads(10 * ROWS, 10),
+            threads(10, 0),
+            "a share for every worker"
+        );
+        assert_eq!(
+            merge_threads(40 * ROWS, 10),
+            threads(10, 30),
+            "four shares a worker"
+        );
+    }
+
+    #[test]
+    fn no_worker_threads_merge_as_one() {
+        assert_eq!(merge_threads(ROWS, 0), threads(1, 0), "one share");
+        assert_eq!(
+            merge_threads(3 * ROWS, 0),
+            threads(1, 2),
+            "the rest is borrowed"
+        );
     }
 }

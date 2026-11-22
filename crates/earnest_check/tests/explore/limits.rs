@@ -267,6 +267,35 @@ fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outco
     same_outcome_with_every_crew(model, &limits, &[2, 4, 10])
 }
 
+const STARTS_OF_A_LEVEL_MERGED_ON_TEN_THREADS: i64 = 45_000;
+
+fn a_level_merged_on_ten_threads() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..STARTS_OF_A_LEVEL_MERGED_ON_TEN_THREADS).collect();
+    let n = sketch.number(
+        "n",
+        0,
+        STARTS_OF_A_LEVEL_MERGED_ON_TEN_THREADS - 1,
+        &every_start,
+    );
+    let flipped = sketch.boolean("flipped", &[false]);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("not1234", not(&both(flipped, is(&n, 1234))));
+    sketch.model()
+}
+
+#[test]
+fn a_level_with_enough_new_states_to_merge_on_every_worker_gives_the_same_outcome_on_every_crew() {
+    let outcome = same_outcome_on_every_worker_count(
+        &a_level_merged_on_ten_threads(),
+        Limits::default().max_states,
+    );
+    assert_eq!(outcome.states, 90_000);
+    assert_eq!(outcome.status, Status::Fail);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+}
+
 #[test]
 fn a_state_limit_at_the_end_of_a_level_gives_the_same_outcome_on_every_worker_count() {
     let outcome =

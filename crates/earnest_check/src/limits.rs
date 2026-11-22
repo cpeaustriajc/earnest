@@ -22,9 +22,11 @@ pub struct Limits {
     /// limit it may spread a level in rounds, merging what it found before it hands out the
     /// rest, and it borrows no thread to take a part while it holds the rest back. A thread
     /// goes back as soon as it finds no part to take. A search that keeps no graph may also
-    /// borrow threads to merge a level. Searches that run side by side share one handle, so a
-    /// thread one of them leaves idle goes to another. The outcome is the same whatever is
-    /// borrowed.
+    /// borrow threads to merge a level: it merges on one thread for every full 4,096 new
+    /// states the level found, its `jobs` first, so a level with fewer than 8,192 new states
+    /// merges on one thread and borrows none. Searches that run side by side share one handle,
+    /// so a thread one of them leaves idle goes to another. The outcome is the same whatever
+    /// is borrowed.
     pub helpers: Option<Helpers>,
     /// Whether [`crate::Outcome::graph`] is filled. It costs memory for every arrow, so leave
     /// it off unless a chart is wanted.

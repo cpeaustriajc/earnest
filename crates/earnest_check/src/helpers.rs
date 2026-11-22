@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// rest of the level anew. While it holds the rest back it borrows no thread to take a part. A
 /// thread goes back as soon as it finds no part to take, so threads a finished search leaves
 /// behind go to the searches that still run. A search that keeps no graph may also borrow
-/// threads to merge the states of a level, and gives them back when the merge ends.
+/// threads to merge a level, one for every full 4,096 new states the level found beyond what
+/// its own threads take, and gives them back when the merge ends.
 #[derive(Clone, Debug, Default)]
 pub struct Helpers {
     idle: Arc<AtomicUsize>,
