@@ -1,0 +1,15 @@
+--- floor_i.rs	2026-11-22 01:38:28.703223598 +0000
++++ floor_ii.rs	2026-11-22 01:38:28.706096746 +0000
+@@ -18,7 +18,11 @@
+     unsafe {
+         core::arch::asm!("prfm pldl1keep, [{x}]", x = in(reg) p, options(nostack, preserves_flags, readonly));
+     }
+-    #[cfg(not(target_arch = "aarch64"))]
++    #[cfg(target_arch = "x86_64")]
++    unsafe {
++        core::arch::x86_64::_mm_prefetch(p as *const i8, core::arch::x86_64::_MM_HINT_T0)
++    }
++    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+     let _ = p;
+ }
+ 

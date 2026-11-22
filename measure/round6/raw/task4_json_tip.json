@@ -1,0 +1,34 @@
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1208,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}

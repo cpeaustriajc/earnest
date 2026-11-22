@@ -1,0 +1,1893 @@
+# block=task4_grid_10m model=tasks/benchmark/models/grid_10m.model.ts max_states=200000000 variants=tip:tip:4: p16:p16:4: p8:p8:4: p32:p32:4: warmup_rounds=1 measured_rounds=7
+# started=2026-11-22T01:59:43Z
+# loadavg_before=1.86 1.73 1.31 1/114 8596
+### run round=0 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1123,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.76
+	System time (seconds): 0.37
+	Percent of CPU this job got: 367%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.12
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193164
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 200597
+	Voluntary context switches: 976
+	Involuntary context switches: 347
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1130074635
+### run round=0 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1100,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.55
+	System time (seconds): 0.40
+	Percent of CPU this job got: 358%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.10
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195080
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 182481
+	Voluntary context switches: 12123
+	Involuntary context switches: 345
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1107792474
+### run round=0 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1098,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.59
+	System time (seconds): 0.42
+	Percent of CPU this job got: 364%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.10
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195572
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 183301
+	Voluntary context switches: 4743
+	Involuntary context switches: 345
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1105400071
+### run round=0 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1101,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.53
+	System time (seconds): 0.39
+	Percent of CPU this job got: 355%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.10
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193956
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 184066
+	Voluntary context switches: 8638
+	Involuntary context switches: 344
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1108853799
+### run round=1 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1258,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 4.24
+	System time (seconds): 0.35
+	Percent of CPU this job got: 364%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.26
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194324
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 166950
+	Voluntary context switches: 4732
+	Involuntary context switches: 394
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1266627198
+### run round=1 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1220,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.81
+	System time (seconds): 0.52
+	Percent of CPU this job got: 354%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.22
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193632
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 186560
+	Voluntary context switches: 17362
+	Involuntary context switches: 353
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1228428131
+### run round=1 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1181,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.99
+	System time (seconds): 0.34
+	Percent of CPU this job got: 366%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.18
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192844
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 197796
+	Voluntary context switches: 1555
+	Involuntary context switches: 338
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1187694721
+### run round=1 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1052,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.33
+	System time (seconds): 0.40
+	Percent of CPU this job got: 354%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194128
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 182361
+	Voluntary context switches: 13525
+	Involuntary context switches: 321
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1058846980
+### run round=2 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1048,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.51
+	System time (seconds): 0.36
+	Percent of CPU this job got: 368%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192440
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 186975
+	Voluntary context switches: 1770
+	Involuntary context switches: 324
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1054702054
+### run round=2 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1159,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.90
+	System time (seconds): 0.35
+	Percent of CPU this job got: 366%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.16
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192232
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 198102
+	Voluntary context switches: 1076
+	Involuntary context switches: 339
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1166284451
+### run round=2 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1076,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.54
+	System time (seconds): 0.37
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193708
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 189653
+	Voluntary context switches: 4395
+	Involuntary context switches: 341
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1082562197
+### run round=2 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1008,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.38
+	System time (seconds): 0.30
+	Percent of CPU this job got: 364%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.01
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194248
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 168780
+	Voluntary context switches: 2886
+	Involuntary context switches: 303
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1016004958
+### run round=3 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1216,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 4.02
+	System time (seconds): 0.39
+	Percent of CPU this job got: 362%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.21
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193300
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 185673
+	Voluntary context switches: 5353
+	Involuntary context switches: 354
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1222742678
+### run round=3 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1132,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.60
+	System time (seconds): 0.46
+	Percent of CPU this job got: 358%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.13
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192768
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 202923
+	Voluntary context switches: 12645
+	Involuntary context switches: 303
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1139262259
+### run round=3 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1067,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.63
+	System time (seconds): 0.29
+	Percent of CPU this job got: 367%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194448
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 180444
+	Voluntary context switches: 1186
+	Involuntary context switches: 336
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1074157226
+### run round=3 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1160,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.93
+	System time (seconds): 0.34
+	Percent of CPU this job got: 367%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.16
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192244
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 195515
+	Voluntary context switches: 1245
+	Involuntary context switches: 357
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1166887026
+### run round=4 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1067,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.54
+	System time (seconds): 0.33
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194220
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 197406
+	Voluntary context switches: 2170
+	Involuntary context switches: 342
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1074449177
+### run round=4 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1063,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.30
+	System time (seconds): 0.45
+	Percent of CPU this job got: 352%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.06
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193288
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 208386
+	Voluntary context switches: 11003
+	Involuntary context switches: 320
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1069879210
+### run round=4 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1032,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.42
+	System time (seconds): 0.33
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.03
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193796
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 189301
+	Voluntary context switches: 1397
+	Involuntary context switches: 309
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1039355263
+### run round=4 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1017,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.37
+	System time (seconds): 0.33
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.02
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193280
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 179082
+	Voluntary context switches: 1463
+	Involuntary context switches: 351
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1023703217
+### run round=5 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1048,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.56
+	System time (seconds): 0.30
+	Percent of CPU this job got: 368%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192204
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 188820
+	Voluntary context switches: 1596
+	Involuntary context switches: 326
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1055081207
+### run round=5 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1069,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.47
+	System time (seconds): 0.41
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192448
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 211096
+	Voluntary context switches: 4905
+	Involuntary context switches: 324
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1075068346
+### run round=5 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1094,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.55
+	System time (seconds): 0.40
+	Percent of CPU this job got: 361%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.09
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195908
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 173187
+	Voluntary context switches: 10436
+	Involuntary context switches: 343
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1101088476
+### run round=5 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 991,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.28
+	System time (seconds): 0.33
+	Percent of CPU this job got: 363%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:00.99
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194220
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 177076
+	Voluntary context switches: 2419
+	Involuntary context switches: 287
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 24
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=998834210
+### run round=6 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1078,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.56
+	System time (seconds): 0.35
+	Percent of CPU this job got: 362%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.08
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195336
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 185873
+	Voluntary context switches: 8502
+	Involuntary context switches: 351
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1084839872
+### run round=6 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1073,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.45
+	System time (seconds): 0.39
+	Percent of CPU this job got: 356%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.07
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193064
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 198361
+	Voluntary context switches: 11812
+	Involuntary context switches: 307
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1079629338
+### run round=6 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1110,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.59
+	System time (seconds): 0.41
+	Percent of CPU this job got: 359%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.11
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194504
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 183148
+	Voluntary context switches: 13248
+	Involuntary context switches: 313
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1116933808
+### run round=6 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1048,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.39
+	System time (seconds): 0.39
+	Percent of CPU this job got: 360%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 192084
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 195365
+	Voluntary context switches: 6738
+	Involuntary context switches: 317
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1054920830
+### run round=7 variant=tip build=tip jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1128,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-tip verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.57
+	System time (seconds): 0.46
+	Percent of CPU this job got: 357%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.13
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195244
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 193746
+	Voluntary context switches: 13257
+	Involuntary context switches: 345
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1135862676
+### run round=7 variant=p16 build=p16 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1033,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p16 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.43
+	System time (seconds): 0.34
+	Percent of CPU this job got: 364%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.03
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 193984
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 187866
+	Voluntary context switches: 2716
+	Involuntary context switches: 323
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1040361557
+### run round=7 variant=p8 build=p8 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1142,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p8 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.70
+	System time (seconds): 0.40
+	Percent of CPU this job got: 358%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.14
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 195060
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 187522
+	Voluntary context switches: 12598
+	Involuntary context switches: 353
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 16
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1148971315
+### run round=7 variant=p32 build=p32 jobs=4 cpus=all
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 1050,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+	Command being timed: "/tmp/bin/earnest-p32 verify --no-cache --json --jobs 4 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts"
+	User time (seconds): 3.41
+	System time (seconds): 0.39
+	Percent of CPU this job got: 361%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:01.05
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 194900
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 185665
+	Voluntary context switches: 2805
+	Involuntary context switches: 309
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 32
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+### end exit=0 outer_wall_ns=1057879017
+# loadavg_after=2.68 1.95 1.40 1/110 29560
+# finished=2026-11-22T02:00:18Z

@@ -1,0 +1,287 @@
+# profile tip jobs=1 runs_in_one_recording=4 event=cpu-clock -F 999 (no hardware event on this machine)
+# loadavg_before=2.87 2.03 1.12 1/116 23117
+# started=2026-11-22T01:47:19Z
+$ perf record -e cpu-clock -F 999 -o /tmp/task2_profile_10m_j1.data -- sh -c 'for i in $(seq 4); do /tmp/bin/earnest-tip verify --no-cache --json --jobs 1 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts; done'
+### run 1
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 6200,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+### run 2
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 6605,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+### run 3
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 5218,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+### run 4
+{
+  "models": [
+    {
+      "name": "Grid10m",
+      "file": "tasks/benchmark/models/grid_10m.model.ts",
+      "line": 3,
+      "status": "pass",
+      "states": 10000000,
+      "milliseconds": 6599,
+      "cached": false,
+      "reason": null,
+      "rules": [
+        {
+          "id": "inside",
+          "says": "Every wheel stays on its dial",
+          "verdict": "holds",
+          "path": null
+        }
+      ],
+      "findings": []
+    }
+  ],
+  "unreadable": [],
+  "skipped": [],
+  "noModel": [],
+  "ruleChanges": [],
+  "summary": {
+    "models": 1,
+    "pass": 1,
+    "fail": 0,
+    "unfinished": 0,
+    "unreadable": 0
+  }
+}
+[ perf record: Woken up 3 times to write data ]
+[ perf record: Captured and wrote 0.944 MB /tmp/task2_profile_10m_j1.data (24580 samples) ]
+	Command being timed: "/usr/lib/linux-tools-6.8.0-151/perf record -e cpu-clock -F 999 -o /tmp/task2_profile_10m_j1.data -- sh -c for i in $(seq 4); do echo '### run' $i; /tmp/bin/earnest-tip verify --no-cache --json --jobs 1 --max-states 200000000 tasks/benchmark/models/grid_10m.model.ts; done"
+	User time (seconds): 24.23
+	System time (seconds): 0.49
+	Percent of CPU this job got: 98%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:25.14
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 166596
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 226549
+	Voluntary context switches: 83
+	Involuntary context switches: 52
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 2040
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+# loadavg_after=2.23 1.95 1.12 1/116 23149
+# finished=2026-11-22T01:47:45Z
+$ perf report -i /tmp/task2_profile_10m_j1.data --no-children --sort symbol --stdio --percent-limit 0
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 24K of event 'cpu-clock'
+# Event count (approx.): 24604604580
+#
+# Overhead  Symbol                                                                                                                                                                                          IPC   [IPC Coverage]
+# ........  ..............................................................................................................................................................................................  ....................
+#
+    66.37%  [.] _RNvMNtCsbNELigJprFy_13earnest_check5storeNtB2_5Store5place                                                                                                                                 -      -            
+     9.37%  [.] _RNvMNtCsbNELigJprFy_13earnest_check7exploreNtB2_6Search5level                                                                                                                              -      -            
+     9.33%  [.] _RNvMNtNtCsbNELigJprFy_13earnest_check5store4rowsNtB2_4Rows6unpack                                                                                                                          -      -            
+     3.29%  [.] _RNvMs_NtNtCs35bxwrR96G3_10earnest_ir4code4condNtB4_4Cond4eval.llvm.586355361143759734                                                                                                      -      -            
+     2.68%  [.] _RNvMs2_NtNtCs35bxwrR96G3_10earnest_ir4code3numNtB5_3Num4eval.llvm.586355361143759734                                                                                                       -      -            
+     1.87%  [.] _RNvMNtNtCsbNELigJprFy_13earnest_check7explore4hereNtB2_8HereSink9place_row                                                                                                                 -      -            
+     1.77%  [.] _RNvMNtCsbNELigJprFy_13earnest_check5storeNtB2_5Store10read_state                                                                                                                           -      -            
+     1.59%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                             -      -            
+     1.43%  [.] _RINvMs6_NtCs6RpvpIXDhib_9hashbrown3rawINtB6_8RawTableNtNtNtCsbNELigJprFy_13earnest_check5store5index9NarrowKeyE14reserve_rehashNCNCNvMs_NtBT_5levelINtBR_6ShardsBP_E11claim_level0s_0EBV_  -      -            
+     0.37%  [.] _RINvNtCscI6d9CVNmLh_4core3ptr9drop_glueNtNtCseZDVTF6dyRJ_13earnest_value5value5ValueECsbNELigJprFy_13earnest_check                                                                         -      -            
+     0.35%  [k] exc_page_fault                                                                                                                                                                              -      -            
+     0.28%  [k] _raw_spin_lock                                                                                                                                                                              -      -            
+     0.20%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                                 -      -            
+     0.17%  [.] __memset_avx512_unaligned_erms                                                                                                                                                              -      -            
+     0.15%  [k] __list_del_entry_valid_or_report                                                                                                                                                            -      -            
+     0.10%  [k] memcg1_commit_charge                                                                                                                                                                        -      -            
+     0.05%  [k] get_mem_cgroup_from_mm                                                                                                                                                                      -      -            
+     0.05%  [k] unmap_page_range                                                                                                                                                                            -      -            
+     0.04%  [k] do_anonymous_page                                                                                                                                                                           -      -            
+     0.03%  [k] ___pte_offset_map                                                                                                                                                                           -      -            
+     0.03%  [k] __mem_cgroup_charge                                                                                                                                                                         -      -            
+     0.02%  [k] __handle_mm_fault                                                                                                                                                                           -      -            
+     0.02%  [k] __lruvec_stat_mod_folio                                                                                                                                                                     -      -            
+     0.02%  [k] __pte_offset_map_lock                                                                                                                                                                       -      -            
+     0.02%  [k] __raw_callee_save___pv_queued_spin_unlock                                                                                                                                                   -      -            
+     0.02%  [k] clear_page_erms                                                                                                                                                                             -      -            
+     0.02%  [k] handle_mm_fault                                                                                                                                                                             -      -            
+     0.02%  [k] handle_softirqs                                                                                                                                                                             -      -            
+     0.02%  [k] mas_walk                                                                                                                                                                                    -      -            
+     0.02%  [k] __rcu_read_lock                                                                                                                                                                             -      -            
+     0.01%  [.] __cpu_indicator_init                                                                                                                                                                        -      -            
+     0.01%  [k] __folio_batch_add_and_move                                                                                                                                                                  -      -            
+     0.01%  [k] __rcu_read_unlock                                                                                                                                                                           -      -            
+     0.01%  [k] _raw_spin_trylock                                                                                                                                                                           -      -            
+     0.01%  [k] folio_add_new_anon_rmap                                                                                                                                                                     -      -            
+     0.01%  [k] get_page_from_freelist                                                                                                                                                                      -      -            
+     0.01%  [k] irqentry_exit_to_user_mode                                                                                                                                                                  -      -            
+     0.01%  [k] page_counter_try_charge                                                                                                                                                                     -      -            
+     0.01%  [k] access_error                                                                                                                                                                                -      -            
+     0.01%  [k] charge_memcg                                                                                                                                                                                -      -            
+     0.01%  [k] folio_remove_rmap_ptes                                                                                                                                                                      -      -            
+     0.01%  [k] free_unref_folios                                                                                                                                                                           -      -            
+     0.01%  [k] get_vma_policy                                                                                                                                                                              -      -            
+     0.01%  [k] lock_vma_under_rcu                                                                                                                                                                          -      -            
+     0.01%  [k] unmapped_area_topdown                                                                                                                                                                       -      -            
+     0.01%  [k] vma_alloc_folio_noprof                                                                                                                                                                      -      -            
+     0.01%  [k] vms_gather_munmap_vmas                                                                                                                                                                      -      -            
+     0.00%  [k] __css_rstat_updated                                                                                                                                                                         -      -            
+     0.00%  [k] __kmem_cache_alloc_bulk                                                                                                                                                                     -      -            
+     0.00%  [k] __memcg_slab_free_hook                                                                                                                                                                      -      -            
+     0.00%  [.] __vdso_clock_gettime                                                                                                                                                                        -      -            
+     0.00%  [k] __x64_sys_munmap                                                                                                                                                                            -      -            
+     0.00%  [.] _int_free_maybe_consolidate                                                                                                                                                                 -      -            
+     0.00%  [.] _int_malloc                                                                                                                                                                                 -      -            
+     0.00%  [k] _raw_spin_unlock_irq                                                                                                                                                                        -      -            
+     0.00%  [k] anon_vma_interval_tree_insert                                                                                                                                                               -      -            
+     0.00%  [k] do_vmi_align_munmap                                                                                                                                                                         -      -            
+     0.00%  [k] finish_task_switch.isra.0                                                                                                                                                                   -      -            
+     0.00%  [k] folio_add_file_rmap_ptes                                                                                                                                                                    -      -            
+     0.00%  [k] folio_batch_move_lru                                                                                                                                                                        -      -            
+     0.00%  [k] folios_put_refs                                                                                                                                                                             -      -            
+     0.00%  [k] mark_buffer_dirty                                                                                                                                                                           -      -            
+     0.00%  [k] mas_empty_area_rev                                                                                                                                                                          -      -            
+     0.00%  [k] mksaveddirty_shift                                                                                                                                                                          -      -            
+     0.00%  [k] move_page_tables                                                                                                                                                                            -      -            
+     0.00%  [k] next_uptodate_folio                                                                                                                                                                         -      -            
+     0.00%  [k] page_counter_uncharge                                                                                                                                                                       -      -            
+     0.00%  [k] percpu_counter_add_batch                                                                                                                                                                    -      -            
+     0.00%  [k] pfn_pte                                                                                                                                                                                     -      -            
+     0.00%  [k] policy_nodemask                                                                                                                                                                             -      -            
+     0.00%  [k] pte_val                                                                                                                                                                                     -      -            
+     0.00%  [k] sched_balance_update_blocked_averages                                                                                                                                                       -      -            
+     0.00%  [k] smp_call_function_many_cond                                                                                                                                                                 -      -            
+     0.00%  [k] tcp_wfree                                                                                                                                                                                   -      -            
+     0.00%  [k] tlb_flush_mmu_tlbonly                                                                                                                                                                       -      -            
+     0.00%  [k] update_sd_lb_stats.constprop.0                                                                                                                                                              -      -            
+     0.00%  [k] vm_normal_page                                                                                                                                                                              -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
+$ perf report -i /tmp/task2_profile_10m_j1.data --no-children --sort dso --stdio
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 24K of event 'cpu-clock'
+# Event count (approx.): 24604604580
+#
+# Overhead  Shared Object    
+# ........  .................
+#
+    96.47%  earnest-tip      
+     1.77%  libc.so.6        
+     1.74%  [kernel.kallsyms]
+     0.01%  libgcc_s.so.1    
+     0.00%  [vdso]           
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

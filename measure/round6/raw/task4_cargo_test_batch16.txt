@@ -1,0 +1,184 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling itoa v1.0.19
+   Compiling memchr v2.8.3
+   Compiling serde v1.0.229
+   Compiling rustc-hash v2.1.3
+   Compiling verus_prettyplease v0.0.0-2026-11-01-0251
+   Compiling syn v3.0.10
+   Compiling verus_syn v0.0.0-2026-11-01-0251
+   Compiling syn v2.0.119
+   Compiling serde_derive v1.0.229
+   Compiling earnest_value v0.1.0 (/tmp/wt-proto/crates/earnest_value)
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling synstructure v0.13.2
+   Compiling convert_case v0.4.0
+   Compiling vstd v0.0.0-2026-11-01-0251
+   Compiling earnest_diagnostics v0.1.0 (/tmp/wt-proto/crates/earnest_diagnostics)
+   Compiling earnest_ir v0.1.0 (/tmp/wt-proto/crates/earnest_ir)
+   Compiling verus_builtin v0.0.0-2026-11-01-0251
+   Compiling earnest_ast v0.1.0 (/tmp/wt-proto/crates/earnest_ast)
+   Compiling verus_state_machines_macros v0.0.0-2026-11-01-0251
+   Compiling verus_builtin_macros v0.0.0-2026-11-01-0251
+   Compiling earnest_semantic v0.1.0 (/tmp/wt-proto/crates/earnest_semantic)
+   Compiling earnest_check v0.1.0 (/tmp/wt-proto/crates/earnest_check)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.62s
+     Running unittests src/lib.rs (target/debug/deps/earnest_check-a2785708c63a5484)
+
+running 26 tests
+test cut::tests::a_cut_past_the_largest_number_ends_at_the_total ... ok
+test cut::tests::a_level_is_cut_into_slices_of_the_given_size_and_a_shorter_last_one ... ok
+test cut::tests::a_level_that_divides_evenly_has_no_shorter_slice ... ok
+test cut::tests::a_slice_size_of_zero_cuts_one_state_at_a_time ... ok
+test cut::tests::an_empty_level_has_no_slice ... ok
+test cut::tests::a_level_smaller_than_the_slice_size_is_one_slice ... ok
+test expand::tests::a_row_is_new_once_until_the_seen_rows_are_forgotten ... ok
+test expand::tests::a_combination_is_tried_only_when_each_of_its_values_is_told_apart_from_earlier_ones ... ok
+test expand::tests::an_action_is_tried_once_per_combination_of_input_values ... ok
+test expand::tests::an_input_without_values_leaves_nothing_to_try ... ok
+test expand::tests::an_action_without_inputs_is_tried_once ... ok
+test expand::tests::every_combination_number_names_a_different_choice_and_the_first_input_turns_fastest ... ok
+test explore::starts::tests::a_field_with_no_start_value_leaves_no_start_state ... ok
+test explore::starts::tests::start_states_are_every_combination_and_the_last_field_turns_fastest ... ok
+test explore::workers::tests::a_part_is_not_taken_once_the_kept_rows_outgrow_what_fits ... ok
+test explore::workers::tests::a_part_is_taken_while_the_kept_rows_fit ... ok
+test explore::starts::tests::a_model_without_fields_has_one_empty_start_state ... ok
+test store::layout::tests::a_boolean_field_is_a_slot_of_one_bit_that_holds_one_for_true ... ok
+test helpers::tests::a_loan_takes_what_is_idle_up_to_what_was_asked_and_gives_it_back_when_dropped ... ok
+test helpers::tests::clones_share_one_count ... ok
+test helpers::tests::threads_added_later_can_be_borrowed ... ok
+test store::layout::tests::a_field_that_does_not_fit_in_the_word_starts_the_next_one ... ok
+test store::layout::tests::a_number_field_is_written_as_its_distance_from_the_lowest_value ... ok
+test store::layout::tests::the_hash_with_one_field_changed_is_the_hash_of_the_changed_row ... ok
+test store::layout::tests::rows_that_differ_in_one_field_hash_apart ... ok
+test store::tests::every_kind_of_index_tells_known_rows_from_new_ones_and_forgets_what_is_cut ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/explore/main.rs (target/debug/deps/explore-49f98ba8c03a7a1f)
+
+running 109 tests
+test counts::a_field_without_start_values_leaves_nothing_to_search ... ok
+test counts::a_model_without_fields_has_one_state ... ok
+test counts::a_counter_from_zero_to_three_has_four_states ... ok
+test counts::every_combination_of_start_values_is_a_start_state ... ok
+test counts::states_reached_twice_are_counted_once ... ok
+test counts::receiving_from_the_queue_reaches_no_new_contents ... ok
+test counts::a_queue_of_capacity_two_over_two_messages_has_seven_contents ... ok
+test findings::a_guard_that_reads_null_is_a_fault_and_the_state_is_not_called_stuck ... ok
+test counts::two_independent_booleans_have_four_states ... ok
+test findings::a_remainder_of_a_negative_number_is_a_fault_with_the_path_to_it ... ok
+test findings::a_number_outside_its_integer_type_is_a_fault_that_names_the_type ... ok
+test findings::a_result_too_large_to_hold_is_a_fault ... ok
+test findings::a_rule_that_can_not_be_evaluated_in_a_state_neither_holds_nor_is_broken ... ok
+test findings::a_start_value_outside_its_field_is_out_of_range_at_the_start ... ok
+test findings::a_rule_is_unknown_when_a_fault_in_an_action_or_an_end_cut_a_branch_short ... ok
+test findings::a_rule_that_reads_null_is_a_fault ... ok
+test findings::a_state_out_of_range_is_not_searched_further_and_its_rules_are_not_judged ... ok
+test findings::a_state_without_an_action_that_an_end_marks_is_not_stuck ... ok
+test findings::a_state_without_an_action_or_an_end_is_stuck ... ok
+test findings::a_stuck_start_state_has_a_path_without_steps ... ok
+test findings::an_end_that_marks_another_state_does_not_help_the_stuck_one ... ok
+test findings::a_stuck_state_a_value_out_of_range_and_a_fault_are_each_reported_once ... ok
+test findings::an_end_that_can_not_be_evaluated_is_a_fault_and_the_state_is_not_called_stuck ... ok
+test findings::one_of_several_ends_is_enough ... ok
+test findings::an_update_that_fits_beside_one_that_leaves_its_range_still_ends_out_of_range ... ok
+test findings::counting_past_a_range_is_out_of_range_with_the_path_to_it ... ok
+test findings::sending_to_a_full_queue_is_out_of_range ... ok
+test graphs::a_graph_cut_short_by_the_state_limit_holds_the_states_visited_so_far ... ok
+test graphs::a_group_label_keeps_states_with_the_same_state_label_apart ... ok
+test findings::only_the_first_stuck_state_is_reported ... ok
+test graphs::a_label_that_can_not_be_evaluated_shows_a_question_mark ... ok
+test graphs::a_view_label_merges_the_states_that_share_it ... ok
+test graphs::a_node_lists_the_rules_its_states_break_and_the_fields_out_of_range ... ok
+test graphs::arrows_between_merged_states_are_merged_and_use_the_view_s_step_labels ... ok
+test graphs::start_end_and_stuck_states_are_marked ... ok
+test graphs::the_graph_is_kept_only_when_the_limits_ask_for_it ... ok
+test graphs::the_view_s_title_and_colors_are_copied_to_the_graph ... ok
+test graphs::two_actions_between_the_same_nodes_share_one_arrow_with_both_labels ... ok
+test graphs::without_a_view_a_text_value_is_shown_without_quotes ... ok
+test graphs::without_a_view_each_state_is_a_node_labelled_with_its_fields ... ok
+test limits::a_model_stopped_by_a_limit_with_nothing_broken_is_unfinished ... ok
+test limits::a_model_with_a_fault_found_before_the_state_limit_is_fail_and_says_it_stopped_early ... ok
+test limits::a_model_with_a_stuck_state_found_before_the_state_limit_is_fail_and_says_it_stopped_early ... ok
+test limits::a_rule_not_seen_broken_before_the_limit_is_unknown ... ok
+test limits::a_number_computed_beyond_32_bits_is_noted_in_the_outcome ... ok
+test limits::a_rule_seen_broken_before_the_limit_fails_the_model ... ok
+test limits::a_start_state_beyond_the_state_limit_is_neither_counted_nor_judged ... ok
+test limits::a_start_state_counted_at_the_state_limit_has_its_rules_judged ... ok
+test limits::a_state_counted_before_the_time_limit_has_its_rules_judged ... ok
+test limits::a_state_counted_just_before_the_state_limit_has_its_rules_judged ... ok
+test limits::a_level_of_two_thousand_states_gives_the_same_outcome_on_one_thread_and_on_four ... ok
+test limits::a_state_limit_equal_to_the_number_of_states_does_not_stop_the_search ... ok
+test limits::a_search_with_many_wide_levels_gives_the_same_outcome_on_one_thread_and_on_four ... ok
+test lending::threads_that_become_idle_while_a_level_runs_change_nothing_and_come_back ... ok
+test limits::a_state_limit_one_above_the_states_of_a_wide_level_of_known_steps_is_never_reached ... ok
+test limits::a_state_out_of_range_is_counted_judged_by_no_rule_and_not_searched_from ... ok
+test limits::a_state_with_more_new_successors_than_the_limit_leaves_the_search_unfinished ... ok
+test limits::a_state_limit_at_the_end_of_a_level_gives_the_same_outcome_on_every_worker_count ... ok
+test limits::a_time_limit_that_has_already_passed_stops_the_search_at_the_start_states ... ok
+test limits::a_time_limit_that_has_already_passed_stops_the_worker_threads_too ... ok
+test limits::a_time_limit_that_is_not_reached_changes_nothing ... ok
+test limits::a_state_limit_inside_a_level_gives_the_same_outcome_on_every_worker_count ... ok
+test limits::a_time_limit_stops_a_rule_that_takes_billions_of_steps_in_one_state ... ok
+test limits::an_action_with_a_billion_input_combinations_stops_at_a_small_state_limit_at_once ... ok
+test limits::an_action_with_a_billion_input_combinations_stops_at_the_time_limit ... ok
+test limits::every_state_of_a_level_held_back_at_a_limit_never_reached_is_expanded ... ok
+test limits::no_worker_threads_counts_as_one ... ok
+test limits::once_the_store_is_full_a_new_state_out_of_range_offered_twice_uses_up_the_room_once ... ok
+test limits::once_the_store_is_full_a_new_successor_offered_twice_uses_up_the_room_once ... ok
+test limits::once_the_store_is_full_a_state_out_of_range_the_store_already_holds_uses_up_no_room ... ok
+test limits::once_the_store_is_full_a_successor_the_store_already_holds_uses_up_no_room ... ok
+test limits::once_the_store_is_full_every_new_state_out_of_range_uses_up_the_room_of_the_state_offering_it ... ok
+test limits::once_the_store_is_full_every_new_successor_uses_up_the_room_of_the_state_that_offers_it ... ok
+test limits::a_time_stop_in_the_last_pass_keeps_every_state_judged_before_it_on_every_worker_count ... ok
+test limits::a_state_limit_one_above_the_states_of_a_model_gives_the_same_outcome_on_every_worker_count ... ok
+test limits::the_default_limits_are_five_million_states_no_time_limit_and_every_rule ... ok
+test limits::the_state_limit_also_bounds_the_start_states ... ok
+test limits::the_state_limit_gives_the_same_outcome_on_one_thread_and_on_four ... ok
+test limits::the_state_limit_stops_the_search_with_the_count_so_far ... ok
+test limits::the_states_judged_at_the_limit_are_the_same_on_one_thread_and_on_four ... ok
+test rules::a_broken_rule_fails_the_model_and_every_state_is_still_counted ... ok
+test rules::a_rule_broken_in_a_start_state_has_a_path_without_steps ... ok
+test rules::a_rule_that_is_left_out_is_not_evaluated ... ok
+test rules::a_step_shows_the_input_the_action_was_taken_with ... ok
+test rules::an_action_of_one_input_reads_its_own_input_after_an_action_of_many ... ok
+test rules::an_action_with_two_inputs_is_tried_with_every_pair ... ok
+test rules::checking_only_a_rule_that_holds_passes_whatever_the_others_would_say ... ok
+test rules::checking_only_a_rule_the_model_does_not_have_checks_no_rule ... ok
+test rules::checking_only_one_rule_leaves_the_others_out ... ok
+test rules::each_broken_rule_has_its_own_path_and_a_rule_that_holds_has_none ... ok
+test rules::each_step_of_a_path_names_its_action_and_the_state_it_leads_to ... ok
+test rules::the_path_to_a_broken_rule_is_the_shortest_one ... ok
+test storage::a_field_with_too_many_values_to_list_is_searched_like_one_with_few ... ok
+test storage::a_limit_above_four_billion_states_changes_nothing ... ok
+test storage::a_value_that_leaves_its_domain_is_kept_and_shown_on_its_path ... ok
+test limits::successors_already_known_never_use_up_the_state_limit ... ok
+test limits::a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind ... ok
+test storage::workers_find_the_same_states_when_a_value_has_no_code_yet ... ok
+test storage::many_workers_find_the_same_paths_through_states_met_from_several_parts ... ok
+test storage::many_workers_stop_at_the_same_state_limit ... ok
+test storage::workers_keep_the_states_that_leave_their_domain ... ok
+test turnstile::an_outcome_serializes_as_the_json_output_documents ... ok
+test turnstile::the_kinds_verdicts_and_statuses_serialize_as_the_words_of_the_json_output ... ok
+test turnstile::the_readme_turnstile_breaks_its_rule_by_pushing_without_paying ... ok
+test turnstile::the_readme_turnstile_has_three_states_and_fails ... ok
+test turnstile::the_readme_turnstile_is_stuck_after_paying ... ok
+test storage::workers_keep_rows_too_wide_for_one_word_the_same_as_one_thread ... ok
+test limits::successors_an_earlier_state_of_the_level_found_never_use_up_the_room_of_a_later_one ... ok
+test storage::workers_keep_the_order_of_states_with_and_without_a_code ... ok
+
+test result: ok. 109 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.46s
+
+   Doc-tests earnest_check
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

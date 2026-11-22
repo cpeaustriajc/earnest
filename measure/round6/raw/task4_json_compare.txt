@@ -1,0 +1,7 @@
+build=tip exit=0
+build=p16 exit=0
+build=p8 exit=0
+build=p32 exit=0
+tip vs p16: same
+tip vs p8: same
+tip vs p32: same

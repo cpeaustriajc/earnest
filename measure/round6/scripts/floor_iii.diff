@@ -1,0 +1,11 @@
+--- floor_i.rs	2026-11-22 01:38:28.703223598 +0000
++++ floor_iii.rs	2026-11-22 01:38:28.716666760 +0000
+@@ -169,7 +169,7 @@
+             let key = s + bit;
+             let h = mix(key);
+             if use_prefetch {
+-                table.prefetch(h);
++                std::hint::black_box(table.slots[table.home(h)]);
+             }
+             b.key[n] = key;
+             b.h[n] = h;

@@ -1,0 +1,14 @@
+# Samples: 22K of event 'cpu-clock'
+user [.] 90.88%  kernel [k] 8.72%  other 0.00%  lines 236
+ 43.02%  [.]  _RNCINvNtNtCsbNELigJprFy_13earnest_check5store5level6gatherINtNtCs40k4W9msRzi_5alloc3vec3VecIBV_jEENCNvMs_B4_INtNtB6_5index6ShardsNtB1L_9NarrowKeyE11claim_level0Es_0B8_
+ 13.40%  [.]  _RNvMs_NtNtCsbNELigJprFy_13earnest_check7explore7workersNtB6_6Search4work
+ 11.76%  [.]  _RNvMs1_NtNtCsbNELigJprFy_13earnest_check7explore4partNtB5_8PartSink13offer_encoded
+  4.19%  [.]  _RNvMs_NtNtCs35bxwrR96G3_10earnest_ir4code4condNtB4_4Cond4eval.llvm.586355361143759734
+  3.70%  [.]  _RNvMs2_NtNtCs35bxwrR96G3_10earnest_ir4code3numNtB5_3Num4eval.llvm.586355361143759734
+  3.19%  [.]  _RNvMNtNtCsbNELigJprFy_13earnest_check5store4rowsNtB2_4Rows6unpack
+  2.50%  [.]  _RNvMNtCsbNELigJprFy_13earnest_check5storeNtB2_5Store10read_state
+  1.85%  [.]  realloc
+  1.78%  [.]  __memmove_avx512_unaligned_erms
+  1.74%  [.]  _RINvMs6_NtCs6RpvpIXDhib_9hashbrown3rawINtB6_8RawTableNtNtNtCsbNELigJprFy_13earnest_check5store5index9NarrowKeyE14reserve_rehashNCNCNvMs_NtBT_5levelINtBR_6ShardsBP_E11claim_level0s_0EBV_
+  1.69%  [k]  exc_page_fault
+  1.40%  [k]  _raw_spin_unlock_irqrestore

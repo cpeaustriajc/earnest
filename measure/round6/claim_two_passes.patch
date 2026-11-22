@@ -1,0 +1,51 @@
+diff --git a/crates/earnest_check/src/store/level.rs b/crates/earnest_check/src/store/level.rs
+index 6ba2df5..bdb8ffe 100644
+--- a/crates/earnest_check/src/store/level.rs
++++ b/crates/earnest_check/src/store/level.rs
+@@ -5,6 +5,7 @@ use hashbrown::hash_table::Entry as Slot;
+ use std::sync::{Mutex, PoisonError};
+ 
+ const BITS_PER_WORD: usize = 64;
++const CLAIM_BATCH: usize = 16;
+ 
+ pub(crate) trait Spread: Sync {
+     fn run(&self, tasks: usize, job: &(dyn Fn(usize) + Sync));
+@@ -107,16 +108,28 @@ impl<F: Filed> Shards<F> {
+             let mut table = table.lock().unwrap_or_else(PoisonError::into_inner);
+             for part in 0..at.parts.len() {
+                 let mut mine = Vec::new();
+-                for ordinal in at.in_shard(part, shard) {
+-                    let row = at.row_of(part, *ordinal);
+-                    let slot = table.entry(
+-                        at.hash_of(part, *ordinal),
+-                        |filed| filed.holds(rows, row),
+-                        |filed| filed.hash(rows),
+-                    );
+-                    if let (Slot::Vacant(vacant), Some(filed)) = (slot, F::new(row, 0)) {
+-                        vacant.insert(filed);
+-                        mine.push(*ordinal);
++                for batch in at.in_shard(part, shard).chunks(CLAIM_BATCH) {
++                    let mut found = [false; CLAIM_BATCH];
++                    for (seen, ordinal) in found.iter_mut().zip(batch) {
++                        let row = at.row_of(part, *ordinal);
++                        *seen = table
++                            .find(at.hash_of(part, *ordinal), |filed| filed.holds(rows, row))
++                            .is_some();
++                    }
++                    for (seen, ordinal) in found.iter().zip(batch) {
++                        if *seen {
++                            continue;
++                        }
++                        let row = at.row_of(part, *ordinal);
++                        let slot = table.entry(
++                            at.hash_of(part, *ordinal),
++                            |filed| filed.holds(rows, row),
++                            |filed| filed.hash(rows),
++                        );
++                        if let (Slot::Vacant(vacant), Some(filed)) = (slot, F::new(row, 0)) {
++                            vacant.insert(filed);
++                            mine.push(*ordinal);
++                        }
+                     }
+                 }
+                 won.push(mine);
