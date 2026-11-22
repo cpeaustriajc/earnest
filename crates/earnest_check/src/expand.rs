@@ -144,6 +144,7 @@ struct Seen {
     at: HashTable<usize>,
     rows: Vec<u64>,
     row_at: HashTable<(usize, u64)>,
+    words: HashTable<(u64, u64)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -428,6 +429,18 @@ impl Seen {
     }
 
     fn first_row(&mut self, row: &[u64], hash: u64) -> bool {
+        if let [word] = row {
+            return match self
+                .words
+                .entry(hash, |(met, _)| met == word, |(_, hash)| *hash)
+            {
+                hashbrown::hash_table::Entry::Occupied(_) => false,
+                hashbrown::hash_table::Entry::Vacant(vacant) => {
+                    vacant.insert((*word, hash));
+                    true
+                }
+            };
+        }
         let width = row.len();
         let rows = &self.rows;
         let earlier = |at: usize| rows.get(at..at.saturating_add(width)).unwrap_or(&[]);
@@ -450,6 +463,7 @@ impl Seen {
         self.values.clear();
         self.row_at.clear();
         self.rows.clear();
+        self.words.clear();
     }
 }
 
@@ -592,8 +606,12 @@ impl<S: Successors> Expansion<'_, '_, S> {
         self.moving.enabled = true;
         if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.base.row) {
             let next = &mut self.scratch.next;
-            next.clear();
-            next.extend_from_slice(row);
+            if let ([into], [word]) = (next.as_mut_slice(), row) {
+                *into = *word;
+            } else {
+                next.clear();
+                next.extend_from_slice(row);
+            }
             let mut fits = true;
             for (at, write) in writes.iter().enumerate() {
                 let place = reusing
