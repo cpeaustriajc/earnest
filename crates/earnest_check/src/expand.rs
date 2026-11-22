@@ -138,8 +138,12 @@ struct Reuse {
     updates: Vec<usize>,
 }
 
+const CODE_BITS: u32 = 16;
+
 #[derive(Debug, Default)]
 struct Seen {
+    codes: Vec<u64>,
+    code_words_met: Vec<usize>,
     values: Vec<Value>,
     at: HashTable<usize>,
     rows: Vec<u64>,
@@ -158,6 +162,14 @@ struct Write<'a> {
     code: &'a Code,
     slot: RangeSlot,
     holds: Holds,
+    code_mask: u64,
+    placed: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SeenBy {
+    WrittenCodes,
+    Rows,
 }
 
 #[derive(Debug)]
@@ -171,6 +183,7 @@ pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
+    seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
     refill: Refill,
@@ -226,10 +239,30 @@ impl<'a> Move<'a> {
                     (None, Some(slot)) => (slot, Holds::TrueOrFalse),
                     (None, None) => return None,
                 };
-                Some(Write { code, slot, holds })
+                let code_mask = u64::MAX
+                    .checked_shr(u64::BITS.saturating_sub(slot.width))
+                    .unwrap_or(0);
+                Some(Write {
+                    code,
+                    slot,
+                    holds,
+                    code_mask,
+                    placed: code_mask.checked_shl(slot.shift).unwrap_or(0),
+                })
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
+        let seen_by = match &in_place {
+            InPlace::Writes(writes)
+                if writes
+                    .iter()
+                    .try_fold(0_u32, |bits, write| bits.checked_add(write.slot.width))
+                    .is_some_and(|bits| bits <= CODE_BITS) =>
+            {
+                SeenBy::WrittenCodes
+            }
+            InPlace::Writes(_) | InPlace::SomeUpdateHasNoSlot => SeenBy::Rows,
+        };
         let refill = if action.inputs_may_be_overwritten() {
             Refill::Every
         } else {
@@ -252,6 +285,7 @@ impl<'a> Move<'a> {
             action,
             updates,
             in_place,
+            seen_by,
             combinations,
             tried,
             refill,
@@ -428,6 +462,30 @@ impl Seen {
         }
     }
 
+    #[inline]
+    fn first_codes(&mut self, codes: u64) -> bool {
+        let at = usize::try_from(codes / u64::from(u64::BITS)).unwrap_or(usize::MAX);
+        let bit = 1_u64 << (codes % u64::from(u64::BITS));
+        let Some(word) = self.codes.get_mut(at) else {
+            return self.first_codes_beyond_the_table(codes, at);
+        };
+        if *word & bit != 0 {
+            return false;
+        }
+        if *word == 0 {
+            self.code_words_met.push(at);
+        }
+        *word |= bit;
+        true
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn first_codes_beyond_the_table(&mut self, codes: u64, at: usize) -> bool {
+        self.codes.resize(at.saturating_add(1), 0);
+        self.first_codes(codes)
+    }
+
     fn first_row(&mut self, row: &[u64], hash: u64) -> bool {
         if let [word] = row {
             return match self
@@ -459,6 +517,11 @@ impl Seen {
     }
 
     fn forget(&mut self) {
+        for at in self.code_words_met.drain(..) {
+            if let Some(word) = self.codes.get_mut(at) {
+                *word = 0;
+            }
+        }
         self.at.clear();
         self.values.clear();
         self.row_at.clear();
@@ -613,6 +676,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 next.extend_from_slice(row);
             }
             let mut fits = true;
+            let mut codes = 0_u64;
             for (at, write) in writes.iter().enumerate() {
                 let place = reusing
                     .then(|| planned.kept(at, &mut self.scratch.known.scalars))
@@ -632,18 +696,21 @@ impl<S: Successors> Expansion<'_, '_, S> {
                         break;
                     }
                 };
-                if !write.slot.write(next, number) {
+                let (Some(code), Some(word)) =
+                    (write.slot.code(number), next.get_mut(write.slot.word))
+                else {
                     fits = false;
                     break;
+                };
+                *word = (*word & !write.placed)
+                    | (code.checked_shl(write.slot.shift).unwrap_or(0) & write.placed);
+                if REPEATS && planned.seen_by == SeenBy::WrittenCodes {
+                    codes =
+                        codes.checked_shl(write.slot.width).unwrap_or(0) | (code & write.code_mask);
                 }
             }
             if fits {
-                let hash = hash_words(next);
-                if (!REPEATS || self.scratch.seen.first_row(next, hash))
-                    && self.sink.offer_row(position, input, next, hash)
-                {
-                    self.offered = self.offered.saturating_add(1);
-                }
+                self.offer_row_once::<REPEATS>(position, input, planned.seen_by, codes);
                 return;
             }
         }
@@ -664,6 +731,34 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 }
             }
             Err(fault) => self.found.note(Whence::Update(position), fault),
+        }
+    }
+
+    #[inline]
+    fn offer_row_once<const REPEATS: bool>(
+        &mut self,
+        position: usize,
+        input: usize,
+        seen_by: SeenBy,
+        codes: u64,
+    ) {
+        let next = &self.scratch.next;
+        let first = match (REPEATS, seen_by) {
+            (false, _) => Some(hash_words(next)),
+            (true, SeenBy::WrittenCodes) => self
+                .scratch
+                .seen
+                .first_codes(codes)
+                .then(|| hash_words(next)),
+            (true, SeenBy::Rows) => {
+                let hash = hash_words(next);
+                self.scratch.seen.first_row(next, hash).then_some(hash)
+            }
+        };
+        if let Some(hash) = first
+            && self.sink.offer_row(position, input, next, hash)
+        {
+            self.offered = self.offered.saturating_add(1);
         }
     }
 
@@ -1294,5 +1389,155 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    fn wide_wheels_model_of(actions: Vec<Action>) -> Model {
+        let mut model = model_of(actions);
+        for field in &mut model.fields {
+            field.domain = Domain::Int { lo: 0, hi: 999_999 };
+        }
+        model
+    }
+
+    fn agrees_in_both_widths(case: &str, actions: &[Action]) {
+        for model in [
+            model_of(actions.to_vec()),
+            wide_wheels_model_of(actions.to_vec()),
+        ] {
+            let expected: Vec<Expanded> = states()
+                .iter()
+                .map(|state| worked_out(&model, state))
+                .collect();
+            for handed in [Handed::Packed, Handed::AsValues] {
+                assert_eq!(
+                    searched(&model, handed),
+                    expected,
+                    "{case}, fields up to {:?}, the state handed {handed:?}",
+                    model.fields.first().map(|field| &field.domain)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_row_that_many_combinations_reach_is_offered_once_in_narrow_and_in_wide_rows() {
+        agrees_in_both_widths(
+            "x adds a and b, y adds b",
+            &[acting(
+                two_inputs(),
+                yes(),
+                &[
+                    Some(plus(
+                        plus(Expr::Field(0), Expr::Local(FAST)),
+                        Expr::Local(SLOW),
+                    )),
+                    Some(plus(Expr::Field(1), Expr::Local(SLOW))),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn rows_of_three_inputs_that_meet_again_out_of_order_are_offered_once() {
+        agrees_in_both_widths(
+            "x adds c and a, y is b times c",
+            &[acting(
+                three_inputs(),
+                yes(),
+                &[
+                    Some(plus(
+                        plus(Expr::Field(0), Expr::Local(SLOWEST)),
+                        Expr::Local(FAST),
+                    )),
+                    Some(math(
+                        Math::Multiply,
+                        Expr::Local(SLOW),
+                        Expr::Local(SLOWEST),
+                    )),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn a_row_that_leaves_the_domain_for_some_combinations_is_offered_once_either_way() {
+        agrees_in_both_widths(
+            "x adds sixty times a, y is the remainder of y and b by 2",
+            &[acting(
+                two_inputs(),
+                yes(),
+                &[
+                    Some(plus(
+                        Expr::Field(0),
+                        math(Math::Multiply, Expr::Local(FAST), int(60)),
+                    )),
+                    Some(math(
+                        Math::Remainder,
+                        plus(Expr::Field(1), Expr::Local(SLOW)),
+                        int(2),
+                    )),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn rows_written_by_one_update_and_kept_by_the_other_are_offered_once() {
+        agrees_in_both_widths(
+            "x is the remainder of a and b by 2, y is kept",
+            &[acting(
+                three_inputs(),
+                yes(),
+                &[
+                    Some(math(
+                        Math::Remainder,
+                        plus(Expr::Local(FAST), Expr::Local(SLOW)),
+                        int(2),
+                    )),
+                    None,
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn a_row_written_codes_tell_apart_is_new_once_until_they_are_forgotten() {
+        let mut seen = Seen::default();
+        assert!(
+            seen.first_codes(70_000),
+            "the first time, past the bits held"
+        );
+        assert!(seen.first_codes(3), "another");
+        assert!(!seen.first_codes(70_000), "met before");
+        assert!(!seen.first_codes(3), "met before");
+        assert!(seen.first_codes(67), "another bit of a word in use");
+        seen.forget();
+        assert!(seen.first_codes(3), "new again once forgotten");
+        assert!(seen.first_codes(70_000), "new again once forgotten");
+    }
+
+    #[test]
+    fn rows_of_two_narrow_wheels_are_told_apart_by_written_codes_and_wide_ones_by_rows() {
+        let actions = [acting(
+            two_inputs(),
+            yes(),
+            &[Some(Expr::Local(FAST)), Some(Expr::Local(SLOW))],
+        )];
+        for (model, told) in [
+            (model_of(actions.to_vec()), super::SeenBy::WrittenCodes),
+            (wide_wheels_model_of(actions.to_vec()), super::SeenBy::Rows),
+        ] {
+            let store = Store::new(&model.fields, 100, Lookup::Presence);
+            let moves = Move::all(&model, store.layout());
+            assert_eq!(
+                moves
+                    .iter()
+                    .map(|planned| planned.seen_by)
+                    .collect::<Vec<_>>(),
+                vec![told],
+                "{:?}",
+                model.fields.first().map(|field| &field.domain)
+            );
+        }
     }
 }
