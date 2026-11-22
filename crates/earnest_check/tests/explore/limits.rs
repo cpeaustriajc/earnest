@@ -996,21 +996,22 @@ fn once_the_store_is_full_a_state_out_of_range_the_store_already_holds_uses_up_n
 }
 
 const STATES_TO_A_SLOW_GUARD: i64 = 2000;
-const SLOW_STATE: i64 = STATES_TO_A_SLOW_GUARD - 1;
-const HALF_OF_THE_STARTS: i64 = STATES_TO_A_SLOW_GUARD / 2;
+const STATES_TO_A_SLOW_GUARD_A_LONE_THREAD_TAKES_IN_PARTS: i64 = 100_000;
 const STUCK_START: i64 = 5;
 
-fn a_level_whose_last_state_takes_billions_of_steps() -> Model {
+fn a_level_whose_last_state_takes_billions_of_steps(starts: i64) -> Model {
+    let slow_state = starts - 1;
+    let half_of_the_starts = starts / 2;
     let mut sketch = Sketch::new();
-    let every_start: Vec<i64> = (0..STATES_TO_A_SLOW_GUARD).collect();
-    let n = sketch.number("n", 0, SLOW_STATE, &every_start);
+    let every_start: Vec<i64> = (0..starts).collect();
+    let n = sketch.number("n", 0, slow_state, &every_start);
     let flipped = sketch.boolean("flipped", &[false]);
-    let low = both(below(&n, HALF_OF_THE_STARTS), is_not(&n, STUCK_START));
+    let low = both(below(&n, half_of_the_starts), is_not(&n, STUCK_START));
     sketch.action("flipLow", both(not(&flipped), low), &[(&flipped, yes())]);
     sketch.action(
         "flipHigh",
-        both(not(&flipped), not(&below(&n, HALF_OF_THE_STARTS))),
-        &[(&flipped, yes()), (&n, plus(&n, -HALF_OF_THE_STARTS))],
+        both(not(&flipped), not(&below(&n, half_of_the_starts))),
+        &[(&flipped, yes()), (&n, plus(&n, -half_of_the_starts))],
     );
     sketch.action(
         "back",
@@ -1023,7 +1024,7 @@ fn a_level_whose_last_state_takes_billions_of_steps() -> Model {
     sketch.action(
         "slow",
         both(
-            is(&n, SLOW_STATE),
+            is(&n, slow_state),
             every_of(2000, every_of(2000, every_of(2000, yes()))),
         ),
         &[(&flipped, yes())],
@@ -1033,11 +1034,10 @@ fn a_level_whose_last_state_takes_billions_of_steps() -> Model {
     sketch.model()
 }
 
-#[test]
-fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() {
-    let model = a_level_whose_last_state_takes_billions_of_steps();
-    let starts = usize::try_from(STATES_TO_A_SLOW_GUARD).unwrap_or(0);
-    let flipped = usize::try_from(HALF_OF_THE_STARTS).unwrap_or(0);
+fn a_time_stop_in_a_later_round_of_a_level_of(starts: i64) {
+    let model = a_level_whose_last_state_takes_billions_of_steps(starts);
+    let flipped = usize::try_from(starts / 2).unwrap_or(0);
+    let starts = usize::try_from(starts).unwrap_or(0);
     let limits = Limits {
         max_states: starts + flipped + 1,
         time_limit: Some(Duration::from_secs(1)),
@@ -1051,7 +1051,11 @@ fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() 
         began.elapsed()
     );
     assert_eq!(outcome.status, Status::Unfinished, "{:?}", outcome.findings);
-    assert_eq!(outcome.reason.as_deref(), Some("time limit of 1 s"));
+    assert_eq!(
+        outcome.reason.as_deref(),
+        Some("time limit of 1 s"),
+        "the slow last state of the level"
+    );
     assert!(
         outcome.findings.is_empty(),
         "the stuck start state was expanded in the level the time stop undid: {:?}",
@@ -1063,6 +1067,16 @@ fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() 
         "no state of the undone level has arrows out: {:?}",
         graph.edges
     );
+}
+
+#[test]
+fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() {
+    a_time_stop_in_a_later_round_of_a_level_of(STATES_TO_A_SLOW_GUARD);
+}
+
+#[test]
+fn a_time_stop_in_a_later_round_of_a_level_a_lone_thread_takes_in_parts_leaves_nothing_behind() {
+    a_time_stop_in_a_later_round_of_a_level_of(STATES_TO_A_SLOW_GUARD_A_LONE_THREAD_TAKES_IN_PARTS);
 }
 
 const STARTS_OF_UNIQUE_AND_SHARED_CHILDREN: i64 = 2000;
