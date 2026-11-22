@@ -135,10 +135,11 @@ impl Search<'_> {
         let mut scratch = Scratch::default();
         let mut state = Vec::new();
         let mut row = Vec::new();
+        let stops_at = deadline.filter(|_| asked == Asked::Everything);
         for (position, id) in frontier.enumerate() {
             let clock_due = position.is_multiple_of(STATES_BETWEEN_CLOCK_READS);
-            let late = deadline.is_some_and(|limit| Instant::now() >= limit);
-            if asked == Asked::Everything && clock_due && late {
+            let late = || stops_at.is_some_and(|limit| Instant::now() >= limit);
+            if clock_due && late() {
                 here.stopped = true;
                 break;
             }

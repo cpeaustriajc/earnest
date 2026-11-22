@@ -298,10 +298,11 @@ impl Search<'_> {
             kit: &mut kit.rows,
             part,
         };
+        let stops_at = deadline.filter(|_| asked == Asked::Everything);
         for (position, id) in ids.enumerate() {
             let clock_due = position.is_multiple_of(STATES_BETWEEN_CLOCK_READS);
-            let late = deadline.is_some_and(|limit| Instant::now() >= limit);
-            if asked == Asked::Everything && clock_due && late {
+            let late = || stops_at.is_some_and(|limit| Instant::now() >= limit);
+            if clock_due && late() {
                 sink.part.stopped = true;
                 return sink.part;
             }
