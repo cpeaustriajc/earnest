@@ -1245,3 +1245,297 @@ fn a_lone_thread_taking_a_wide_level_in_parts_matches_the_graph_kept_search_at_e
     assert_eq!(whole.reason, None);
     assert_eq!(whole.rules[0].verdict, Verdict::Broken);
 }
+
+use crate::build::{
+    HYPERCUBE_STATES, HYPERCUBE_TOP, at_point, every_start_up_to, hypercube_sketch,
+};
+
+const HYPERCUBE_STATES_THROUGH_SUM_21: usize = 44_000;
+const HYPERCUBE_STATES_THROUGH_SUM_22: usize = 50_000;
+const STARTS_OF_A_WIDE_LEVEL: i64 = 5000;
+
+fn wide_level_of_flips(starts: i64) -> Model {
+    let (mut sketch, n, flipped) = every_start_up_to(starts);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("not1234", not(&both(flipped, is(&n, 1234))));
+    sketch.model()
+}
+
+fn hypercube_with_a_late_rule() -> Model {
+    let (mut sketch, axes) = hypercube_sketch(HYPERCUBE_TOP, Moves::Up);
+    sketch.end("corner", at_point(&axes, [HYPERCUBE_TOP; 5]));
+    sketch.rule("notEarly", not(&at_point(&axes, [1, 2, 3, 4, 5])));
+    sketch.rule("notAtSum22", not(&at_point(&axes, [9, 9, 2, 1, 1])));
+    sketch.rule("notAtSum23", not(&at_point(&axes, [9, 9, 2, 2, 1])));
+    sketch.model()
+}
+
+#[test]
+fn a_level_of_five_thousand_states_gives_the_same_outcome_on_one_thread_and_on_several() {
+    let model = wide_level_of_flips(STARTS_OF_A_WIDE_LEVEL);
+    let single = explore(&model, &with_jobs(1));
+    assert_eq!(single.states, 10_000);
+    assert_eq!(single.status, Status::Fail);
+    let path = single.rules[0]
+        .path
+        .as_ref()
+        .expect("a broken rule has a path");
+    assert_eq!(texts(&path.start), ["n = 1234", "flipped = false"]);
+    assert_eq!(steps(path), ["flip  flipped: false -> true"]);
+    for jobs in [3, 4, 64] {
+        assert_eq!(explore(&model, &with_jobs(jobs)), single, "{jobs} workers");
+    }
+}
+
+#[test]
+fn a_search_with_many_levels_of_thousands_of_states_gives_the_same_outcome_on_one_thread_and_on_four()
+ {
+    let (mut sketch, axes) = hypercube_sketch(HYPERCUBE_TOP, Moves::Up);
+    sketch.end("corner", at_point(&axes, [HYPERCUBE_TOP; 5]));
+    sketch.rule("notThere", not(&at_point(&axes, [3, 5, 7, 2, 9])));
+    let model = sketch.model();
+    let single = explore(&model, &with_jobs(1));
+    assert_eq!(single.states, HYPERCUBE_STATES);
+    assert_eq!(single.status, Status::Fail);
+    let path = single.rules[0]
+        .path
+        .as_ref()
+        .expect("a broken rule has a path");
+    assert_eq!(path.steps.len(), 26);
+    assert!(single.findings.is_empty(), "{:?}", single.findings);
+    assert_eq!(explore(&model, &with_jobs(4)), single);
+}
+
+#[test]
+fn the_state_limit_inside_a_level_of_five_thousand_states_gives_the_same_outcome_on_one_thread_and_on_four()
+ {
+    let model = wide_level_of_flips(STARTS_OF_A_WIDE_LEVEL);
+    let limited = |jobs: usize| Limits {
+        max_states: 7000,
+        ..with_jobs(jobs)
+    };
+    let single = explore(&model, &limited(1));
+    assert_eq!(single.states, 7000);
+    assert_eq!(single.reason.as_deref(), Some("state limit of 7000"));
+    assert_eq!(explore(&model, &limited(4)), single);
+}
+
+#[test]
+fn a_state_limit_at_the_end_of_a_wide_level_gives_the_same_outcome_on_every_worker_count() {
+    let outcome = same_outcome_on_every_worker_count(
+        &hypercube_with_a_late_rule(),
+        HYPERCUBE_STATES_THROUGH_SUM_22,
+    );
+    assert_eq!(outcome.states, HYPERCUBE_STATES_THROUGH_SUM_22);
+    assert_eq!(outcome.reason.as_deref(), Some("state limit of 50000"));
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(
+        verdicts,
+        [Verdict::Broken, Verdict::Broken, Verdict::Unknown]
+    );
+}
+
+#[test]
+fn a_state_limit_inside_a_wide_level_gives_the_same_outcome_on_every_worker_count() {
+    let inside = HYPERCUBE_STATES_THROUGH_SUM_21 + 3000;
+    let outcome = same_outcome_on_every_worker_count(&hypercube_with_a_late_rule(), inside);
+    assert_eq!(outcome.states, inside);
+    assert_eq!(outcome.status, Status::Fail);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+    assert_eq!(outcome.rules[2].verdict, Verdict::Unknown);
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_model_of_wide_levels_gives_the_same_outcome_on_every_worker_count()
+ {
+    let outcome =
+        same_outcome_on_every_worker_count(&hypercube_with_a_late_rule(), HYPERCUBE_STATES + 1);
+    assert_eq!(outcome.states, HYPERCUBE_STATES);
+    assert_eq!(outcome.reason, None);
+    let verdicts: Vec<Verdict> = outcome.rules.iter().map(|rule| rule.verdict).collect();
+    assert_eq!(verdicts, [Verdict::Broken; 3]);
+}
+
+#[test]
+fn a_state_limit_one_above_the_states_of_a_level_of_five_thousand_known_steps_is_never_reached() {
+    let top = STARTS_OF_A_WIDE_LEVEL - 1;
+    let (mut sketch, n, flipped) = every_start_up_to(STARTS_OF_A_WIDE_LEVEL);
+    sketch.action("step", below(&n, top), &[(&n, plus(&n, 1))]);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    sketch.end("any", yes());
+    sketch.rule("not1234", not(&both(flipped, is(&n, 1234))));
+    let states = 2 * usize::try_from(STARTS_OF_A_WIDE_LEVEL).unwrap_or(0);
+    let outcome = same_outcome_on_every_worker_count(&sketch.model(), states + 1);
+    assert_eq!(outcome.states, states);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+}
+
+const TOP_OF_WIDE_JUMPS: i64 = 4095;
+
+fn wide_jumps_from(starts: &[i64]) -> Model {
+    let mut sketch = Sketch::new();
+    let x = sketch.number("x", 0, TOP_OF_WIDE_JUMPS, starts);
+    let y = sketch.number("y", 0, 1, &[0]);
+    let z = sketch.number("z", 0, 1, &[0]);
+    let every_k: Vec<Value> = (0..=TOP_OF_WIDE_JUMPS).map(Value::Int).collect();
+    let at_top = both(is(&x, TOP_OF_WIDE_JUMPS), is(&z, 0));
+    sketch.action("bump", is(&y, 0), &[(&y, int(1))]);
+    for (name, lands) in [("jumpOne", 0), ("jumpTwo", 0), ("lift", 1)] {
+        sketch.action_with(
+            name,
+            &[("k", every_k.clone())],
+            at_top.clone(),
+            &[(&x, Expr::Local(0)), (&y, int(lands))],
+        );
+    }
+    sketch.action("last", at_top, &[(&z, int(1))]);
+    sketch.rule("flat", is(&z, 0));
+    sketch.end("rest", yes());
+    sketch.model()
+}
+
+#[test]
+fn successors_already_known_never_use_up_the_state_limit_of_a_wide_level() {
+    let every_start: Vec<i64> = (0..=TOP_OF_WIDE_JUMPS).collect();
+    let model = wide_jumps_from(&every_start);
+    let states = 2 * every_start.len() + 2;
+    for (case, outcome) in every_worker_count(&model, states) {
+        assert_eq!(outcome.status, Status::Fail, "{case}");
+        assert_eq!(outcome.states, states, "{case}");
+        assert_eq!(outcome.reason, None, "{case}");
+        assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+    }
+}
+
+const STARTS_OF_WIDE_FANS: i64 = 2400;
+const SHARED_FAN: i64 = 3000;
+const WHOLE_FAN: i64 = 6001;
+
+fn two_wide_fans_and_a_fault(faulting: Faulting) -> Model {
+    let mut sketch = Sketch::new();
+    let last_start = STARTS_OF_WIDE_FANS - 1;
+    let every_start: Vec<i64> = (0..STARTS_OF_WIDE_FANS).collect();
+    let x = sketch.number("x", 0, last_start, &every_start);
+    let t = sketch.number("t", 0, 1, &[0]);
+    let k = sketch.number("k", 0, WHOLE_FAN, &[0]);
+    let shared_k: Vec<Value> = (0..SHARED_FAN).map(Value::Int).collect();
+    let own_k: Vec<Value> = (SHARED_FAN..WHOLE_FAN).map(Value::Int).collect();
+    let fans_out = |at: i64| both(is(&x, at), is(&t, 0));
+    let last = fans_out(last_start);
+    let divides_by_zero = is(&apply(Op::Math(Math::Divide), &k, int(0)), 0);
+    let boom = both(last.clone(), divides_by_zero);
+    let lands = [(&x, int(0)), (&t, int(1)), (&k, Expr::Local(0))];
+    if faulting == Faulting::First {
+        sketch.action("boom", boom.clone(), &[(&t, int(1))]);
+    }
+    let first_or_last = Expr::Or(Box::new(fans_out(0)), Box::new(last.clone()));
+    sketch.action_with("fan", &[("k", shared_k)], first_or_last, &lands);
+    sketch.action_with("fanMore", &[("k", own_k)], last, &lands);
+    if faulting == Faulting::Last {
+        sketch.action("boom", boom, &[(&t, int(1))]);
+    }
+    sketch.end("rest", yes());
+    sketch.model()
+}
+
+#[test]
+fn successors_an_earlier_state_of_a_wide_level_found_never_use_up_the_room_of_a_later_one() {
+    for (faulting, max_states) in [
+        (Faulting::Last, 6600),
+        (Faulting::First, 6600),
+        (Faulting::Last, 9600),
+    ] {
+        let model = two_wide_fans_and_a_fault(faulting);
+        let alone = explore(&model, &with_states(max_states));
+        assert_eq!(alone.status, Status::Fail, "the last start state faults");
+        assert_eq!(kinds_of(&alone), [FindingKind::Fault], "{faulting:?}");
+        for (case, outcome) in every_worker_count(&model, max_states) {
+            let case = format!("{faulting:?} faults, room {max_states}, {case}");
+            assert_eq!(outcome.status, alone.status, "{case}");
+            assert_eq!(outcome.states, alone.states, "{case}");
+            assert_eq!(outcome.reason, alone.reason, "{case}");
+            assert_eq!(outcome.findings, alone.findings, "{case}");
+        }
+    }
+}
+
+const STARTS_OF_WIDE_UNIQUE_AND_SHARED_CHILDREN: i64 = 6000;
+const WIDE_SHARED_CHILDREN: i64 = 1500;
+
+#[test]
+fn every_state_of_a_wide_level_held_back_at_a_limit_never_reached_is_expanded() {
+    let (mut sketch, n, flipped) = every_start_up_to(STARTS_OF_WIDE_UNIQUE_AND_SHARED_CHILDREN);
+    let shared_up_to = 2 * WIDE_SHARED_CHILDREN;
+    sketch.action(
+        "flipOwn",
+        both(not(&flipped), not(&below(&n, shared_up_to))),
+        &[(&flipped, yes())],
+    );
+    sketch.action(
+        "flipLow",
+        both(not(&flipped), below(&n, WIDE_SHARED_CHILDREN)),
+        &[(&flipped, yes())],
+    );
+    sketch.action(
+        "flipHigh",
+        both(
+            not(&flipped),
+            both(
+                not(&below(&n, WIDE_SHARED_CHILDREN)),
+                below(&n, shared_up_to),
+            ),
+        ),
+        &[(&flipped, yes()), (&n, plus(&n, -WIDE_SHARED_CHILDREN))],
+    );
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("neverFlipped5990", not(&both(flipped, is(&n, 5990))));
+    let starts = usize::try_from(STARTS_OF_WIDE_UNIQUE_AND_SHARED_CHILDREN).unwrap_or(0);
+    let children =
+        usize::try_from(STARTS_OF_WIDE_UNIQUE_AND_SHARED_CHILDREN - WIDE_SHARED_CHILDREN)
+            .unwrap_or(0);
+    let outcome = same_outcome_on_every_worker_count(&sketch.model(), starts + children + 1);
+    assert_eq!(outcome.states, starts + children);
+    assert_eq!(outcome.reason, None);
+    assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
+}
+
+const STARTS_OF_ONE_CHILD_EACH_IN_A_WIDE_LEVEL: i64 = 6000;
+const CHILDREN_OF_A_WIDE_LEVEL_THAT_FIT: i64 = 2500;
+
+#[test]
+fn a_time_stop_in_the_last_pass_over_a_wide_level_keeps_every_state_judged_before_it_on_every_worker_count()
+ {
+    let (mut sketch, n, flipped) = every_start_up_to(STARTS_OF_ONE_CHILD_EACH_IN_A_WIDE_LEVEL);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    let slow = every_of(2000, every_of(2000, every_of(2000, yes())));
+    let slow_child = CHILDREN_OF_A_WIDE_LEVEL_THAT_FIT - 1;
+    sketch.rule(
+        "slowAtTheLastChild",
+        not(&both(both(flipped, is(&n, slow_child)), slow)),
+    );
+    let model = sketch.model();
+    let starts = usize::try_from(STARTS_OF_ONE_CHILD_EACH_IN_A_WIDE_LEVEL).unwrap_or(0);
+    let children = usize::try_from(CHILDREN_OF_A_WIDE_LEVEL_THAT_FIT).unwrap_or(0);
+    for jobs in [1, 4] {
+        let limits = Limits {
+            max_states: starts + children,
+            time_limit: Some(Duration::from_secs(1)),
+            jobs,
+            ..Limits::default()
+        };
+        let outcome = explore(&model, &limits);
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("time limit of 1 s"),
+            "{jobs} workers"
+        );
+        assert_eq!(
+            outcome.states,
+            starts + children - 1,
+            "the starts and every child but the slow last one had their rules judged: {jobs} \
+             workers"
+        );
+    }
+}
