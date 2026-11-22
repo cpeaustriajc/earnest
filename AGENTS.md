@@ -6,4 +6,6 @@
   misleads the next agent. Use names: `const WEEKS_KEPT: usize = 5;`
 - Write each doc comment for the person who calls the item. Say what it is for and what the
   caller must know. Never restate the name.
+- `just benchmark` holds a speed budget (`tasks/benchmark/README.md`). Never raise a limit to pass
+  it: make the change faster or take it back.
 - Run `just check` before you finish.
