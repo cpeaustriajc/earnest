@@ -1,6 +1,6 @@
-use crate::build::{CUBE_TOP, Moves, at_corner, cube_sketch};
 use crate::build::{
-    Sketch, apply, below, both, counter, int, is, is_not, not, plus, steps, texts, yes,
+    CUBE_TOP, Moves, Sketch, apply, at_corner, below, both, counter, cube_sketch, int, is, is_not,
+    not, plus, steps, texts, yes,
 };
 use earnest_check::{FindingKind, Helpers, Limits, Outcome, Status, Verdict, explore};
 use earnest_ir::{Expr, Math, Model, Op, Order, Shelf, Sweep};
