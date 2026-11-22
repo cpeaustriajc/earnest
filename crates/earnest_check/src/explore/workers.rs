@@ -19,23 +19,17 @@ const WORTH_SPREADING: Duration = Duration::from_millis(1);
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
 
 struct Hands {
-    own: usize,
-    idle_helpers: Option<usize>,
+    threads: usize,
     keep_graph: bool,
 }
 
 impl Hands {
     fn take_in_parts(&self, states: usize, per_state: Duration) -> bool {
-        match (self.own, self.idle_helpers) {
-            (1, None) => false,
-            (1, Some(0)) => {
-                !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
-            }
-            _ => {
-                let count = u32::try_from(states).unwrap_or(u32::MAX);
-                states >= SMALLEST_SHARED_LEVEL
-                    || per_state.saturating_mul(count) >= WORTH_SPREADING
-            }
+        if self.threads > 1 {
+            let count = u32::try_from(states).unwrap_or(u32::MAX);
+            states >= SMALLEST_SHARED_LEVEL || per_state.saturating_mul(count) >= WORTH_SPREADING
+        } else {
+            !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
         }
     }
 }
@@ -123,8 +117,7 @@ impl Search<'_> {
         let own = self.limits.jobs.max(1);
         let helpers = self.limits.helpers.as_ref();
         let hands = Hands {
-            own,
-            idle_helpers: helpers.map(Helpers::idle),
+            threads: own.saturating_add(helpers.map_or(0, Helpers::idle)),
             keep_graph: self.limits.keep_graph,
         };
         if !hands.take_in_parts(frontier.len(), per_state) {
@@ -353,24 +346,12 @@ mod tests {
     const LONE_LEVEL: usize = SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS;
     const SLOW_STATE: Duration = Duration::from_secs(1);
 
-    fn without_graph(own: usize, idle_helpers: Option<usize>) -> Hands {
-        Hands {
-            own,
-            idle_helpers,
-            keep_graph: false,
-        }
-    }
-
-    fn with_graph(own: usize, idle_helpers: Option<usize>) -> Hands {
-        Hands {
-            keep_graph: true,
-            ..without_graph(own, idle_helpers)
-        }
-    }
-
     #[test]
-    fn a_lone_thread_that_may_borrow_takes_a_level_in_parts_from_its_size_alone() {
-        let lone = without_graph(1, Some(0));
+    fn a_lone_thread_that_keeps_no_graph_takes_a_level_in_parts_from_its_size_alone() {
+        let lone = Hands {
+            threads: 1,
+            keep_graph: false,
+        };
         assert!(
             !lone.take_in_parts(LONE_LEVEL - 1, Duration::ZERO),
             "just short"
@@ -390,38 +371,32 @@ mod tests {
     }
 
     #[test]
-    fn a_lone_thread_with_no_helpers_or_a_graph_takes_every_level_row_by_row() {
-        for (case, crew) in [
-            ("no helpers", without_graph(1, None)),
-            ("no helpers, graph", with_graph(1, None)),
-            ("graph", with_graph(1, Some(0))),
-        ] {
-            assert!(
-                !crew.take_in_parts(10 * LONE_LEVEL, SLOW_STATE),
-                "a wide slow level, {case}"
-            );
-        }
+    fn a_lone_thread_that_keeps_the_graph_takes_every_level_row_by_row() {
+        let lone = Hands {
+            threads: 1,
+            keep_graph: true,
+        };
+        assert!(!lone.take_in_parts(10 * LONE_LEVEL, SLOW_STATE));
     }
 
     #[test]
     fn several_threads_take_a_level_in_parts_from_its_size_or_its_time() {
-        for (case, crew) in [
-            ("four own", without_graph(4, None)),
-            ("four own, graph", with_graph(4, Some(0))),
-            ("one own and an idle helper", without_graph(1, Some(1))),
-            ("one own and an idle helper, graph", with_graph(1, Some(1))),
-        ] {
+        for keep_graph in [false, true] {
+            let crew = Hands {
+                threads: 2,
+                keep_graph,
+            };
             assert!(
                 !crew.take_in_parts(SMALLEST_SHARED_LEVEL - 1, Duration::ZERO),
-                "a narrow quick level, {case}"
+                "a narrow quick level, graph kept: {keep_graph}"
             );
             assert!(
                 crew.take_in_parts(SMALLEST_SHARED_LEVEL, Duration::ZERO),
-                "a level of the shared size, {case}"
+                "a level of the shared size, graph kept: {keep_graph}"
             );
             assert!(
                 crew.take_in_parts(SMALLEST_SHARED_LEVEL - 1, SLOW_STATE),
-                "a narrow slow level, {case}"
+                "a narrow slow level, graph kept: {keep_graph}"
             );
         }
     }
