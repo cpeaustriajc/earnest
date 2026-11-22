@@ -4,6 +4,7 @@ use super::val::{Binding, Place, Val};
 use crate::eval::{as_bool, compare};
 use crate::{Expr, Fault, Frame, Op, Order};
 use earnest_value::Value;
+use std::mem::{Discriminant, discriminant};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Wanted {
@@ -86,16 +87,8 @@ impl Cond {
 
     pub(super) fn shaped(expr: &Expr, shared: &Shared) -> Option<Self> {
         match expr {
-            Expr::And(..) => {
-                let mut parts = Vec::new();
-                every_part(expr, &mut parts, shared);
-                Some(Self::All(parts.into_boxed_slice()))
-            }
-            Expr::Or(..) => {
-                let mut parts = Vec::new();
-                any_part(expr, &mut parts, shared);
-                Some(Self::Any(parts.into_boxed_slice()))
-            }
+            Expr::And(..) => Some(Self::All(joined_parts(expr, shared))),
+            Expr::Or(..) => Some(Self::Any(joined_parts(expr, shared))),
             Expr::Bind { slot, value, body } => {
                 let binding = Binding::of(*slot, value, Self::of(body, shared), shared);
                 Some(Self::Bind(Box::new(binding)))
@@ -127,22 +120,14 @@ impl Cond {
     }
 
     fn equality(left: &Expr, right: &Expr, wanted: Wanted, shared: &Shared) -> Self {
-        match (left, right) {
-            (_, Expr::Const(Value::Int(number))) => {
-                return Self::Is {
-                    operand: Operand::of(left, shared),
-                    number: *number,
-                    wanted,
-                };
-            }
-            (Expr::Const(Value::Int(number)), _) => {
-                return Self::Is {
-                    operand: Operand::of(right, shared),
-                    number: *number,
-                    wanted,
-                };
-            }
-            _ => {}
+        if let (other, Expr::Const(Value::Int(number))) | (Expr::Const(Value::Int(number)), other) =
+            (left, right)
+        {
+            return Self::Is {
+                operand: Operand::of(other, shared),
+                number: *number,
+                wanted,
+            };
         }
         match (
             Place::of(left),
@@ -262,20 +247,18 @@ fn is(found: &Value, constant: &Value) -> bool {
     }
 }
 
-fn every_part(expr: &Expr, parts: &mut Vec<Cond>, shared: &Shared) {
-    if let Expr::And(left, right) = expr {
-        every_part(left, parts, shared);
-        every_part(right, parts, shared);
-    } else {
-        parts.push(Cond::of(expr, shared));
-    }
+fn joined_parts(expr: &Expr, shared: &Shared) -> Box<[Cond]> {
+    let mut parts = Vec::new();
+    gather_joined(expr, discriminant(expr), &mut parts, shared);
+    parts.into_boxed_slice()
 }
 
-fn any_part(expr: &Expr, parts: &mut Vec<Cond>, shared: &Shared) {
-    if let Expr::Or(left, right) = expr {
-        any_part(left, parts, shared);
-        any_part(right, parts, shared);
-    } else {
-        parts.push(Cond::of(expr, shared));
+fn gather_joined(expr: &Expr, join: Discriminant<Expr>, parts: &mut Vec<Cond>, shared: &Shared) {
+    match expr {
+        Expr::And(left, right) | Expr::Or(left, right) if discriminant(expr) == join => {
+            gather_joined(left, join, parts, shared);
+            gather_joined(right, join, parts, shared);
+        }
+        _ => parts.push(Cond::of(expr, shared)),
     }
 }
