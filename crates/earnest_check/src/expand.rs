@@ -1,5 +1,5 @@
 use crate::store::{RangeSlot, RowLayout, hash_words};
-use earnest_ir::{Action, Code, Fault, Frame, Model};
+use earnest_ir::{Action, Code, Fault, Frame, Input, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxBuildHasher;
@@ -120,6 +120,7 @@ pub(crate) trait Successors {
 pub(crate) struct Scratch {
     updates: Vec<(usize, Value)>,
     next: Vec<u64>,
+    digits: Vec<usize>,
     seen: Seen,
 }
 
@@ -157,6 +158,13 @@ pub(crate) struct Move<'a> {
     in_place: InPlace<'a>,
     combinations: usize,
     tried: Tried,
+    refill: Refill,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Refill {
+    Turned,
+    Every,
 }
 
 #[derive(Debug)]
@@ -206,12 +214,18 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
+        let refill = if action.inputs_may_be_overwritten() {
+            Refill::Every
+        } else {
+            Refill::Turned
+        };
         Self {
             action,
             updates,
             in_place,
             combinations,
             tried,
+            refill,
         }
     }
 
@@ -227,14 +241,46 @@ impl<'a> Move<'a> {
     }
 }
 
+#[cfg(test)]
 fn told_apart_from_earlier(action: &Action, told: &[Vec<bool>], input: usize) -> bool {
     let mut rest = input;
-    action.inputs.iter().zip(told).all(|(each, apart)| {
-        let count = each.values.len();
-        let digit = rest.checked_rem(count);
-        rest = rest.checked_div(count).unwrap_or(0);
-        digit.and_then(|at| apart.get(at)).copied().unwrap_or(true)
-    })
+    let digits: Vec<usize> = action
+        .inputs
+        .iter()
+        .map(|each| {
+            let count = each.values.len();
+            let digit = rest.checked_rem(count).unwrap_or(usize::MAX);
+            rest = rest.checked_div(count).unwrap_or(0);
+            digit
+        })
+        .collect();
+    told_apart_at(told, &digits)
+}
+
+fn told_apart_at(told: &[Vec<bool>], digits: &[usize]) -> bool {
+    digits
+        .iter()
+        .zip(told)
+        .all(|(digit, apart)| apart.get(*digit).copied().unwrap_or(true))
+}
+
+fn turn(digits: &mut [usize], inputs: &[Input]) -> usize {
+    for (at, (digit, each)) in digits.iter_mut().zip(inputs).enumerate() {
+        *digit = digit.saturating_add(1);
+        if *digit < each.values.len() {
+            return at.saturating_add(1);
+        }
+        *digit = 0;
+    }
+    digits.len()
+}
+
+fn put_inputs(inputs: &[Input], digits: &[usize], count: usize, frame: &mut Frame<'_>) {
+    for (each, digit) in inputs.iter().zip(digits).take(count) {
+        if let Some(found) = each.values.get(*digit) {
+            frame.put_copy(each.slot, found);
+        }
+    }
 }
 
 pub(crate) fn same_words(one: &[u64], other: &[u64]) -> bool {
@@ -361,18 +407,32 @@ impl<S: Successors> Expansion<'_, '_, S> {
     fn every_input_told_apart(&mut self, position: usize, planned: &Move<'_>) {
         self.scratch.seen.forget();
         let skipping = planned.skipping();
+        let inputs = planned.action.inputs.as_slice();
+        let mut digits = std::mem::take(&mut self.scratch.digits);
+        digits.clear();
+        digits.resize(inputs.len(), 0);
+        let mut turned = usize::MAX;
         for input in 0..planned.combinations {
+            if input > 0 {
+                turned = turned.max(turn(&mut digits, inputs));
+            }
             if !self.may_go_on_noting_a_time_stop() {
                 break;
             }
             if let Some(told) = skipping
-                && !told_apart_from_earlier(planned.action, told, input)
+                && !told_apart_at(told, &digits)
             {
                 continue;
             }
-            set_inputs(planned.action, input, &mut self.frame);
+            let count = match planned.refill {
+                Refill::Turned => turned,
+                Refill::Every => inputs.len(),
+            };
+            put_inputs(inputs, &digits, count, &mut self.frame);
+            turned = 0;
             self.try_input::<true>(position, planned, input);
         }
+        self.scratch.digits = digits;
     }
 
     #[inline]
@@ -545,7 +605,7 @@ impl Expand<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Seen, chosen, input_count, told_apart_from_earlier};
+    use super::{Seen, chosen, input_count, told_apart_from_earlier, turn};
     use earnest_ir::{Action, Expr, Input};
     use earnest_value::{Domain, Value};
 
@@ -625,6 +685,32 @@ mod tests {
             .map(|pair| numbers(pair))
             .collect();
         assert_eq!(all, expected);
+    }
+
+    #[test]
+    fn turning_the_digits_walks_the_combinations_in_order_and_says_how_many_inputs_changed() {
+        let two_by_three = action(vec![
+            input("a", 0, numbers(&[1, 2])),
+            input("b", 1, numbers(&[10, 20, 30])),
+        ]);
+        let mut digits = vec![0, 0];
+        let mut changed = Vec::new();
+        for combination in 1..6 {
+            changed.push(turn(&mut digits, &two_by_three.inputs));
+            let found: Vec<Option<&Value>> = two_by_three
+                .inputs
+                .iter()
+                .zip(&digits)
+                .map(|(each, digit)| each.values.get(*digit))
+                .collect();
+            let expected: Vec<Option<&Value>> = chosen(&two_by_three, combination).collect();
+            assert_eq!(found, expected, "combination {combination}");
+        }
+        assert_eq!(
+            changed,
+            vec![1, 2, 1, 2, 1],
+            "a carry turns the next input too"
+        );
     }
 
     #[test]

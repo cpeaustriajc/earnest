@@ -39,6 +39,27 @@ impl Action {
             })
             .collect()
     }
+
+    /// Whether the guard or an update binds a value to the slot of an input, or two inputs
+    /// share a slot. Either way a slot of an input may hold another value after the action is
+    /// evaluated than the one put there, so a search that tries the next combination puts every
+    /// input again, not only those whose value changed.
+    #[must_use]
+    pub fn inputs_may_be_overwritten(&self) -> bool {
+        let binders = Binders::of(
+            std::iter::once(&self.guard)
+                .chain(self.updates.iter().flatten())
+                .map(Code::expr),
+        );
+        self.inputs.iter().enumerate().any(|(at, input)| {
+            binders.bound(input.slot)
+                || self
+                    .inputs
+                    .iter()
+                    .skip(at.saturating_add(1))
+                    .any(|other| other.slot == input.slot)
+        })
+    }
 }
 
 impl Binders<'_> {

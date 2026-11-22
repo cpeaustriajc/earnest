@@ -138,6 +138,17 @@ impl<'a> Frame<'a> {
         self.fill(slot, value);
     }
 
+    /// Puts a copy of `value` in `slot`, the same as [`Frame::put`] with a clone of it, and
+    /// faster when the slot already holds a number and `value` is one.
+    pub fn put_copy(&mut self, slot: usize, value: &Value) {
+        self.writer = NO_UNIT;
+        match (self.locals.get_mut(slot), value) {
+            (Some(Value::Int(place)), Value::Int(number)) => *place = *number,
+            (Some(place), _) => *place = value.clone(),
+            (None, _) => {}
+        }
+    }
+
     pub(crate) fn write(&mut self, unit: u64, slot: usize, value: Value) {
         self.enter(unit);
         self.fill(slot, value);
