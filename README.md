@@ -56,14 +56,15 @@ type checker and Node, which need the package to find `m` and its types.
 
 ## Nightly builds
 
-To try the newest `main` without building it, download the archive for your platform from the
-`nightly` pre-release on the GitHub releases page. Each night that `main` has moved, it is rebuilt
-from the tip of `main` and replaced; it is not a release and has no version of its own. Each
-archive holds the one binary `earnest` (`earnest.exe` on Windows) and has a `.sha256` file beside
-it. Check a download in the folder that holds both:
+To try the newest `main` without building it, take the `nightly` pre-release from the GitHub
+releases page. Each night that `main` has moved, it is rebuilt from the tip of `main` and
+replaced; it is not a release. Each archive holds the one binary `earnest` (`earnest.exe` on
+Windows) beside a `.sha256` file; check a download in the folder that holds both. On macOS and
+Linux, Homebrew installs the same build and checks it for you:
 
 ```sh
 sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256      # shasum -a 256 --check on macOS
+brew install cpeaustriajc/earnest/earnest                  # brew upgrade earnest for a newer night
 ```
 
 ## Commands
