@@ -1,0 +1,35 @@
+---
+title: Earnest
+description: A model checker for models written in your app's own language.
+template: splash
+hero:
+  tagline: State the rules of a change as a model in TypeScript or Rust. Earnest visits every reachable state and shows the shortest path to each broken rule.
+  actions:
+    - text: Quickstart
+      link: /start/quickstart/
+      icon: right-arrow
+    - text: Write your first model
+      link: /tutorials/first-model/
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+:::caution[Early access]
+There is no release yet and nothing is on npm. The only builds are the nightly builds of `main`, and the model API and the command line can change from one night to the next.
+:::
+
+<CardGrid>
+	<Card title="No second language" icon="seti:typescript">
+		A model is an ordinary TypeScript or Rust file. Whoever writes the app can write the model.
+	</Card>
+	<Card title="No second toolchain" icon="setting">
+		The project's own type checker, linter and formatter already accept a model file.
+	</Card>
+	<Card title="Every state" icon="magnifier">
+		`earnest verify` visits every reachable state and judges every rule in each one.
+	</Card>
+	<Card title="Made for agents" icon="rocket">
+		Paste one prompt into a coding agent, and it installs Earnest and writes a first model.
+	</Card>
+</CardGrid>

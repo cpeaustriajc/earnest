@@ -4,3 +4,7 @@
 /mutants.out
 node_modules
 /packages/*/dist
+/apps/docs/dist
+/apps/docs/.astro
+!/apps/docs/
+!/apps/docs/src/content/docs/
