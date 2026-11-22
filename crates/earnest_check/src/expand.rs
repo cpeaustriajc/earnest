@@ -2,8 +2,8 @@ use crate::store::{RangeSlot, RowLayout, hash_words};
 use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
-use rustc_hash::FxHasher;
-use std::hash::{Hash, Hasher};
+use rustc_hash::FxBuildHasher;
+use std::hash::BuildHasher;
 use std::time::Instant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,12 +241,6 @@ pub(crate) fn same_words(one: &[u64], other: &[u64]) -> bool {
     one.len() == other.len() && one.iter().zip(other).all(|(left, right)| left == right)
 }
 
-fn hash_values(values: &[Value]) -> u64 {
-    let mut hasher = FxHasher::default();
-    values.hash(&mut hasher);
-    hasher.finish()
-}
-
 impl Seen {
     fn first_updates(&mut self, updates: &[(usize, Value)]) -> bool {
         let width = updates.len();
@@ -258,11 +252,11 @@ impl Seen {
         let Some(candidate) = values.get(start..) else {
             return false;
         };
-        let hash = hash_values(candidate);
+        let hash = FxBuildHasher.hash_one(candidate);
         match seen.entry(
             hash,
             |at| tuple(*at) == candidate,
-            |at| hash_values(tuple(*at)),
+            |at| FxBuildHasher.hash_one(tuple(*at)),
         ) {
             hashbrown::hash_table::Entry::Occupied(_) => {
                 self.values.truncate(start);
