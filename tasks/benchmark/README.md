@@ -37,6 +37,11 @@ from a cache and nothing is written to the repository, and prints Markdown:
 - the budget: the 10-million-state target and the four limits below, each with its measurement.
 
 Wall time is the time from starting the process to its exit, so it includes reading the files.
+Search time is the `"milliseconds"` the checker reports for a model in its JSON: the time of the
+search of that model alone, from building its table of states and its actions to the outcome,
+without starting the process, reading and lowering the file or printing. The checker gives it in
+whole milliseconds, cut down, so a search time can read up to 1 ms short: about 1% of a search of
+100 ms, and a ratio of two such times can be off by the error of both.
 Peak memory is the largest resident set (`VmHWM` in `/proc`) any run reached; it is `n/a` where
 `/proc` has no such file. The binary fails, with the model and both numbers, when the checker's
 state count for a model differs from the one derived below, when a model is not `pass`, or when
@@ -89,15 +94,18 @@ misses. Times are medians; "all cores" is the default number of workers.
 | `grid_10m` with 4 workers, wall time: the product's target | 1.2 s to 2.4 s in ten runs of the `check` job | under 5 s |
 | `grid_10m` with 1 worker, wall time | 3.7 s to 3.8 s in the `check` job, 3.9 s to 6.1 s on cloud machines | under 8 s |
 | `grid_10m` peak memory, with 4 workers and with 1 worker | 196 MiB and 207 MiB | under 256 MiB |
-| `narrow_levels`, all cores over 1 worker | about 1x, one measurement up to 1.37x | at most 1.5x |
-| `wide`, all cores over 1 worker | about 0.33x | at most 0.75x |
+| `narrow_levels`, search time with all cores over search time with 1 worker | about 1x, one measurement up to 1.37x, both in wall time | at most 1.5x |
+| `wide`, search time with all cores over search time with 1 worker | about 0.33x in wall time | at most 0.75x |
 
-Machines of the same size differed by more than two times on the same code in one day, so the
-two times are loose and the memory and the two ratios, taken on one machine in one job, carry
-the budget; `wide` leaves room for four CPUs that are two cores of two threads. The benchmark
-wants a machine that does nothing else; a missed line is measured once more and judged by the
-better of the two. When a line fails, make the change faster or take it back. A limit changes
-only with the owner's word.
+Machines of the same size differed by more than two times on the same code in one day, so the two
+times are loose and the memory and the two ratios, taken on one machine in one job, carry the
+budget. The two ratios divide search times and the two times of `grid_10m` are wall times, which is
+what a person waits for. A ratio of wall times would count starting the process and reading the
+file in both runs, a part that no worker shortens, so a faster search would move the ratio towards
+its limit; `wide` leaves room for four CPUs that are two cores of two threads. The benchmark wants
+a machine that does nothing else; a missed line is measured once more and judged by the better of
+the two. When a line fails, make the change faster or take it back. A limit changes only with the
+owner's word.
 
 ## Results
 
