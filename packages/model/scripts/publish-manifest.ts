@@ -1,14 +1,20 @@
-import { copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const PACKAGE = resolve(import.meta.dirname, "..");
 const MANIFEST = join(PACKAGE, "package.json");
+const NEXT_MANIFEST = join(PACKAGE, ".package.next.json");
 const SOURCE = join(PACKAGE, "node_modules", ".package.source.json");
-const PUBLISHED = join(PACKAGE, "node_modules", ".package.published.json");
+
+const replaceManifest = (text: string): void => {
+  writeFileSync(NEXT_MANIFEST, text);
+  renameSync(NEXT_MANIFEST, MANIFEST);
+};
 
 const restore = (): void => {
   if (existsSync(SOURCE)) {
-    renameSync(SOURCE, MANIFEST);
+    replaceManifest(readFileSync(SOURCE, "utf8"));
+    rmSync(SOURCE);
   }
 };
 
@@ -19,8 +25,7 @@ const apply = (): void => {
     publishConfig: { exports: unknown };
   };
   const published = { ...manifest, exports: manifest.publishConfig.exports };
-  writeFileSync(PUBLISHED, `${JSON.stringify(published, null, 2)}\n`);
-  renameSync(PUBLISHED, MANIFEST);
+  replaceManifest(`${JSON.stringify(published, null, 2)}\n`);
 };
 
 const [command] = process.argv.slice(2);
