@@ -7,7 +7,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/nightly.yml
-      - .github/homebrew/**
+      - install.sh
+      - install.ps1
 
 permissions:
   contents: read
@@ -21,7 +22,6 @@ env:
   RUST_VERSION: 1.100.0
   RELEASE_TAG: nightly
   SMOKE_MODEL: tasks/benchmark/models/mixed/basket.model.ts
-  HOMEBREW_TAP: cpeaustriajc/homebrew-earnest
 
 jobs:
   decide:
@@ -123,6 +123,14 @@ jobs:
             shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
           fi
           cat "$ARCHIVE.sha256"
+      - name: Install from the archive with install.sh
+        if: matrix.runs_here && runner.os != 'Windows'
+        env:
+          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/dist
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
+        run: |
+          sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
@@ -180,55 +188,32 @@ jobs:
             --title "Nightly build of main" \
             --notes-file notes.md
 
-  homebrew:
-    needs: [build, publish]
-    if: >-
-      always() && needs.build.result == 'success' &&
-      (needs.publish.result == 'success' || github.event_name == 'pull_request')
-    runs-on: ubuntu-latest
+
+  installed:
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
-    env:
-      TAP_KEY_SET: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY != '' }}
-      PUSH: ${{ github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          path: earnest
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Write the formula
+      - name: Install the published nightly with install.sh
+        if: runner.os != 'Windows'
+        env:
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
         run: |
-          base=$(sed -n 's/^version = "\(.*\)"$/\1/p' earnest/Cargo.toml | head -n 1)
-          version="$base-nightly.$(date -u +%Y%m%d%H%M)"
-          download="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
-          earnest/.github/homebrew/formula.sh "$version" "$download" dist > earnest.rb
-          ruby -c earnest.rb
-          cat earnest.rb
-      - name: Say why the tap is not updated
-        if: env.PUSH == 'true' && env.TAP_KEY_SET != 'true'
-        run: echo "::warning::The secret HOMEBREW_TAP_DEPLOY_KEY is not set, so $HOMEBREW_TAP keeps its old formula."
-      - uses: actions/checkout@v4
-        if: env.PUSH == 'true' && env.TAP_KEY_SET == 'true'
-        with:
-          repository: ${{ env.HOMEBREW_TAP }}
-          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-          persist-credentials: true
-          path: tap
-      - name: Push the formula to the tap
-        if: env.PUSH == 'true' && env.TAP_KEY_SET == 'true'
-        working-directory: tap
+          sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
+      - name: Install the published nightly with install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EARNEST_INSTALL_DIR: ${{ runner.temp }}\installed
         run: |
-          mkdir -p Formula
-          cp ../earnest.rb Formula/earnest.rb
-          git add Formula/earnest.rb
-          if git diff --cached --quiet; then
-            echo "The formula is unchanged."
-            exit 0
-          fi
-          git -c user.name="github-actions[bot]" \
-            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit --quiet --message "Install the nightly build of earnest at $GITHUB_SHA"
-          git push origin HEAD
+          ./install.ps1
+          & "$env:EARNEST_INSTALL_DIR\earnest.exe" verify --no-cache $env:SMOKE_MODEL
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
