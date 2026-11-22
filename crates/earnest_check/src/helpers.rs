@@ -5,10 +5,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// time.
 ///
 /// Give every search of a run the same handle, with the threads no search is using in it. A
-/// search borrows what is idle when it starts a level and again before it takes each part of
-/// the level, and gives each thread back when it has no part left, so threads a finished
-/// search leaves behind go to the searches that still run, and no thread waits while another
-/// search has a part of a level to spread.
+/// search borrows what is idle when it starts to spread a level over threads, and again each
+/// time one of its threads is about to take a part, while it sees more parts left to take than
+/// threads at work. Near its state limit a search may spread a level in rounds: it stops
+/// handing out parts once what its threads found may not fit, merges that, and spreads the
+/// rest of the level anew. While it holds the rest back it borrows no thread to take a part. A
+/// thread goes back as soon as it finds no part to take, so threads a finished search leaves
+/// behind go to the searches that still run. A search that keeps no graph may also borrow
+/// threads to merge the states of a level, and gives them back when the merge ends.
 #[derive(Clone, Debug, Default)]
 pub struct Helpers {
     idle: Arc<AtomicUsize>,
