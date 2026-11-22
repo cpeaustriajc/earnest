@@ -55,7 +55,7 @@ impl Search<'_> {
                 rows: &part.rows,
                 hashes: &part.hashes,
                 froms: &part.froms,
-                by_shard: &part.by_shard,
+                ordinals: &part.ordinals,
                 shard_starts: &part.shard_starts,
             })
             .collect();
@@ -75,6 +75,7 @@ impl Search<'_> {
         let words = self.store.layout().words();
         let graph = self.limits.keep_graph;
         for part in parts {
+            let part = part.into_ordinal_order(words);
             let mut marks = part.marks.into_iter().peekable();
             let mut raws = part.raws.into_iter();
             let mut listed = part.entries.iter().copied().peekable();

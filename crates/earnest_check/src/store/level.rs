@@ -2,6 +2,7 @@ use super::index::{Filed, SHARD_COUNT, Shards};
 use super::rows::{Parents, ParentsTail, Rows, pack};
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry as Slot;
+use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
 const BITS_PER_WORD: usize = 64;
@@ -14,7 +15,7 @@ pub(crate) struct Fresh<'a> {
     pub(crate) rows: &'a [u64],
     pub(crate) hashes: &'a [u64],
     pub(crate) froms: &'a [usize],
-    pub(crate) by_shard: &'a [usize],
+    pub(crate) ordinals: &'a [usize],
     pub(crate) shard_starts: &'a [usize],
 }
 
@@ -28,31 +29,39 @@ pub(super) struct Level<'a> {
 }
 
 impl Level<'_> {
-    fn row_of(&self, part: usize, ordinal: usize) -> &[u64] {
-        let start = ordinal.saturating_mul(self.words);
+    fn row_of(&self, part: usize, position: usize) -> &[u64] {
+        let start = position.saturating_mul(self.words);
         self.parts
             .get(part)
             .and_then(|fresh| fresh.rows.get(start..start.saturating_add(self.words)))
             .unwrap_or(&[])
     }
 
-    fn hash_of(&self, part: usize, ordinal: usize) -> u64 {
+    fn hash_of(&self, part: usize, position: usize) -> u64 {
         self.parts
             .get(part)
-            .and_then(|fresh| fresh.hashes.get(ordinal))
+            .and_then(|fresh| fresh.hashes.get(position))
             .copied()
             .unwrap_or(0)
     }
 
-    fn in_shard(&self, part: usize, shard: usize) -> &[usize] {
+    fn ordinal_of(&self, part: usize, position: usize) -> usize {
+        self.parts
+            .get(part)
+            .and_then(|fresh| fresh.ordinals.get(position))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn in_shard(&self, part: usize, shard: usize) -> Range<usize> {
         self.parts
             .get(part)
             .and_then(|fresh| {
                 let start = *fresh.shard_starts.get(shard)?;
                 let end = *fresh.shard_starts.get(shard + 1)?;
-                fresh.by_shard.get(start..end)
+                Some(start..end.min(fresh.hashes.len()).max(start))
             })
-            .unwrap_or(&[])
+            .unwrap_or(0..0)
     }
 }
 
@@ -71,11 +80,7 @@ impl<F: Filed> Shards<F> {
             first_in_level(&at)
         };
         let maps: Vec<Winners> = gather(at.spread, at.parts.len(), |part| {
-            Winners::of(
-                &wins,
-                part,
-                at.parts.get(part).map_or(0, |fresh| fresh.hashes.len()),
-            )
+            Winners::of(&wins, &at, part)
         });
         let mut bases = Vec::with_capacity(maps.len());
         let mut total = 0;
@@ -89,7 +94,7 @@ impl<F: Filed> Shards<F> {
             }
             return None;
         }
-        write_level(rows, parents, &at, &maps, total);
+        write_level(rows, parents, &at, &wins, &maps, total);
         if !F::HOLDS_ROW {
             self.file_level(rows, &at, &wins, &maps, &bases);
         }
@@ -108,16 +113,16 @@ impl<F: Filed> Shards<F> {
             for part in 0..at.parts.len() {
                 let filed = at.in_shard(part, shard);
                 let mut mine = Vec::with_capacity(filed.len());
-                for ordinal in filed {
-                    let row = at.row_of(part, *ordinal);
+                for position in filed {
+                    let row = at.row_of(part, position);
                     let slot = table.entry(
-                        at.hash_of(part, *ordinal),
+                        at.hash_of(part, position),
                         |filed| filed.holds(rows, row),
                         |filed| filed.hash(rows),
                     );
                     if let (Slot::Vacant(vacant), Some(filed)) = (slot, F::new(row, 0)) {
                         vacant.insert(filed);
-                        mine.push(*ordinal);
+                        mine.push(position);
                     }
                 }
                 won.push(mine);
@@ -134,10 +139,10 @@ impl<F: Filed> Shards<F> {
                 return;
             };
             let mut table = table.lock().unwrap_or_else(PoisonError::into_inner);
-            for (part, ordinals) in won.iter().enumerate() {
-                for ordinal in ordinals {
-                    let row = at.row_of(part, *ordinal);
-                    let hash = at.hash_of(part, *ordinal);
+            for (part, positions) in won.iter().enumerate() {
+                for position in positions {
+                    let row = at.row_of(part, *position);
+                    let hash = at.hash_of(part, *position);
                     if let Ok(found) = table.find_entry(hash, |filed| filed.holds(rows, row)) {
                         found.remove();
                     }
@@ -163,15 +168,15 @@ impl<F: Filed> Shards<F> {
             let mut table = table.lock().unwrap_or_else(PoisonError::into_inner);
             let hasher = |filed: &F| filed.hash(rows);
             table.reserve(won.iter().map(Vec::len).sum(), hasher);
-            for (part, ordinals) in won.iter().enumerate() {
+            for (part, positions) in won.iter().enumerate() {
                 let (Some(map), Some(base)) = (maps.get(part), bases.get(part)) else {
                     continue;
                 };
-                for ordinal in ordinals {
-                    let id = at.count + base + map.rank(*ordinal);
-                    let row = at.row_of(part, *ordinal);
+                for position in positions {
+                    let id = at.count + base + map.rank(at.ordinal_of(part, *position));
+                    let row = at.row_of(part, *position);
                     if let Some(filed) = F::new(row, id) {
-                        table.insert_unique(at.hash_of(part, *ordinal), filed, hasher);
+                        table.insert_unique(at.hash_of(part, *position), filed, hasher);
                     }
                 }
             }
@@ -187,15 +192,15 @@ fn first_in_level(at: &Level<'_>) -> Vec<Won> {
         for part in 0..at.parts.len() {
             let filed = at.in_shard(part, shard);
             let mut mine = Vec::with_capacity(filed.len());
-            for ordinal in filed {
-                let row = at.row_of(part, *ordinal);
+            for position in filed {
+                let row = at.row_of(part, position);
                 if let Slot::Vacant(vacant) = seen.entry(
-                    at.hash_of(part, *ordinal),
+                    at.hash_of(part, position),
                     |(other, earlier)| at.row_of(*other, *earlier) == row,
                     |(other, earlier)| at.hash_of(*other, *earlier),
                 ) {
-                    vacant.insert((part, *ordinal));
-                    mine.push(*ordinal);
+                    vacant.insert((part, position));
+                    mine.push(position);
                 }
             }
             won.push(mine);
@@ -208,6 +213,7 @@ fn write_level(
     rows: &mut Rows,
     parents: &mut Parents,
     at: &Level<'_>,
+    wins: &[Won],
     maps: &[Winners],
     total: usize,
 ) {
@@ -231,13 +237,16 @@ fn write_level(
         };
         let mut slice = slice.lock().unwrap_or_else(PoisonError::into_inner);
         let (row_part, parent_part): &mut (&mut [u8], ParentsTail<'_>) = &mut slice;
-        for (place, won) in map.ordinals().enumerate() {
-            let start = place * stride;
-            if let Some(into) = row_part.get_mut(start..start + stride) {
-                pack(at.row_of(part, won), into);
-            }
-            if let Some(from) = fresh.froms.get(won) {
-                parent_part.set(place, *from);
+        for won in wins.iter().filter_map(|shard| shard.get(part)) {
+            for position in won {
+                let place = map.rank(at.ordinal_of(part, *position));
+                let start = place * stride;
+                if let Some(into) = row_part.get_mut(start..start + stride) {
+                    pack(at.row_of(part, *position), into);
+                }
+                if let Some(from) = fresh.froms.get(*position) {
+                    parent_part.set(place, *from);
+                }
             }
         }
     });
@@ -251,10 +260,12 @@ struct Winners {
 }
 
 impl Winners {
-    fn of(wins: &[Won], part: usize, found: usize) -> Self {
+    fn of(wins: &[Won], at: &Level<'_>, part: usize) -> Self {
+        let found = at.parts.get(part).map_or(0, |fresh| fresh.hashes.len());
         let mut bits = vec![0_u64; found.div_ceil(BITS_PER_WORD)];
         for shard in wins {
-            for ordinal in shard.get(part).map_or(&[][..], Vec::as_slice) {
+            for position in shard.get(part).map_or(&[][..], Vec::as_slice) {
+                let ordinal = at.ordinal_of(part, *position);
                 if let Some(word) = bits.get_mut(ordinal / BITS_PER_WORD) {
                     *word |= 1 << (ordinal % BITS_PER_WORD);
                 }
@@ -280,20 +291,6 @@ impl Winners {
             usize::try_from((bits & below).count_ones()).unwrap_or(0)
         });
         self.before.get(word).copied().unwrap_or(0) + within
-    }
-
-    fn ordinals(&self) -> impl Iterator<Item = usize> + '_ {
-        self.bits.iter().enumerate().flat_map(|(word, bits)| {
-            let mut rest = *bits;
-            std::iter::from_fn(move || {
-                if rest == 0 {
-                    return None;
-                }
-                let bit = usize::try_from(rest.trailing_zeros()).unwrap_or(0);
-                rest &= rest - 1;
-                Some(word * BITS_PER_WORD + bit)
-            })
-        })
     }
 }
 

@@ -31,7 +31,7 @@ pub(super) struct Part {
     pub(super) rows: Vec<u64>,
     pub(super) hashes: Vec<u64>,
     pub(super) froms: Vec<usize>,
-    pub(super) by_shard: Vec<usize>,
+    pub(super) ordinals: Vec<usize>,
     pub(super) shard_starts: Vec<usize>,
     pub(super) raws: Vec<Box<[Value]>>,
     pub(super) stopped: bool,
@@ -211,7 +211,7 @@ impl Part {
         self.hashes.len().saturating_add(self.raws.len())
     }
 
-    fn file_by_shard(&mut self) {
+    fn file_by_shard(&mut self, words: usize) {
         let mut starts = vec![0; SHARD_COUNT + 1];
         for hash in &self.hashes {
             if let Some(count) = starts.get_mut(shard_of(*hash) + 1) {
@@ -224,17 +224,77 @@ impl Part {
                 *start += before;
             }
         }
+        let count = self.hashes.len();
         let mut next = starts.clone();
-        self.by_shard = vec![0; self.hashes.len()];
-        for (ordinal, hash) in self.hashes.iter().enumerate() {
-            if let Some(at) = next.get_mut(shard_of(*hash))
-                && let Some(slot) = self.by_shard.get_mut(*at)
-            {
-                *slot = ordinal;
-                *at += 1;
+        let mut ordinals = vec![0; count];
+        let mut hashes = vec![0; count];
+        let mut froms = vec![0; count];
+        let mut rows = vec![0; self.rows.len()];
+        for (ordinal, (hash, from)) in self.hashes.iter().zip(&self.froms).enumerate() {
+            let Some(at) = next.get_mut(shard_of(*hash)) else {
+                continue;
+            };
+            let position = *at;
+            *at += 1;
+            if let (Some(to_ordinal), Some(to_hash), Some(to_from)) = (
+                ordinals.get_mut(position),
+                hashes.get_mut(position),
+                froms.get_mut(position),
+            ) {
+                *to_ordinal = ordinal;
+                *to_hash = *hash;
+                *to_from = *from;
             }
+            move_row(&self.rows, ordinal, &mut rows, position, words);
         }
+        self.ordinals = ordinals;
+        self.hashes = hashes;
+        self.froms = froms;
+        self.rows = rows;
         self.shard_starts = starts;
+    }
+
+    pub(super) fn into_ordinal_order(mut self, words: usize) -> Self {
+        if self.shard_starts.is_empty() {
+            return self;
+        }
+        let count = self.hashes.len();
+        let mut hashes = vec![0; count];
+        let mut froms = vec![0; count];
+        let mut rows = vec![0; self.rows.len()];
+        for (position, ordinal) in self.ordinals.iter().enumerate() {
+            if let (Some(to_hash), Some(to_from), Some(hash), Some(from)) = (
+                hashes.get_mut(*ordinal),
+                froms.get_mut(*ordinal),
+                self.hashes.get(position),
+                self.froms.get(position),
+            ) {
+                *to_hash = *hash;
+                *to_from = *from;
+            }
+            move_row(&self.rows, position, &mut rows, *ordinal, words);
+        }
+        self.hashes = hashes;
+        self.froms = froms;
+        self.rows = rows;
+        self.ordinals = Vec::new();
+        self.shard_starts = Vec::new();
+        self
+    }
+}
+
+fn move_row(from: &[u64], at: usize, into: &mut [u64], place: usize, words: usize) {
+    if words == 1 {
+        if let (Some(word), Some(slot)) = (from.get(at), into.get_mut(place)) {
+            *slot = *word;
+        }
+        return;
+    }
+    let start = place.saturating_mul(words);
+    if let Some(slots) = into.get_mut(start..start.saturating_add(words)) {
+        for (slot, word) in slots.iter_mut().zip(row_at(from, words, at)) {
+            *slot = *word;
+        }
     }
 }
 
@@ -315,7 +375,7 @@ impl Search<'_> {
             sink.part.expanded = sink.part.expanded.saturating_add(1);
         }
         if !self.limits.keep_graph {
-            sink.part.file_by_shard();
+            sink.part.file_by_shard(words);
         }
         kit.fresh_per_state = (sink.part.hashes.len(), sink.part.expanded);
         sink.part
