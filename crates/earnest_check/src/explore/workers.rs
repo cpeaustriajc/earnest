@@ -17,7 +17,7 @@ const LEAST_TIME_OF_A_STATE: Duration = Duration::from_nanos(500);
 const TIME_A_PART_PAYS_FOR: Duration = Duration::from_micros(512);
 const MOST_PARTS: usize = 64;
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
-const PARTS_OF_A_LONE_ROUND: usize = 14;
+const PARTS_OF_A_LONE_ROUND: usize = MOST_PARTS / 2;
 
 fn wide(count: usize) -> u128 {
     u128::try_from(count).unwrap_or(u128::MAX)
@@ -455,6 +455,16 @@ mod tests {
                 .map(|shape| shape.part_states),
             Some(part * 10 + 1),
             "one state more makes every part a state wider"
+        );
+    }
+
+    #[test]
+    fn a_lone_round_is_half_the_most_parts_as_a_smaller_one_brings_too_few_rows_to_each_shard_table()
+     {
+        assert_eq!(
+            PARTS_OF_A_LONE_ROUND, 32,
+            "rounds of 14 parts made 100 million states 6% slower, of 24 still 10 million states, \
+             since each round's claim met each shard's table with fewer rows"
         );
     }
 
