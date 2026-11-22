@@ -31,8 +31,9 @@ finds the same states and the same verdicts.
 Four agents each got one sentence, "find all implicit state machines to the <app> using
 `earnest`", for zellij `62cfa6c`, helix `1a3fdfd`, excalidraw `9c2e462` and t3code `9de4ec1`.
 They wrote 18 models, and TLC 1.8.0 found the same states and the same verdict on all 18. The
-models are not in this repository. The full write-up, with the bugs and the limits of the
-comparison, is `apps/docs/src/content/docs/compare/tla.md`.
+models are not in this repository. A fifth agent modelled Zed at `d31d107` and found that its Git
+panel can run two commits at once: click Commit, then press the Commit key. The full write-up,
+with the bugs and the limits of the comparison, is `apps/docs/src/content/docs/compare/tla.md`.
 
 ![Verdicts that TLC confirms: 18 of 18. Higher is better.](apps/docs/src/assets/compare/tlc-agreement.png)
 

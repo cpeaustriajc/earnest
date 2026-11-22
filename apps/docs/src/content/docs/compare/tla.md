@@ -1,6 +1,6 @@
 ---
 title: Earnest, TLA+ and Quint on real apps
-description: Four open-source apps, 18 models of their hidden state machines, checked by earnest, TLC and Quint.
+description: Five open-source apps, the bugs earnest found in them, and 18 models checked by earnest, TLC and Quint.
 ---
 
 We gave an agent one sentence for each of four open-source apps: "find all implicit state machines to the <app> using `earnest`". Nothing else: no models to start from, no hints about where to look. Each agent cloned the app, read its code, wrote the machines it found as earnest models in the app's own language, and ran `earnest verify`. We then ran TLC on earnest's TLA+ export of every model.
@@ -25,7 +25,15 @@ Each broken rule comes with the shortest path to it, step by step. We checked th
 - **zellij, a tab switch goes one tab too far.** While a tab loads, `GoToTab` stores a 1-based index (`screen.rs:13032`). The code that applies it later adds 1 again (`screen.rs:12962`). Path: a new tab starts loading, you press `GoToTab 1`, the tab finishes, and the second tab is active.
 - **helix, the register stays in the macro.** Typing `"a` and then `Q` to stop a recording leaves `"a` at the end of the macro, because `record_macro` drops only the last key (`commands.rs:6970`).
 - **excalidraw, the crop editor stays open on a deleted image.** Delete never clears `croppingElementId` (`actionDeleteSelected.tsx:300`).
-- **t3code, a run that ended starts again.** A `failed` run can go back to `preparing` (`Orchestrator.ts:12762`), while `isTerminalRunStatus` treats `failed` as final (`ThreadManagementService.ts:585`). We haven't shown what goes wrong because of it.
+- **t3code, a run that ended starts again.** A `failed` run can go back to `preparing` (`Orchestrator.ts:12762`), while `isTerminalRunStatus` treats `failed` as final (`ThreadManagementService.ts:585`). A failing test in t3code's own test harness shows one effect. A scheduled task fails its worktree setup, the user presses Retry, and the agent starts. The Schedules page still shows the run as Failed, because `ScheduledTaskService.ts:962` writes `failed` once and never looks again.
+
+## Zed: the Git panel can run two commits at once
+
+A fifth agent modelled the Git panel of [Zed](https://github.com/zed-industries/zed) at commit `d31d107`. The model `GitPanelCommit` has 39 states, and `earnest verify` breaks its rule "At most one commit or uncommit runs at a time" in two steps: click **Commit**, then press the Commit key.
+
+![earnest's output for GitPanelCommit next to the three lines of crates/git_ui/src/git_panel.rs that cause it: the button refuses a second commit at line 7102, the Commit key checks only focus at line 4205, and commit_changes replaces the pending commit at line 4429.](../../../assets/compare/zed-git-panel.png)
+
+The button checks `pending_commit` (`git_panel.rs:7102`), but the Commit key checks only focus (`git_panel.rs:4205`). Then `commit_changes` replaces the pending commit (`git_panel.rs:4429`), so the first task is dropped while its git job still runs. We confirmed this by reading the source. We have not run it in Zed. The Zed model is not one of the 18 in the charts below.
 
 ## TLC agrees on every model
 
@@ -119,6 +127,6 @@ Earnest checks rules that must hold in every state, and states where nothing can
 
 - An agent wrote every model by reading the code, so a model can be wrong about the app. A broken rule is a lead to check in the code, not proof of a bug.
 - "All" means what each agent's search found. Each agent modelled 2 to 7 machines and only listed the rest.
-- None of the bugs has been reported to its project or reproduced in a running app.
+- One t3code bug is reproduced by a failing test. The other bugs, Zed's among them, are confirmed only by reading the source. None of them has been reported to its project.
 - The models are not in this repository, so you can't rerun these numbers from it.
 - One agent stopped on its first try because "the helix" named no repository. With `helix-editor/helix`, it went ahead.
