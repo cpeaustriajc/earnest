@@ -16,7 +16,7 @@ use merge::{Full, Judged};
 use part::Part;
 use starts::Starts;
 use std::ops::Range;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 const STATES_BETWEEN_CLOCK_READS: usize = 64;
 
@@ -150,7 +150,6 @@ impl Search<'_> {
             .limits
             .time_limit
             .and_then(|limit| began.checked_add(limit));
-        let mut per_state = Duration::ZERO;
         for start in Starts::new(&self.model.fields) {
             let placed =
                 self.store
@@ -162,14 +161,8 @@ impl Search<'_> {
         }
         let mut frontier = 0..self.store.len();
         while !frontier.is_empty() && self.reason.is_none() {
-            let level_began = Instant::now();
             let found_before = self.store.len();
-            let level = self.level(frontier.clone(), deadline, Asked::Everything, per_state);
-            per_state = level_began
-                .elapsed()
-                .saturating_mul(u32::try_from(level.workers).unwrap_or(u32::MAX))
-                .checked_div(u32::try_from(frontier.len()).unwrap_or(u32::MAX))
-                .unwrap_or_default();
+            let level = self.level(frontier.clone(), deadline, Asked::Everything);
             if level.end == Round::Stopped {
                 self.reason = Some(self.time_limit_reason());
                 break;
@@ -185,7 +178,7 @@ impl Search<'_> {
 
     fn judge_the_rest(&mut self, deadline: Option<Instant>) {
         let unjudged = self.judged..self.store.len();
-        let level = self.level(unjudged, deadline, Asked::RulesOnly, Duration::ZERO);
+        let level = self.level(unjudged, deadline, Asked::RulesOnly);
         if level.end == Round::Stopped {
             self.reason = Some(self.time_limit_reason());
             let kept = self.judged;
@@ -209,13 +202,7 @@ impl Search<'_> {
             .expand(self.model, self.limits, deadline, asked)
     }
 
-    fn level(
-        &mut self,
-        frontier: Range<usize>,
-        deadline: Option<Instant>,
-        asked: Asked,
-        per_state: Duration,
-    ) -> Ran {
+    fn level(&mut self, frontier: Range<usize>, deadline: Option<Instant>, asked: Asked) -> Ran {
         let lending = self.limits.helpers.as_ref();
         let mut judged = Judged::default();
         let mut rest = frontier.start;
@@ -230,8 +217,7 @@ impl Search<'_> {
                     fewest,
                     else_lending,
                 } => {
-                    let spread =
-                        self.spread_round(&states, deadline, asked, per_state, fewest, &mut judged);
+                    let spread = self.spread_round(&states, deadline, asked, fewest, &mut judged);
                     let Some(ran) = spread else {
                         way = Way::Here(else_lending);
                         continue;
@@ -275,15 +261,11 @@ impl Search<'_> {
         states: &Range<usize>,
         deadline: Option<Instant>,
         asked: Asked,
-        per_state: Duration,
         fewest: usize,
         judged: &mut Judged,
     ) -> Option<Ran> {
-        let expansion = self.spread_level(states, deadline, asked, per_state, fewest)?;
-        let ran = Ran {
-            end: expansion.end,
-            workers: expansion.workers,
-        };
+        let expansion = self.spread_level(states, deadline, asked, fewest)?;
+        let ran = Ran { end: expansion.end };
         let undone = ran.end == Round::Stopped && asked == Asked::Everything;
         if ran.end == Round::RestAlone || undone {
             return Some(ran);
@@ -297,10 +279,7 @@ impl Search<'_> {
         };
         Some(match merged {
             Ok(()) => ran,
-            Err(Full) => Ran {
-                end: Round::Full,
-                ..ran
-            },
+            Err(Full) => Ran { end: Round::Full },
         })
     }
 
@@ -376,5 +355,4 @@ enum Way<'h> {
 #[derive(Clone, Copy)]
 struct Ran {
     end: Round,
-    workers: usize,
 }

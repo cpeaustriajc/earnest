@@ -14,8 +14,8 @@ holds
 - a `Graph` of the states and actions for a chart, when the limits ask for one.
 
 `Limits` bounds the states and the time, picks one rule, and sets the worker threads. A level of
-512 states or more is split among the workers, and the outcome is the same for any number of
-them. When a limit stops the search, the states it has counted and not gone on from still have
+2,048 states or more is split among the workers in parts of 1,024 states or more, and the
+outcome is the same for any number of them. When a limit stops the search, the states it has counted and not gone on from still have
 their rules judged before the outcome is given, so "N states so far" never counts a state whose
 rules nobody looked at. No action is tried from them.
 

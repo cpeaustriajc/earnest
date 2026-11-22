@@ -13,7 +13,7 @@ pub struct Limits {
     pub max_states: usize,
     /// How long the search may run before it stops as unfinished. `None` is no limit.
     pub time_limit: Option<Duration>,
-    /// Worker threads for a level of 512 states or more. 0 counts as 1. The outcome is the
+    /// Worker threads for a level of 2,048 states or more. 0 counts as 1. The outcome is the
     /// same for every number. A search left with one thread, no helper being idle, that keeps
     /// no graph takes a level of 16,384 states or more in parts on its own, so it holds that
     /// level's new states until it merges them.

@@ -11,12 +11,15 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::thread::Scope;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-const SMALLEST_SHARED_LEVEL: usize = 512;
+const FEWEST_STATES_A_PART_PAYS_FOR: usize = 1024;
 const MOST_PARTS: usize = 64;
-const WORTH_SPREADING: Duration = Duration::from_millis(1);
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
+
+fn parts_of(states: usize) -> usize {
+    (states / FEWEST_STATES_A_PART_PAYS_FOR).clamp(1, MOST_PARTS)
+}
 
 struct Hands {
     threads: usize,
@@ -24,10 +27,9 @@ struct Hands {
 }
 
 impl Hands {
-    fn take_in_parts(&self, states: usize, per_state: Duration) -> bool {
+    fn take_in_parts(&self, states: usize) -> bool {
         if self.threads > 1 {
-            let count = u32::try_from(states).unwrap_or(u32::MAX);
-            states >= SMALLEST_SHARED_LEVEL || per_state.saturating_mul(count) >= WORTH_SPREADING
+            parts_of(states) > 1
         } else {
             !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
         }
@@ -37,7 +39,6 @@ impl Hands {
 pub(super) struct Expansion {
     pub(super) parts: Vec<Part>,
     pub(super) end: Round,
-    pub(super) workers: usize,
 }
 
 struct Level {
@@ -60,7 +61,6 @@ struct Shared {
     next: AtomicUsize,
     stopped: AtomicBool,
     running: AtomicUsize,
-    peak: AtomicUsize,
     kept_rows: AtomicUsize,
     helpers_taken_up: AtomicUsize,
     done: Mutex<Vec<(usize, Part)>>,
@@ -111,7 +111,6 @@ impl Search<'_> {
         frontier: &Range<usize>,
         deadline: Option<Instant>,
         asked: Asked,
-        per_state: Duration,
         fewest_states: usize,
     ) -> Option<Expansion> {
         let own = self.limits.jobs.max(1);
@@ -120,12 +119,15 @@ impl Search<'_> {
             threads: own.saturating_add(helpers.map_or(0, Helpers::idle)),
             keep_graph: self.limits.keep_graph,
         };
-        if !hands.take_in_parts(frontier.len(), per_state) {
+        if !hands.take_in_parts(frontier.len()) {
             return None;
         }
         let level = Level {
             frontier: frontier.clone(),
-            cuts: cut_points(frontier.len(), frontier.len().div_ceil(MOST_PARTS)),
+            cuts: cut_points(
+                frontier.len(),
+                frontier.len().div_ceil(parts_of(frontier.len())),
+            ),
             deadline,
             asked,
             kept_rows_that_fit: self.estimated_kept_rows_that_fit(),
@@ -190,11 +192,7 @@ impl Search<'_> {
                     Round::RestFrom(frontier.start.saturating_add(*cut))
                 })
         };
-        Some(Expansion {
-            parts: taken,
-            end,
-            workers: shared.peak.into_inner(),
-        })
+        Some(Expansion { parts: taken, end })
     }
 
     fn start_worker<'scope, 'env>(
@@ -217,11 +215,7 @@ impl Search<'_> {
         shared: &'env Shared,
         loan: Option<Loan<'env>>,
     ) {
-        let running = shared
-            .running
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
-        shared.peak.fetch_max(running, Ordering::SeqCst);
+        shared.running.fetch_add(1, Ordering::SeqCst);
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             self.take_parts(scope, level, shared);
         }));
@@ -337,14 +331,14 @@ impl Spread for Crew<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Hands, Level, SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, SMALLEST_SHARED_LEVEL, Shared,
+        FEWEST_STATES_A_PART_PAYS_FOR, Hands, Level, MOST_PARTS,
+        SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, Shared, parts_of,
     };
     use crate::expand::Asked;
     use std::sync::atomic::Ordering;
-    use std::time::Duration;
 
     const LONE_LEVEL: usize = SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS;
-    const SLOW_STATE: Duration = Duration::from_secs(1);
+    const PART: usize = FEWEST_STATES_A_PART_PAYS_FOR;
 
     #[test]
     fn a_lone_thread_that_keeps_no_graph_takes_a_level_in_parts_from_its_size_alone() {
@@ -352,22 +346,9 @@ mod tests {
             threads: 1,
             keep_graph: false,
         };
-        assert!(
-            !lone.take_in_parts(LONE_LEVEL - 1, Duration::ZERO),
-            "just short"
-        );
-        assert!(
-            lone.take_in_parts(LONE_LEVEL, Duration::ZERO),
-            "at the size"
-        );
-        assert!(
-            !lone.take_in_parts(LONE_LEVEL - 1, SLOW_STATE),
-            "a slow level short of the size"
-        );
-        assert!(
-            lone.take_in_parts(10 * LONE_LEVEL, Duration::ZERO),
-            "far above"
-        );
+        assert!(!lone.take_in_parts(LONE_LEVEL - 1), "just short");
+        assert!(lone.take_in_parts(LONE_LEVEL), "at the size");
+        assert!(lone.take_in_parts(10 * LONE_LEVEL), "far above");
     }
 
     #[test]
@@ -376,29 +357,39 @@ mod tests {
             threads: 1,
             keep_graph: true,
         };
-        assert!(!lone.take_in_parts(10 * LONE_LEVEL, SLOW_STATE));
+        assert!(!lone.take_in_parts(10 * LONE_LEVEL));
     }
 
     #[test]
-    fn several_threads_take_a_level_in_parts_from_its_size_or_its_time() {
+    fn several_threads_take_a_level_in_parts_once_it_fills_two_parts() {
         for keep_graph in [false, true] {
             let crew = Hands {
                 threads: 2,
                 keep_graph,
             };
             assert!(
-                !crew.take_in_parts(SMALLEST_SHARED_LEVEL - 1, Duration::ZERO),
-                "a narrow quick level, graph kept: {keep_graph}"
+                !crew.take_in_parts(2 * PART - 1),
+                "short of two parts, graph kept: {keep_graph}"
             );
             assert!(
-                crew.take_in_parts(SMALLEST_SHARED_LEVEL, Duration::ZERO),
-                "a level of the shared size, graph kept: {keep_graph}"
-            );
-            assert!(
-                crew.take_in_parts(SMALLEST_SHARED_LEVEL - 1, SLOW_STATE),
-                "a narrow slow level, graph kept: {keep_graph}"
+                crew.take_in_parts(2 * PART),
+                "two parts, graph kept: {keep_graph}"
             );
         }
+    }
+
+    #[test]
+    fn a_level_has_a_part_for_every_full_share_of_states_up_to_the_most_parts() {
+        assert_eq!(parts_of(0), 1, "an empty level");
+        assert_eq!(parts_of(PART - 1), 1, "short of one share");
+        assert_eq!(parts_of(3 * PART - 1), 2, "short of three shares");
+        assert_eq!(parts_of(3 * PART), 3, "three shares");
+        assert_eq!(parts_of(MOST_PARTS * PART), MOST_PARTS, "the most parts");
+        assert_eq!(
+            parts_of(10 * MOST_PARTS * PART),
+            MOST_PARTS,
+            "far more shares than parts"
+        );
     }
 
     const KEPT_ROWS_THAT_FIT: usize = 5;
