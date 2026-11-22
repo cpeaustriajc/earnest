@@ -1,0 +1,14 @@
+
+ Performance counter stats for '/SCRATCH/bin/earnest verify --no-cache --json --jobs 1 --max-states 200000000 lights.model.ts':
+
+   <not supported>      cycles                                                                
+   <not supported>      instructions                                                          
+   <not supported>      cache-misses                                                          
+           1213.42 msec cpu-clock                        #    0.997 CPUs utilized             
+
+       1.216886475 seconds time elapsed
+
+       1.160136000 seconds user
+       0.034352000 seconds sys
+
+
