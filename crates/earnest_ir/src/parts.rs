@@ -11,6 +11,21 @@ impl Expr {
         }
     }
 
+    pub(crate) fn reads_plainly(&self, slots: &mut Vec<usize>) -> bool {
+        match self {
+            Self::Bind { .. } | Self::Sweep { .. } => false,
+            Self::Local(slot) => {
+                slots.push(*slot);
+                true
+            }
+            _ => {
+                let mut plain = true;
+                self.each_part(&mut |part| plain &= part.reads_plainly(slots));
+                plain
+            }
+        }
+    }
+
     pub(crate) fn each_part<'e>(&'e self, visit: &mut impl FnMut(&'e Self)) {
         match self {
             Self::Const(_) | Self::Field(_) | Self::Local(_) => {}
