@@ -1,5 +1,6 @@
 //! Medians, rates and the Markdown the benchmark prints.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 const KIB_PER_MIB: f64 = 1024.0;
@@ -7,6 +8,11 @@ pub(crate) const TOGETHER_TARGET_SECONDS: u32 = 5;
 pub(crate) const SLOWEST_TARGET_SECONDS: u32 = 10;
 pub(crate) const LARGE_TARGET_SECONDS: u32 = 5;
 pub(crate) const TARGET_WORKERS: usize = 4;
+pub(crate) const LARGEST_ONE_WORKER_BUDGET_SECONDS: f64 = 8.0;
+pub(crate) const LARGEST_PEAK_MEMORY_BUDGET_MIB: f64 = 256.0;
+pub(crate) const NARROW_LEVELS_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 1.5;
+pub(crate) const WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 0.75;
+const PERCENT: f64 = 100.0;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Row {
@@ -127,20 +133,143 @@ pub(crate) fn target_line(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum LargeTarget {
+pub(crate) enum Verdict {
     Met,
     Missed,
-    TooFewCoresToJudge,
+    NotJudged,
 }
 
-pub(crate) fn large_target(median: Duration, cores: usize) -> LargeTarget {
-    if cores < TARGET_WORKERS {
-        LargeTarget::TooFewCoresToJudge
-    } else if median < Duration::from_secs(u64::from(LARGE_TARGET_SECONDS)) {
-        LargeTarget::Met
-    } else {
-        LargeTarget::Missed
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Unit {
+    Seconds,
+    Mib,
+    Times,
+}
+
+impl Unit {
+    fn shown(self, value: f64) -> String {
+        match self {
+            Self::Seconds => format!("{value:.3} s"),
+            Self::Mib => format!("{value:.1} MiB"),
+            Self::Times => format!("{value:.2}x"),
+        }
     }
+
+    const fn bound(self) -> &'static str {
+        match self {
+            Self::Seconds | Self::Mib => "under",
+            Self::Times => "at most",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Target,
+    Budget,
+}
+
+impl Kind {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Target => "target",
+            Self::Budget => "budget",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Judged {
+    OnTargetCores,
+    Anywhere,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Limit {
+    pub(crate) what: String,
+    pub(crate) measured: Option<f64>,
+    pub(crate) again: Option<f64>,
+    pub(crate) runs: Vec<(PathBuf, Option<usize>)>,
+    pub(crate) allowed: f64,
+    pub(crate) unit: Unit,
+    pub(crate) kind: Kind,
+    pub(crate) judged: Judged,
+}
+
+impl Limit {
+    fn best(&self) -> Option<f64> {
+        match (self.measured, self.again) {
+            (Some(first), Some(second)) => Some(first.min(second)),
+            (first, second) => first.or(second),
+        }
+    }
+
+    pub(crate) fn verdict(&self, cores: usize) -> Verdict {
+        let Some(measured) = self.best() else {
+            return Verdict::NotJudged;
+        };
+        let within = match self.unit {
+            Unit::Seconds | Unit::Mib => measured < self.allowed,
+            Unit::Times => measured <= self.allowed,
+        };
+        if self.judged == Judged::OnTargetCores && cores < TARGET_WORKERS {
+            Verdict::NotJudged
+        } else if within {
+            Verdict::Met
+        } else {
+            Verdict::Missed
+        }
+    }
+
+    pub(crate) fn line(&self, cores: usize) -> String {
+        let shown = |value: Option<f64>| {
+            value.map_or_else(|| "n/a".to_owned(), |value| self.unit.shown(value))
+        };
+        let measured = match self.again {
+            Some(_) => format!(
+                "{}, measured again {}",
+                shown(self.measured),
+                shown(self.again)
+            ),
+            None => shown(self.measured),
+        };
+        let verdict = match (self.verdict(cores), self.best()) {
+            (Verdict::Missed, Some(value)) => {
+                format!(
+                    "missed, {:.0}% over",
+                    (value / self.allowed - 1.0) * PERCENT
+                )
+            }
+            (Verdict::NotJudged, Some(_)) => {
+                format!("not judged, fewer than {TARGET_WORKERS} cores")
+            }
+            (Verdict::NotJudged | Verdict::Missed, None) => "not judged, not measured".to_owned(),
+            (Verdict::Met, _) => "met".to_owned(),
+        };
+        format!(
+            "{}: {measured}, {} {} {}: {verdict}",
+            self.what,
+            self.kind.label(),
+            self.unit.bound(),
+            self.unit.shown(self.allowed)
+        )
+    }
+}
+
+pub(crate) fn budget_section(limits: &[Limit], cores: usize) -> String {
+    let lines: Vec<String> = limits
+        .iter()
+        .map(|limit| format!("- {}\n", limit.line(cores)))
+        .collect();
+    format!("## Budget\n\n{}", lines.concat())
+}
+
+pub(crate) fn mib(peak_kib: Option<u64>) -> Option<f64> {
+    peak_kib.map(|kib| float(kib) / KIB_PER_MIB)
+}
+
+pub(crate) fn ratio(over: Duration, under: Duration) -> f64 {
+    over.as_secs_f64() / under.as_secs_f64().max(f64::EPSILON)
 }
 
 pub(crate) fn speedup_line(model: &str, one: Duration, all: Duration, cores: usize) -> String {
@@ -313,23 +442,116 @@ mod tests {
         );
     }
 
+    fn limit(measured: Option<f64>, allowed: f64, unit: Unit, judged: Judged) -> Limit {
+        Limit {
+            what: "Big with 4 workers, wall time".to_owned(),
+            measured,
+            again: None,
+            runs: Vec::new(),
+            allowed,
+            unit,
+            kind: Kind::Budget,
+            judged,
+        }
+    }
+
     #[test]
-    fn the_large_target_is_judged_only_on_a_machine_with_the_cores() {
+    fn a_time_is_met_only_under_its_limit_and_judged_only_on_the_target_cores() {
         assert_eq!(
-            large_target(millis(4_999), 4),
-            LargeTarget::Met,
-            "under the target"
+            limit(Some(4.999), 5.0, Unit::Seconds, Judged::OnTargetCores).verdict(4),
+            Verdict::Met,
+            "under the limit"
         );
         assert_eq!(
-            large_target(millis(5_000), 16),
-            LargeTarget::Missed,
-            "the target itself is not under the target"
+            limit(Some(5.0), 5.0, Unit::Seconds, Judged::OnTargetCores).verdict(16),
+            Verdict::Missed,
+            "the limit itself is not under the limit"
         );
         assert_eq!(
-            large_target(millis(60_000), 2),
-            LargeTarget::TooFewCoresToJudge,
+            limit(Some(60.0), 5.0, Unit::Seconds, Judged::OnTargetCores).verdict(2),
+            Verdict::NotJudged,
             "a slow run on two cores says nothing about four"
         );
+        assert_eq!(
+            limit(Some(300.0), 256.0, Unit::Mib, Judged::Anywhere).verdict(2),
+            Verdict::Missed,
+            "memory is judged on any machine"
+        );
+        assert_eq!(
+            limit(None, 256.0, Unit::Mib, Judged::Anywhere).verdict(4),
+            Verdict::NotJudged,
+            "no peak memory to judge"
+        );
+    }
+
+    #[test]
+    fn a_ratio_may_equal_its_limit() {
+        assert_eq!(
+            limit(Some(1.5), 1.5, Unit::Times, Judged::OnTargetCores).verdict(4),
+            Verdict::Met,
+            "at most the limit"
+        );
+        assert_eq!(
+            limit(Some(1.51), 1.5, Unit::Times, Judged::OnTargetCores).verdict(4),
+            Verdict::Missed,
+            "above the limit"
+        );
+    }
+
+    #[test]
+    fn a_limit_line_names_the_run_the_measurement_the_limit_and_how_far_over() {
+        assert_eq!(
+            limit(Some(3.6), 3.0, Unit::Seconds, Judged::OnTargetCores).line(4),
+            "Big with 4 workers, wall time: 3.600 s, budget under 3.000 s: missed, 20% over",
+            "a miss"
+        );
+        assert_eq!(
+            limit(Some(0.33), 0.75, Unit::Times, Judged::OnTargetCores).line(4),
+            "Big with 4 workers, wall time: 0.33x, budget at most 0.75x: met",
+            "a ratio that is met"
+        );
+        assert_eq!(
+            limit(Some(3.6), 3.0, Unit::Seconds, Judged::OnTargetCores).line(2),
+            "Big with 4 workers, wall time: 3.600 s, budget under 3.000 s: not judged, fewer than 4 cores",
+            "too few cores"
+        );
+        assert_eq!(
+            limit(None, 256.0, Unit::Mib, Judged::Anywhere).line(4),
+            "Big with 4 workers, wall time: n/a, budget under 256.0 MiB: not judged, not measured",
+            "no peak memory"
+        );
+    }
+
+    #[test]
+    fn a_limit_measured_again_is_judged_by_the_better_measurement_and_shows_both() {
+        let busy_once = Limit {
+            again: Some(0.40),
+            ..limit(Some(0.71), 0.75, Unit::Times, Judged::OnTargetCores)
+        };
+        assert_eq!(
+            busy_once.line(4),
+            "Big with 4 workers, wall time: 0.71x, measured again 0.40x, budget at most 0.75x: met",
+            "a busy moment that the second measurement clears"
+        );
+        let slower = Limit {
+            again: Some(3.3),
+            ..limit(Some(3.6), 3.0, Unit::Seconds, Judged::OnTargetCores)
+        };
+        assert_eq!(
+            slower.line(4),
+            "Big with 4 workers, wall time: 3.600 s, measured again 3.300 s, budget under 3.000 s: missed, 10% over",
+            "a loss of speed misses twice and is judged by the better"
+        );
+    }
+
+    #[test]
+    fn a_ratio_is_the_first_time_over_the_second() {
+        assert!(
+            (ratio(millis(500), millis(1_000)) - 0.5).abs() < f64::EPSILON,
+            "half"
+        );
+        assert_eq!(mib(Some(2_048)), Some(2.0), "2,048 KiB");
+        assert_eq!(mib(None), None, "no peak");
     }
 
     #[test]
