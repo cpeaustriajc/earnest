@@ -14,7 +14,9 @@ pub struct Limits {
     /// How long the search may run before it stops as unfinished. `None` is no limit.
     pub time_limit: Option<Duration>,
     /// Worker threads for a level of 512 states or more. 0 counts as 1. The outcome is the
-    /// same for every number.
+    /// same for every number. While no thread is idle, one thread goes through every level
+    /// state by state, unless the search has `helpers` and keeps no graph: then it takes a
+    /// wide level in parts on its own, which holds the level's new states until it merges them.
     pub jobs: usize,
     /// Idle threads the search may borrow, on top of `jobs`, for the parts of each level it
     /// spreads. It borrows when it starts to spread a level and whenever a thread is about to
@@ -26,7 +28,9 @@ pub struct Limits {
     /// enough to pay for the thread, its `jobs` first, so a level with few new states merges
     /// on one thread and borrows none. Searches that run side by side share one handle, so a
     /// thread one of them leaves idle goes to another. The outcome is the same whatever is
-    /// borrowed.
+    /// borrowed. With one of `jobs`, a handle makes a search that keeps no graph spread a wide
+    /// level even when no thread is idle, its own thread taking every part, so it needs more
+    /// memory than with `None`, which keeps it state by state.
     pub helpers: Option<Helpers>,
     /// Whether [`crate::Outcome::graph`] is filled. It costs memory for every arrow, so leave
     /// it off unless a chart is wanted.

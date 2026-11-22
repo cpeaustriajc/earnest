@@ -13,7 +13,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// thread goes back as soon as it finds no part to take, so threads a finished search leaves
 /// behind go to the searches that still run. A search that keeps no graph may also borrow
 /// threads to merge a level, but only when the level found too many new states for its own
-/// threads, and gives them back when the merge ends.
+/// threads, and gives them back when the merge ends. A search on one thread that has a handle
+/// and keeps no graph spreads a wide level even when no thread is idle and takes every part
+/// itself, which needs more memory than the state by state search of one with no handle.
 #[derive(Clone, Debug, Default)]
 pub struct Helpers {
     idle: Arc<AtomicUsize>,
