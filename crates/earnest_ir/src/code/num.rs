@@ -1,3 +1,4 @@
+use super::chain::Chain;
 use super::shared::Shared;
 use super::val::Val;
 use crate::eval::{arithmetic, is_safe, wrong_or_null};
@@ -68,6 +69,7 @@ pub(super) enum Num {
     Bounded(Bound, Operand),
     Negate(Operand),
     Value(Box<Val>),
+    Chain(Box<(Chain, Self)>),
 }
 
 impl Operand {
@@ -122,6 +124,17 @@ impl Num {
     }
 
     pub(super) fn shaped(expr: &Expr, shared: &Shared) -> Option<Self> {
+        let tree = Self::tree(expr, shared)?;
+        if matches!(tree, Self::FieldMath { .. }) {
+            return Some(tree);
+        }
+        Some(match Chain::of(expr) {
+            Some(chain) => Self::Chain(Box::new((chain, tree))),
+            None => tree,
+        })
+    }
+
+    fn tree(expr: &Expr, shared: &Shared) -> Option<Self> {
         let Expr::Apply(op, arguments) = expr else {
             return None;
         };
@@ -148,7 +161,7 @@ impl Num {
     }
 
     fn bounded(bound: Bound, inner: &Expr, shared: &Shared) -> Self {
-        match Self::shaped(inner, shared) {
+        match Self::tree(inner, shared) {
             Some(Self::Math {
                 math,
                 bound: Bound::Any,
@@ -209,6 +222,10 @@ impl Num {
                 Ok(bound.check(answer?)?)
             }
             Self::FieldMath { .. } => self.eval(frame),
+            Self::Chain(chained) => match chained.0.run(frame) {
+                Some(number) => Ok(number),
+                None => chained.1.rest(frame),
+            },
             Self::Bounded(bound, inner) => {
                 let number = inner.get(frame).map_err(Stop::fault)?;
                 Ok(bound.check(number)?)

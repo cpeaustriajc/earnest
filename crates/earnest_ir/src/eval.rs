@@ -124,6 +124,10 @@ impl<'a> Frame<'a> {
         self.beyond_32_bits
     }
 
+    pub(crate) fn note_beyond_32_bits(&mut self) {
+        self.beyond_32_bits = true;
+    }
+
     pub(crate) fn note(&mut self, answer: &Result<i64, Fault>) {
         self.beyond_32_bits |= match answer {
             Ok(number) => i32::try_from(*number).is_err(),

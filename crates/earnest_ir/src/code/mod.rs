@@ -1,3 +1,4 @@
+mod chain;
 mod cond;
 mod num;
 mod shared;
