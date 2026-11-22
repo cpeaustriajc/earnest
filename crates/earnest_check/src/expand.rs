@@ -1,5 +1,5 @@
 use crate::store::{RangeSlot, RowLayout, hash_words};
-use earnest_ir::{Action, Code, Fault, Frame, Input, Model};
+use earnest_ir::{Action, Code, Fault, Frame, Input, Model, Scalar};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxBuildHasher;
@@ -467,9 +467,9 @@ impl<S: Successors> Expansion<'_, '_, S> {
             next.extend_from_slice(row);
             let mut fits = true;
             for write in writes {
-                let number = match (write.holds, write.code.eval(&mut self.frame)) {
-                    (Holds::WholeNumber, Ok(Value::Int(number))) => number,
-                    (Holds::TrueOrFalse, Ok(Value::Bool(flag))) => i64::from(flag),
+                let number = match (write.holds, write.code.scalar(&mut self.frame)) {
+                    (Holds::WholeNumber, Ok(Scalar::Int(number))) => number,
+                    (Holds::TrueOrFalse, Ok(Scalar::Bool(flag))) => i64::from(flag),
                     (_, Err(fault)) => {
                         self.found.note(Whence::Update(position), fault);
                         return;
