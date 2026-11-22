@@ -7,11 +7,12 @@ mod starts;
 mod workers;
 
 use crate::expand::{Asked, Budget, Expand, Mark, Move, Whence, Width};
+use crate::helpers::Helpers;
 use crate::limits::{Limits, TIME_LIMIT_REASON};
 use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
-use merge::Judged;
+use merge::{Full, Judged};
 use part::Part;
 use starts::Starts;
 use std::ops::Range;
@@ -169,8 +170,12 @@ impl Search<'_> {
                 .saturating_mul(u32::try_from(level.workers).unwrap_or(u32::MAX))
                 .checked_div(u32::try_from(frontier.len()).unwrap_or(u32::MAX))
                 .unwrap_or_default();
-            if level.stopped {
+            if level.end == Round::Stopped {
                 self.reason = Some(self.time_limit_reason());
+                break;
+            }
+            if level.end == Round::Full {
+                self.reason = Some(self.limit_reason());
                 break;
             }
             frontier = found_before..self.store.len();
@@ -181,7 +186,7 @@ impl Search<'_> {
     fn judge_the_rest(&mut self, deadline: Option<Instant>) {
         let unjudged = self.judged..self.store.len();
         let level = self.level(unjudged, deadline, Asked::RulesOnly, Duration::ZERO);
-        if level.stopped {
+        if level.end == Round::Stopped {
             self.reason = Some(self.time_limit_reason());
             let kept = self.judged;
             self.store.truncate(kept);
@@ -211,81 +216,92 @@ impl Search<'_> {
         asked: Asked,
         per_state: Duration,
     ) -> Ran {
-        let mut helpers = self.limits.helpers.as_ref();
+        let lending = self.limits.helpers.as_ref();
         let mut judged = Judged::default();
-        let mut rest = frontier.clone();
-        let mut spread =
-            self.spread_level(&rest, deadline, asked, per_state, FEWEST_STATES_OF_A_ROUND);
-        loop {
-            match spread.take() {
-                Some(expansion) if expansion.crowded => helpers = None,
-                Some(expansion) => {
-                    if expansion.stopped && asked == Asked::Everything {
-                        self.undo_level(&frontier);
-                        return Ran {
-                            stopped: true,
-                            workers: expansion.workers,
-                        };
-                    }
-                    let before = self.store.len();
-                    let kept = expansion.parts.iter().map(Part::kept_rows).sum();
-                    let merged = self.merge_any(expansion.parts);
-                    self.last_spread_merge = SpreadMerge {
-                        kept,
-                        new: self.store.len().saturating_sub(before),
+        let mut rest = frontier.start;
+        let mut way = Way::Spread {
+            fewest: FEWEST_STATES_OF_A_ROUND,
+            else_lending: lending,
+        };
+        let ran = loop {
+            let states = rest..frontier.end;
+            let ran = match way {
+                Way::Spread {
+                    fewest,
+                    else_lending,
+                } => {
+                    let spread =
+                        self.spread_round(&states, deadline, asked, per_state, fewest, &mut judged);
+                    let Some(ran) = spread else {
+                        way = Way::Here(else_lending);
+                        continue;
                     };
-                    judged.add(merged.marks, merged.through);
-                    match expansion.left_over {
-                        Some(left) if self.reason.is_none() => {
-                            let taken = left.start.saturating_sub(rest.start);
-                            rest = left;
-                            spread = self.spread_level(
-                                &rest,
-                                deadline,
-                                asked,
-                                per_state,
-                                taken.saturating_mul(ROUND_GROWTH),
-                            );
-                            continue;
-                        }
-                        _ => {
-                            self.record_all(&judged.marks, judged.through);
-                            return Ran {
-                                stopped: expansion.stopped,
-                                workers: expansion.workers,
-                            };
-                        }
+                    ran
+                }
+                Way::Here(lending) => {
+                    self.expand_here(states, deadline, asked, lending, &mut judged)
+                }
+            };
+            way = match (ran.end, way) {
+                (Round::RestFrom(from), Way::Spread { .. }) => {
+                    let taken = from.saturating_sub(rest);
+                    rest = from;
+                    Way::Spread {
+                        fewest: taken.saturating_mul(ROUND_GROWTH),
+                        else_lending: lending,
                     }
                 }
-                None => {}
-            }
-            let here = self.expand_here(rest.clone(), deadline, asked, helpers);
-            if here.stopped && asked == Asked::Everything {
-                self.undo_level(&frontier);
-                return Ran {
-                    stopped: true,
-                    workers: 1,
-                };
-            }
-            judged.add(here.marks, here.through);
-            rest.start = here.through;
-            if here.handed {
-                spread =
-                    self.spread_level(&rest, deadline, asked, per_state, FEWEST_STATES_OF_A_ROUND);
-                if spread.is_none() {
-                    helpers = None;
+                (Round::RestFrom(from), Way::Here(_)) => {
+                    rest = from;
+                    Way::Spread {
+                        fewest: FEWEST_STATES_OF_A_ROUND,
+                        else_lending: None,
+                    }
                 }
-                continue;
-            }
-            self.record_all(&judged.marks, judged.through);
-            if here.full {
-                self.reason = Some(self.limit_reason());
-            }
-            return Ran {
-                stopped: here.stopped,
-                workers: 1,
+                (Round::RestAlone, _) => Way::Here(None),
+                (Round::Done | Round::Stopped | Round::Full, _) => break ran,
             };
+        };
+        if ran.end == Round::Stopped && asked == Asked::Everything {
+            self.undo_level(&frontier);
+        } else {
+            self.record_all(&judged.marks, judged.through);
         }
+        ran
+    }
+
+    fn spread_round(
+        &mut self,
+        states: &Range<usize>,
+        deadline: Option<Instant>,
+        asked: Asked,
+        per_state: Duration,
+        fewest: usize,
+        judged: &mut Judged,
+    ) -> Option<Ran> {
+        let expansion = self.spread_level(states, deadline, asked, per_state, fewest)?;
+        let ran = Ran {
+            end: expansion.end,
+            workers: expansion.workers,
+        };
+        let undone = ran.end == Round::Stopped && asked == Asked::Everything;
+        if ran.end == Round::RestAlone || undone {
+            return Some(ran);
+        }
+        let before = self.store.len();
+        let kept = expansion.parts.iter().map(Part::kept_rows).sum();
+        let merged = self.merge_any(expansion.parts, judged);
+        self.last_spread_merge = SpreadMerge {
+            kept,
+            new: self.store.len().saturating_sub(before),
+        };
+        Some(match merged {
+            Ok(()) => ran,
+            Err(Full) => Ran {
+                end: Round::Full,
+                ..ran
+            },
+        })
     }
 
     fn undo_level(&mut self, frontier: &Range<usize>) {
@@ -340,7 +356,26 @@ impl Search<'_> {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Round {
+    Done,
+    RestFrom(usize),
+    RestAlone,
+    Stopped,
+    Full,
+}
+
+#[derive(Clone, Copy)]
+enum Way<'h> {
+    Spread {
+        fewest: usize,
+        else_lending: Option<&'h Helpers>,
+    },
+    Here(Option<&'h Helpers>),
+}
+
+#[derive(Clone, Copy)]
 struct Ran {
-    stopped: bool,
+    end: Round,
     workers: usize,
 }

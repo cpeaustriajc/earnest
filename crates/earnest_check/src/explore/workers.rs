@@ -1,5 +1,5 @@
 use super::part::{Kit, Part};
-use super::{Search, SpreadMerge};
+use super::{Round, Search, SpreadMerge};
 use crate::cut::cut_points;
 use crate::expand::Asked;
 use crate::helpers::{Helpers, Loan};
@@ -19,10 +19,8 @@ const WORTH_SPREADING: Duration = Duration::from_millis(1);
 
 pub(super) struct Expansion {
     pub(super) parts: Vec<Part>,
-    pub(super) stopped: bool,
-    pub(super) crowded: bool,
+    pub(super) end: Round,
     pub(super) workers: usize,
-    pub(super) left_over: Option<Range<usize>>,
 }
 
 struct Level {
@@ -155,33 +153,38 @@ impl Search<'_> {
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner);
         finished.sort_by_key(|(part, _)| *part);
-        let mut expansion = Expansion {
-            parts: Vec::with_capacity(finished.len()),
-            stopped: false,
-            crowded: finished.iter().any(|(_, part)| part.crowded),
-            workers: shared.peak.into_inner(),
-            left_over: None,
-        };
+        let crowded = finished.iter().any(|(_, part)| part.crowded);
+        let mut taken = Vec::with_capacity(finished.len());
+        let mut stopped = false;
         for (expected, (index, part)) in finished.into_iter().enumerate() {
             if index != expected {
-                expansion.stopped = true;
+                stopped = true;
                 break;
             }
-            let stopped = part.stopped;
-            expansion.parts.push(part);
+            stopped = part.stopped;
+            taken.push(part);
             if stopped {
-                expansion.stopped = true;
                 break;
             }
         }
-        if !expansion.stopped {
-            expansion.left_over = level
+        let end = if crowded {
+            Round::RestAlone
+        } else if stopped {
+            Round::Stopped
+        } else {
+            level
                 .cuts
-                .get(expansion.parts.len())
-                .filter(|_| (1..parts).contains(&expansion.parts.len()))
-                .map(|cut| frontier.start.saturating_add(*cut)..frontier.end);
-        }
-        Some(expansion)
+                .get(taken.len())
+                .filter(|_| (1..parts).contains(&taken.len()))
+                .map_or(Round::Done, |cut| {
+                    Round::RestFrom(frontier.start.saturating_add(*cut))
+                })
+        };
+        Some(Expansion {
+            parts: taken,
+            end,
+            workers: shared.peak.into_inner(),
+        })
     }
 
     fn start_worker<'scope, 'env>(

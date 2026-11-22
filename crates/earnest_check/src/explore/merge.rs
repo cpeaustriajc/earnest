@@ -21,6 +21,8 @@ fn merge_threads(rows: usize, jobs: usize) -> MergeThreads {
     }
 }
 
+pub(super) struct Full;
+
 #[derive(Default)]
 pub(super) struct Judged {
     pub(super) marks: Vec<(usize, Mark)>,
@@ -35,16 +37,15 @@ impl Judged {
 }
 
 impl Search<'_> {
-    pub(super) fn merge_any(&mut self, parts: Vec<Part>) -> Judged {
+    pub(super) fn merge_any(&mut self, parts: Vec<Part>, judged: &mut Judged) -> Result<(), Full> {
         let simple = !self.limits.keep_graph && parts.iter().all(|part| part.raws.is_empty());
         if simple && parts.len() > 1 && self.merge_spread(&parts) {
-            let mut judged = Judged::default();
             for part in parts {
                 judged.add(part.marks, part.first.saturating_add(part.expanded));
             }
-            return judged;
+            return Ok(());
         }
-        self.merge(parts)
+        self.merge(parts, judged)
     }
 
     fn merge_spread(&mut self, parts: &[Part]) -> bool {
@@ -69,8 +70,7 @@ impl Search<'_> {
         self.store.place_level(&fresh, &crew, most).is_some()
     }
 
-    fn merge(&mut self, parts: Vec<Part>) -> Judged {
-        let mut judged = Judged::default();
+    fn merge(&mut self, parts: Vec<Part>, judged: &mut Judged) -> Result<(), Full> {
         let most = self.limits.max_states;
         let words = self.store.layout().words();
         let graph = self.limits.keep_graph;
@@ -117,10 +117,7 @@ impl Search<'_> {
                 let to = match placed {
                     Placed::Known(found) => found.id,
                     Placed::New(to) => Some(to),
-                    Placed::Full => {
-                        self.reason = Some(self.limit_reason());
-                        return judged;
-                    }
+                    Placed::Full => return Err(Full),
                 };
                 if graph && let Some(to) = to {
                     self.arrows.push(Arrow {
@@ -132,7 +129,7 @@ impl Search<'_> {
             }
             judged.add(marks, part.first.saturating_add(part.expanded));
         }
-        judged
+        Ok(())
     }
 }
 

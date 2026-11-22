@@ -1,5 +1,6 @@
 use super::encode::{encode_next, with_updates};
-use super::{Arrow, STATES_BETWEEN_CLOCK_READS, Search};
+use super::merge::Judged;
+use super::{Arrow, Ran, Round, STATES_BETWEEN_CLOCK_READS, Search};
 use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
 use crate::helpers::Helpers;
 use crate::store::{Placed, Store, hash_words};
@@ -87,12 +88,10 @@ impl Successors for HereSink<'_> {
     }
 }
 
-pub(super) struct Here {
-    pub(super) stopped: bool,
-    pub(super) full: bool,
-    pub(super) handed: bool,
-    pub(super) marks: Vec<(usize, Mark)>,
-    pub(super) through: usize,
+struct Here {
+    end: Round,
+    marks: Vec<(usize, Mark)>,
+    through: usize,
 }
 
 impl Search<'_> {
@@ -101,15 +100,14 @@ impl Search<'_> {
         frontier: Range<usize>,
         deadline: Option<Instant>,
         asked: Asked,
-        helpers: Option<&Helpers>,
-    ) -> Here {
+        lending: Option<&Helpers>,
+        judged: &mut Judged,
+    ) -> Ran {
         let expand = self
             .expander
             .expand(self.model, self.limits, deadline, asked);
         let mut here = Here {
-            stopped: false,
-            full: false,
-            handed: false,
+            end: Round::Done,
             marks: Vec::new(),
             through: frontier.start,
         };
@@ -130,12 +128,12 @@ impl Search<'_> {
         for (position, id) in frontier.enumerate() {
             let clock_due = position.is_multiple_of(STATES_BETWEEN_CLOCK_READS);
             if clock_due && stops_at.is_some_and(|limit| Instant::now() >= limit) {
-                here.stopped = true;
+                here.end = Round::Stopped;
                 break;
             }
-            let idle = || helpers.is_some_and(|helpers| helpers.idle() > 0);
+            let idle = || lending.is_some_and(|helpers| helpers.idle() > 0);
             if clock_due && position > 0 && idle() {
-                here.handed = true;
+                here.end = Round::RestFrom(here.through);
                 break;
             }
             let is_row = sink.store.read_state(id, &mut row, &mut state);
@@ -147,7 +145,7 @@ impl Search<'_> {
             };
             let mark = expand.state(base, outside, &mut sink, &mut scratch);
             if mark.clock == Clock::Stopped {
-                here.stopped = true;
+                here.end = Round::Stopped;
                 break;
             }
             if !mark.is_plain() {
@@ -155,10 +153,14 @@ impl Search<'_> {
             }
             here.through = id.saturating_add(1);
             if sink.full {
-                here.full = true;
+                here.end = Round::Full;
                 break;
             }
         }
-        here
+        judged.add(here.marks, here.through);
+        Ran {
+            end: here.end,
+            workers: 1,
+        }
     }
 }
