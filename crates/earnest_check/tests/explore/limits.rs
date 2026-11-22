@@ -235,8 +235,7 @@ fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[u
         keep_graph,
         ..base.clone()
     };
-    let single = explore(model, &with(1, None, true));
-    for keep_graph in [true, false] {
+    let alone_and_with_every_crew = |keep_graph: bool| {
         let alone = explore(model, &with(1, None, keep_graph));
         for jobs in worker_counts {
             assert_eq!(
@@ -253,8 +252,11 @@ fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[u
             alone,
             "one worker and {IDLE_HELPERS} helpers, graph kept: {keep_graph}"
         );
-    }
-    single
+        alone
+    };
+    let with_graph = alone_and_with_every_crew(true);
+    alone_and_with_every_crew(false);
+    with_graph
 }
 
 fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outcome {
