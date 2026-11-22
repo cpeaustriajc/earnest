@@ -136,6 +136,7 @@ impl Code {
     ///
     /// A [`Fault`] when the expression has no value in this state, and [`Fault::NullRead`] or
     /// [`Fault::WrongKind`] when its value is not a boolean.
+    #[inline]
     pub fn truth(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         self.test.eval(frame)
     }

@@ -149,6 +149,7 @@ impl Cond {
         }
     }
 
+    #[inline]
     pub(super) fn eval(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
             Self::All(parts) => {
@@ -176,6 +177,11 @@ impl Cond {
                 *number,
             )),
             Self::Const(flag) => Ok(*flag),
+            Self::Matches {
+                place,
+                value,
+                wanted,
+            } => Ok(wanted.compares(place.find(frame)?, value)),
             _ => self.rest(frame),
         }
     }
@@ -196,11 +202,6 @@ impl Cond {
                 Err(Stop::Kind(_)) => Ok(wanted.of_other_kinds()),
                 Err(Stop::Fault(fault)) => Err(fault),
             },
-            Self::Matches {
-                place,
-                value,
-                wanted,
-            } => Ok(wanted.compares(place.find(frame)?, value)),
             Self::Alike(places, wanted) => {
                 let first = places.0.find(frame)?;
                 let second = places.1.find(frame)?;
@@ -213,7 +214,9 @@ impl Cond {
             }
             Self::Read(place) => as_bool(place.find(frame)?),
             Self::Not(inner) => Ok(!inner.eval(frame)?),
-            Self::FieldOrder { .. } | Self::All(_) | Self::Const(_) => self.eval(frame),
+            Self::FieldOrder { .. } | Self::Matches { .. } | Self::All(_) | Self::Const(_) => {
+                self.eval(frame)
+            }
             Self::Any(parts) => {
                 for part in parts {
                     if part.eval(frame)? {
