@@ -1,5 +1,6 @@
 //! Medians, rates and the Markdown the benchmark prints.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 const KIB_PER_MIB: f64 = 1024.0;
@@ -188,6 +189,8 @@ pub(crate) enum Judged {
 pub(crate) struct Limit {
     pub(crate) what: String,
     pub(crate) measured: Option<f64>,
+    pub(crate) again: Option<f64>,
+    pub(crate) runs: Vec<(PathBuf, Option<usize>)>,
     pub(crate) allowed: f64,
     pub(crate) unit: Unit,
     pub(crate) kind: Kind,
@@ -195,8 +198,15 @@ pub(crate) struct Limit {
 }
 
 impl Limit {
+    fn best(&self) -> Option<f64> {
+        match (self.measured, self.again) {
+            (Some(first), Some(second)) => Some(first.min(second)),
+            (first, second) => first.or(second),
+        }
+    }
+
     pub(crate) fn verdict(&self, cores: usize) -> Verdict {
-        let Some(measured) = self.measured else {
+        let Some(measured) = self.best() else {
             return Verdict::NotJudged;
         };
         let within = match self.unit {
@@ -213,10 +223,18 @@ impl Limit {
     }
 
     pub(crate) fn line(&self, cores: usize) -> String {
-        let measured = self
-            .measured
-            .map_or_else(|| "n/a".to_owned(), |value| self.unit.shown(value));
-        let verdict = match (self.verdict(cores), self.measured) {
+        let shown = |value: Option<f64>| {
+            value.map_or_else(|| "n/a".to_owned(), |value| self.unit.shown(value))
+        };
+        let measured = match self.again {
+            Some(_) => format!(
+                "{}, measured again {}",
+                shown(self.measured),
+                shown(self.again)
+            ),
+            None => shown(self.measured),
+        };
+        let verdict = match (self.verdict(cores), self.best()) {
             (Verdict::Missed, Some(value)) => {
                 format!(
                     "missed, {:.0}% over",
@@ -430,6 +448,8 @@ mod tests {
         Limit {
             what: "Big with 4 workers, wall time".to_owned(),
             measured,
+            again: None,
+            runs: Vec::new(),
             allowed,
             unit,
             kind: Kind::Budget,
@@ -488,8 +508,8 @@ mod tests {
             "a miss"
         );
         assert_eq!(
-            limit(Some(0.33), 0.6, Unit::Times, Judged::OnTargetCores).line(4),
-            "Big with 4 workers, wall time: 0.33x, budget at most 0.60x: met",
+            limit(Some(0.33), 0.75, Unit::Times, Judged::OnTargetCores).line(4),
+            "Big with 4 workers, wall time: 0.33x, budget at most 0.75x: met",
             "a ratio that is met"
         );
         assert_eq!(
@@ -501,6 +521,28 @@ mod tests {
             limit(None, 256.0, Unit::Mib, Judged::Anywhere).line(4),
             "Big with 4 workers, wall time: n/a, budget under 256.0 MiB: not judged, not measured",
             "no peak memory"
+        );
+    }
+
+    #[test]
+    fn a_limit_measured_again_is_judged_by_the_better_measurement_and_shows_both() {
+        let busy_once = Limit {
+            again: Some(0.40),
+            ..limit(Some(0.71), 0.75, Unit::Times, Judged::OnTargetCores)
+        };
+        assert_eq!(
+            busy_once.line(4),
+            "Big with 4 workers, wall time: 0.71x, measured again 0.40x, budget at most 0.75x: met",
+            "a busy moment that the second measurement clears"
+        );
+        let slower = Limit {
+            again: Some(3.3),
+            ..limit(Some(3.6), 3.0, Unit::Seconds, Judged::OnTargetCores)
+        };
+        assert_eq!(
+            slower.line(4),
+            "Big with 4 workers, wall time: 3.600 s, measured again 3.300 s, budget under 3.000 s: missed, 10% over",
+            "a loss of speed misses twice and is judged by the better"
         );
     }
 

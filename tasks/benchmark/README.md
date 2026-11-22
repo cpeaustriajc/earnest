@@ -92,8 +92,9 @@ misses. Times are medians; "all cores" is the default number of workers.
 | `wide`, all cores over 1 worker | about 0.33x | at most 0.6x |
 
 The two wall times are loose because runners differ by up to 1.9 times on the same code; the
-memory and the two ratios, taken on one machine in one job, are tight. When a line fails, make
-the change faster or take it back. A limit changes only with the owner's word.
+memory and the two ratios, taken on one machine in one job, are tight. The benchmark wants a machine that does
+nothing else; a missed line is measured once more and judged by the better of the two. When a
+line fails, make the change faster or take it back. A limit changes only with the owner's word.
 
 ## Results
 

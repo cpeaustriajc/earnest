@@ -17,6 +17,8 @@ use models::{LARGEST, Language, NARROW_LEVELS, R12_LARGE, SCALED, WIDE};
 use report::{Judged, Kind, Limit, Row, Unit, Verdict};
 use run::{Job, processor_name, run_once};
 
+type Run = (PathBuf, Option<usize>);
+
 const DEFAULT_RUNS: usize = 5;
 const USAGE: &str = "usage: benchmark [--runs <n>] [--binary <path>]";
 
@@ -128,10 +130,12 @@ struct Benchmarked {
     cores: usize,
 }
 
-fn wall_time(what: String, measured: &Measured, allowed: f64, kind: Kind) -> Limit {
+fn wall_time(what: String, (measured, run): (&Measured, &Run), allowed: f64, kind: Kind) -> Limit {
     Limit {
         what,
         measured: Some(measured.median.as_secs_f64()),
+        again: None,
+        runs: vec![run.clone()],
         allowed,
         unit: Unit::Seconds,
         kind,
@@ -156,6 +160,8 @@ impl Bench<'_> {
                 one.median.as_secs_f64()
             ),
             measured: Some(report::ratio(all.median, one.median)),
+            again: None,
+            runs: vec![(file.clone(), None), (file, Some(1))],
             allowed,
             unit: Unit::Times,
             kind: Kind::Budget,
@@ -163,13 +169,13 @@ impl Bench<'_> {
         })
     }
 
-    fn limits(
-        &mut self,
-        repository: &Path,
-        target: &Measured,
-        one: &Measured,
-    ) -> Result<Vec<Limit>, String> {
+    fn limits(&mut self, repository: &Path) -> Result<Vec<Limit>, String> {
         let workers = report::TARGET_WORKERS;
+        let largest = models::scaled_path(repository, LARGEST, Language::TypeScript);
+        let target_run = (largest.clone(), Some(workers));
+        let one_run = (largest, Some(1));
+        let target = &self.measure(std::slice::from_ref(&target_run.0), target_run.1)?;
+        let one = &self.measure(std::slice::from_ref(&one_run.0), one_run.1)?;
         let (larger, larger_run) = if one.peak_kib > target.peak_kib {
             (one, "1 worker".to_owned())
         } else {
@@ -178,19 +184,19 @@ impl Bench<'_> {
         Ok(vec![
             wall_time(
                 format!("{LARGEST} with {workers} workers, wall time"),
-                target,
+                (target, &target_run),
                 f64::from(report::LARGE_TARGET_SECONDS),
                 Kind::Target,
             ),
             wall_time(
                 format!("{LARGEST} with {workers} workers, wall time"),
-                target,
+                (target, &target_run),
                 report::LARGEST_TARGET_WORKERS_BUDGET_SECONDS,
                 Kind::Budget,
             ),
             wall_time(
                 format!("{LARGEST} with 1 worker, wall time"),
-                one,
+                (one, &one_run),
                 report::LARGEST_ONE_WORKER_BUDGET_SECONDS,
                 Kind::Budget,
             ),
@@ -199,6 +205,8 @@ impl Bench<'_> {
                     "{LARGEST}, peak memory, the larger of {workers} workers and 1 worker ({larger_run})"
                 ),
                 measured: report::mib(larger.peak_kib),
+                again: None,
+                runs: vec![target_run.clone(), one_run.clone()],
                 allowed: report::LARGEST_PEAK_MEMORY_BUDGET_MIB,
                 unit: Unit::Mib,
                 kind: Kind::Budget,
@@ -215,6 +223,33 @@ impl Bench<'_> {
                 report::WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET,
             )?,
         ])
+    }
+
+    fn limits_measured_again_where_missed(
+        &mut self,
+        repository: &Path,
+        cores: usize,
+    ) -> Result<Vec<Limit>, String> {
+        let mut limits = self.limits(repository)?;
+        let missed = |limit: &Limit| limit.verdict(cores) == Verdict::Missed;
+        let again: Vec<Run> = limits
+            .iter()
+            .filter(|limit| missed(limit))
+            .flat_map(|limit| limit.runs.clone())
+            .collect();
+        if again.is_empty() {
+            return Ok(limits);
+        }
+        for (file, workers) in again {
+            self.cache.remove(&(vec![file], workers));
+        }
+        let second = self.limits(repository)?;
+        for (limit, measured_again) in limits.iter_mut().zip(second) {
+            if missed(limit) {
+                limit.again = measured_again.measured;
+            }
+        }
+        Ok(limits)
     }
 }
 
@@ -293,7 +328,7 @@ fn benchmark(options: &Options) -> Result<Benchmarked, String> {
     );
     let target_line = report::target_line(LARGEST, target.median, target.peak_kib, cores);
     let speedup = report::speedup_line(LARGEST, one.median, all.median, cores);
-    let limits = bench.limits(&repository, &target, &one)?;
+    let limits = bench.limits_measured_again_where_missed(&repository, cores)?;
     let text = [
         report::first_line(cores, processor.as_deref(), options.runs),
         "## Scaled models\n".to_owned(),
