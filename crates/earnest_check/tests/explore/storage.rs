@@ -210,3 +210,115 @@ fn workers_keep_rows_too_wide_for_one_word_the_same_as_one_thread() {
         assert_eq!(alone.states, max_states, "the walk stays in the cube");
     }
 }
+
+use crate::build::{HYPERCUBE_STATES, HYPERCUBE_TOP, at_point, hypercube_sketch};
+
+fn hypercube_on_axes_up_to(highest: i64, points: &[[i64; 5]]) -> Model {
+    let (mut sketch, axes) = hypercube_sketch(highest, Moves::UpAndDown);
+    for (number, point) in points.iter().enumerate() {
+        sketch.rule(&format!("notAt{number}"), not(&at_point(&axes, *point)));
+    }
+    sketch.model()
+}
+
+#[test]
+fn workers_find_the_same_states_of_wide_levels_when_a_value_has_no_code_yet() {
+    let listed = explore(&queue_of_up_to(13, 13), &Limits::default());
+    assert_eq!(listed.states, 16_383, "queues of up to thirteen messages");
+    for limits in [Limits::default(), with_jobs_and_graph(4), with_jobs_only(4)] {
+        let grown = explore(&queue_of_up_to(13, 20), &limits);
+        assert_eq!(grown.states, listed.states);
+        assert_eq!(grown.rules, listed.rules, "the same verdicts and paths");
+    }
+}
+
+#[test]
+fn workers_keep_the_states_of_a_wide_level_that_leave_their_domain() {
+    let alone = explore(&queue_of_up_to(13, 12), &Limits::default());
+    assert_eq!(alone.states, 16_383, "the queues of thirteen are counted");
+    assert_eq!(alone.findings[0].kind, FindingKind::OutOfRange);
+    assert_eq!(explore(&queue_of_up_to(13, 12), &with_jobs_only(4)), alone);
+    assert_eq!(
+        explore(&queue_of_up_to(13, 12), &with_jobs_and_graph(4)).findings,
+        alone.findings
+    );
+}
+
+#[test]
+fn a_limit_above_four_billion_states_changes_nothing_in_a_search_of_wide_levels() {
+    let model = hypercube_sketch(HYPERCUBE_TOP, Moves::Up).0.model();
+    for jobs in [1, 4] {
+        let usual = explore(&model, &with_jobs_and_graph(jobs));
+        let huge = explore(
+            &model,
+            &Limits {
+                max_states: usize::MAX,
+                ..with_jobs_and_graph(jobs)
+            },
+        );
+        assert_eq!(usual.states, HYPERCUBE_STATES);
+        assert_eq!(huge, usual, "{jobs} jobs");
+    }
+}
+
+#[test]
+fn many_workers_find_the_same_paths_through_states_of_wide_levels_met_from_several_parts() {
+    let points = [
+        [5, 5, 4, 4, 4],
+        [9, 9, 1, 1, 2],
+        [9, 0, 9, 0, 4],
+        [3, 3, 3, 3, 3],
+        [HYPERCUBE_TOP; 5],
+    ];
+    let model = hypercube_on_axes_up_to(HYPERCUBE_TOP, &points);
+    let alone = explore(&model, &with_jobs_only(1));
+    assert_eq!(alone.states, HYPERCUBE_STATES);
+    for rule in &alone.rules {
+        assert_eq!(rule.verdict, Verdict::Broken);
+    }
+    for jobs in [2, 3, 4, 7, 10] {
+        assert_eq!(explore(&model, &with_jobs_only(jobs)), alone, "{jobs} jobs");
+    }
+}
+
+#[test]
+fn many_workers_stop_at_the_same_state_limit_inside_a_wide_level() {
+    let model = hypercube_on_axes_up_to(HYPERCUBE_TOP, &[[HYPERCUBE_TOP; 5]]);
+    for max_states in [9_000, 47_000, 99_999] {
+        alone_and_with_workers(&model, max_states, &[2, 4, 10]);
+    }
+}
+
+fn queue_and_clock_broken_in_a_wide_level() -> Model {
+    let mut sketch = Sketch::new();
+    let (queue, messages) = message_queue(&mut sketch, 20);
+    let clock = sketch.number("clock", 0, 3, &[0]);
+    let size = size_of(&queue);
+    let short = apply(Op::Order(Order::Less), &size, Expr::Const(Value::Int(12)));
+    let sent = apply(Op::Seq(SeqOp::Push), &queue, Expr::Local(0));
+    sketch.action("tick", below(&clock, 3), &[(&clock, plus(&clock, 1))]);
+    sketch.action_with("send", &[("message", messages)], short, &[(&queue, sent)]);
+    let late = both(is(&size, 12), is(&clock, 0));
+    sketch.rule("neverTwelveUnticked", not(&late));
+    sketch.model()
+}
+
+#[test]
+fn workers_keep_the_order_of_states_of_wide_levels_with_and_without_a_code() {
+    let model = queue_and_clock_broken_in_a_wide_level();
+    let alone = explore(&model, &with_jobs_only(1));
+    assert_eq!(alone.states, 8191 * 4);
+    broken_after(&alone, 12);
+    for max_states in (7_677..15_356).step_by(181) {
+        alone_and_with_workers(&model, max_states, &[2, 4]);
+    }
+}
+
+#[test]
+fn workers_keep_rows_of_wide_levels_too_wide_for_one_word_the_same_as_one_thread() {
+    let model = hypercube_on_axes_up_to(1 << 30, &[[HYPERCUBE_TOP; 5]]);
+    for max_states in [9_000, HYPERCUBE_STATES] {
+        let alone = alone_and_with_workers(&model, max_states, &[2, 4, 10]);
+        assert_eq!(alone.states, max_states, "the walk stays in the hypercube");
+    }
+}
