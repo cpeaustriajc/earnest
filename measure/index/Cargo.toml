@@ -1,0 +1,17 @@
+[package]
+name = "index-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+hashbrown = { version = "=0.17.1", default-features = false, features = ["inline-more"] }
+
+[features]
+prefetch = []
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+[workspace]

@@ -1,0 +1,70 @@
+wheels=7 states=10000000 rounds=3 prefetch_feature=true arch=aarch64 expansion_helpers=10
+words=1 threads=1 round=0 variant=hashbrown claim_s=0.5012 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=1 round=0 variant=own/16 claim_s=0.4633 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=0 variant=load/16 claim_s=0.4688 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=0 variant=prefetch/16 claim_s=0.4685 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=1 variant=hashbrown claim_s=0.5020 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=1 round=1 variant=own/16 claim_s=0.4695 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=1 variant=load/16 claim_s=0.4821 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=1 variant=prefetch/16 claim_s=0.4526 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=2 variant=hashbrown claim_s=0.6463 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=1 round=2 variant=own/16 claim_s=0.5530 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=2 variant=load/16 claim_s=0.4839 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=1 round=2 variant=prefetch/16 claim_s=0.4708 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+SUMMARY words=1 threads=1 new=10000000 lookups=26138826 found=16138826 levels=65
+  hashbrown      min_s=0.5012 median_s=0.5020 vs_hashbrown=+0.0% index_bytes_per_state=8.39
+  own/16         min_s=0.4633 median_s=0.4695 vs_hashbrown=-6.5% index_bytes_per_state=6.71
+  load/16        min_s=0.4688 median_s=0.4821 vs_hashbrown=-4.0% index_bytes_per_state=6.71
+  prefetch/16    min_s=0.4526 median_s=0.4685 vs_hashbrown=-6.7% index_bytes_per_state=6.71
+words=1 threads=4 round=0 variant=hashbrown claim_s=0.1819 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=4 round=0 variant=own/16 claim_s=0.1704 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=0 variant=load/16 claim_s=0.1701 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=0 variant=prefetch/16 claim_s=0.1660 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=1 variant=hashbrown claim_s=0.1834 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=4 round=1 variant=own/16 claim_s=0.1657 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=1 variant=load/16 claim_s=0.1673 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=1 variant=prefetch/16 claim_s=0.1568 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=2 variant=hashbrown claim_s=0.1841 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=2590c032de643c86
+words=1 threads=4 round=2 variant=own/16 claim_s=0.1746 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=2 variant=load/16 claim_s=0.2078 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+words=1 threads=4 round=2 variant=prefetch/16 claim_s=0.1928 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=67108864 digest=2590c032de643c86
+SUMMARY words=1 threads=4 new=10000000 lookups=26138826 found=16138826 levels=65
+  hashbrown      min_s=0.1819 median_s=0.1834 vs_hashbrown=+0.0% index_bytes_per_state=8.39
+  own/16         min_s=0.1657 median_s=0.1704 vs_hashbrown=-7.1% index_bytes_per_state=6.71
+  load/16        min_s=0.1673 median_s=0.1701 vs_hashbrown=-7.3% index_bytes_per_state=6.71
+  prefetch/16    min_s=0.1568 median_s=0.1660 vs_hashbrown=-9.5% index_bytes_per_state=6.71
+words=2 threads=1 round=0 variant=hashbrown claim_s=1.0995 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=1 round=0 variant=own/16 claim_s=1.3275 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=0 variant=load/16 claim_s=1.4578 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=0 variant=prefetch/16 claim_s=1.2601 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=1 variant=hashbrown claim_s=1.0971 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=1 round=1 variant=own/16 claim_s=1.3453 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=1 variant=load/16 claim_s=1.2746 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=1 variant=prefetch/16 claim_s=1.3336 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=2 variant=hashbrown claim_s=1.2212 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=1 round=2 variant=own/16 claim_s=1.3271 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=2 variant=load/16 claim_s=1.2626 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=1 round=2 variant=prefetch/16 claim_s=1.2651 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+SUMMARY words=2 threads=1 new=10000000 lookups=26138826 found=16138826 levels=65
+  hashbrown      min_s=1.0971 median_s=1.0995 vs_hashbrown=+0.0% index_bytes_per_state=8.39
+  own/16         min_s=1.3271 median_s=1.3275 vs_hashbrown=+20.7% index_bytes_per_state=13.42
+  load/16        min_s=1.2626 median_s=1.2746 vs_hashbrown=+15.9% index_bytes_per_state=13.42
+  prefetch/16    min_s=1.2601 median_s=1.2651 vs_hashbrown=+15.1% index_bytes_per_state=13.42
+words=2 threads=4 round=0 variant=hashbrown claim_s=0.4503 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=4 round=0 variant=own/16 claim_s=0.5592 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=0 variant=load/16 claim_s=0.5183 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=0 variant=prefetch/16 claim_s=0.6610 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=1 variant=hashbrown claim_s=0.5957 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=4 round=1 variant=own/16 claim_s=0.5549 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=1 variant=load/16 claim_s=0.4820 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=1 variant=prefetch/16 claim_s=0.4793 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=2 variant=hashbrown claim_s=0.4117 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=83886592 digest=056d833823c71e24
+words=2 threads=4 round=2 variant=own/16 claim_s=0.4945 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=2 variant=load/16 claim_s=0.4776 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+words=2 threads=4 round=2 variant=prefetch/16 claim_s=0.4658 new=10000000 lookups=26138826 found=16138826 levels=65 index_bytes=134217728 digest=056d833823c71e24
+SUMMARY words=2 threads=4 new=10000000 lookups=26138826 found=16138826 levels=65
+  hashbrown      min_s=0.4117 median_s=0.4503 vs_hashbrown=+0.0% index_bytes_per_state=8.39
+  own/16         min_s=0.4945 median_s=0.5549 vs_hashbrown=+23.2% index_bytes_per_state=13.42
+  load/16        min_s=0.4776 median_s=0.4820 vs_hashbrown=+7.0% index_bytes_per_state=13.42
+  prefetch/16    min_s=0.4658 median_s=0.4793 vs_hashbrown=+6.4% index_bytes_per_state=13.42
+CHECK OK: every variant and thread count gave the same new rows, ids and parents

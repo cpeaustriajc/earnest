@@ -1,0 +1,20 @@
+wheels=8 states=100000000 rounds=1 prefetch_feature=true arch=aarch64 expansion_helpers=10
+words=1 threads=4 round=0 variant=hashbrown claim_s=3.4290 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=671089152 digest=e3058aa889dcc6a5
+words=1 threads=4 round=0 variant=own/16 claim_s=2.7717 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=536870912 digest=e3058aa889dcc6a5
+words=1 threads=4 round=0 variant=load/16 claim_s=2.5959 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=536870912 digest=e3058aa889dcc6a5
+words=1 threads=4 round=0 variant=prefetch/16 claim_s=2.7443 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=536870912 digest=e3058aa889dcc6a5
+SUMMARY words=1 threads=4 new=100000000 lookups=259644583 found=159644583 levels=74
+  hashbrown      min_s=3.4290 median_s=3.4290 vs_hashbrown=+0.0% index_bytes_per_state=6.71
+  own/16         min_s=2.7717 median_s=2.7717 vs_hashbrown=-19.2% index_bytes_per_state=5.37
+  load/16        min_s=2.5959 median_s=2.5959 vs_hashbrown=-24.3% index_bytes_per_state=5.37
+  prefetch/16    min_s=2.7443 median_s=2.7443 vs_hashbrown=-20.0% index_bytes_per_state=5.37
+words=2 threads=4 round=0 variant=hashbrown claim_s=6.4980 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=671089152 digest=edc7e94be215fa40
+words=2 threads=4 round=0 variant=own/16 claim_s=8.6779 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=1073741824 digest=edc7e94be215fa40
+words=2 threads=4 round=0 variant=load/16 claim_s=7.9998 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=1073741824 digest=edc7e94be215fa40
+words=2 threads=4 round=0 variant=prefetch/16 claim_s=7.8236 new=100000000 lookups=259644583 found=159644583 levels=74 index_bytes=1073741824 digest=edc7e94be215fa40
+SUMMARY words=2 threads=4 new=100000000 lookups=259644583 found=159644583 levels=74
+  hashbrown      min_s=6.4980 median_s=6.4980 vs_hashbrown=+0.0% index_bytes_per_state=6.71
+  own/16         min_s=8.6779 median_s=8.6779 vs_hashbrown=+33.5% index_bytes_per_state=10.74
+  load/16        min_s=7.9998 median_s=7.9998 vs_hashbrown=+23.1% index_bytes_per_state=10.74
+  prefetch/16    min_s=7.8236 median_s=7.8236 vs_hashbrown=+20.4% index_bytes_per_state=10.74
+CHECK OK: every variant and thread count gave the same new rows, ids and parents
