@@ -164,8 +164,8 @@ impl Place {
 
 #[cfg(test)]
 mod tests {
-    use super::super::codec::Codec;
-    use super::RowLayout;
+    use super::{RowLayout, hash_words};
+    use crate::store::codec::Codec;
     use earnest_value::Domain;
 
     fn layout(domains: &[Domain]) -> RowLayout {
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn rows_that_differ_in_one_field_hash_apart() {
         let hashes: std::collections::HashSet<u64> =
-            (0..100_u64).map(|row| super::hash_words(&[row])).collect();
+            (0..100_u64).map(|row| hash_words(&[row])).collect();
         assert_eq!(hashes.len(), 100, "every row its own hash");
     }
 }
