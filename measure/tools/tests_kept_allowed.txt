@@ -1,0 +1,47 @@
+A test that is truly wrong: stop and tell the owner which test and why; the owner overrides by merging.
+crates/earnest_check/tests/explore/build.rs:2: changes or removes base line 2: `use earnest_ir::{Action, End, Expr, Field, Input, Math, Model, Op, Order, Rule, View};`
+crates/earnest_check/tests/explore/build.rs:84: changes or removes base line 84: `guard,`
+crates/earnest_check/tests/explore/build.rs:85: changes or removes base line 85: `updates: changed,`
+crates/earnest_check/tests/explore/build.rs:95: changes or removes base line 95: `holds,`
+crates/earnest_check/tests/explore/build.rs:104: changes or removes base line 104: `when,`
+crates/earnest_check/tests/explore/findings.rs:1: changes or removes base line 1: `use crate::build::{Sketch, apply, below, counter, int, is, plus, steps, texts, yes};`
+crates/earnest_check/tests/explore/graphs.rs:37: changes or removes base line 37: `pieces: vec![Piece::Text("band ".to_owned()), Piece::Shown(band)],`
+crates/earnest_check/tests/explore/graphs.rs:227: changes or removes base line 227: `pieces: vec![Piece::Text("n is ".to_owned()), Piece::Shown(unreadable)],`
+crates/earnest_check/tests/explore/limits.rs:2: changes or removes base line 2: `Sketch, apply, below, both, counter, int, is, is_not, not, plus, steps, texts, yes,`
+crates/earnest_check/tests/explore/limits.rs:4: changes or removes base line 4: `use earnest_check::{FindingKind, Limits, Outcome, Status, Verdict, explore};`
+crates/earnest_check/tests/explore/rules.rs:1: changes or removes base line 1: `use crate::build::{Sketch, below, counter, int, is, is_not, steps, texts};`
+crates/earnest_ir/tests/eval.rs:2: changes or removes base line 2: `//! fault is reported as a fault.`
+crates/earnest_ir/tests/eval.rs:5: changes or removes base line 5: `Expr, Fault, Frame, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep, eval, truth,`
+crates/earnest_ir/tests/eval.rs:7: changes or removes base line 7: `use earnest_value::{IntType, MOST_SAFE_INTEGER, Symbols, Value};`
+crates/earnest_ir/tests/eval.rs:13: changes or removes base line 13: `eval(expr, &mut Frame::new(state, SLOTS))`
+crates/earnest_ir/tests/eval.rs:710: changes or removes base line 710: `let mut frame = Frame::new(&[], SLOTS);`
+crates/earnest_ir/tests/eval.rs:711: changes or removes base line 711: `assert_eq!(truth(&yes(), &mut frame), Ok(true));`
+crates/earnest_ir/tests/eval.rs:712: changes or removes base line 712: `assert_eq!(truth(&no(), &mut frame), Ok(false));`
+crates/earnest_ir/tests/eval.rs:713: changes or removes base line 713: `assert_eq!(truth(&int(1), &mut frame), Err(Fault::WrongKind));`
+crates/earnest_ir/tests/eval.rs:714: changes or removes base line 714: `assert_eq!(truth(&null(), &mut frame), Err(Fault::NullRead));`
+crates/earnest_ir/tests/eval.rs:715: changes or removes base line 715: `assert_eq!(truth(&faulting(), &mut frame), Err(Fault::NullRead));`
+crates/earnest_semantic/tests/lower/actions.rs:8: changes or removes base line 8: `use earnest_ir::{Frame, Model, truth};`
+crates/earnest_semantic/tests/lower/actions.rs:72: changes or removes base line 72: `truth(&taken.guard, &mut frame).expect("the guard has a value in the start state")`
+crates/earnest_semantic/tests/lower/actions.rs:285: changes or removes base line 285: `truth(&end.when, &mut Frame::new(&state, end.slots)),`
+crates/earnest_semantic/tests/lower/build.rs:6: changes or removes base line 6: `use earnest_ir::{Fault, Frame, Model, eval, truth};`
+crates/earnest_semantic/tests/lower/build.rs:403: changes or removes base line 403: `truth(&checked.holds, &mut Frame::new(&state, checked.slots))`
+crates/earnest_semantic/tests/lower/build.rs:433: changes or removes base line 433: `Some(Some(update)) => {`
+crates/earnest_semantic/tests/lower/build.rs:434: changes or removes base line 434: `eval(update, &mut frame).expect("the update has a value in the start state")`
+crates/earnest_semantic/tests/lower/build.rs:435: changes or removes base line 435: `}`
+crates/earnest_semantic/tests/lower/earlier.rs:6: changes or removes base line 6: `use earnest_ir::{Frame, Model, Rule, truth};`
+crates/earnest_semantic/tests/lower/earlier.rs:25: changes or removes base line 25: `truth(&rule.holds, &mut Frame::new(&state, rule.slots)).expect("the rule has a value")`
+crates/earnest_semantic/tests/lower/rust.rs:489: changes or removes base line 489: `earnest_ir::eval(update, &mut frame),`
+crates/earnest_semantic/tests/lower/views.rs:6: changes or removes base line 6: `use earnest_ir::{Frame, Label, Model, Piece, eval};`
+crates/earnest_semantic/tests/lower/views.rs:34: changes or removes base line 34: `let value = eval(expr, &mut frame).expect("the label has a value");`
+crates/earnest_tla/tests/write/build.rs:1: changes or removes base line 1: `use earnest_ir::{Action, End, Expr, Field, Input, Model, Op, Rule, View};`
+crates/earnest_tla/tests/write/build.rs:91: changes or removes base line 91: `guard,`
+crates/earnest_tla/tests/write/build.rs:92: changes or removes base line 92: `updates: changed,`
+crates/earnest_tla/tests/write/build.rs:102: changes or removes base line 102: `holds,`
+crates/earnest_tla/tests/write/build.rs:111: changes or removes base line 111: `when,`
+crates/earnest_tla/tests/write/modules.rs:387: changes or removes base line 387: `model.actions[0].updates.push(Some(int(9)));`
+crates/earnest_tla/tests/write/shape.rs:3: changes or removes base line 3: `Action, End, Expr, Field, Input, MapOp, Math, Model, Op, Order, Rule, SeqOp, SetOp, Shelf,`
+crates/earnest_tla/tests/write/shape.rs:4: changes or removes base line 4: `Sweep, View,`
+crates/earnest_tla/tests/write/shape.rs:255: changes or removes base line 255: `guard,`
+crates/earnest_tla/tests/write/shape.rs:256: changes or removes base line 256: `updates,`
+crates/earnest_tla/tests/write/shape.rs:284: changes or removes base line 284: `holds,`
+crates/earnest_tla/tests/write/shape.rs:293: changes or removes base line 293: `when,`
