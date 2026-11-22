@@ -24,10 +24,7 @@ pub(super) trait Filed: Copy + Send + Sync {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct NarrowKey(u32);
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Key(u64);
+pub(super) struct Key<W>(W);
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct NarrowId(u32);
@@ -35,41 +32,24 @@ pub(super) struct NarrowId(u32);
 #[derive(Clone, Copy, Debug)]
 pub(super) struct WideId(usize);
 
-impl Filed for NarrowKey {
+impl<W> Filed for Key<W>
+where
+    W: Copy + Send + Sync + TryFrom<u64> + Into<u64>,
+{
     const HOLDS_ROW: bool = true;
 
     fn new(row: &[u64], _: usize) -> Option<Self> {
-        u32::try_from(row.first().copied().unwrap_or(0))
+        W::try_from(row.first().copied().unwrap_or(0))
             .ok()
             .map(Self)
     }
 
     fn holds(self, _: &Rows, row: &[u64]) -> bool {
-        u64::from(self.0) == row.first().copied().unwrap_or(0)
+        self.0.into() == row.first().copied().unwrap_or(0)
     }
 
     fn hash(self, _: &Rows) -> u64 {
-        hash_words(&[u64::from(self.0)])
-    }
-
-    fn id(self) -> Option<usize> {
-        None
-    }
-}
-
-impl Filed for Key {
-    const HOLDS_ROW: bool = true;
-
-    fn new(row: &[u64], _: usize) -> Option<Self> {
-        Some(Self(row.first().copied().unwrap_or(0)))
-    }
-
-    fn holds(self, _: &Rows, row: &[u64]) -> bool {
-        self.0 == row.first().copied().unwrap_or(0)
-    }
-
-    fn hash(self, _: &Rows) -> u64 {
-        hash_words(&[self.0])
+        hash_words(&[self.0.into()])
     }
 
     fn id(self) -> Option<usize> {
@@ -200,8 +180,8 @@ impl<F: Filed> Shards<F> {
 
 #[derive(Debug)]
 pub(super) enum Index {
-    NarrowKeys(Shards<NarrowKey>),
-    Keys(Shards<Key>),
+    NarrowKeys(Shards<Key<u32>>),
+    Keys(Shards<Key<u64>>),
     NarrowIds(Shards<NarrowId>),
     WideIds(Shards<WideId>),
 }
