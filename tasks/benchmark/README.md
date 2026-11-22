@@ -78,17 +78,18 @@ The 12 mixed models that stand in for the app's 12 are the next ten (in `models/
 
 ## Results
 
-Last run: the release build of commit 906e76c, `--runs 5`, in the `check` job of pull request 15.
+Last run: the release build of commit 2963116, `--runs 5`, in the `check` job of pull request 15.
 
 Machine: a GitHub-hosted `ubuntu-latest` runner (image `ubuntu-26.04`), which GitHub documents as
 4 vCPUs and 16 GB on x86-64 for a public repository. The benchmark counted 4 cores. The runner
 shares its host, so other work there adds noise to every number below. Every later run of the
 `check` job prints its own numbers in the step `just benchmark`.
 
-Five runs of the `check` job. The first four measured the same search code: their commits differ
+Six runs of the `check` job. The first four measured the same search code: their commits differ
 only in tests, in this file and in the first line of the benchmark output, which names the
 processor from 433b987 on. The run of 906e76c is the first with the search code that writes the
-updates of an action into a copy of the packed row.
+updates of an action into a copy of the packed row. The run of 2963116 is the first with the
+search code that tries an action of one input combination without the loop over the inputs.
 
 | Commit | Processor | `grid_10m`, 4 workers | `grid_10m`, 1 worker | `grid_1m` | `wide` |
 |---|---|---:|---:|---:|---:|
@@ -97,62 +98,63 @@ updates of an action into a copy of the packed row.
 | 433b987 | AMD EPYC 9V74 80-Core Processor | 2.139 s | 10.102 s | 0.197 s | 0.347 s |
 | cb8f468 | Intel(R) Xeon(R) 6975P-C | 1.803 s | 5.675 s | 0.185 s | 0.275 s |
 | 906e76c | Intel(R) Xeon(R) 6975P-C | 1.737 s | 6.168 s | 0.176 s | 0.235 s |
+| 2963116 | AMD EPYC 7763 64-Core Processor | 2.124 s | 7.580 s | 0.208 s | 0.341 s |
 
 `grid_10m` with 4 workers took between 1.5 s and 2.4 s, against the target of under 5 s. The same
 code took up to 1.9 times as long in one run as in another, so two builds can be compared only on
-one machine. The runners have different processors, which explains a part of that spread. The
+one machine. The runners have three kinds of processor, which explains a part of that spread. The
 speed of a runner also changes within a run: the run of 433b987 shows a speed-up of 4.79 on 4
-cores. The sections below are as the run of 906e76c printed them.
+cores. The sections below are as the run of 2963116 printed them.
 
-Cores: 4 (Intel(R) Xeon(R) 6975P-C). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.
+Cores: 4 (AMD EPYC 7763 64-Core Processor). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.
 
 ### Scaled models
 
 | Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
 |---|---|---:|---:|---:|---:|
-| Grid1k | TypeScript | 1,000 | 0.002 | 434,971 | 5.7 |
-| Grid1k | Rust | 1,000 | 0.002 | 439,367 | 6.0 |
-| Ledger | TypeScript | 36,400 | 0.036 | 1,012,658 | 7.5 |
-| Ledger | Rust | 36,400 | 0.037 | 981,423 | 8.2 |
-| Wide | TypeScript | 10,000 | 0.235 | 42,540 | 7.6 |
-| Wide | Rust | 10,000 | 0.245 | 40,841 | 8.0 |
-| Grid100k | TypeScript | 100,000 | 0.031 | 3,213,057 | 8.5 |
-| Grid100k | Rust | 100,000 | 0.032 | 3,164,556 | 9.4 |
-| Grid1m | TypeScript | 1,000,000 | 0.176 | 5,672,181 | 28.3 |
-| Grid1m | Rust | 1,000,000 | 0.177 | 5,649,143 | 28.8 |
-| Grid10m | TypeScript | 10,000,000 | 1.729 | 5,785,289 | 196.8 |
-| Grid10m | Rust | 10,000,000 | 1.755 | 5,698,879 | 193.1 |
+| Grid1k | TypeScript | 1,000 | 0.002 | 412,371 | 5.3 |
+| Grid1k | Rust | 1,000 | 0.003 | 286,532 | 6.2 |
+| Ledger | TypeScript | 36,400 | 0.049 | 743,859 | 7.4 |
+| Ledger | Rust | 36,400 | 0.051 | 717,778 | 8.3 |
+| Wide | TypeScript | 10,000 | 0.341 | 29,344 | 7.3 |
+| Wide | Rust | 10,000 | 0.358 | 27,955 | 8.2 |
+| Grid100k | TypeScript | 100,000 | 0.043 | 2,309,788 | 8.6 |
+| Grid100k | Rust | 100,000 | 0.045 | 2,220,150 | 9.3 |
+| Grid1m | TypeScript | 1,000,000 | 0.208 | 4,816,329 | 28.7 |
+| Grid1m | Rust | 1,000,000 | 0.214 | 4,681,494 | 29.2 |
+| Grid10m | TypeScript | 10,000,000 | 2.147 | 4,658,427 | 197.2 |
+| Grid10m | Rust | 10,000,000 | 2.203 | 4,539,594 | 193.6 |
 
 ### The 12 mixed models, each alone
 
 | Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
 |---|---|---:|---:|---:|---:|
-| counter100 | TypeScript | 100 | 0.002 | 42,680 | 5.5 |
-| traffic | TypeScript | 30 | 0.002 | 13,083 | 0.2 |
-| plane | TypeScript | 400 | 0.002 | 174,825 | 0.0 |
-| basket | TypeScript | 16 | 0.001 | 13,355 | 0.0 |
-| mailbox4 | TypeScript | 31 | 0.002 | 13,402 | 5.7 |
-| trail3 | TypeScript | 40 | 0.001 | 33,250 | 0.0 |
-| shelf | TypeScript | 64 | 0.002 | 27,741 | 5.7 |
-| seats | TypeScript | 18 | 0.002 | 7,832 | 0.0 |
-| votes | TypeScript | 21 | 0.002 | 9,114 | 0.0 |
-| pairs | TypeScript | 120 | 0.002 | 52,196 | 0.1 |
-| ledger | TypeScript | 36,400 | 0.036 | 1,012,658 | 7.5 |
-| wide | TypeScript | 10,000 | 0.235 | 42,540 | 7.6 |
+| counter100 | TypeScript | 100 | 0.002 | 41,186 | 5.2 |
+| traffic | TypeScript | 30 | 0.002 | 12,145 | 5.2 |
+| plane | TypeScript | 400 | 0.002 | 164,541 | 5.3 |
+| basket | TypeScript | 16 | 0.002 | 6,522 | 5.1 |
+| mailbox4 | TypeScript | 31 | 0.002 | 12,820 | 5.2 |
+| trail3 | TypeScript | 40 | 0.002 | 16,474 | 5.5 |
+| shelf | TypeScript | 64 | 0.002 | 26,435 | 5.3 |
+| seats | TypeScript | 18 | 0.002 | 7,337 | 5.1 |
+| votes | TypeScript | 21 | 0.002 | 8,684 | 5.3 |
+| pairs | TypeScript | 120 | 0.002 | 49,140 | 5.2 |
+| ledger | TypeScript | 36,400 | 0.049 | 743,859 | 7.4 |
+| wide | TypeScript | 10,000 | 0.341 | 29,344 | 7.3 |
 
 ### Spec targets
 
-- 12 models together: 0.262 s, target under 5 s (a stand-in: these benchmark models, not the first app's 12)
-- slowest model alone: 0.235 s, target under 10 s (a stand-in: these benchmark models, not the first app's)
-- the 12 models in that one run: 47,240 states, peak memory 8.4 MiB
-- grid_10m with 4 workers: 1.737 s, peak memory 191.3 MiB, target under 5 s on 4 cores and 16 GB (this machine has 4 cores, at least the 4 of the target)
+- 12 models together: 0.363 s, target under 5 s (a stand-in: these benchmark models, not the first app's 12)
+- slowest model alone: 0.341 s, target under 10 s (a stand-in: these benchmark models, not the first app's)
+- the 12 models in that one run: 47,240 states, peak memory 8.5 MiB
+- grid_10m with 4 workers: 2.124 s, peak memory 194.3 MiB, target under 5 s on 4 cores and 16 GB (this machine has 4 cores, at least the 4 of the target)
 
 ### One large model on one worker and on all cores
 
-- grid_10m: 1 worker 6.168 s, 4 workers (all cores) 1.729 s, speed-up 3.57x
+- grid_10m: 1 worker 7.580 s, 4 workers (all cores) 2.147 s, speed-up 3.53x
 
 ### R12: many models and one large model in one run
 
-- the 13 models in one run: 0.394 s; the large model (grid_1m) alone: 0.176 s; the slowest of the 12 alone (wide): 0.235 s
-- R12 asks for about as long as the largest model alone: the one run took 1.68x the longest of them alone (wide)
-- peak memory 31.4 MiB
+- the 13 models in one run: 0.538 s; the large model (grid_1m) alone: 0.208 s; the slowest of the 12 alone (wide): 0.341 s
+- R12 asks for about as long as the largest model alone: the one run took 1.58x the longest of them alone (wide)
+- peak memory 31.2 MiB
