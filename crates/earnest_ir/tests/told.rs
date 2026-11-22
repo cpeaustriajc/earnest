@@ -322,6 +322,11 @@ proptest! {
     ) {
         let Case { action, exprs, state, left_over } = case;
         let told = action.told_apart();
+        prop_assert_eq!(told.len(), action.inputs.len(), "one answer for each input");
+        for (apart, input) in told.iter().zip(&action.inputs) {
+            prop_assert_eq!(apart.len(), input.values.len(), "one answer for each value");
+            prop_assert!(apart.first().copied().unwrap_or(true), "the first value is always new");
+        }
         let reference = expanded(&action, &exprs, &state, &left_over, Walk::EveryCombination);
         let skipping = expanded(
             &action,
@@ -538,6 +543,22 @@ fn a_slot_bound_to_a_computed_value_is_no_copy_of_the_input() {
         told_for_first(values, vec![guard]),
         table(&[true, true, false])
     );
+}
+
+#[test]
+fn a_slot_bound_to_the_input_in_one_expression_and_to_a_computed_value_in_another_is_no_copy() {
+    let nested = |inner: i64| Value::record(vec![(name(0), record(&[(1, inner)]))]);
+    let values = vec![nested(1), nested(2)];
+    let exprs = vec![
+        bind(2, Expr::Local(0), yes()),
+        bind(2, read(0, 0), equal(read(2, 1), number(1))),
+    ];
+    assert_eq!(
+        told_for_first(values.clone(), exprs.clone()),
+        table(&[true, true])
+    );
+    assert_the_table_skips_safely(values.clone(), exprs.clone());
+    assert_the_skip_is_seen(values, exprs, &table(&[true, false]));
 }
 
 #[test]
