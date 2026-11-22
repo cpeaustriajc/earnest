@@ -330,7 +330,7 @@ fn r12_a_model_of_levels_of_thousands_of_states_gives_the_same_results_on_every_
     sandbox.write("models/wheels.model.ts", WIDE_WHEELS);
     for limit in ["47000", "100000"] {
         let report = |jobs: &str| {
-            let run = Run::of(sandbox.command().args([
+            let run = sandbox.earnest(&[
                 "verify",
                 "--json",
                 "--no-cache",
@@ -338,7 +338,7 @@ fn r12_a_model_of_levels_of_thousands_of_states_gives_the_same_results_on_every_
                 limit,
                 "--jobs",
                 jobs,
-            ]));
+            ]);
             run.exits(1);
             without_timings(&run.json())
         };

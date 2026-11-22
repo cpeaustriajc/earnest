@@ -18,8 +18,11 @@ const TIME_A_PART_PAYS_FOR: Duration = Duration::from_micros(512);
 const MOST_PARTS: usize = 64;
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
 
+fn wide(count: usize) -> u128 {
+    u128::try_from(count).unwrap_or(u128::MAX)
+}
+
 fn parts_of(states: usize, state_time: Duration) -> usize {
-    let wide = |count: usize| u128::try_from(count).unwrap_or(u128::MAX);
     let work = wide(states).saturating_mul(state_time.max(LEAST_TIME_OF_A_STATE).as_nanos());
     let parts = work / TIME_A_PART_PAYS_FOR.as_nanos().max(1);
     usize::try_from(parts)
@@ -35,12 +38,14 @@ struct Hands {
 }
 
 impl Hands {
-    fn take_in_parts(&self, states: usize, state_time: Duration) -> bool {
-        if self.threads > 1 {
-            parts_of(states, state_time) > 1
+    fn take_in_parts(&self, states: usize, state_time: Duration) -> Option<usize> {
+        let parts = parts_of(states, state_time);
+        let taken = if self.threads > 1 {
+            parts > 1
         } else {
             !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
-        }
+        };
+        taken.then_some(parts)
     }
 }
 
@@ -106,7 +111,6 @@ impl Search<'_> {
         if kept == 0 {
             return room;
         }
-        let wide = |count: usize| u128::try_from(count).unwrap_or(u128::MAX);
         wide(room)
             .saturating_mul(wide(kept))
             .checked_div(wide(new))
@@ -128,26 +132,16 @@ impl Search<'_> {
             threads: own.saturating_add(helpers.map_or(0, Helpers::idle)),
             keep_graph: self.limits.keep_graph,
         };
-        if !hands.take_in_parts(frontier.len(), self.state_time) {
-            return None;
-        }
+        let parts = hands.take_in_parts(frontier.len(), self.state_time)?;
         let level = Level {
             frontier: frontier.clone(),
-            cuts: cut_points(
-                frontier.len(),
-                frontier
-                    .len()
-                    .div_ceil(parts_of(frontier.len(), self.state_time)),
-            ),
+            cuts: cut_points(frontier.len(), frontier.len().div_ceil(parts)),
             deadline,
             asked,
             kept_rows_that_fit: self.estimated_kept_rows_that_fit(),
             fewest_states,
         };
         let parts = level.parts();
-        if parts <= 1 {
-            return None;
-        }
         let shared = Shared::default();
         std::thread::scope(|scope| {
             for _ in 1..own.min(parts) {
@@ -374,13 +368,22 @@ mod tests {
             threads: 1,
             keep_graph: false,
         };
-        assert!(!lone.take_in_parts(LONE_LEVEL - 1, CHEAP), "just short");
-        assert!(lone.take_in_parts(LONE_LEVEL, CHEAP), "at the size");
         assert!(
-            !lone.take_in_parts(LONE_LEVEL - 1, SLOW_STATE),
+            lone.take_in_parts(LONE_LEVEL - 1, CHEAP).is_none(),
+            "just short"
+        );
+        assert!(
+            lone.take_in_parts(LONE_LEVEL, CHEAP).is_some(),
+            "at the size"
+        );
+        assert!(
+            lone.take_in_parts(LONE_LEVEL - 1, SLOW_STATE).is_none(),
             "a slow level short of the size"
         );
-        assert!(lone.take_in_parts(10 * LONE_LEVEL, CHEAP), "far above");
+        assert!(
+            lone.take_in_parts(10 * LONE_LEVEL, CHEAP).is_some(),
+            "far above"
+        );
     }
 
     #[test]
@@ -389,7 +392,7 @@ mod tests {
             threads: 1,
             keep_graph: true,
         };
-        assert!(!lone.take_in_parts(10 * LONE_LEVEL, SLOW_STATE));
+        assert!(lone.take_in_parts(10 * LONE_LEVEL, SLOW_STATE).is_none());
     }
 
     #[test]
@@ -402,15 +405,16 @@ mod tests {
                 keep_graph,
             };
             assert!(
-                !crew.take_in_parts(2 * part - 1, CHEAP),
+                crew.take_in_parts(2 * part - 1, CHEAP).is_none(),
                 "short of two parts, graph kept: {keep_graph}"
             );
             assert!(
-                crew.take_in_parts(2 * part, CHEAP),
+                crew.take_in_parts(2 * part, CHEAP).is_some(),
                 "two parts, graph kept: {keep_graph}"
             );
             assert!(
-                crew.take_in_parts(2 * part, LEAST_TIME_OF_A_STATE / 2),
+                crew.take_in_parts(2 * part, LEAST_TIME_OF_A_STATE / 2)
+                    .is_some(),
                 "states measured below the least time count at the least time, graph kept: \
                  {keep_graph}"
             );
@@ -423,10 +427,13 @@ mod tests {
             threads: 4,
             keep_graph: false,
         };
-        assert!(crew.take_in_parts(190, SLOW_STATE), "190 states of 65 µs");
-        assert!(!crew.take_in_parts(190, CHEAP), "190 cheap states");
         assert!(
-            !crew.take_in_parts(1, Duration::from_secs(1)),
+            crew.take_in_parts(190, SLOW_STATE).is_some(),
+            "190 states of 65 µs"
+        );
+        assert!(crew.take_in_parts(190, CHEAP).is_none(), "190 cheap states");
+        assert!(
+            crew.take_in_parts(1, Duration::from_secs(1)).is_none(),
             "a single state is one part however slow"
         );
     }

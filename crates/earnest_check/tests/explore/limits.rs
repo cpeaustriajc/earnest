@@ -1188,15 +1188,8 @@ const LATE_CHILD: i64 = CHILDREN_OF_PAIRS_OF_STARTS - 3;
 const LIMITS_INSIDE_THE_CHILDREN: usize = 6;
 
 fn starts_whose_pairs_share_a_child() -> Model {
-    let mut sketch = Sketch::new();
-    let every_start: Vec<i64> = (0..STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS).collect();
-    let n = sketch.number(
-        "n",
-        0,
-        STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS - 1,
-        &every_start,
-    );
-    let flipped = sketch.boolean("flipped", &[false]);
+    let (mut sketch, n, flipped) =
+        every_start_up_to(STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS);
     let halved = apply(Op::Math(Math::Divide), &n, int(2));
     sketch.action(
         "flipHalf",
