@@ -28,8 +28,14 @@ struct Level {
     cuts: Vec<usize>,
     deadline: Option<Instant>,
     asked: Asked,
-    kept_rows_that_fit: Option<usize>,
+    kept_rows_that_fit: usize,
     fewest_states: usize,
+}
+
+impl Level {
+    fn parts(&self) -> usize {
+        self.cuts.len().saturating_sub(1)
+    }
 }
 
 #[derive(Default)]
@@ -52,30 +58,18 @@ impl Shared {
     fn holds_back_at(&self, level: &Level, part: usize) -> bool {
         let taken = level.cuts.get(part).copied().unwrap_or(usize::MAX);
         taken >= level.fewest_states
-            && level
-                .kept_rows_that_fit
-                .is_some_and(|fit| self.kept_rows.load(Ordering::SeqCst) > fit)
+            && self.kept_rows.load(Ordering::SeqCst) > level.kept_rows_that_fit
     }
 
-    fn take_part(&self, level: &Level, parts: usize) -> Option<usize> {
-        let mut part = self.next.load(Ordering::SeqCst);
-        loop {
-            if part >= parts
-                || self.stopped.load(Ordering::SeqCst)
-                || self.holds_back_at(level, part)
-            {
-                return None;
-            }
-            match self.next.compare_exchange(
-                part,
-                part.saturating_add(1),
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
-                Ok(_) => return Some(part),
-                Err(now) => part = now,
-            }
-        }
+    fn take_part(&self, level: &Level) -> Option<usize> {
+        self.next
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |part| {
+                let open = part < level.parts()
+                    && !self.stopped.load(Ordering::SeqCst)
+                    && !self.holds_back_at(level, part);
+                open.then(|| part.saturating_add(1))
+            })
+            .ok()
     }
 }
 
@@ -117,11 +111,10 @@ impl Search<'_> {
             cuts: cut_points(frontier.len(), frontier.len().div_ceil(MOST_PARTS)),
             deadline,
             asked,
-            kept_rows_that_fit: (asked == Asked::Everything)
-                .then(|| self.estimated_kept_rows_that_fit()),
+            kept_rows_that_fit: self.estimated_kept_rows_that_fit(),
             fewest_states,
         };
-        let parts = level.cuts.len().saturating_sub(1);
+        let parts = level.parts();
         if parts <= 1 {
             return None;
         }
@@ -233,11 +226,10 @@ impl Search<'_> {
         level: &'env Level,
         shared: &'env Shared,
     ) {
-        let parts = level.cuts.len().saturating_sub(1);
         let mut kit = Kit::default();
         loop {
-            self.take_up_idle_threads(scope, level, shared, parts);
-            let Some(part) = shared.take_part(level, parts) else {
+            self.take_up_idle_threads(scope, level, shared);
+            let Some(part) = shared.take_part(level) else {
                 return;
             };
             let ids = level
@@ -271,11 +263,11 @@ impl Search<'_> {
         scope: &'scope Scope<'scope, 'env>,
         level: &'env Level,
         shared: &'env Shared,
-        parts: usize,
     ) {
         let Some(helpers) = self.limits.helpers.as_ref() else {
             return;
         };
+        let parts = level.parts();
         while helpers.idle() > 0
             && !shared.holds_back(level)
             && shared.helpers_taken_up.load(Ordering::SeqCst) < parts
@@ -331,7 +323,6 @@ mod tests {
     use crate::expand::Asked;
     use std::sync::atomic::Ordering;
 
-    const PARTS: usize = 3;
     const KEPT_ROWS_THAT_FIT: usize = 5;
 
     fn level_of_three_parts() -> Level {
@@ -340,7 +331,7 @@ mod tests {
             cuts: vec![0, 10, 20, 30],
             deadline: None,
             asked: Asked::Everything,
-            kept_rows_that_fit: Some(KEPT_ROWS_THAT_FIT),
+            kept_rows_that_fit: KEPT_ROWS_THAT_FIT,
             fewest_states: 1,
         }
     }
@@ -356,7 +347,7 @@ mod tests {
     fn a_part_is_not_taken_once_the_kept_rows_outgrow_what_fits() {
         let shared = shared_after_the_first_part(KEPT_ROWS_THAT_FIT + 1);
         assert_eq!(
-            shared.take_part(&level_of_three_parts(), PARTS),
+            shared.take_part(&level_of_three_parts()),
             None,
             "the rest of the level is held back"
         );
@@ -371,7 +362,7 @@ mod tests {
     fn a_part_is_taken_while_the_kept_rows_fit() {
         let shared = shared_after_the_first_part(KEPT_ROWS_THAT_FIT);
         assert_eq!(
-            shared.take_part(&level_of_three_parts(), PARTS),
+            shared.take_part(&level_of_three_parts()),
             Some(1),
             "the next part"
         );
