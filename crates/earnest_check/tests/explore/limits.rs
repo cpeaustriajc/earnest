@@ -1062,7 +1062,7 @@ fn a_time_stop_in_a_later_round_of_a_level_leaves_nothing_of_the_level_behind() 
     let began = Instant::now();
     let outcome = same_outcome_with_every_crew(&model, &limits, &[4]);
     assert!(
-        began.elapsed() < Duration::from_secs(60),
+        began.elapsed() < Duration::from_mins(1),
         "each search stops near its limit of 1 s: {:?}",
         began.elapsed()
     );
