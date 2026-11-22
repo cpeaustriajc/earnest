@@ -26,6 +26,28 @@ That is a deliberate choice, made to keep verification from adding anything new 
 Earnest still checks what a TLA+ checker checks. Every model can be exported as TLA+, and TLC
 finds the same states and the same verdicts.
 
+## Compared with TLA+ and Quint
+
+Four agents each got one sentence, "find all implicit state machines to the <app> using
+`earnest`", for zellij `62cfa6c`, helix `1a3fdfd`, excalidraw `9c2e462` and t3code `9de4ec1`.
+They wrote 18 models, and TLC 1.8.0 found the same states and the same verdict on all 18. The
+models are not in this repository. The full write-up, with the bugs and the limits of the
+comparison, is `apps/docs/src/content/docs/compare/tla.md`.
+
+![Verdicts that TLC confirms: 18 of 18. Higher is better.](apps/docs/src/assets/compare/tlc-agreement.png)
+
+![Time to check every model of each app. Lower is better. earnest 0.1.0: 5.9 to 11 ms. TLC 1.8.0: 778 to 2,698 ms.](apps/docs/src/assets/compare/time-per-app.png)
+
+![Peak memory for each app. Lower is better. earnest 0.1.0: 5.2 to 7.1 MB. TLC 1.8.0: 137 to 162 MB.](apps/docs/src/assets/compare/memory-per-app.png)
+
+![Time to find both zellij bugs with the same two models in each tool. Lower is better. earnest 0.1.0: 4.2 ms. TLC 1.8.0: 696 ms. Quint 0.33.1 run: 878 ms. Quint 0.33.1 verify: 5,865 ms.](apps/docs/src/assets/compare/time-three-tools.png)
+
+![Download size on macOS of what you install to check every state. Lower is better. earnest 0.1.0: 5 MB. TLC 1.8.0 with JDK 27: about 300 MB. Quint 0.33.1 with Apalache and JDK 27: about 527 MB.](apps/docs/src/assets/compare/install-size.png)
+
+Method: hyperfine 2.0.0, 2 warm-up runs and 10 measured runs (1 warm-up run for the three-tool
+chart), on a 10-core Apple silicon Mac. TLC ran on one worker, on earnest's TLA+ export of each
+model, and its time includes Java starting up.
+
 ## Install
 
 Early access ships as a nightly build of `main`. The install script downloads the archive for
