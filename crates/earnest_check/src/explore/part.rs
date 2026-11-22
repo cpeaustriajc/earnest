@@ -6,7 +6,7 @@ use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxHashSet;
 use std::ops::Range;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Target {
@@ -36,6 +36,7 @@ pub(super) struct Part {
     pub(super) raws: Vec<Box<[Value]>>,
     pub(super) stopped: bool,
     pub(super) crowded: bool,
+    pub(super) took: Duration,
 }
 
 #[derive(Default)]

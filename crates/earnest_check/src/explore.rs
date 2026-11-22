@@ -16,7 +16,7 @@ use merge::{Full, Judged};
 use part::Part;
 use starts::Starts;
 use std::ops::Range;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const STATES_BETWEEN_CLOCK_READS: usize = 64;
 
@@ -52,6 +52,7 @@ pub(crate) struct Search<'a> {
     pub(crate) cut_short: bool,
     judged: usize,
     last_spread_merge: SpreadMerge,
+    state_time: Duration,
 }
 
 struct Expander<'a> {
@@ -138,6 +139,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         cut_short: false,
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
+        state_time: Duration::ZERO,
     };
     search.run();
     search.outcome()
@@ -205,6 +207,7 @@ impl Search<'_> {
     fn level(&mut self, frontier: Range<usize>, deadline: Option<Instant>, asked: Asked) -> Ran {
         let lending = self.limits.helpers.as_ref();
         let mut judged = Judged::default();
+        let mut work = Work::default();
         let mut rest = frontier.start;
         let mut way = Way::Spread {
             fewest: FEWEST_STATES_OF_A_ROUND,
@@ -228,6 +231,7 @@ impl Search<'_> {
                     self.expand_here(states, deadline, asked, lending, &mut judged)
                 }
             };
+            work = work.and(ran.work);
             way = match (ran.end, way) {
                 (Round::RestFrom(from), Way::Spread { .. }) => {
                     let taken = from.saturating_sub(rest);
@@ -248,6 +252,11 @@ impl Search<'_> {
                 (Round::Done | Round::Stopped | Round::Full, _) => break ran,
             };
         };
+        if asked == Asked::Everything
+            && let Some(state_time) = work.per_state()
+        {
+            self.state_time = state_time;
+        }
         if ran.end == Round::Stopped && asked == Asked::Everything {
             self.undo_level(&frontier);
         } else {
@@ -265,7 +274,10 @@ impl Search<'_> {
         judged: &mut Judged,
     ) -> Option<Ran> {
         let expansion = self.spread_level(states, deadline, asked, fewest)?;
-        let ran = Ran { end: expansion.end };
+        let ran = Ran {
+            end: expansion.end,
+            work: expansion.work,
+        };
         let undone = ran.end == Round::Stopped && asked == Asked::Everything;
         if ran.end == Round::RestAlone || undone {
             return Some(ran);
@@ -279,7 +291,10 @@ impl Search<'_> {
         };
         Some(match merged {
             Ok(()) => ran,
-            Err(Full) => Ran { end: Round::Full },
+            Err(Full) => Ran {
+                end: Round::Full,
+                ..ran
+            },
         })
     }
 
@@ -355,4 +370,30 @@ enum Way<'h> {
 #[derive(Clone, Copy)]
 struct Ran {
     end: Round,
+    work: Work,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Work {
+    states: usize,
+    took: Duration,
+}
+
+impl Work {
+    fn and(self, more: Self) -> Self {
+        Self {
+            states: self.states.saturating_add(more.states),
+            took: self.took.saturating_add(more.took),
+        }
+    }
+
+    fn per_state(self) -> Option<Duration> {
+        let states = u128::try_from(self.states)
+            .ok()
+            .filter(|states| *states > 0)?;
+        let nanos = self.took.as_nanos() / states;
+        Some(Duration::from_nanos(
+            u64::try_from(nanos).unwrap_or(u64::MAX),
+        ))
+    }
 }
