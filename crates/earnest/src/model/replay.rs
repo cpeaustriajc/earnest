@@ -120,7 +120,7 @@ pub fn replay<State: Behavior + Clone>(
 ) -> Result<Vec<State>, Mismatch> {
     let mut states = vec![start.clone()];
     for (position, wanted) in path.iter().enumerate() {
-        let here = states.last().map(Behavior::steps).unwrap_or_default();
+        let here = states.last().map_or_default(Behavior::steps);
         let Some(found) = here.iter().position(|step| wanted.matches(step)) else {
             let listed: Vec<String> = here.iter().map(describe).collect();
             let possible = if listed.is_empty() {

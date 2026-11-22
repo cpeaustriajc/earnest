@@ -72,8 +72,7 @@ impl Search<'_> {
         let start = chain
             .first()
             .and_then(|id| self.states.get(*id))
-            .map(|state| self.named(state))
-            .unwrap_or_default();
+            .map_or_default(|state| self.named(state));
         let steps = chain
             .windows(2)
             .filter_map(|pair| {

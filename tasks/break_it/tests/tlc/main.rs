@@ -24,9 +24,14 @@ const TLC_JAR_FROM_THE_ROOT: &str = "../../target/tools/tla2tools.jar";
 fn binary() -> PathBuf {
     let test = env::current_exe().expect("a test knows where its own binary is");
     let folder = test
-        .parent()
+        .ancestors()
+        .find(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
         .and_then(Path::parent)
-        .expect("a test binary sits in `deps` under the folder of its build profile");
+        .expect("a test binary sits in `deps` or `build` under the folder of its build profile");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut build = Command::new(cargo);
     build
@@ -174,9 +179,14 @@ fn repository() -> PathBuf {
 
 fn profile_folder() -> PathBuf {
     let test = env::current_exe().expect("a test knows where its own binary is");
-    test.parent()
+    test.ancestors()
+        .find(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
         .and_then(Path::parent)
-        .expect("a test binary sits in `deps` under the folder of its build profile")
+        .expect("a test binary sits in `deps` or `build` under the folder of its build profile")
         .to_path_buf()
 }
 

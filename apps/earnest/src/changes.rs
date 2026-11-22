@@ -183,17 +183,13 @@ fn models_listed_at(base: &str, folder: &Path) -> Vec<PathBuf> {
     let mut search = git(folder);
     search.args(["grep", "--files-with-matches", "--null", "--text"]);
     search.args(["--fixed-strings", "-e", IN_EVERY_MODEL_FILE]);
-    let mut listed: Vec<PathBuf> = search
-        .arg(base)
-        .output()
-        .map(|output| {
-            names_from(&output)
-                .into_iter()
-                .filter_map(|name| name.strip_prefix(base)?.strip_prefix(':'))
-                .map(PathBuf::from)
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut listed: Vec<PathBuf> = search.arg(base).output().map_or_default(|output| {
+        names_from(&output)
+            .into_iter()
+            .filter_map(|name| name.strip_prefix(base)?.strip_prefix(':'))
+            .map(PathBuf::from)
+            .collect()
+    });
     let mut tree = git(folder);
     tree.args(["ls-tree", "-r", "--name-only", "-z"]);
     if let Ok(output) = tree.arg(base).args(["--", "."]).output() {
