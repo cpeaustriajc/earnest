@@ -17,9 +17,14 @@ fn repository() -> PathBuf {
 
 fn profile_folder() -> PathBuf {
     let test = env::current_exe().expect("a test knows where its own binary is");
-    test.parent()
+    test.ancestors()
+        .find(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
         .and_then(Path::parent)
-        .expect("a test binary sits in `deps` under the folder of its build profile")
+        .expect("a test binary sits in `deps` or `build` under the folder of its build profile")
         .to_path_buf()
 }
 

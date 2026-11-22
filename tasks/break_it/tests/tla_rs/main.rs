@@ -14,9 +14,14 @@ const CONFORMANCE_MODELS: &str = "../conformance/models";
 fn binary() -> PathBuf {
     let test = env::current_exe().expect("a test knows where its own binary is");
     let folder = test
-        .parent()
+        .ancestors()
+        .find(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
         .and_then(Path::parent)
-        .expect("a test binary sits in `deps` under the folder of its build profile");
+        .expect("a test binary sits in `deps` or `build` under the folder of its build profile");
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let mut build = Command::new(cargo);
     build
