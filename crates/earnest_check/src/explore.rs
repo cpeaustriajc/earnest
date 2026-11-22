@@ -13,7 +13,7 @@ use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
 use merge::{Full, Judged};
-use part::Part;
+use part::{Part, Spares};
 use starts::Starts;
 use std::ops::Range;
 use std::time::{Duration, Instant};
@@ -53,6 +53,7 @@ pub(crate) struct Search<'a> {
     judged: usize,
     last_spread_merge: SpreadMerge,
     state_time: Duration,
+    spares: Spares,
 }
 
 struct Expander<'a> {
@@ -140,6 +141,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
         state_time: Duration::ZERO,
+        spares: Spares::default(),
     };
     search.run();
     search.outcome()
@@ -220,7 +222,14 @@ impl Search<'_> {
                     fewest,
                     else_lending,
                 } => {
-                    let spread = self.spread_round(&states, deadline, asked, fewest, &mut judged);
+                    let spread = self.spread_round(
+                        &states,
+                        frontier.len(),
+                        deadline,
+                        asked,
+                        fewest,
+                        &mut judged,
+                    );
                     let Some(ran) = spread else {
                         way = Way::Here(else_lending);
                         continue;
@@ -268,12 +277,13 @@ impl Search<'_> {
     fn spread_round(
         &mut self,
         states: &Range<usize>,
+        width: usize,
         deadline: Option<Instant>,
         asked: Asked,
         fewest: usize,
         judged: &mut Judged,
     ) -> Option<Ran> {
-        let expansion = self.spread_level(states, deadline, asked, fewest)?;
+        let mut expansion = self.spread_level(states, width, deadline, asked, fewest)?;
         let ran = Ran {
             end: expansion.end,
             work: expansion.work,
@@ -284,7 +294,8 @@ impl Search<'_> {
         }
         let before = self.store.len();
         let kept = expansion.parts.iter().map(Part::kept_rows).sum();
-        let merged = self.merge_any(expansion.parts, judged);
+        let merged = self.merge_any(&mut expansion.parts, judged);
+        self.spares.keep(expansion.parts, expansion.spare_parts);
         self.last_spread_merge = SpreadMerge {
             kept,
             new: self.store.len().saturating_sub(before),

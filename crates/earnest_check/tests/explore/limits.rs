@@ -1540,3 +1540,93 @@ fn a_time_stop_in_the_last_pass_over_a_wide_level_keeps_every_state_judged_befor
         );
     }
 }
+
+const STARTS_OF_A_LEVEL_TAKEN_IN_ROUNDS: i64 = 60_000;
+const FOLDED_OF_A_LEVEL_TAKEN_IN_ROUNDS: i64 = STARTS_OF_A_LEVEL_TAKEN_IN_ROUNDS / 4;
+const STATES_OF_A_LEVEL_TAKEN_IN_ROUNDS: usize = 150_000;
+const STATES_BEFORE_THE_SECOND_WIDE_LEVEL: usize = 60_000;
+const STATES_BEFORE_THE_LAST_LEVEL: usize = 135_000;
+const STARTS_WITH_A_SLOW_STATE_IN_THE_THIRD_ROUND: i64 = 40_000;
+
+fn a_model_whose_wide_levels_are_taken_in_rounds() -> Model {
+    let starts = STARTS_OF_A_LEVEL_TAKEN_IN_ROUNDS;
+    let folded = FOLDED_OF_A_LEVEL_TAKEN_IN_ROUNDS;
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..starts).collect();
+    let n = sketch.number("n", 0, starts - 1, &every_start);
+    let k = sketch.number("k", 0, 3, &[0]);
+    let fold = apply(Op::Math(Math::Remainder), &n, int(folded));
+    sketch.action("fold", is(&k, 0), &[(&n, fold.clone()), (&k, int(1))]);
+    sketch.action("mark", is(&k, 0), &[(&k, int(2))]);
+    sketch.action("deepen", is(&k, 1), &[(&k, int(3))]);
+    sketch.action("refold", is(&k, 2), &[(&n, fold), (&k, int(3))]);
+    sketch.end("deep", is(&k, 3));
+    sketch.rule("neverMarkedLate", not(&both(is(&k, 2), is(&n, starts - 5))));
+    sketch.rule("neverDeepSeven", not(&both(is(&k, 3), is(&n, 7))));
+    sketch.rule("neverFoldedLast", not(&both(is(&k, 1), is(&n, folded - 1))));
+    sketch.model()
+}
+
+#[test]
+fn wide_levels_a_lone_thread_takes_in_rounds_give_the_same_outcome_as_taken_at_once() {
+    let model = a_model_whose_wide_levels_are_taken_in_rounds();
+    let outcome = same_outcome_with_every_crew(&model, &with_states(usize::MAX), &[4]);
+    assert_eq!(outcome.states, STATES_OF_A_LEVEL_TAKEN_IN_ROUNDS);
+    assert_eq!(outcome.reason, None);
+    let paths: Vec<Vec<String>> = outcome
+        .rules
+        .iter()
+        .map(|rule| rule.path.as_ref().map_or_default(steps))
+        .collect();
+    assert_eq!(paths.len(), 3, "every rule is broken: {paths:?}");
+    assert!(
+        outcome
+            .rules
+            .iter()
+            .all(|rule| rule.verdict == Verdict::Broken),
+        "{paths:?}"
+    );
+    assert_eq!(
+        paths,
+        [
+            vec!["mark  k: 0 -> 2"],
+            vec!["fold  k: 0 -> 1", "deepen  k: 1 -> 3"],
+            vec!["fold  k: 0 -> 1"],
+        ],
+        "each from the start the rule names, the first action of each state first"
+    );
+}
+
+#[test]
+fn a_state_limit_inside_a_wide_level_a_lone_thread_takes_in_rounds_gives_the_same_outcome() {
+    let model = a_model_whose_wide_levels_are_taken_in_rounds();
+    let starts = STATES_BEFORE_THE_SECOND_WIDE_LEVEL;
+    let folded = usize::try_from(FOLDED_OF_A_LEVEL_TAKEN_IN_ROUNDS).unwrap_or(0);
+    for limit in [
+        starts + 1,
+        starts + folded - 1,
+        starts + folded,
+        starts + folded + 1,
+        starts + 2 * folded + 7,
+        STATES_BEFORE_THE_LAST_LEVEL - 1,
+        STATES_BEFORE_THE_LAST_LEVEL,
+        STATES_BEFORE_THE_LAST_LEVEL + 1,
+        STATES_BEFORE_THE_LAST_LEVEL + folded / 2,
+        STATES_OF_A_LEVEL_TAKEN_IN_ROUNDS,
+    ] {
+        let outcome = same_outcome_with_every_crew(&model, &with_states(limit), &[4]);
+        let expected = Some(format!("state limit of {limit}"));
+        let full = limit < STATES_OF_A_LEVEL_TAKEN_IN_ROUNDS;
+        assert_eq!(outcome.states, limit, "a limit of {limit}");
+        assert_eq!(
+            outcome.reason,
+            expected.filter(|_| full),
+            "a limit of {limit}"
+        );
+    }
+}
+
+#[test]
+fn a_time_stop_in_the_third_round_of_a_level_a_lone_thread_takes_in_rounds_leaves_nothing_behind() {
+    a_time_stop_in_a_later_round_of_a_level_of(STARTS_WITH_A_SLOW_STATE_IN_THE_THIRD_ROUND);
+}

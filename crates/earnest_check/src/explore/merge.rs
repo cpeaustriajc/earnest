@@ -37,11 +37,18 @@ impl Judged {
 }
 
 impl Search<'_> {
-    pub(super) fn merge_any(&mut self, parts: Vec<Part>, judged: &mut Judged) -> Result<(), Full> {
+    pub(super) fn merge_any(
+        &mut self,
+        parts: &mut [Part],
+        judged: &mut Judged,
+    ) -> Result<(), Full> {
         let simple = !self.limits.keep_graph && parts.iter().all(|part| part.raws.is_empty());
-        if simple && parts.len() > 1 && self.merge_spread(&parts) {
+        if simple && parts.len() > 1 && self.merge_spread(parts) {
             for part in parts {
-                judged.add(part.marks, part.first.saturating_add(part.expanded));
+                judged.add(
+                    std::mem::take(&mut part.marks),
+                    part.first.saturating_add(part.expanded),
+                );
             }
             return Ok(());
         }
@@ -52,14 +59,16 @@ impl Search<'_> {
         let fresh: Vec<Fresh<'_>> = parts
             .iter()
             .map(|part| Fresh {
+                count: part.fresh,
                 rows: &part.rows,
                 hashes: &part.hashes,
+                first: part.first,
                 froms: &part.froms,
                 ordinals: &part.ordinals,
                 shard_starts: &part.shard_starts,
             })
             .collect();
-        let rows = parts.iter().map(|part| part.hashes.len()).sum();
+        let rows = parts.iter().map(|part| part.fresh).sum();
         let threads = merge_threads(rows, self.limits.jobs);
         let crew = Crew {
             own: threads.own,
@@ -70,17 +79,22 @@ impl Search<'_> {
         self.store.place_level(&fresh, &crew, most).is_some()
     }
 
-    fn merge(&mut self, parts: Vec<Part>, judged: &mut Judged) -> Result<(), Full> {
+    fn merge(&mut self, parts: &mut [Part], judged: &mut Judged) -> Result<(), Full> {
         let most = self.limits.max_states;
         let words = self.store.layout().words();
         let graph = self.limits.keep_graph;
         for part in parts {
-            let part = part.into_ordinal_order(words);
-            let mut marks = part.marks.into_iter().peekable();
-            let mut raws = part.raws.into_iter();
+            let mut marks = std::mem::take(&mut part.marks).into_iter().peekable();
+            let mut raws = std::mem::take(&mut part.raws).into_iter();
+            let part = &*part;
+            let by_ordinal = part.by_ordinal();
+            let filed_at = |at: usize| {
+                by_ordinal
+                    .as_ref()
+                    .map_or(at, |positions| positions.get(at).copied().unwrap_or(at))
+            };
             let mut listed = part.entries.iter().copied().peekable();
-            let mut fresh = 0..part.hashes.len();
-            let froms = &part.froms;
+            let mut fresh = 0..part.fresh;
             let mut next = || {
                 if graph {
                     return listed.next();
@@ -88,8 +102,9 @@ impl Search<'_> {
                 let due = |entry: &Entry| matches!(entry.target, Target::Raw { fresh_before } if fresh_before <= fresh.start);
                 listed.next_if(due).or_else(|| {
                     let at = fresh.next()?;
+                    let at = filed_at(at);
                     Some(Entry {
-                        from: froms.get(at).copied().unwrap_or(0),
+                        from: part.parent_at(at),
                         action: 0,
                         target: Target::Fresh(at),
                     })
@@ -104,7 +119,7 @@ impl Search<'_> {
                 let placed = match entry.target {
                     Target::Known(to) => Placed::Known(Found { id: Some(to) }),
                     Target::Fresh(at) => {
-                        let hash = part.hashes.get(at).copied().unwrap_or(0);
+                        let hash = part.hash_at(at);
                         self.store
                             .place(row_at(&part.rows, words, at), hash, parent, most)
                     }

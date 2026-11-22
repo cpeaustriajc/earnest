@@ -12,10 +12,12 @@ pub(crate) trait Spread: Sync {
 }
 
 pub(crate) struct Fresh<'a> {
+    pub(crate) count: usize,
     pub(crate) rows: &'a [u64],
     pub(crate) hashes: &'a [u64],
-    pub(crate) froms: &'a [usize],
-    pub(crate) ordinals: &'a [usize],
+    pub(crate) first: usize,
+    pub(crate) froms: &'a [u32],
+    pub(crate) ordinals: &'a [u32],
     pub(crate) shard_starts: &'a [usize],
 }
 
@@ -29,43 +31,54 @@ pub(super) struct Level<'a> {
 }
 
 impl Level<'_> {
-    fn row_of(&self, part: usize, position: usize) -> &[u64] {
-        let start = position.saturating_mul(self.words);
+    fn row_of(&self, part: usize, position: u32) -> &[u64] {
+        let start = wide(position).saturating_mul(self.words);
         self.parts
             .get(part)
             .and_then(|fresh| fresh.rows.get(start..start.saturating_add(self.words)))
             .unwrap_or(&[])
     }
 
-    fn hash_of(&self, part: usize, position: usize) -> u64 {
+    fn hash_of(&self, part: usize, position: u32) -> u64 {
         self.parts
             .get(part)
-            .and_then(|fresh| fresh.hashes.get(position))
+            .and_then(|fresh| fresh.hashes.get(wide(position)))
             .copied()
             .unwrap_or(0)
     }
 
-    fn ordinal_of(&self, part: usize, position: usize) -> usize {
-        self.parts
-            .get(part)
-            .and_then(|fresh| fresh.ordinals.get(position))
-            .copied()
-            .unwrap_or(0)
+    fn parent_of(&self, part: usize, position: u32) -> usize {
+        self.parts.get(part).map_or(0, |fresh| {
+            let offset = fresh.froms.get(wide(position)).copied().unwrap_or(0);
+            fresh.first.saturating_add(wide(offset))
+        })
     }
 
-    fn in_shard(&self, part: usize, shard: usize) -> Range<usize> {
+    fn ordinal_of(&self, part: usize, position: u32) -> usize {
+        self.parts
+            .get(part)
+            .and_then(|fresh| fresh.ordinals.get(wide(position)))
+            .map_or(0, |ordinal| wide(*ordinal))
+    }
+
+    fn in_shard(&self, part: usize, shard: usize) -> Range<u32> {
         self.parts
             .get(part)
             .and_then(|fresh| {
                 let start = *fresh.shard_starts.get(shard)?;
                 let end = *fresh.shard_starts.get(shard + 1)?;
-                Some(start..end.min(fresh.hashes.len()).max(start))
+                let end = end.min(fresh.count).max(start);
+                Some(u32::try_from(start).ok()?..u32::try_from(end).ok()?)
             })
             .unwrap_or(0..0)
     }
 }
 
-type Won = Vec<Vec<usize>>;
+fn wide(position: u32) -> usize {
+    usize::try_from(position).unwrap_or(usize::MAX)
+}
+
+type Won = Vec<Vec<u32>>;
 
 impl<F: Filed> Shards<F> {
     pub(super) fn place_level(
@@ -187,7 +200,7 @@ impl<F: Filed> Shards<F> {
 fn first_in_level(at: &Level<'_>) -> Vec<Won> {
     gather(at.spread, SHARD_COUNT, |shard| {
         let in_shard = (0..at.parts.len()).map(|part| at.in_shard(part, shard).len());
-        let mut seen: HashTable<(usize, usize)> = HashTable::with_capacity(in_shard.sum());
+        let mut seen: HashTable<(usize, u32)> = HashTable::with_capacity(in_shard.sum());
         let mut won = Vec::with_capacity(at.parts.len());
         for part in 0..at.parts.len() {
             let filed = at.in_shard(part, shard);
@@ -230,9 +243,7 @@ fn write_level(
         slices.push(Mutex::new((row_part, parent_part)));
     }
     at.spread.run(maps.len(), &|part| {
-        let (Some(map), Some(fresh), Some(slice)) =
-            (maps.get(part), at.parts.get(part), slices.get(part))
-        else {
+        let (Some(map), Some(slice)) = (maps.get(part), slices.get(part)) else {
             return;
         };
         let mut slice = slice.lock().unwrap_or_else(PoisonError::into_inner);
@@ -244,9 +255,7 @@ fn write_level(
                 if let Some(into) = row_part.get_mut(start..start + stride) {
                     pack(at.row_of(part, *position), into);
                 }
-                if let Some(from) = fresh.froms.get(*position) {
-                    parent_part.set(place, *from);
-                }
+                parent_part.set(place, at.parent_of(part, *position));
             }
         }
     });
@@ -261,7 +270,7 @@ struct Winners {
 
 impl Winners {
     fn of(wins: &[Won], at: &Level<'_>, part: usize) -> Self {
-        let found = at.parts.get(part).map_or(0, |fresh| fresh.hashes.len());
+        let found = at.parts.get(part).map_or(0, |fresh| fresh.count);
         let mut bits = vec![0_u64; found.div_ceil(BITS_PER_WORD)];
         for shard in wins {
             for position in shard.get(part).map_or(&[][..], Vec::as_slice) {
