@@ -36,12 +36,11 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           build=true
-          if [ "$EVENT" = schedule ]; then
-            published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null || true)
-            if [ "$published" = "$GITHUB_SHA" ]; then
-              echo "The $RELEASE_TAG release already holds $GITHUB_SHA."
-              build=false
-            fi
+          if [ "$EVENT" = schedule ] &&
+            published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null) &&
+            [ "$published" = "$GITHUB_SHA" ]; then
+            echo "The $RELEASE_TAG release already holds $GITHUB_SHA."
+            build=false
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
 
