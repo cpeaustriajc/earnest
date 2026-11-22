@@ -75,6 +75,22 @@ impl Code {
         &self.expr
     }
 
+    /// The local slots the expression reads, when it binds no slot and tests no items of a
+    /// collection; `None` when it does.
+    ///
+    /// Such an expression gives the same value or the same [`Fault`] in every frame with the
+    /// same state and the same values in these slots, and evaluating it again in that frame
+    /// changes nothing in it, so its earlier answer may be used in place of evaluating it.
+    #[must_use]
+    pub fn slots_read(&self) -> Option<Vec<usize>> {
+        let mut slots = Vec::new();
+        self.expr.reads_plainly(&mut slots).then(|| {
+            slots.sort_unstable();
+            slots.dedup();
+            slots
+        })
+    }
+
     /// The value of the expression in the state and locals of `frame`.
     ///
     /// # Errors

@@ -121,7 +121,21 @@ pub(crate) struct Scratch {
     updates: Vec<(usize, Value)>,
     next: Vec<u64>,
     digits: Vec<usize>,
+    known: Known,
     seen: Seen,
+}
+
+#[derive(Debug, Default)]
+struct Known {
+    guard: Option<Result<bool, Fault>>,
+    scalars: Vec<Option<Result<Scalar, Fault>>>,
+    updates: Vec<Option<Result<Value, Fault>>>,
+}
+
+#[derive(Debug)]
+struct Reuse {
+    guard: usize,
+    updates: Vec<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -159,6 +173,7 @@ pub(crate) struct Move<'a> {
     combinations: usize,
     tried: Tried,
     refill: Refill,
+    reuse: Option<Reuse>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -219,6 +234,19 @@ impl<'a> Move<'a> {
         } else {
             Refill::Turned
         };
+        let reuse = (refill == Refill::Turned)
+            .then(|| Reuse {
+                guard: first_input_read(action, &action.guard),
+                updates: updates
+                    .iter()
+                    .map(|(_, code)| first_input_read(action, code))
+                    .collect(),
+            })
+            .filter(|reuse| {
+                std::iter::once(&reuse.guard)
+                    .chain(&reuse.updates)
+                    .any(|first| *first > 0)
+            });
         Self {
             action,
             updates,
@@ -226,7 +254,13 @@ impl<'a> Move<'a> {
             combinations,
             tried,
             refill,
+            reuse,
         }
+    }
+
+    fn kept<'k, T>(&self, update: usize, known: &'k mut [Option<T>]) -> Option<&'k mut Option<T>> {
+        let first = self.reuse.as_ref()?.updates.get(update)?;
+        (*first > 0).then(|| known.get_mut(update)).flatten()
     }
 
     fn repeats(&self) -> bool {
@@ -237,6 +271,84 @@ impl<'a> Move<'a> {
         match &self.tried {
             Tried::FirstOfEach(told) => Some(told),
             Tried::Once | Tried::Every => None,
+        }
+    }
+}
+
+fn first_input_read(action: &Action, code: &Code) -> usize {
+    let Some(slots) = code.slots_read() else {
+        return 0;
+    };
+    let inputs = &action.inputs;
+    if !slots
+        .iter()
+        .all(|slot| inputs.iter().any(|input| input.slot == *slot))
+    {
+        return 0;
+    }
+    inputs
+        .iter()
+        .position(|input| slots.contains(&input.slot))
+        .unwrap_or(inputs.len())
+}
+
+fn known_or_scalar(
+    known: Option<&mut Option<Result<Scalar, Fault>>>,
+    code: &Code,
+    frame: &mut Frame<'_>,
+) -> Result<Scalar, Fault> {
+    let Some(place) = known else {
+        return code.scalar(frame);
+    };
+    if let Some(answer) = *place {
+        return answer;
+    }
+    let answer = code.scalar(frame);
+    *place = Some(answer);
+    answer
+}
+
+fn known_or_eval(
+    known: Option<&mut Option<Result<Value, Fault>>>,
+    code: &Code,
+    frame: &mut Frame<'_>,
+) -> Result<Value, Fault> {
+    let Some(place) = known else {
+        return code.eval(frame);
+    };
+    if let Some(answer) = place {
+        return answer.clone();
+    }
+    let answer = code.eval(frame);
+    *place = Some(answer.clone());
+    answer
+}
+
+impl Known {
+    fn start(&mut self, reuse: Option<&Reuse>) {
+        self.guard = None;
+        self.scalars.clear();
+        self.updates.clear();
+        if let Some(reuse) = reuse {
+            self.scalars.resize(reuse.updates.len(), None);
+            self.updates.resize(reuse.updates.len(), None);
+        }
+    }
+
+    fn forget_turned(&mut self, reuse: &Reuse, turned: usize) {
+        if reuse.guard < turned {
+            self.guard = None;
+        }
+        for ((scalar, place), first) in self
+            .scalars
+            .iter_mut()
+            .zip(self.updates.iter_mut())
+            .zip(&reuse.updates)
+        {
+            if *first < turned {
+                *scalar = None;
+                *place = None;
+            }
         }
     }
 }
@@ -370,13 +482,15 @@ fn next_updates(
     state: &[Value],
     frame: &mut Frame<'_>,
     updates: &mut Vec<(usize, Value)>,
+    mut known: Option<&mut [Option<Result<Value, Fault>>]>,
 ) -> Result<(), Fault> {
     updates.clear();
-    for (position, code) in &planned.updates {
+    for (at, (position, code)) in planned.updates.iter().enumerate() {
         if *position >= state.len() {
             break;
         }
-        updates.push((*position, code.eval(frame)?));
+        let place = known.as_deref_mut().and_then(|all| planned.kept(at, all));
+        updates.push((*position, known_or_eval(place, code, frame)?));
     }
     Ok(())
 }
@@ -412,6 +526,8 @@ impl<S: Successors> Expansion<'_, '_, S> {
         digits.clear();
         digits.resize(inputs.len(), 0);
         let mut turned = usize::MAX;
+        let reuse = planned.reuse.as_ref();
+        self.scratch.known.start(reuse);
         for input in 0..planned.combinations {
             if input > 0 {
                 turned = turned.max(turn(&mut digits, inputs));
@@ -429,6 +545,9 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 Refill::Every => inputs.len(),
             };
             put_inputs(inputs, &digits, count, &mut self.frame);
+            if let Some(reuse) = reuse {
+                self.scratch.known.forget_turned(reuse, turned);
+            }
             turned = 0;
             self.try_input::<true>(position, planned, input);
         }
@@ -451,7 +570,17 @@ impl<S: Successors> Expansion<'_, '_, S> {
         planned: &Move<'_>,
         input: usize,
     ) {
-        match planned.action.guard.truth(&mut self.frame) {
+        let reusing = REPEATS && planned.reuse.is_some();
+        let guard = match (reusing, self.scratch.known.guard) {
+            (true, Some(answer)) => answer,
+            (true, None) => {
+                let answer = planned.action.guard.truth(&mut self.frame);
+                self.scratch.known.guard = Some(answer);
+                answer
+            }
+            (false, _) => planned.action.guard.truth(&mut self.frame),
+        };
+        match guard {
             Ok(true) => {}
             Ok(false) => return,
             Err(fault) => {
@@ -466,8 +595,14 @@ impl<S: Successors> Expansion<'_, '_, S> {
             next.clear();
             next.extend_from_slice(row);
             let mut fits = true;
-            for write in writes {
-                let number = match (write.holds, write.code.scalar(&mut self.frame)) {
+            for (at, write) in writes.iter().enumerate() {
+                let place = reusing
+                    .then(|| planned.kept(at, &mut self.scratch.known.scalars))
+                    .flatten();
+                let number = match (
+                    write.holds,
+                    known_or_scalar(place, write.code, &mut self.frame),
+                ) {
                     (Holds::WholeNumber, Ok(Scalar::Int(number))) => number,
                     (Holds::TrueOrFalse, Ok(Scalar::Bool(flag))) => i64::from(flag),
                     (_, Err(fault)) => {
@@ -499,6 +634,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             self.base.values,
             &mut self.frame,
             &mut self.scratch.updates,
+            reusing.then_some(self.scratch.known.updates.as_mut_slice()),
         ) {
             Ok(()) => {
                 if (!REPEATS || self.scratch.seen.first_updates(&self.scratch.updates))
