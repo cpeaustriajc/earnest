@@ -1000,6 +1000,7 @@ const STUCK_START: i64 = 5;
 
 fn a_level_whose_last_state_takes_billions_of_steps(starts: i64) -> Model {
     let slow_state = starts - 1;
+    let stuck_start_in_the_last_round = starts - 2;
     let half_of_the_starts = starts / 2;
     let mut sketch = Sketch::new();
     let every_start: Vec<i64> = (0..starts).collect();
@@ -1009,14 +1010,20 @@ fn a_level_whose_last_state_takes_billions_of_steps(starts: i64) -> Model {
     sketch.action("flipLow", both(not(&flipped), low), &[(&flipped, yes())]);
     sketch.action(
         "flipHigh",
-        both(not(&flipped), not(&below(&n, half_of_the_starts))),
+        both(
+            both(not(&flipped), not(&below(&n, half_of_the_starts))),
+            is_not(&n, stuck_start_in_the_last_round),
+        ),
         &[(&flipped, yes()), (&n, plus(&n, -half_of_the_starts))],
     );
     sketch.action(
         "back",
         both(
             not(&flipped),
-            both(not(&is(&n, 0)), is_not(&n, STUCK_START)),
+            both(
+                both(not(&is(&n, 0)), is_not(&n, STUCK_START)),
+                is_not(&n, stuck_start_in_the_last_round),
+            ),
         ),
         &[(&n, plus(&n, -1))],
     );
@@ -1057,7 +1064,8 @@ fn a_time_stop_in_a_later_round_of_a_level_of(starts: i64) {
     );
     assert!(
         outcome.findings.is_empty(),
-        "the stuck start state was expanded in the level the time stop undid: {:?}",
+        "both stuck start states were expanded in the level the time stop undid, the one next \
+         to the slow state in the round the stop ended: {:?}",
         outcome.findings
     );
     let graph = outcome.graph.as_ref().expect("the graph is kept");
