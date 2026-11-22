@@ -13,11 +13,13 @@ holds
 - findings for a stuck state, a value out of range and a fault, each with its path, and
 - a `Graph` of the states and actions for a chart, when the limits ask for one.
 
-`Limits` bounds the states and the time, picks one rule, and sets the worker threads. A level is
-split among the workers when it holds work for two parts or more: a part pays for about half a
-millisecond, the states of a level are taken to cost what one state took to expand in the level
-before, and never less than half a microsecond, so a level of 2,048 states or more is always
-split and a narrower one of slow states may be. The outcome is the same for any number of
+`Limits` bounds the states and the time, picks one rule, and sets the worker threads. With two
+threads or more, a level is split among them when it holds work for two parts or more: a part
+pays for about half a millisecond, the states of a level are taken to cost what one state took
+to expand in the level before, and never less than half a microsecond, so a level of 2,048
+states or more is always split and a narrower one of slow states may be. A search left with one
+thread takes a level of 16,384 states or more in parts on its own when it keeps no graph, and
+every level state by state when it keeps one. The outcome is the same for any number of
 workers. When a limit stops the search, the states it has counted and not gone on from still have
 their rules judged before the outcome is given, so "N states so far" never counts a state whose
 rules nobody looked at. No action is tried from them.
