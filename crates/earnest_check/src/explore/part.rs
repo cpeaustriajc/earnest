@@ -77,9 +77,10 @@ impl PartSink<'_> {
     fn add_fresh(&mut self, action: usize, row: &[u64], hash: u64) {
         append_row(&mut self.part.rows, row);
         self.part.hashes.push(hash);
-        self.part.froms.push(self.from);
         if self.graph {
             self.push(action, Target::Fresh(self.part.hashes.len() - 1));
+        } else {
+            self.part.froms.push(self.from);
         }
     }
 
@@ -312,7 +313,9 @@ impl Search<'_> {
             }
             sink.part.expanded = sink.part.expanded.saturating_add(1);
         }
-        sink.part.file_by_shard();
+        if !self.limits.keep_graph {
+            sink.part.file_by_shard();
+        }
         kit.fresh_per_state = (sink.part.hashes.len(), sink.part.expanded);
         sink.part
     }
