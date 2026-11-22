@@ -54,6 +54,18 @@ Either puts the program `earnest` in `~/.cargo/bin`. The checker never resolves 
 `earnest verify` works with no `node_modules` at all. The import matters only to the editor, the
 type checker and Node, which need the package to find `m` and its types.
 
+## Nightly builds
+
+To try the newest `main` without building it, download the archive for your platform from the
+`nightly` pre-release on the GitHub releases page. Each night that `main` has moved, it is rebuilt
+from the tip of `main` and replaced; it is not a release and has no version of its own. Each
+archive holds the one binary `earnest` (`earnest.exe` on Windows) and has a `.sha256` file beside
+it. Check a download in the folder that holds both:
+
+```sh
+sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256      # shasum -a 256 --check on macOS
+```
+
 ## Commands
 
 ```sh
