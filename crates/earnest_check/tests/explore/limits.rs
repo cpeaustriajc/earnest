@@ -1129,3 +1129,48 @@ fn every_state_of_a_level_held_back_at_a_limit_never_reached_is_expanded() {
     assert_eq!(outcome.reason, None);
     assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
 }
+
+const STARTS_OF_ONE_CHILD_EACH: i64 = 2000;
+const CHILDREN_THAT_FIT: i64 = 600;
+const SLOW_CHILD: i64 = CHILDREN_THAT_FIT - 1;
+
+fn starts_whose_last_child_that_fits_takes_billions_of_steps_to_judge() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..STARTS_OF_ONE_CHILD_EACH).collect();
+    let n = sketch.number("n", 0, STARTS_OF_ONE_CHILD_EACH - 1, &every_start);
+    let flipped = sketch.boolean("flipped", &[false]);
+    sketch.action("flip", not(&flipped), &[(&flipped, yes())]);
+    let slow = every_of(2000, every_of(2000, every_of(2000, yes())));
+    sketch.rule(
+        "slowAtTheLastChild",
+        not(&both(both(flipped, is(&n, SLOW_CHILD)), slow)),
+    );
+    sketch.model()
+}
+
+#[test]
+fn a_time_stop_in_the_last_pass_keeps_every_state_judged_before_it_on_every_worker_count() {
+    let model = starts_whose_last_child_that_fits_takes_billions_of_steps_to_judge();
+    let starts = usize::try_from(STARTS_OF_ONE_CHILD_EACH).unwrap_or(0);
+    let children = usize::try_from(CHILDREN_THAT_FIT).unwrap_or(0);
+    for jobs in [1, 4] {
+        let limits = Limits {
+            max_states: starts + children,
+            time_limit: Some(Duration::from_secs(1)),
+            jobs,
+            ..Limits::default()
+        };
+        let outcome = explore(&model, &limits);
+        assert_eq!(
+            outcome.reason.as_deref(),
+            Some("time limit of 1 s"),
+            "{jobs} workers"
+        );
+        assert_eq!(
+            outcome.states,
+            starts + children - 1,
+            "the starts and every child but the slow last one had their rules judged: {jobs} \
+             workers"
+        );
+    }
+}
