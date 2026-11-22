@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@astrojs/starlight": "0.43.1",
-    "astro": "7.4.13"
+    "astro": "7.4.13",
+    "starlight-llms-txt": "0.12.0"
   }
 }

@@ -97,7 +97,7 @@ val lands_where_asked = tab_loading or wanted == -1 or wanted == active_position
 
 TLA+, written by hand:
 
-```tla
+```text
 GoToTab(index) ==
 	/\ wanted' = index - 1
 	/\ IF loading
