@@ -1,5 +1,6 @@
 use super::layout::hash_words;
-use super::rows::Rows;
+use super::level::Level;
+use super::rows::{Parents, Rows};
 use hashbrown::HashTable;
 use hashbrown::hash_table::Entry as Slot;
 
@@ -240,6 +241,20 @@ impl Index {
             Self::Keys(shards) => shards.claim(rows, row, hash, id),
             Self::NarrowIds(shards) => shards.claim(rows, row, hash, id),
             Self::WideIds(shards) => shards.claim(rows, row, hash, id),
+        }
+    }
+
+    pub(super) fn place_level(
+        &mut self,
+        rows: &mut Rows,
+        parents: &mut Parents,
+        at: Level<'_>,
+    ) -> Option<usize> {
+        match self {
+            Self::NarrowKeys(shards) => shards.place_level(rows, parents, at),
+            Self::Keys(shards) => shards.place_level(rows, parents, at),
+            Self::NarrowIds(shards) => shards.place_level(rows, parents, at),
+            Self::WideIds(shards) => shards.place_level(rows, parents, at),
         }
     }
 

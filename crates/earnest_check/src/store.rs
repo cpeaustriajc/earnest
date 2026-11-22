@@ -225,13 +225,9 @@ impl Store {
             count: self.count,
             most,
         };
-        let (rows, parents) = (&mut self.rows, &mut self.parents);
-        let placed = match &mut self.index {
-            Index::NarrowKeys(shards) => shards.place_level(rows, parents, at),
-            Index::Keys(shards) => shards.place_level(rows, parents, at),
-            Index::NarrowIds(shards) => shards.place_level(rows, parents, at),
-            Index::WideIds(shards) => shards.place_level(rows, parents, at),
-        }?;
+        let placed = self
+            .index
+            .place_level(&mut self.rows, &mut self.parents, at)?;
         self.count += placed;
         Some(placed)
     }
