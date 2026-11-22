@@ -1,4 +1,4 @@
-use super::part::{Kit, Part};
+use super::part::Part;
 use super::{Round, Search, SpreadMerge, Work};
 use crate::cut::cut_points;
 use crate::expand::Asked;
@@ -17,6 +17,7 @@ const LEAST_TIME_OF_A_STATE: Duration = Duration::from_nanos(500);
 const TIME_A_PART_PAYS_FOR: Duration = Duration::from_micros(512);
 const MOST_PARTS: usize = 64;
 const SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: usize = 16_384;
+const PARTS_OF_A_LONE_ROUND: usize = 14;
 
 fn wide(count: usize) -> u128 {
     u128::try_from(count).unwrap_or(u128::MAX)
@@ -37,15 +38,30 @@ struct Hands {
     keep_graph: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Shape {
+    part_states: usize,
+    round_parts: usize,
+    keeps_spares: bool,
+}
+
 impl Hands {
-    fn take_in_parts(&self, states: usize, state_time: Duration) -> Option<usize> {
-        let parts = parts_of(states, state_time);
-        let taken = if self.threads > 1 {
-            parts > 1
-        } else {
-            !self.keep_graph && states >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS
-        };
-        taken.then_some(parts)
+    fn take_in_parts(&self, width: usize, state_time: Duration) -> Option<Shape> {
+        let parts = parts_of(width, state_time);
+        let part_states = width.div_ceil(parts);
+        if self.threads > 1 {
+            return (parts > 1).then_some(Shape {
+                part_states,
+                round_parts: parts,
+                keeps_spares: false,
+            });
+        }
+        let taken = !self.keep_graph && width >= SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS;
+        taken.then_some(Shape {
+            part_states,
+            round_parts: PARTS_OF_A_LONE_ROUND,
+            keeps_spares: true,
+        })
     }
 }
 
@@ -53,11 +69,14 @@ pub(super) struct Expansion {
     pub(super) parts: Vec<Part>,
     pub(super) end: Round,
     pub(super) work: Work,
+    pub(super) spare_parts: usize,
 }
 
 struct Level {
     frontier: Range<usize>,
     cuts: Vec<usize>,
+    round_parts: usize,
+    keeps_spares: bool,
     deadline: Option<Instant>,
     asked: Asked,
     kept_rows_that_fit: usize,
@@ -67,6 +86,10 @@ struct Level {
 impl Level {
     fn parts(&self) -> usize {
         self.cuts.len().saturating_sub(1)
+    }
+
+    fn parts_of_this_round(&self) -> usize {
+        self.parts().min(self.round_parts)
     }
 }
 
@@ -95,7 +118,7 @@ impl Shared {
     fn take_part(&self, level: &Level) -> Option<usize> {
         self.next
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |part| {
-                let open = part < level.parts()
+                let open = part < level.parts_of_this_round()
                     && !self.stopped.load(Ordering::SeqCst)
                     && !self.holds_back_at(level, part);
                 open.then(|| part.saturating_add(1))
@@ -122,6 +145,7 @@ impl Search<'_> {
     pub(super) fn spread_level(
         &self,
         frontier: &Range<usize>,
+        width: usize,
         deadline: Option<Instant>,
         asked: Asked,
         fewest_states: usize,
@@ -132,22 +156,25 @@ impl Search<'_> {
             threads: own.saturating_add(helpers.map_or(0, Helpers::idle)),
             keep_graph: self.limits.keep_graph,
         };
-        let parts = hands.take_in_parts(frontier.len(), self.state_time)?;
+        let shape = hands.take_in_parts(width, self.state_time)?;
         let level = Level {
             frontier: frontier.clone(),
-            cuts: cut_points(frontier.len(), frontier.len().div_ceil(parts)),
+            cuts: cut_points(frontier.len(), shape.part_states),
+            round_parts: shape.round_parts,
+            keeps_spares: shape.keeps_spares,
             deadline,
             asked,
             kept_rows_that_fit: self.estimated_kept_rows_that_fit(),
             fewest_states,
         };
         let parts = level.parts();
+        let round = level.parts_of_this_round();
         let shared = Shared::default();
         std::thread::scope(|scope| {
-            for _ in 1..own.min(parts) {
+            for _ in 1..own.min(round) {
                 self.start_worker(scope, &level, &shared, None);
             }
-            for _ in 0..parts.saturating_sub(own) {
+            for _ in 0..round.saturating_sub(own) {
                 let Some(loan) = helpers
                     .map(|helpers| helpers.borrow(1))
                     .filter(|loan| loan.threads() > 0)
@@ -205,6 +232,11 @@ impl Search<'_> {
             parts: taken,
             end,
             work,
+            spare_parts: if shape.keeps_spares {
+                shape.round_parts
+            } else {
+                0
+            },
         })
     }
 
@@ -250,11 +282,11 @@ impl Search<'_> {
         level: &'env Level,
         shared: &'env Shared,
     ) {
-        let mut kit = Kit::default();
+        let mut kit = self.spares.kit();
         loop {
             self.take_up_idle_threads(scope, level, shared);
             let Some(part) = shared.take_part(level) else {
-                return;
+                break;
             };
             let ids = level
                 .cuts
@@ -265,11 +297,15 @@ impl Search<'_> {
                         ..level.frontier.start.saturating_add(*to)
                 });
             let Some(ids) = ids else {
-                return;
+                break;
             };
             let began = Instant::now();
-            let mut expansion = self.expand_ids(ids, level.deadline, level.asked, &mut kit);
+            let spare = self.spares.part();
+            let mut expansion = self.expand_ids(ids, level.deadline, level.asked, &mut kit, spare);
             expansion.took = began.elapsed();
+            if !level.keeps_spares {
+                kit.drop_spare_rows();
+            }
             if expansion.stopped {
                 shared.stopped.store(true, Ordering::SeqCst);
             }
@@ -282,6 +318,9 @@ impl Search<'_> {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push((part, expansion));
         }
+        if level.keeps_spares {
+            self.spares.keep_kit(kit);
+        }
     }
 
     fn take_up_idle_threads<'scope, 'env>(
@@ -293,7 +332,7 @@ impl Search<'_> {
         let Some(helpers) = self.limits.helpers.as_ref() else {
             return;
         };
-        let parts = level.parts();
+        let parts = level.parts_of_this_round();
         while helpers.idle() > 0
             && !shared.holds_back(level)
             && shared.helpers_taken_up.load(Ordering::SeqCst) < parts
@@ -346,8 +385,8 @@ impl Spread for Crew<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Hands, LEAST_TIME_OF_A_STATE, Level, MOST_PARTS,
-        SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, Shared, TIME_A_PART_PAYS_FOR, parts_of,
+        Hands, LEAST_TIME_OF_A_STATE, Level, MOST_PARTS, PARTS_OF_A_LONE_ROUND,
+        SMALLEST_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS, Shape, Shared, TIME_A_PART_PAYS_FOR, parts_of,
     };
     use crate::expand::Asked;
     use std::sync::atomic::Ordering;
@@ -384,6 +423,61 @@ mod tests {
             lone.take_in_parts(10 * LONE_LEVEL, CHEAP).is_some(),
             "far above"
         );
+    }
+
+    #[test]
+    fn a_lone_thread_takes_a_level_in_rounds_of_a_few_parts_and_keeps_what_a_round_took() {
+        let lone = Hands {
+            threads: 1,
+            keep_graph: false,
+        };
+        let part = cheap_states_a_part_pays_for();
+        assert_eq!(
+            lone.take_in_parts(LONE_LEVEL, CHEAP),
+            Some(Shape {
+                part_states: part,
+                round_parts: PARTS_OF_A_LONE_ROUND,
+                keeps_spares: true,
+            }),
+            "the narrowest level it takes in parts"
+        );
+        assert_eq!(
+            lone.take_in_parts(MOST_PARTS * part * 10, CHEAP),
+            Some(Shape {
+                part_states: part * 10,
+                round_parts: PARTS_OF_A_LONE_ROUND,
+                keeps_spares: true,
+            }),
+            "a level of the most parts, ten shares each"
+        );
+        assert_eq!(
+            lone.take_in_parts(MOST_PARTS * part * 10 + 1, CHEAP)
+                .map(|shape| shape.part_states),
+            Some(part * 10 + 1),
+            "one state more makes every part a state wider"
+        );
+    }
+
+    #[test]
+    fn several_threads_take_a_level_in_one_round_and_keep_nothing() {
+        let part = cheap_states_a_part_pays_for();
+        for threads in [2, 4, 10] {
+            let crew = Hands {
+                threads,
+                keep_graph: false,
+            };
+            for parts in [2, PARTS_OF_A_LONE_ROUND + 1, MOST_PARTS] {
+                assert_eq!(
+                    crew.take_in_parts(parts * part, CHEAP),
+                    Some(Shape {
+                        part_states: part,
+                        round_parts: parts,
+                        keeps_spares: false,
+                    }),
+                    "{threads} threads, {parts} parts"
+                );
+            }
+        }
     }
 
     #[test]
@@ -473,6 +567,8 @@ mod tests {
         Level {
             frontier: 0..30,
             cuts: vec![0, 10, 20, 30],
+            round_parts: MOST_PARTS,
+            keeps_spares: false,
             deadline: None,
             asked: Asked::Everything,
             kept_rows_that_fit: KEPT_ROWS_THAT_FIT,
@@ -499,6 +595,32 @@ mod tests {
             shared.next.load(Ordering::SeqCst),
             1,
             "a part held back is left for a later round, not claimed"
+        );
+    }
+
+    #[test]
+    fn no_part_past_the_end_of_a_round_is_taken() {
+        let level = Level {
+            round_parts: 2,
+            kept_rows_that_fit: usize::MAX,
+            ..level_of_three_parts()
+        };
+        let shared = Shared::default();
+        assert_eq!(shared.take_part(&level), Some(0), "the first part");
+        assert_eq!(
+            shared.take_part(&level),
+            Some(1),
+            "the last part of the round"
+        );
+        assert_eq!(
+            shared.take_part(&level),
+            None,
+            "the next round's first part"
+        );
+        assert_eq!(
+            shared.next.load(Ordering::SeqCst),
+            2,
+            "a part of the next round is left to it, not claimed"
         );
     }
 

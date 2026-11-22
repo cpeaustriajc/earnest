@@ -6,6 +6,7 @@ use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxHashSet;
 use std::ops::Range;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, Debug)]
@@ -28,24 +29,82 @@ pub(super) struct Part {
     pub(super) expanded: usize,
     pub(super) marks: Vec<(usize, Mark)>,
     pub(super) entries: Vec<Entry>,
+    pub(super) fresh: usize,
     pub(super) rows: Vec<u64>,
     pub(super) hashes: Vec<u64>,
-    pub(super) froms: Vec<usize>,
-    pub(super) ordinals: Vec<usize>,
+    pub(super) froms: Vec<u32>,
+    pub(super) ordinals: Vec<u32>,
     pub(super) shard_starts: Vec<usize>,
     pub(super) raws: Vec<Box<[Value]>>,
     pub(super) stopped: bool,
     pub(super) crowded: bool,
     pub(super) took: Duration,
+    next: Vec<usize>,
+}
+
+#[derive(Default)]
+struct FreshRows {
+    rows: Vec<u64>,
+    hashes: Vec<u64>,
+    froms: Vec<u32>,
+}
+
+#[derive(Default)]
+pub(super) struct Spares {
+    parts: Mutex<Vec<Part>>,
+    kits: Mutex<Vec<Kit>>,
+}
+
+impl Spares {
+    pub(super) fn part(&self) -> Part {
+        self.parts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn kit(&self) -> Kit {
+        self.kits
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn keep_kit(&self, kit: Kit) {
+        self.kits
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(kit);
+    }
+
+    pub(super) fn keep(&self, parts: Vec<Part>, most: usize) {
+        let mut kept = self.parts.lock().unwrap_or_else(PoisonError::into_inner);
+        for mut part in parts {
+            if kept.len() >= most {
+                return;
+            }
+            part.empty();
+            kept.push(part);
+        }
+    }
 }
 
 #[derive(Default)]
 pub(super) struct Kit {
     rows: RowKit,
+    spare_rows: FreshRows,
     fresh_per_state: (usize, usize),
     scratch: Scratch,
     state: Vec<Value>,
     base: Vec<u64>,
+}
+
+impl Kit {
+    pub(super) fn drop_spare_rows(&mut self) {
+        self.spare_rows = FreshRows::default();
+    }
 }
 
 #[derive(Default)]
@@ -60,6 +119,7 @@ struct PartSink<'a> {
     store: &'a Store,
     graph: bool,
     from: usize,
+    from_offset: u32,
     counted: usize,
     kit: &'a mut RowKit,
     part: Part,
@@ -76,12 +136,18 @@ impl PartSink<'_> {
 
     #[inline]
     fn add_fresh(&mut self, action: usize, row: &[u64], hash: u64) {
+        let at = self.part.fresh;
+        if u32::try_from(at).is_err() {
+            self.part.crowded = true;
+            return;
+        }
+        self.part.fresh = at + 1;
         append_row(&mut self.part.rows, row);
         self.part.hashes.push(hash);
         if self.graph {
-            self.push(action, Target::Fresh(self.part.hashes.len() - 1));
+            self.push(action, Target::Fresh(at));
         } else {
-            self.part.froms.push(self.from);
+            self.part.froms.push(self.from_offset);
         }
     }
 
@@ -105,7 +171,7 @@ impl PartSink<'_> {
                 if !self.graph && self.store.find(row, hash).is_some() {
                     return false;
                 }
-                vacant.insert(hashes.len());
+                vacant.insert(self.part.fresh);
                 self.add_fresh(action, row, hash);
                 true
             }
@@ -160,7 +226,7 @@ impl PartSink<'_> {
                 return false;
             }
             self.part.raws.push(next);
-            let fresh_before = self.part.hashes.len();
+            let fresh_before = self.part.fresh;
             self.push(action, Target::Raw { fresh_before });
             return first;
         }
@@ -208,11 +274,56 @@ impl Successors for PartSink<'_> {
 
 impl Part {
     pub(super) fn kept_rows(&self) -> usize {
-        self.hashes.len().saturating_add(self.raws.len())
+        self.fresh.saturating_add(self.raws.len())
     }
 
-    fn file_by_shard(&mut self, words: usize) {
-        let mut starts = vec![0; SHARD_COUNT + 1];
+    pub(super) fn hash_at(&self, at: usize) -> u64 {
+        self.hashes.get(at).copied().unwrap_or(0)
+    }
+
+    pub(super) fn parent_at(&self, at: usize) -> usize {
+        let offset = self.froms.get(at).copied().unwrap_or(0);
+        self.first
+            .saturating_add(usize::try_from(offset).unwrap_or(usize::MAX))
+    }
+
+    pub(super) fn by_ordinal(&self) -> Option<Vec<usize>> {
+        if self.shard_starts.is_empty() {
+            return None;
+        }
+        let mut positions = vec![0; self.fresh];
+        for (position, ordinal) in self.ordinals.iter().enumerate() {
+            if let Some(slot) = usize::try_from(*ordinal)
+                .ok()
+                .and_then(|ordinal| positions.get_mut(ordinal))
+            {
+                *slot = position;
+            }
+        }
+        Some(positions)
+    }
+
+    fn empty(&mut self) {
+        self.first = 0;
+        self.expanded = 0;
+        self.marks.clear();
+        self.entries.clear();
+        self.fresh = 0;
+        self.rows.clear();
+        self.hashes.clear();
+        self.froms.clear();
+        self.ordinals.clear();
+        self.shard_starts.clear();
+        self.raws.clear();
+        self.stopped = false;
+        self.crowded = false;
+        self.took = Duration::ZERO;
+    }
+
+    fn file_by_shard(&mut self, words: usize, filed: &mut FreshRows) {
+        let starts = &mut self.shard_starts;
+        starts.clear();
+        starts.resize(SHARD_COUNT + 1, 0);
         for hash in &self.hashes {
             if let Some(count) = starts.get_mut(shard_of(*hash) + 1) {
                 *count += 1;
@@ -224,62 +335,39 @@ impl Part {
                 *start += before;
             }
         }
-        let count = self.hashes.len();
-        let mut next = starts.clone();
-        let mut ordinals = vec![0; count];
-        let mut hashes = vec![0; count];
-        let mut froms = vec![0; count];
-        let mut rows = vec![0; self.rows.len()];
-        for (ordinal, (hash, from)) in self.hashes.iter().zip(&self.froms).enumerate() {
-            let Some(at) = next.get_mut(shard_of(*hash)) else {
+        let count = self.fresh;
+        self.next.clone_from(starts);
+        filed.rows.clear();
+        filed.rows.resize(self.rows.len(), 0);
+        filed.hashes.clear();
+        filed.hashes.resize(self.hashes.len(), 0);
+        filed.froms.clear();
+        filed.froms.resize(count, 0);
+        self.ordinals.clear();
+        self.ordinals.resize(count, 0);
+        for ((at, hash), ordinal) in self.hashes.iter().enumerate().zip(0_u32..) {
+            let hash = *hash;
+            let Some(next) = self.next.get_mut(shard_of(hash)) else {
                 continue;
             };
-            let position = *at;
-            *at += 1;
-            if let (Some(to_ordinal), Some(to_hash), Some(to_from)) = (
-                ordinals.get_mut(position),
-                hashes.get_mut(position),
-                froms.get_mut(position),
+            let position = *next;
+            *next += 1;
+            if let (Some(to_ordinal), Some(to_from), Some(from)) = (
+                self.ordinals.get_mut(position),
+                filed.froms.get_mut(position),
+                self.froms.get(at),
             ) {
                 *to_ordinal = ordinal;
-                *to_hash = *hash;
                 *to_from = *from;
             }
-            move_row(&self.rows, ordinal, &mut rows, position, words);
-        }
-        self.ordinals = ordinals;
-        self.hashes = hashes;
-        self.froms = froms;
-        self.rows = rows;
-        self.shard_starts = starts;
-    }
-
-    pub(super) fn into_ordinal_order(mut self, words: usize) -> Self {
-        if self.shard_starts.is_empty() {
-            return self;
-        }
-        let count = self.hashes.len();
-        let mut hashes = vec![0; count];
-        let mut froms = vec![0; count];
-        let mut rows = vec![0; self.rows.len()];
-        for (position, ordinal) in self.ordinals.iter().enumerate() {
-            if let (Some(to_hash), Some(to_from), Some(hash), Some(from)) = (
-                hashes.get_mut(*ordinal),
-                froms.get_mut(*ordinal),
-                self.hashes.get(position),
-                self.froms.get(position),
-            ) {
-                *to_hash = *hash;
-                *to_from = *from;
+            if let Some(to_hash) = filed.hashes.get_mut(position) {
+                *to_hash = hash;
             }
-            move_row(&self.rows, position, &mut rows, *ordinal, words);
+            move_row(&self.rows, at, &mut filed.rows, position, words);
         }
-        self.hashes = hashes;
-        self.froms = froms;
-        self.rows = rows;
-        self.ordinals = Vec::new();
-        self.shard_starts = Vec::new();
-        self
+        std::mem::swap(&mut self.rows, &mut filed.rows);
+        std::mem::swap(&mut self.hashes, &mut filed.hashes);
+        std::mem::swap(&mut self.froms, &mut filed.froms);
     }
 }
 
@@ -318,6 +406,7 @@ impl Search<'_> {
         deadline: Option<Instant>,
         asked: Asked,
         kit: &mut Kit,
+        mut part: Part,
     ) -> Part {
         let expand = self.expand(deadline, asked);
         kit.rows.met.clear();
@@ -328,10 +417,7 @@ impl Search<'_> {
             .checked_div(states_before)
             .unwrap_or(0);
         let words = self.store.layout().words();
-        let mut part = Part {
-            first: ids.start,
-            ..Part::default()
-        };
+        part.first = ids.start;
         if !self.limits.keep_graph {
             part.rows.reserve(expected * words);
             part.hashes.reserve(expected);
@@ -341,6 +427,7 @@ impl Search<'_> {
             store: &self.store,
             graph: self.limits.keep_graph,
             from: 0,
+            from_offset: 0,
             counted: 0,
             kit: &mut kit.rows,
             part,
@@ -354,7 +441,12 @@ impl Search<'_> {
             }
             let is_row = self.store.read_state(id, &mut kit.base, &mut kit.state);
             let outside = self.store.outside(id, &kit.base, &self.model.fields);
+            let Ok(from_offset) = u32::try_from(id.saturating_sub(sink.part.first)) else {
+                sink.part.crowded = true;
+                return sink.part;
+            };
             sink.from = id;
+            sink.from_offset = from_offset;
             sink.counted = 0;
             let base = Base {
                 values: &kit.state,
@@ -365,7 +457,7 @@ impl Search<'_> {
                 sink.part.stopped = true;
                 return sink.part;
             }
-            if sink.counted > self.limits.max_states {
+            if sink.part.crowded || sink.counted > self.limits.max_states {
                 sink.part.crowded = true;
                 return sink.part;
             }
@@ -375,9 +467,70 @@ impl Search<'_> {
             sink.part.expanded = sink.part.expanded.saturating_add(1);
         }
         if !self.limits.keep_graph {
-            sink.part.file_by_shard(words);
+            sink.part.file_by_shard(words, &mut kit.spare_rows);
         }
-        kit.fresh_per_state = (sink.part.hashes.len(), sink.part.expanded);
+        kit.fresh_per_state = (sink.part.fresh, sink.part.expanded);
         sink.part
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Part, Spares};
+    use crate::store::SHARD_COUNT;
+
+    fn part_that_found_two_rows(first: usize) -> Part {
+        Part {
+            first,
+            expanded: 3,
+            fresh: 2,
+            rows: vec![1, 2],
+            hashes: vec![5, 6],
+            froms: vec![0, 1],
+            ordinals: vec![1, 0],
+            shard_starts: vec![0; SHARD_COUNT + 1],
+            stopped: true,
+            crowded: true,
+            ..Part::default()
+        }
+    }
+
+    #[test]
+    fn spares_keep_no_more_parts_than_asked_and_hand_each_back_empty_with_its_room() {
+        let spares = Spares::default();
+        spares.keep(
+            vec![
+                part_that_found_two_rows(10),
+                part_that_found_two_rows(20),
+                part_that_found_two_rows(30),
+            ],
+            2,
+        );
+        for _ in 0..2 {
+            let part = spares.part();
+            assert_eq!(
+                (part.first, part.expanded, part.fresh),
+                (0, 0, 0),
+                "nothing found"
+            );
+            assert!(
+                part.rows.is_empty()
+                    && part.hashes.is_empty()
+                    && part.froms.is_empty()
+                    && part.ordinals.is_empty()
+                    && part.shard_starts.is_empty(),
+                "every buffer emptied"
+            );
+            assert!(
+                !part.stopped && !part.crowded,
+                "neither stopped nor crowded"
+            );
+            assert!(part.rows.capacity() >= 2, "the room its rows grew to stays");
+        }
+        assert_eq!(
+            spares.part().rows.capacity(),
+            0,
+            "a third part was not kept, so a new one comes"
+        );
     }
 }
