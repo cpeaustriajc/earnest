@@ -6,7 +6,7 @@ result goes into the PR as a statechart and a report.
 
 Status: early access. There is no release yet and nothing is on npm: the only builds are the
 nightly builds of `main`, and the model API and the command line can change from one night to the
-next. Version 1 is built and passes its own checks, and is not yet proven. Six adversarial
+next. Earnest 0.1.0 is built and passes its own checks, and is not yet proven. Six adversarial
 passes each found models with a broken rule that were reported as passing, and no pass has come
 back clean. TLC 1.8.0 confirms the TLA+ export of every conformance model in CI. The spec is the
 Claude Doc "A formal verification suite for agents".
