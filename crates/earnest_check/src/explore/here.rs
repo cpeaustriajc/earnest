@@ -2,7 +2,7 @@ use super::encode::{encode_next, with_updates};
 use super::{Arrow, STATES_BETWEEN_CLOCK_READS, Search};
 use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
 use crate::helpers::Helpers;
-use crate::store::{Placed, Store};
+use crate::store::{Placed, Store, hash_words};
 use earnest_value::Value;
 use rustc_hash::FxHashSet;
 use std::ops::Range;
@@ -68,7 +68,7 @@ impl Successors for HereSink<'_> {
     ) -> bool {
         let mut row = std::mem::take(&mut self.row);
         let counted = if encode_next(self.store, base.row, &mut row, base.values, updates) {
-            let hash = self.store.layout().hash(&row);
+            let hash = hash_words(&row);
             self.place_row(action, &row, hash)
         } else if self.full {
             let next = with_updates(base.values, updates);

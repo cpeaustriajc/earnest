@@ -6,7 +6,7 @@ const SEAT_SPREAD: u64 = 0x9E37_79B9_7F4A_7C15;
 const MIX: u64 = 0xD6E8_FEB8_6659_FD93;
 const HALF_WORD: u32 = 32;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct RowLayout {
     places: Vec<Place>,
     numbers: Vec<Option<RangeSlot>>,
@@ -65,7 +65,7 @@ fn mix(word: u64, at: usize) -> u64 {
     mixed ^ (mixed >> HALF_WORD)
 }
 
-pub(super) fn hash_words(row: &[u64]) -> u64 {
+pub(crate) fn hash_words(row: &[u64]) -> u64 {
     hash_each(row.iter().copied())
 }
 
@@ -136,12 +136,6 @@ impl RowLayout {
     #[must_use]
     pub(crate) fn truth(&self, position: usize) -> Option<RangeSlot> {
         self.truths.get(position).copied().flatten()
-    }
-
-    #[must_use]
-    pub(crate) fn hash(&self, row: &[u64]) -> u64 {
-        debug_assert_eq!(row.len(), self.words, "a row has the words of its layout");
-        hash_words(row)
     }
 
     pub(super) fn place(&self, position: usize) -> Option<Place> {
@@ -227,9 +221,8 @@ mod tests {
 
     #[test]
     fn rows_that_differ_in_one_field_hash_apart() {
-        let digits = layout(&[Domain::Int { lo: 0, hi: 9 }, Domain::Int { lo: 0, hi: 9 }]);
         let hashes: std::collections::HashSet<u64> =
-            (0..100_u64).map(|row| digits.hash(&[row])).collect();
+            (0..100_u64).map(|row| super::hash_words(&[row])).collect();
         assert_eq!(hashes.len(), 100, "every row its own hash");
     }
 }

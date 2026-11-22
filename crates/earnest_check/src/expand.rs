@@ -1,4 +1,4 @@
-use crate::store::{RangeSlot, RowLayout};
+use crate::store::{RangeSlot, RowLayout, hash_words};
 use earnest_ir::{Action, Code, Fault, Frame, Model};
 use earnest_value::Value;
 use hashbrown::HashTable;
@@ -344,7 +344,6 @@ fn next_updates(
 struct Expansion<'s, 'f, S> {
     base: Base<'s>,
     moving: Enabling,
-    layout: &'s RowLayout,
     frame: Frame<'f>,
     found: Mark,
     budget: Budget,
@@ -432,7 +431,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 }
             }
             if fits {
-                let hash = self.layout.hash(next);
+                let hash = hash_words(next);
                 if (!REPEATS || self.scratch.seen.first_row(next, hash))
                     && self.sink.offer_row(position, input, next, hash)
                 {
@@ -479,7 +478,6 @@ impl<S: Successors> Expansion<'_, '_, S> {
 pub(crate) struct Expand<'a> {
     pub(crate) model: &'a Model,
     pub(crate) moves: &'a [Move<'a>],
-    pub(crate) layout: &'a RowLayout,
     pub(crate) only_rule: Option<&'a str>,
     pub(crate) slots: usize,
     pub(crate) asked: Asked,
@@ -524,7 +522,6 @@ impl Expand<'_> {
         let mut expansion = Expansion {
             base,
             moving: Enabling::default(),
-            layout: self.layout,
             frame,
             found,
             budget: self.budget,

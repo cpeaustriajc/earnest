@@ -9,7 +9,7 @@ use earnest_ir::Field;
 use earnest_value::{Domain, Value};
 use index::{Claim, Index};
 pub(crate) use index::{Found, Lookup, SHARD_COUNT, shard_of};
-pub(crate) use layout::{RangeSlot, RowLayout};
+pub(crate) use layout::{RangeSlot, RowLayout, hash_words};
 use level::Level;
 pub(crate) use level::{Fresh, Spread};
 use rows::{Parents, Rows};
@@ -244,7 +244,7 @@ impl Store {
     ) -> Placed {
         let mut row = Vec::with_capacity(self.layout.words());
         if self.encode_or_add(&values, &mut row) {
-            let hash = self.layout.hash(&row);
+            let hash = hash_words(&row);
             return self.place(&row, hash, parent, most);
         }
         if let Some(id) = self.wide_ids.get(&values) {
@@ -281,7 +281,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use super::{Lookup, Placed, Store};
+    use super::{Lookup, Placed, Store, hash_words};
     use earnest_ir::Field;
     use earnest_value::{Domain, Symbols, Value};
 
@@ -315,14 +315,14 @@ mod tests {
                 let mut store = Store::new(&fields(highest), 100, lookup);
                 for (a, b) in [(1, 2), (2, 1), (highest, highest)] {
                     let row = row(&store, a, b);
-                    let hash = store.layout().hash(&row);
+                    let hash = hash_words(&row);
                     assert!(
                         matches!(store.place(&row, hash, None, 100), Placed::New(_)),
                         "{case}"
                     );
                 }
                 let again = row(&store, 2, 1);
-                let hash = store.layout().hash(&again);
+                let hash = hash_words(&again);
                 let Placed::Known(found) = store.place(&again, hash, None, 100) else {
                     panic!("{case}: a row met before is known");
                 };
@@ -332,7 +332,7 @@ mod tests {
                 store.truncate(1);
                 assert!(store.find(&again, hash).is_none(), "{case}: cut away");
                 let first = row(&store, 1, 2);
-                let first_hash = store.layout().hash(&first);
+                let first_hash = hash_words(&first);
                 assert!(store.find(&first, first_hash).is_some(), "{case}: kept");
                 assert_eq!(store.state(0), [Value::Int(1), Value::Int(2)], "{case}");
             }

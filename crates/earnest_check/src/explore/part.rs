@@ -1,7 +1,7 @@
 use super::encode::{encode_next, with_updates};
 use super::{STATES_BETWEEN_CLOCK_READS, Search};
 use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors, same_words};
-use crate::store::{SHARD_COUNT, Store, shard_of};
+use crate::store::{SHARD_COUNT, Store, hash_words, shard_of};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxHashSet;
@@ -132,11 +132,10 @@ impl PartSink<'_> {
 impl PartSink<'_> {
     #[inline]
     fn offer_unseen_word(&mut self, action: usize, word: u64, hash: u64) -> bool {
-        let layout = self.store.layout();
         let met = self.kit.met_words.entry(
             hash,
             |earlier| *earlier == word,
-            |earlier| layout.hash(&[*earlier]),
+            |earlier| hash_words(&[*earlier]),
         );
         let hashbrown::hash_table::Entry::Vacant(vacant) = met else {
             return false;
@@ -198,7 +197,7 @@ impl PartSink<'_> {
             return first;
         }
         let row = std::mem::take(&mut self.kit.row);
-        let hash = self.store.layout().hash(&row);
+        let hash = hash_words(&row);
         let counted = self.offer_encoded(action, &row, hash);
         self.kit.row = row;
         counted
