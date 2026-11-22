@@ -11,7 +11,7 @@ pub(crate) const TARGET_WORKERS: usize = 4;
 pub(crate) const LARGEST_TARGET_WORKERS_BUDGET_SECONDS: f64 = 3.0;
 pub(crate) const LARGEST_ONE_WORKER_BUDGET_SECONDS: f64 = 6.0;
 pub(crate) const LARGEST_PEAK_MEMORY_BUDGET_MIB: f64 = 256.0;
-pub(crate) const NARROW_LEVELS_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 1.25;
+pub(crate) const NARROW_LEVELS_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 1.5;
 pub(crate) const WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 0.75;
 const PERCENT: f64 = 100.0;
 
@@ -489,12 +489,12 @@ mod tests {
     #[test]
     fn a_ratio_may_equal_its_limit() {
         assert_eq!(
-            limit(Some(1.25), 1.25, Unit::Times, Judged::OnTargetCores).verdict(4),
+            limit(Some(1.5), 1.5, Unit::Times, Judged::OnTargetCores).verdict(4),
             Verdict::Met,
             "at most the limit"
         );
         assert_eq!(
-            limit(Some(1.26), 1.25, Unit::Times, Judged::OnTargetCores).verdict(4),
+            limit(Some(1.51), 1.5, Unit::Times, Judged::OnTargetCores).verdict(4),
             Verdict::Missed,
             "above the limit"
         );

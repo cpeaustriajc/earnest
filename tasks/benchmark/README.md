@@ -88,7 +88,7 @@ misses. Times are medians; "all cores" is the default number of workers.
 | `grid_10m` with 4 workers, wall time | 1.2 s to 2.4 s in ten runs of the `check` job | under 3 s |
 | `grid_10m` with 1 worker, wall time | 3.8 s in the `check` job | under 6 s |
 | `grid_10m` peak memory, with 4 workers and with 1 worker | 196 MiB and 207 MiB | under 256 MiB |
-| `narrow_levels`, all cores over 1 worker | about 1x | at most 1.25x |
+| `narrow_levels`, all cores over 1 worker | about 1x, one measurement up to 1.37x | at most 1.5x |
 | `wide`, all cores over 1 worker | about 0.33x | at most 0.75x |
 
 The two wall times are loose because runners differ by up to 1.9 times on the same code; the
