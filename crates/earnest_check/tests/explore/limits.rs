@@ -260,11 +260,7 @@ fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[u
 }
 
 fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outcome {
-    let limits = Limits {
-        max_states,
-        ..Limits::default()
-    };
-    same_outcome_with_every_crew(model, &limits, &[2, 4, 10])
+    same_outcome_with_every_crew(model, &with_states(max_states), &[2, 4, 10])
 }
 
 const STARTS_OF_A_LEVEL_MERGED_ON_TEN_THREADS: i64 = 45_000;
@@ -676,24 +672,11 @@ fn successors_already_known_never_use_up_the_state_limit() {
         (jumps_from(&every_start), 2050),
     ];
     for (model, states) in &cases {
-        for keep_graph in [false, true] {
-            for jobs in [1, 2, 4, 10] {
-                let limits = Limits {
-                    max_states: *states,
-                    jobs,
-                    keep_graph,
-                    ..Limits::default()
-                };
-                let outcome = explore(model, &limits);
-                assert_eq!(
-                    outcome.status,
-                    Status::Fail,
-                    "{jobs} jobs, graph {keep_graph}"
-                );
-                assert_eq!(outcome.states, *states, "{jobs} jobs, graph {keep_graph}");
-                assert_eq!(outcome.reason, None, "{jobs} jobs, graph {keep_graph}");
-                assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
-            }
+        for (case, outcome) in every_worker_count(model, *states) {
+            assert_eq!(outcome.status, Status::Fail, "{case}");
+            assert_eq!(outcome.states, *states, "{case}");
+            assert_eq!(outcome.reason, None, "{case}");
+            assert_eq!(outcome.rules[0].verdict, Verdict::Broken);
         }
     }
 }
@@ -701,23 +684,10 @@ fn successors_already_known_never_use_up_the_state_limit() {
 #[test]
 fn a_state_with_more_new_successors_than_the_limit_leaves_the_search_unfinished() {
     let model = jumps_from(&[1023]);
-    for keep_graph in [false, true] {
-        for jobs in [1, 2, 4, 10] {
-            let limits = Limits {
-                max_states: 100,
-                jobs,
-                keep_graph,
-                ..Limits::default()
-            };
-            let outcome = explore(&model, &limits);
-            assert_eq!(
-                outcome.status,
-                Status::Unfinished,
-                "{jobs} jobs, graph {keep_graph}"
-            );
-            assert_eq!(outcome.reason.as_deref(), Some("state limit of 100"));
-            assert_eq!(outcome.rules[0].verdict, Verdict::Unknown);
-        }
+    for (case, outcome) in every_worker_count(&model, 100) {
+        assert_eq!(outcome.status, Status::Unfinished, "{case}");
+        assert_eq!(outcome.reason.as_deref(), Some("state limit of 100"));
+        assert_eq!(outcome.rules[0].verdict, Verdict::Unknown);
     }
 }
 
@@ -763,25 +733,13 @@ fn successors_an_earlier_state_of_the_level_found_never_use_up_the_room_of_a_lat
         let model = two_fans_and_a_fault(faulting);
         let alone = explore(&model, &with_states(max_states));
         assert_eq!(alone.status, Status::Fail, "the last start state faults");
-        let kinds: Vec<_> = alone.findings.iter().map(|found| found.kind).collect();
-        assert_eq!(kinds, [FindingKind::Fault], "{faulting:?}");
-        for keep_graph in [false, true] {
-            for jobs in [1, 2, 4, 10] {
-                let limits = Limits {
-                    max_states,
-                    jobs,
-                    keep_graph,
-                    ..Limits::default()
-                };
-                let outcome = explore(&model, &limits);
-                let case = format!(
-                    "{faulting:?} faults, room {max_states}, {jobs} jobs, graph {keep_graph}"
-                );
-                assert_eq!(outcome.status, alone.status, "{case}");
-                assert_eq!(outcome.states, alone.states, "{case}");
-                assert_eq!(outcome.reason, alone.reason, "{case}");
-                assert_eq!(outcome.findings, alone.findings, "{case}");
-            }
+        assert_eq!(kinds_of(&alone), [FindingKind::Fault], "{faulting:?}");
+        for (case, outcome) in every_worker_count(&model, max_states) {
+            let case = format!("{faulting:?} faults, room {max_states}, {case}");
+            assert_eq!(outcome.status, alone.status, "{case}");
+            assert_eq!(outcome.states, alone.states, "{case}");
+            assert_eq!(outcome.reason, alone.reason, "{case}");
+            assert_eq!(outcome.findings, alone.findings, "{case}");
         }
     }
 }
@@ -791,10 +749,9 @@ fn every_worker_count(model: &Model, max_states: usize) -> Vec<(String, Outcome)
     for keep_graph in [false, true] {
         for jobs in [1, 2, 4, 10] {
             let limits = Limits {
-                max_states,
                 jobs,
                 keep_graph,
-                ..Limits::default()
+                ..with_states(max_states)
             };
             outcomes.push((
                 format!("{jobs} jobs, graph {keep_graph}"),
