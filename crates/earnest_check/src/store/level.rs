@@ -106,8 +106,9 @@ impl<F: Filed> Shards<F> {
             };
             let mut table = table.lock().unwrap_or_else(PoisonError::into_inner);
             for part in 0..at.parts.len() {
-                let mut mine = Vec::new();
-                for ordinal in at.in_shard(part, shard) {
+                let filed = at.in_shard(part, shard);
+                let mut mine = Vec::with_capacity(filed.len());
+                for ordinal in filed {
                     let row = at.row_of(part, *ordinal);
                     let slot = table.entry(
                         at.hash_of(part, *ordinal),
@@ -180,11 +181,13 @@ impl<F: Filed> Shards<F> {
 
 fn first_in_level(at: &Level<'_>) -> Vec<Won> {
     gather(at.spread, SHARD_COUNT, |shard| {
-        let mut seen: HashTable<(usize, usize)> = HashTable::new();
+        let in_shard = (0..at.parts.len()).map(|part| at.in_shard(part, shard).len());
+        let mut seen: HashTable<(usize, usize)> = HashTable::with_capacity(in_shard.sum());
         let mut won = Vec::with_capacity(at.parts.len());
         for part in 0..at.parts.len() {
-            let mut mine = Vec::new();
-            for ordinal in at.in_shard(part, shard) {
+            let filed = at.in_shard(part, shard);
+            let mut mine = Vec::with_capacity(filed.len());
+            for ordinal in filed {
                 let row = at.row_of(part, *ordinal);
                 if let Slot::Vacant(vacant) = seen.entry(
                     at.hash_of(part, *ordinal),
