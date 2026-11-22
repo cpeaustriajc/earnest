@@ -129,9 +129,10 @@ impl Search<'_> {
         };
         let mut places: FxHashMap<(Option<String>, String), usize> = FxHashMap::default();
         let mut node_of = Vec::with_capacity(self.store.len());
+        let (mut row, mut values) = (Vec::new(), Vec::new());
         for id in 0..self.store.len() {
-            let state = self.store.state(id);
-            let state = state.as_slice();
+            self.store.read_state(id, &mut row, &mut values);
+            let state = values.as_slice();
             let label = view.state.as_ref().map_or_else(
                 || self.default_label(state),
                 |found| self.label(found, state),
