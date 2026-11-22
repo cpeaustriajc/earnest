@@ -31,6 +31,7 @@ struct Options {
 #[derive(Clone, Debug)]
 struct Measured {
     median: Duration,
+    search: Duration,
     peak_kib: Option<u64>,
     states: u64,
 }
@@ -92,16 +93,19 @@ impl Bench<'_> {
         .map_err(|error| error.to_string())?;
         run_once(&job)?;
         let mut walls = Vec::new();
+        let mut searches = Vec::new();
         let mut peak_kib = None;
         let mut states = 0;
         for _ in 0..self.options.runs {
             let sample = run_once(&job)?;
             walls.push(sample.wall);
+            searches.push(sample.search());
             peak_kib = peak_kib.max(sample.peak_kib);
             states = sample.models.iter().map(|seen| seen.states).sum();
         }
         let measured = Measured {
             median: report::median(&walls),
+            search: report::median(&searches),
             peak_kib,
             states,
         };
@@ -143,6 +147,28 @@ fn wall_time(what: String, (measured, run): (&Measured, &Run), allowed: f64, kin
     }
 }
 
+fn search_time_all_cores_over_one_worker(
+    model: &str,
+    file: &Path,
+    (all, one): (&Measured, &Measured),
+    allowed: f64,
+) -> Limit {
+    Limit {
+        what: format!(
+            "{model}, search time with all cores ({:.3} s) over search time with 1 worker ({:.3} s)",
+            all.search.as_secs_f64(),
+            one.search.as_secs_f64()
+        ),
+        measured: Some(report::ratio(all.search, one.search)),
+        again: None,
+        runs: vec![(file.to_path_buf(), None), (file.to_path_buf(), Some(1))],
+        allowed,
+        unit: Unit::Times,
+        kind: Kind::Budget,
+        judged: Judged::OnTargetCores,
+    }
+}
+
 impl Bench<'_> {
     fn all_cores_over_one_worker(
         &mut self,
@@ -153,20 +179,12 @@ impl Bench<'_> {
         let file = models::scaled_path(repository, model, Language::TypeScript);
         let all = self.measure(std::slice::from_ref(&file), None)?;
         let one = self.measure(std::slice::from_ref(&file), Some(1))?;
-        Ok(Limit {
-            what: format!(
-                "{model}, time with all cores ({:.3} s) over time with 1 worker ({:.3} s)",
-                all.median.as_secs_f64(),
-                one.median.as_secs_f64()
-            ),
-            measured: Some(report::ratio(all.median, one.median)),
-            again: None,
-            runs: vec![(file.clone(), None), (file, Some(1))],
+        Ok(search_time_all_cores_over_one_worker(
+            model,
+            &file,
+            (&all, &one),
             allowed,
-            unit: Unit::Times,
-            kind: Kind::Budget,
-            judged: Judged::OnTargetCores,
-        })
+        ))
     }
 
     fn limits(&mut self, repository: &Path) -> Result<Vec<Limit>, String> {
@@ -432,6 +450,38 @@ mod tests {
             let arguments: Vec<String> = bad.iter().map(|word| (*word).to_owned()).collect();
             assert!(parse_options(&arguments).is_err(), "{bad:?} is refused");
         }
+    }
+
+    #[test]
+    fn the_ratio_lines_divide_the_search_times_and_not_the_wall_times() {
+        let measured = |wall: u64, search: u64| Measured {
+            median: Duration::from_millis(wall),
+            search: Duration::from_millis(search),
+            peak_kib: None,
+            states: 10_000,
+        };
+        let file = PathBuf::from("wide.model.ts");
+        let limit = search_time_all_cores_over_one_worker(
+            "wide",
+            &file,
+            (&measured(120, 30), &measured(240, 120)),
+            0.75,
+        );
+        assert_eq!(
+            limit.measured,
+            Some(0.25),
+            "30 ms over 120 ms, not 120 ms over 240 ms"
+        );
+        assert_eq!(
+            limit.line(4),
+            "wide, search time with all cores (0.030 s) over search time with 1 worker (0.120 s): 0.25x, budget at most 0.75x: met",
+            "the line names the search times"
+        );
+        assert_eq!(
+            limit.runs,
+            vec![(file.clone(), None), (file, Some(1))],
+            "a miss measures both runs again"
+        );
     }
 
     #[test]

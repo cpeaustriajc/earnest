@@ -1,4 +1,5 @@
-//! Runs `earnest verify` once on some files and measures its wall time and peak memory.
+//! Runs `earnest verify` once on some files and measures its wall time and peak memory, and reads
+//! the time of the search that the checker reports for each model.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ const POLL: Duration = Duration::from_millis(1);
 pub(crate) struct Seen {
     pub(crate) name: String,
     pub(crate) states: u64,
+    pub(crate) search: Duration,
 }
 
 #[derive(Debug)]
@@ -23,6 +25,12 @@ pub(crate) struct Sample {
     pub(crate) wall: Duration,
     pub(crate) peak_kib: Option<u64>,
     pub(crate) models: Vec<Seen>,
+}
+
+impl Sample {
+    pub(crate) fn search(&self) -> Duration {
+        self.models.iter().map(|seen| seen.search).sum()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -97,9 +105,13 @@ pub(crate) fn parse_results(json: &str) -> Result<Vec<Seen>, String> {
             let counted = model["states"]
                 .as_u64()
                 .ok_or_else(|| format!("{name} has no state count"))?;
+            let milliseconds = model["milliseconds"]
+                .as_u64()
+                .ok_or_else(|| format!("{name} has no search time"))?;
             Ok(Seen {
                 name: name.to_owned(),
                 states: counted,
+                search: Duration::from_millis(milliseconds),
             })
         })
         .collect()
@@ -225,17 +237,46 @@ mod tests {
         assert_eq!(peak_from_status("Name:\tearnest\n"), None, "no mark");
     }
 
+    fn counter(states: u64) -> Seen {
+        Seen {
+            name: "Counter".to_owned(),
+            states,
+            search: Duration::from_millis(7),
+        }
+    }
+
     #[test]
-    fn results_give_each_models_name_and_states() {
+    fn results_give_each_models_name_states_and_search_time() {
+        let json = r#"{"models":[{"name":"Counter","status":"pass","states":100,"milliseconds":7}],"unreadable":[]}"#;
+        assert_eq!(
+            parse_results(json),
+            Ok(vec![counter(100)]),
+            "one passing model"
+        );
+    }
+
+    #[test]
+    fn a_model_without_a_search_time_is_an_error() {
         let json =
             r#"{"models":[{"name":"Counter","status":"pass","states":100}],"unreadable":[]}"#;
         assert_eq!(
             parse_results(json),
-            Ok(vec![Seen {
-                name: "Counter".to_owned(),
-                states: 100
-            }]),
-            "one passing model"
+            Err("Counter has no search time".to_owned()),
+            "no milliseconds"
+        );
+    }
+
+    #[test]
+    fn the_search_time_of_a_run_is_the_sum_over_its_models() {
+        let sample = Sample {
+            wall: Duration::from_millis(50),
+            peak_kib: None,
+            models: vec![counter(100), counter(100)],
+        };
+        assert_eq!(
+            sample.search(),
+            Duration::from_millis(14),
+            "two models of 7 ms"
         );
     }
 
@@ -255,15 +296,8 @@ mod tests {
 
     #[test]
     fn counts_must_equal_the_derived_ones() {
-        let right = [Seen {
-            name: "Counter".to_owned(),
-            states: 100,
-        }];
-        assert_eq!(check_counts(&right), Ok(()), "the derived count");
-        let wrong = [Seen {
-            name: "Counter".to_owned(),
-            states: 101,
-        }];
+        assert_eq!(check_counts(&[counter(100)]), Ok(()), "the derived count");
+        let wrong = [counter(101)];
         assert_eq!(
             check_counts(&wrong),
             Err("Counter: the checker counted 101 states, but README.md derives 100".to_owned()),
@@ -271,7 +305,7 @@ mod tests {
         );
         let stranger = [Seen {
             name: "Stranger".to_owned(),
-            states: 1,
+            ..counter(1)
         }];
         assert!(check_counts(&stranger).is_err(), "an unknown model fails");
     }
