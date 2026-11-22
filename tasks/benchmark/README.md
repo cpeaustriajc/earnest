@@ -34,14 +34,15 @@ from a cache and nothing is written to the repository, and prints Markdown:
   against the longest of the 13 alone (`grid_1m` or `wide`, whichever takes longer). R12 asks
   for about 1x. It stays on `grid_1m` because it is about many models in one run, not about the
   biggest one.
+- the budget: the five limits below, each with its measurement.
 
 Wall time is the time from starting the process to its exit, so it includes reading the files.
 Peak memory is the largest resident set (`VmHWM` in `/proc`) any run reached; it is `n/a` where
 `/proc` has no such file. The binary fails, with the model and both numbers, when the checker's
 state count for a model differs from the one derived below, when a model is not `pass`, or when
 a file is unreadable. It also fails, after it prints the result, when `grid_10m` with 4 workers
-takes 5 s or more on a machine with at least 4 cores; with fewer cores it does not judge that
-target. It is not part of `just check`; that runs only its unit tests, which also check that
+takes 5 s or more on a machine with at least 4 cores, or when a line of the budget below is
+missed, with one line for each miss; with fewer cores it judges only the line on memory. It is not part of `just check`; that runs only its unit tests, which also check that
 every derived count below is in this file. The `check` workflow runs it after `just check`, on a
 runner with 4 vCPUs and 16 GB, so a change that misses the target fails there.
 
@@ -76,6 +77,23 @@ The 12 mixed models that stand in for the app's 12 are the next ten (in `models/
 | `Seats` | `mixed/seats` | 18 | `seat` has no initial value, so it starts at every record `{row 1 to 3, aisle}`: 3 × 2 = 6. `owner` has none either and starts at `null`, `Kim` or `Lee`: 3. Every combination is a start state and no action leaves them. 6 × 3 = 18 |
 | `Votes` | `mixed/votes` | 21 | `Idle` (0, 0): 1. `Voting` with every `(yes, no)` of sum at most 3: 1 + 2 + 3 + 4 = 10. `Done`, closed from each of them: 10. 1 + 10 + 10 = 21 |
 | `Pairs` | `mixed/pairs` | 120 | `(a, b)` of 0 to 14 with `a <= b`, reached by raising `b` and then `a` up to it: 15 + 14 + ... + 1 = 120 |
+
+## Budget
+
+The release this budget was set on must stay this fast; `just benchmark` fails on any line it
+misses. Times are medians; "all cores" is the default number of workers.
+
+| What | Measured when the budget was set | Limit |
+|---|---|---|
+| `grid_10m` with 4 workers, wall time | 1.2 s to 2.4 s in ten runs of the `check` job | under 3 s |
+| `grid_10m` with 1 worker, wall time | 3.8 s in the `check` job | under 6 s |
+| `grid_10m` peak memory, with 4 workers and with 1 worker | 196 MiB and 207 MiB | under 256 MiB |
+| `narrow_levels`, all cores over 1 worker | about 1x | at most 1.25x |
+| `wide`, all cores over 1 worker | about 0.33x | at most 0.6x |
+
+The two wall times are loose because runners differ by up to 1.9 times on the same code; the
+memory and the two ratios, taken on one machine in one job, are tight. When a line fails, make
+the change faster or take it back. A limit changes only with the owner's word.
 
 ## Results
 

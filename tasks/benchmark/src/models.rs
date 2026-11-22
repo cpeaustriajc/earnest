@@ -7,6 +7,8 @@ pub(crate) const FOLDER: &str = "tasks/benchmark/models";
 
 pub(crate) const LARGEST: &str = "grid_10m";
 pub(crate) const R12_LARGE: &str = "grid_1m";
+pub(crate) const NARROW_LEVELS: &str = "narrow_levels";
+pub(crate) const WIDE: &str = "wide";
 pub(crate) const LARGEST_STATE_LIMIT: u64 = 20_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
