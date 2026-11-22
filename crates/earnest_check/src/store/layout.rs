@@ -164,13 +164,14 @@ impl Place {
 
 #[cfg(test)]
 mod tests {
+    use super::super::codec::Codec;
     use super::RowLayout;
     use earnest_value::Domain;
 
     fn layout(domains: &[Domain]) -> RowLayout {
         let widths: Vec<u32> = domains
             .iter()
-            .map(|domain| super::super::codec::Codec::kind_of(domain).1)
+            .map(|domain| Codec::kind_of(domain).1)
             .collect();
         RowLayout::of(&domains.iter().collect::<Vec<_>>(), &widths)
     }
