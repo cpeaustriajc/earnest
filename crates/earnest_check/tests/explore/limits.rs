@@ -228,33 +228,32 @@ fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[u
         keep_graph,
         ..base.clone()
     };
-    let alone_and_with_every_crew = |keep_graph: bool| {
-        let alone = explore(model, &with(1, None, keep_graph));
-        for jobs in worker_counts {
+    let every_crew_gives = |expected: &Outcome, keep_graph: bool| {
+        for jobs in worker_counts.iter().copied().chain([1]) {
             assert_eq!(
-                explore(model, &with(*jobs, None, keep_graph)),
-                alone,
+                &explore(model, &with(jobs, None, keep_graph)),
+                expected,
                 "{jobs} workers, graph kept: {keep_graph}"
             );
         }
-        assert_eq!(
-            explore(
-                model,
-                &with(1, Some(Helpers::new(IDLE_HELPERS)), keep_graph)
-            ),
-            alone,
-            "one worker and {IDLE_HELPERS} helpers, graph kept: {keep_graph}"
-        );
-        assert_eq!(
-            explore(model, &with(1, Some(Helpers::new(0)), keep_graph)),
-            alone,
-            "one worker and no idle helper, graph kept: {keep_graph}"
-        );
-        alone
+        for idle in [IDLE_HELPERS, 0] {
+            assert_eq!(
+                &explore(model, &with(1, Some(Helpers::new(idle)), keep_graph)),
+                expected,
+                "one worker and {idle} idle helpers, graph kept: {keep_graph}"
+            );
+        }
     };
-    let with_graph = alone_and_with_every_crew(true);
-    alone_and_with_every_crew(false);
-    with_graph
+    let row_by_row = explore(model, &with(1, None, true));
+    every_crew_gives(&row_by_row, true);
+    every_crew_gives(
+        &Outcome {
+            graph: None,
+            ..row_by_row.clone()
+        },
+        false,
+    );
+    row_by_row
 }
 
 fn same_outcome_on_every_worker_count(model: &Model, max_states: usize) -> Outcome {
@@ -1202,7 +1201,7 @@ fn starts_whose_pairs_share_a_child() -> Model {
 }
 
 #[test]
-fn a_lone_thread_with_a_handle_matches_row_by_row_at_every_state_limit_near_a_wide_level() {
+fn a_lone_thread_taking_a_wide_level_in_parts_matches_the_graph_kept_search_at_every_state_limit() {
     let model = starts_whose_pairs_share_a_child();
     let starts = usize::try_from(STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS).unwrap_or(0);
     let children = usize::try_from(CHILDREN_OF_PAIRS_OF_STARTS).unwrap_or(0);
@@ -1219,18 +1218,24 @@ fn a_lone_thread_with_a_handle_matches_row_by_row_at_every_state_limit_near_a_wi
         states + 1,
     ];
     for max_states in near_the_ends.into_iter().chain(inside) {
-        let row_by_row = explore(&model, &with_states(max_states));
-        let lone = Limits {
-            helpers: Some(Helpers::new(0)),
-            ..with_states(max_states)
-        };
+        let row_by_row = explore(
+            &model,
+            &Limits {
+                keep_graph: true,
+                ..with_states(max_states)
+            },
+        );
+        let in_parts = explore(&model, &with_states(max_states));
         assert_eq!(
-            explore(&model, &lone),
-            row_by_row,
+            in_parts,
+            Outcome {
+                graph: None,
+                ..row_by_row
+            },
             "state limit {max_states}"
         );
         assert_eq!(
-            row_by_row.states,
+            in_parts.states,
             max_states.min(states),
             "state limit {max_states}"
         );
