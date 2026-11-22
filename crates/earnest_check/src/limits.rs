@@ -28,7 +28,7 @@ pub struct Limits {
     /// enough to pay for the thread, its `jobs` first, so a level with few new states merges
     /// on one thread and borrows none. Searches that run side by side share one handle, so a
     /// thread one of them leaves idle goes to another. The outcome is the same whatever is
-    /// borrowed. With one of `jobs`, a handle makes a search that keeps no graph spread a wide
+    /// borrowed. With `jobs` at 1, a handle makes a search that keeps no graph spread a wide
     /// level even when no thread is idle, its own thread taking every part, so it needs more
     /// memory than with `None`, which keeps it state by state.
     pub helpers: Option<Helpers>,
