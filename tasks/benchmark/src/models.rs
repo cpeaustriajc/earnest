@@ -37,7 +37,7 @@ pub(crate) struct Scaled {
     pub(crate) model: &'static str,
 }
 
-pub(crate) const SCALED: [Scaled; 6] = [
+pub(crate) const SCALED: [Scaled; 7] = [
     Scaled {
         file: "grid_1k",
         model: "Grid1k",
@@ -49,6 +49,10 @@ pub(crate) const SCALED: [Scaled; 6] = [
     Scaled {
         file: "wide",
         model: "Wide",
+    },
+    Scaled {
+        file: "narrow_levels",
+        model: "NarrowLevels",
     },
     Scaled {
         file: "grid_100k",
@@ -79,13 +83,14 @@ pub(crate) const MIXED_SMALL: [&str; 10] = [
 
 pub(crate) const MIXED_LARGE: [&str; 2] = ["ledger", "wide"];
 
-pub(crate) const EXPECTED_STATES: [(&str, u64); 16] = [
+pub(crate) const EXPECTED_STATES: [(&str, u64); 17] = [
     ("Grid1k", 1_000),
     ("Grid100k", 100_000),
     ("Grid1m", 1_000_000),
     ("Grid10m", 10_000_000),
     ("Ledger", 36_400),
     ("Wide", 10_000),
+    ("NarrowLevels", 1_020_300),
     ("Counter", 100),
     ("Traffic", 30),
     ("Plane", 400),
