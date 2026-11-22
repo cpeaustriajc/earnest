@@ -1,5 +1,7 @@
 use earnest_check::{Limits, Named, Outcome, Path, explore};
-use earnest_ir::{Action, Code, End, Expr, Field, Input, Math, Model, Op, Order, Rule, View};
+use earnest_ir::{
+    Action, Code, End, Expr, Field, Input, Math, Model, Op, Order, Rule, SeqOp, View,
+};
 use earnest_value::{Domain, Symbols, Value};
 
 pub(crate) struct Sketch {
@@ -169,6 +171,60 @@ pub(crate) fn counter(top: i64) -> (Sketch, Expr) {
     let n = sketch.number("n", 0, top, &[0]);
     sketch.action("inc", below(&n, top), &[(&n, plus(&n, 1))]);
     (sketch, n)
+}
+
+pub(crate) fn size_of(queue: &Expr) -> Expr {
+    Expr::Apply(Op::Seq(SeqOp::Size), vec![queue.clone()])
+}
+
+pub(crate) fn message_queue(sketch: &mut Sketch, max: usize) -> (Expr, Vec<Value>) {
+    let messages = vec![sketch.text("a"), sketch.text("b")];
+    let domain = Domain::Seq {
+        item: Box::new(Domain::OneOf(messages.clone())),
+        max,
+    };
+    let queue = sketch.field("queue", domain, vec![Value::seq(Vec::new())]);
+    (queue, messages)
+}
+
+pub(crate) const CUBE_TOP: i64 = 29;
+
+#[derive(Clone, Copy)]
+pub(crate) enum Moves {
+    Up,
+    UpAndDown,
+}
+
+pub(crate) fn cube_sketch(highest: i64, moves: Moves) -> (Sketch, Vec<Expr>) {
+    let mut sketch = Sketch::new();
+    let axes: Vec<Expr> = ["x", "y", "z"]
+        .iter()
+        .map(|name| sketch.number(name, 0, highest, &[0]))
+        .collect();
+    for (name, axis) in ["X", "Y", "Z"].iter().zip(&axes) {
+        sketch.action(
+            &format!("up{name}"),
+            below(axis, CUBE_TOP),
+            &[(axis, plus(axis, 1))],
+        );
+        if matches!(moves, Moves::UpAndDown) {
+            sketch.action(
+                &format!("down{name}"),
+                is_not(axis, 0),
+                &[(axis, plus(axis, -1))],
+            );
+        }
+    }
+    (sketch, axes)
+}
+
+pub(crate) fn at_corner(axes: &[Expr], corner: [i64; 3]) -> Expr {
+    corner
+        .iter()
+        .zip(axes)
+        .map(|(value, axis)| is(axis, *value))
+        .reduce(both)
+        .expect("three axes")
 }
 
 pub(crate) fn texts(named: &[Named]) -> Vec<String> {

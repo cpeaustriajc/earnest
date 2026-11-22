@@ -1,3 +1,4 @@
+use crate::build::{CUBE_TOP, Moves, at_corner, cube_sketch};
 use crate::build::{
     Sketch, apply, below, both, counter, int, is, is_not, not, plus, steps, texts, yes,
 };
@@ -210,19 +211,11 @@ const CUBE_STATES_THROUGH_SUM_43: usize = 13_500;
 const CUBE_STATES_THROUGH_SUM_42: usize = 12_825;
 
 fn cube_with_a_late_rule() -> Model {
-    let mut sketch = Sketch::new();
-    let axes: Vec<Expr> = ["x", "y", "z"]
-        .iter()
-        .map(|name| sketch.number(name, 0, 29, &[0]))
-        .collect();
-    for (name, axis) in ["moveX", "moveY", "moveZ"].iter().zip(&axes) {
-        sketch.action(name, below(axis, 29), &[(axis, plus(axis, 1))]);
-    }
-    let at = |x: i64, y: i64, z: i64| both(is(&axes[0], x), both(is(&axes[1], y), is(&axes[2], z)));
-    sketch.end("corner", at(29, 29, 29));
-    sketch.rule("notEarly", not(&at(10, 20, 5)));
-    sketch.rule("notAtSum43", not(&at(20, 20, 3)));
-    sketch.rule("notAtSum44", not(&at(20, 20, 4)));
+    let (mut sketch, axes) = cube_sketch(CUBE_TOP, Moves::Up);
+    sketch.end("corner", at_corner(&axes, [29, 29, 29]));
+    sketch.rule("notEarly", not(&at_corner(&axes, [10, 20, 5])));
+    sketch.rule("notAtSum43", not(&at_corner(&axes, [20, 20, 3])));
+    sketch.rule("notAtSum44", not(&at_corner(&axes, [20, 20, 4])));
     sketch.model()
 }
 

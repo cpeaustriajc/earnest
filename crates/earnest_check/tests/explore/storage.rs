@@ -1,20 +1,14 @@
-use crate::build::{Sketch, apply, below, both, is, is_not, not, plus};
+use crate::build::{
+    CUBE_TOP, Moves, Sketch, apply, at_corner, below, both, cube_sketch, is, message_queue, not,
+    plus, size_of,
+};
 use earnest_check::{FindingKind, Limits, Outcome, Status, Verdict, explore};
 use earnest_ir::{Expr, Model, Op, Order, SeqOp};
-use earnest_value::{Domain, Value};
-
-fn size_of(queue: &Expr) -> Expr {
-    Expr::Apply(Op::Seq(SeqOp::Size), vec![queue.clone()])
-}
+use earnest_value::Value;
 
 fn queue_of_up_to(most: i64, max: usize) -> Model {
     let mut sketch = Sketch::new();
-    let messages = vec![sketch.text("a"), sketch.text("b")];
-    let domain = Domain::Seq {
-        item: Box::new(Domain::OneOf(messages.clone())),
-        max,
-    };
-    let queue = sketch.field("queue", domain, vec![Value::seq(Vec::new())]);
+    let (queue, messages) = message_queue(&mut sketch, max);
     let below_three = apply(
         Op::Order(Order::Less),
         &size_of(&queue),
@@ -32,18 +26,10 @@ fn queue_of_up_to(most: i64, max: usize) -> Model {
 }
 
 fn cube() -> Model {
-    let mut sketch = Sketch::new();
-    let axes: Vec<Expr> = ["x", "y", "z"]
-        .iter()
-        .map(|name| sketch.number(name, 0, 29, &[0]))
-        .collect();
-    for (name, axis) in ["moveX", "moveY", "moveZ"].iter().zip(&axes) {
-        sketch.action(name, below(axis, 29), &[(axis, plus(axis, 1))]);
-    }
-    sketch.model()
+    cube_sketch(CUBE_TOP, Moves::Up).0.model()
 }
 
-fn with_graph(jobs: usize) -> Limits {
+fn with_jobs_and_graph(jobs: usize) -> Limits {
     Limits {
         jobs,
         keep_graph: true,
@@ -51,11 +37,27 @@ fn with_graph(jobs: usize) -> Limits {
     }
 }
 
-fn with_jobs(jobs: usize) -> Limits {
+fn with_jobs_only(jobs: usize) -> Limits {
     Limits {
         jobs,
         ..Limits::default()
     }
+}
+
+fn alone_and_with_workers(model: &Model, max_states: usize, worker_counts: &[usize]) -> Outcome {
+    let limited = |jobs: usize| Limits {
+        max_states,
+        ..with_jobs_only(jobs)
+    };
+    let alone = explore(model, &limited(1));
+    for jobs in worker_counts {
+        assert_eq!(
+            explore(model, &limited(*jobs)),
+            alone,
+            "{jobs} jobs, {max_states} states"
+        );
+    }
+    alone
 }
 
 fn broken_after(outcome: &Outcome, steps: usize) {
@@ -67,7 +69,11 @@ fn broken_after(outcome: &Outcome, steps: usize) {
 
 #[test]
 fn a_field_with_too_many_values_to_list_is_searched_like_one_with_few() {
-    for limits in [Limits::default(), with_graph(1), with_graph(4)] {
+    for limits in [
+        Limits::default(),
+        with_jobs_and_graph(1),
+        with_jobs_and_graph(4),
+    ] {
         let listed = explore(&queue_of_up_to(3, 3), &limits);
         let grown = explore(&queue_of_up_to(3, 20), &limits);
         assert_eq!(listed.states, 15, "queues of up to three messages");
@@ -95,7 +101,7 @@ fn a_value_that_leaves_its_domain_is_kept_and_shown_on_its_path() {
 fn workers_find_the_same_states_when_a_value_has_no_code_yet() {
     let listed = explore(&queue_of_up_to(10, 10), &Limits::default());
     assert_eq!(listed.states, 2047, "queues of up to ten messages");
-    for limits in [Limits::default(), with_graph(4), with_jobs(4)] {
+    for limits in [Limits::default(), with_jobs_and_graph(4), with_jobs_only(4)] {
         let grown = explore(&queue_of_up_to(10, 20), &limits);
         assert_eq!(grown.states, listed.states);
         assert_eq!(grown.rules, listed.rules, "the same verdicts and paths");
@@ -107,9 +113,9 @@ fn workers_keep_the_states_that_leave_their_domain() {
     let alone = explore(&queue_of_up_to(10, 9), &Limits::default());
     assert_eq!(alone.states, 2047, "the queues of ten are counted");
     assert_eq!(alone.findings[0].kind, FindingKind::OutOfRange);
-    assert_eq!(explore(&queue_of_up_to(10, 9), &with_jobs(4)), alone);
+    assert_eq!(explore(&queue_of_up_to(10, 9), &with_jobs_only(4)), alone);
     assert_eq!(
-        explore(&queue_of_up_to(10, 9), &with_graph(4)).findings,
+        explore(&queue_of_up_to(10, 9), &with_jobs_and_graph(4)).findings,
         alone.findings
     );
 }
@@ -118,12 +124,12 @@ fn workers_keep_the_states_that_leave_their_domain() {
 fn a_limit_above_four_billion_states_changes_nothing() {
     let model = cube();
     for jobs in [1, 4] {
-        let usual = explore(&model, &with_graph(jobs));
+        let usual = explore(&model, &with_jobs_and_graph(jobs));
         let huge = explore(
             &model,
             &Limits {
                 max_states: usize::MAX,
-                ..with_graph(jobs)
+                ..with_jobs_and_graph(jobs)
             },
         );
         assert_eq!(usual.states, 27_000);
@@ -132,35 +138,13 @@ fn a_limit_above_four_billion_states_changes_nothing() {
 }
 
 fn cube_with_corners(corners: &[[i64; 3]]) -> Model {
-    cube_on_axes_up_to(29, corners)
+    cube_on_axes_up_to(CUBE_TOP, corners)
 }
 
 fn cube_on_axes_up_to(highest: i64, corners: &[[i64; 3]]) -> Model {
-    let mut sketch = Sketch::new();
-    let axes: Vec<Expr> = ["x", "y", "z"]
-        .iter()
-        .map(|name| sketch.number(name, 0, highest, &[0]))
-        .collect();
-    for (name, axis) in ["X", "Y", "Z"].iter().zip(&axes) {
-        sketch.action(
-            &format!("up{name}"),
-            below(axis, 29),
-            &[(axis, plus(axis, 1))],
-        );
-        sketch.action(
-            &format!("down{name}"),
-            is_not(axis, 0),
-            &[(axis, plus(axis, -1))],
-        );
-    }
+    let (mut sketch, axes) = cube_sketch(highest, Moves::UpAndDown);
     for (number, corner) in corners.iter().enumerate() {
-        let at = corner
-            .iter()
-            .zip(&axes)
-            .map(|(value, axis)| is(axis, *value))
-            .reduce(both)
-            .expect("three axes");
-        sketch.rule(&format!("notAt{number}"), not(&at));
+        sketch.rule(&format!("notAt{number}"), not(&at_corner(&axes, *corner)));
     }
     sketch.model()
 }
@@ -175,13 +159,13 @@ fn many_workers_find_the_same_paths_through_states_met_from_several_parts() {
         [29, 29, 29],
     ];
     let model = cube_with_corners(&corners);
-    let alone = explore(&model, &with_jobs(1));
+    let alone = explore(&model, &with_jobs_only(1));
     assert_eq!(alone.states, 27_000);
     for rule in &alone.rules {
         assert_eq!(rule.verdict, Verdict::Broken);
     }
     for jobs in [2, 3, 4, 7, 10] {
-        assert_eq!(explore(&model, &with_jobs(jobs)), alone, "{jobs} jobs");
+        assert_eq!(explore(&model, &with_jobs_only(jobs)), alone, "{jobs} jobs");
     }
 }
 
@@ -189,29 +173,13 @@ fn many_workers_find_the_same_paths_through_states_met_from_several_parts() {
 fn many_workers_stop_at_the_same_state_limit() {
     let model = cube_with_corners(&[[29, 29, 29]]);
     for max_states in [600, 4_000, 26_999] {
-        let limits = |jobs| Limits {
-            max_states,
-            ..with_jobs(jobs)
-        };
-        let alone = explore(&model, &limits(1));
-        for jobs in [2, 4, 10] {
-            assert_eq!(
-                explore(&model, &limits(jobs)),
-                alone,
-                "{jobs} jobs, {max_states} states"
-            );
-        }
+        alone_and_with_workers(&model, max_states, &[2, 4, 10]);
     }
 }
 
 fn queue_and_clock() -> Model {
     let mut sketch = Sketch::new();
-    let messages = vec![sketch.text("a"), sketch.text("b")];
-    let domain = Domain::Seq {
-        item: Box::new(Domain::OneOf(messages.clone())),
-        max: 20,
-    };
-    let queue = sketch.field("queue", domain, vec![Value::seq(Vec::new())]);
+    let (queue, messages) = message_queue(&mut sketch, 20);
     let clock = sketch.number("clock", 0, 3, &[0]);
     let size = size_of(&queue);
     let short = apply(Op::Order(Order::Less), &size, Expr::Const(Value::Int(12)));
@@ -226,22 +194,11 @@ fn queue_and_clock() -> Model {
 #[test]
 fn workers_keep_the_order_of_states_with_and_without_a_code() {
     let model = queue_and_clock();
-    let alone = explore(&model, &with_jobs(1));
+    let alone = explore(&model, &with_jobs_only(1));
     assert_eq!(alone.states, 8191 * 4);
     broken_after(&alone, 10);
     for max_states in (1_916..3_836).step_by(3) {
-        let limits = |jobs| Limits {
-            max_states,
-            ..with_jobs(jobs)
-        };
-        let alone = explore(&model, &limits(1));
-        for jobs in [2, 4] {
-            assert_eq!(
-                explore(&model, &limits(jobs)),
-                alone,
-                "{jobs} jobs, {max_states} states"
-            );
-        }
+        alone_and_with_workers(&model, max_states, &[2, 4]);
     }
 }
 
@@ -249,18 +206,7 @@ fn workers_keep_the_order_of_states_with_and_without_a_code() {
 fn workers_keep_rows_too_wide_for_one_word_the_same_as_one_thread() {
     let model = cube_on_axes_up_to(1 << 30, &[[29, 29, 29]]);
     for max_states in [600, 27_000] {
-        let limits = |jobs| Limits {
-            max_states,
-            ..with_jobs(jobs)
-        };
-        let alone = explore(&model, &limits(1));
+        let alone = alone_and_with_workers(&model, max_states, &[2, 4, 10]);
         assert_eq!(alone.states, max_states, "the walk stays in the cube");
-        for jobs in [2, 4, 10] {
-            assert_eq!(
-                explore(&model, &limits(jobs)),
-                alone,
-                "{jobs} jobs, {max_states} states"
-            );
-        }
     }
 }
