@@ -176,7 +176,26 @@ impl Num {
         }
     }
 
+    #[inline]
     pub(super) fn eval(&self, frame: &mut Frame<'_>) -> Result<i64, Stop> {
+        match self {
+            Self::FieldMath {
+                math,
+                bound,
+                field,
+                number,
+            } => {
+                let first = int_at(frame.state, *field).map_err(Stop::fault)?;
+                let answer = arithmetic(*math, first, *number);
+                frame.note(&answer);
+                Ok(bound.check(answer?)?)
+            }
+            _ => self.rest(frame),
+        }
+    }
+
+    #[inline(never)]
+    fn rest(&self, frame: &mut Frame<'_>) -> Result<i64, Stop> {
         match self {
             Self::Math {
                 math,
@@ -189,17 +208,7 @@ impl Num {
                 frame.note(&answer);
                 Ok(bound.check(answer?)?)
             }
-            Self::FieldMath {
-                math,
-                bound,
-                field,
-                number,
-            } => {
-                let first = int_at(frame.state, *field).map_err(Stop::fault)?;
-                let answer = arithmetic(*math, first, *number);
-                frame.note(&answer);
-                Ok(bound.check(answer?)?)
-            }
+            Self::FieldMath { .. } => self.eval(frame),
             Self::Bounded(bound, inner) => {
                 let number = inner.get(frame).map_err(Stop::fault)?;
                 Ok(bound.check(number)?)
