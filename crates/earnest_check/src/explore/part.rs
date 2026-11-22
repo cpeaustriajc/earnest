@@ -83,7 +83,7 @@ impl PartSink<'_> {
         }
     }
 
-    fn offer_new_with_graph(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
+    fn offer_fresh(&mut self, action: usize, row: &[u64], hash: u64) -> bool {
         let words = self.store.layout().words();
         let (rows, hashes) = (&self.part.rows, &self.part.hashes);
         let met = self.kit.met.entry(
@@ -93,11 +93,16 @@ impl PartSink<'_> {
         );
         match met {
             hashbrown::hash_table::Entry::Occupied(earlier) => {
-                let at = *earlier.get();
-                self.push(action, Target::Fresh(at));
+                if self.graph {
+                    let at = *earlier.get();
+                    self.push(action, Target::Fresh(at));
+                }
                 false
             }
             hashbrown::hash_table::Entry::Vacant(vacant) => {
+                if !self.graph && self.store.find(row, hash).is_some() {
+                    return false;
+                }
                 vacant.insert(hashes.len());
                 self.add_fresh(action, row, hash);
                 true
@@ -110,26 +115,9 @@ impl PartSink<'_> {
         if let [word] = row {
             return self.offer_unseen_word(action, *word, hash);
         }
-        let words = self.store.layout().words();
-        let (rows, hashes) = (&self.part.rows, &self.part.hashes);
-        let met = self.kit.met.entry(
-            hash,
-            |at| same_words(row_at(rows, words, *at), row),
-            |at| hashes.get(*at).copied().unwrap_or(0),
-        );
-        let hashbrown::hash_table::Entry::Vacant(vacant) = met else {
-            return false;
-        };
-        if self.store.find(row, hash).is_some() {
-            return false;
-        }
-        vacant.insert(hashes.len());
-        self.add_fresh(action, row, hash);
-        true
+        self.offer_fresh(action, row, hash)
     }
-}
 
-impl PartSink<'_> {
     #[inline]
     fn offer_unseen_word(&mut self, action: usize, word: u64, hash: u64) -> bool {
         let met = self.kit.met_words.entry(
@@ -144,29 +132,7 @@ impl PartSink<'_> {
         self.add_fresh(action, &[word], hash);
         true
     }
-}
 
-impl Successors for PartSink<'_> {
-    fn offer(
-        &mut self,
-        action: usize,
-        _: usize,
-        base: Base<'_>,
-        updates: &[(usize, Value)],
-    ) -> bool {
-        let counted = self.offer_unless_met(action, base, updates);
-        self.counted += usize::from(counted);
-        counted
-    }
-
-    fn offer_row(&mut self, action: usize, _: usize, row: &[u64], hash: u64) -> bool {
-        let counted = self.offer_encoded(action, row, hash);
-        self.counted += usize::from(counted);
-        counted
-    }
-}
-
-impl PartSink<'_> {
     fn offer_unless_met(
         &mut self,
         action: usize,
@@ -214,7 +180,27 @@ impl PartSink<'_> {
             }
             return false;
         }
-        self.offer_new_with_graph(action, row, hash)
+        self.offer_fresh(action, row, hash)
+    }
+}
+
+impl Successors for PartSink<'_> {
+    fn offer(
+        &mut self,
+        action: usize,
+        _: usize,
+        base: Base<'_>,
+        updates: &[(usize, Value)],
+    ) -> bool {
+        let counted = self.offer_unless_met(action, base, updates);
+        self.counted += usize::from(counted);
+        counted
+    }
+
+    fn offer_row(&mut self, action: usize, _: usize, row: &[u64], hash: u64) -> bool {
+        let counted = self.offer_encoded(action, row, hash);
+        self.counted += usize::from(counted);
+        counted
     }
 }
 
