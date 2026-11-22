@@ -11,6 +11,19 @@ use shared::Shared;
 use std::fmt;
 use val::Val;
 
+/// The value of a [`Code`] for a caller that keeps only numbers and booleans, from
+/// [`Code::scalar`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Scalar {
+    /// The value is this whole number.
+    Int(i64),
+    /// The value is this boolean.
+    Bool(bool),
+    /// The value is of another kind; [`Code::eval`] gives it.
+    Other,
+}
+
 /// An expression together with the form the search evaluates it in.
 ///
 /// Build one with [`Code::new`] once, before the search, and evaluate it in every state with
@@ -71,6 +84,33 @@ impl Code {
         match &self.value {
             Val::Num(num) => num.eval(frame).map(Value::Int).map_err(Stop::fault),
             other => other.eval(frame),
+        }
+    }
+
+    /// The value of the expression when it is a number or a boolean, without building a
+    /// [`Value`]. It has the same effects on the frame as [`Code::eval`], and gives a fault
+    /// exactly when [`Code::eval`] does.
+    ///
+    /// # Errors
+    ///
+    /// The [`Fault`] that [`Code::eval`] gives.
+    #[inline]
+    pub fn scalar(&self, frame: &mut Frame<'_>) -> Result<Scalar, Fault> {
+        match &self.value {
+            Val::Num(num) => num.eval(frame).map(Scalar::Int).map_err(Stop::fault),
+            other => Self::other_scalar(other, frame),
+        }
+    }
+
+    #[inline(never)]
+    fn other_scalar(value: &Val, frame: &mut Frame<'_>) -> Result<Scalar, Fault> {
+        match value {
+            Val::Cond(cond) => cond.eval(frame).map(Scalar::Bool),
+            other => Ok(match other.eval(frame)? {
+                Value::Int(number) => Scalar::Int(number),
+                Value::Bool(flag) => Scalar::Bool(flag),
+                _ => Scalar::Other,
+            }),
         }
     }
 
