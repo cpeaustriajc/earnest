@@ -231,7 +231,7 @@ fn write_level(
         for (place, won) in map.ordinals().enumerate() {
             let start = place * stride;
             if let Some(into) = row_part.get_mut(start..start + stride) {
-                pack(at.row_of(part, won), stride, into);
+                pack(at.row_of(part, won), into);
             }
             if let Some(from) = fresh.froms.get(won) {
                 parent_part.set(place, *from);

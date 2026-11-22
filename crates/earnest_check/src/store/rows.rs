@@ -17,8 +17,8 @@ fn word_of(chunk: &[u8]) -> u64 {
     u64::from_le_bytes(whole)
 }
 
-pub(super) fn pack(row: &[u64], stride: usize, into: &mut [u8]) {
-    for (chunk, word) in into.chunks_mut(WORD_BYTES).zip(row).take(stride) {
+pub(super) fn pack(row: &[u64], into: &mut [u8]) {
+    for (chunk, word) in into.chunks_mut(WORD_BYTES).zip(row) {
         let bytes = word.to_le_bytes();
         chunk.copy_from_slice(bytes.get(..chunk.len()).unwrap_or(&bytes));
     }
@@ -67,7 +67,7 @@ impl Rows {
         let start = self.bytes.len();
         self.bytes.resize(start.saturating_add(self.stride), 0);
         if let Some(into) = self.bytes.get_mut(start..) {
-            pack(row, self.stride, into);
+            pack(row, into);
         }
     }
 
