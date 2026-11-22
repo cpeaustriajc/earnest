@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-DEFAULT_DOWNLOAD_URL="https://github.com/cpeaustriajc/earnest/releases/download/nightly"
+DEFAULT_DOWNLOAD_URL="https://github.com/cpeaustriajc/earnest/releases/download/v0.1.0-nightly"
 
 fail() {
   echo "earnest install: $*" >&2
