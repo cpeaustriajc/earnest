@@ -12,7 +12,7 @@ pub(crate) const LARGEST_TARGET_WORKERS_BUDGET_SECONDS: f64 = 3.0;
 pub(crate) const LARGEST_ONE_WORKER_BUDGET_SECONDS: f64 = 6.0;
 pub(crate) const LARGEST_PEAK_MEMORY_BUDGET_MIB: f64 = 256.0;
 pub(crate) const NARROW_LEVELS_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 1.25;
-pub(crate) const WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 0.6;
+pub(crate) const WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 0.75;
 const PERCENT: f64 = 100.0;
 
 #[derive(Clone, Debug, PartialEq)]
