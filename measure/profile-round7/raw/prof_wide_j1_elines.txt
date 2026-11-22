@@ -1,0 +1,35 @@
+# total samples 7308
+ 14.59%   1066  earnest_check/expand.rs:435
+  7.47%    546  earnest_ir/eval.rs:510
+  4.31%    315  earnest_check/store/layout.rs:63
+  4.27%    312  earnest_check/store/layout.rs:75
+  3.94%    288  earnest_ir/code/num.rs:199
+  3.22%    235  earnest_check/store/layout.rs:45
+  2.33%    170  earnest_check/expand.rs:620
+  2.07%    151  earnest_ir/code/num.rs:85
+  2.05%    150  earnest_ir/code/num.rs:181
+  1.86%    136  earnest_check/expand.rs:566
+  1.86%    136  earnest_check/store/index.rs:143
+  1.83%    134  earnest_check/expand.rs:447
+  1.71%    125  earnest_check/store/layout.rs:51
+  1.64%    120  earnest_ir/code/num.rs:209
+  1.59%    116  earnest_check/expand.rs:308
+  1.49%    109  earnest_check/expand.rs:343
+  1.40%    102  earnest_check/store/layout.rs:41
+  1.37%    100  earnest_ir/code/num.rs:36
+  1.33%     97  earnest_ir/eval.rs:129
+  1.33%     97  earnest_check/expand.rs:264
+  1.25%     91  earnest_check/expand.rs:431
+  1.25%     91  earnest_ir/eval.rs:145
+  1.22%     89  earnest_ir/code/num.rs:225
+  1.16%     85  earnest_ir/code/num.rs:198
+  1.14%     83  earnest_ir/eval.rs:503
+# samples with no earnest frame, by perf symbol and innermost line
+  1.19%     87  <earnest_ir::code::num::Num>::rest  [code/num.rs:?]
+  0.12%      9  <earnest_ir::code::Code>::scalar  [code/mod.rs:?]
+  0.04%      3  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [util.rs:24]
+  0.03%      2  <earnest_check::expand::Seen>::first_row  [ptr/mod.rs:?]
+  0.01%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableTjyEE14reserve_rehashNCNvMs2_NtCs6WLDDI7QwVe_13earnest_c  [x86/sse2.rs:1570]
+  0.01%      1  <earnest_check::explore::here::HereSink>::place_row  [explore/here.rs:?]
+  0.01%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableTjyEE14reserve_rehashNCNvMs2_NtCs6WLDDI7QwVe_13earnest_c  [control/bitmask.rs:40]
+  0.01%      1  main  [??:?]

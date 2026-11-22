@@ -1,0 +1,35 @@
+# total samples 19725
+ 23.89%   4713  earnest_check/store/level.rs:118
+  9.41%   1857  earnest_check/explore/part.rs:125
+  3.97%    784  earnest_check/store/level.rs:124
+  3.32%    654  earnest_check/store/rows.rs:17
+  2.57%    507  earnest_check/store/index.rs:48
+  2.41%    476  earnest_ir/code/num.rs:95
+  1.33%    262  earnest_check/store/layout.rs:75
+  1.18%    232  earnest_check/explore/part.rs:133
+  1.12%    220  earnest_check/expand.rs:734
+  1.05%    208  earnest_ir/code/mod.rs:115
+  0.81%    160  earnest_check/store/layout.rs:61
+  0.81%    159  earnest_ir/code/cond.rs:168
+  0.75%    147  earnest_check/store/layout.rs:45
+  0.73%    144  earnest_ir/code/mod.rs:141
+  0.72%    142  earnest_check/expand.rs:531
+  0.70%    139  earnest_check/expand.rs:610
+  0.63%    124  earnest_ir/code/num.rs:96
+  0.60%    118  earnest_check/explore/part.rs:245
+  0.59%    116  earnest_check/explore/part.rs:175
+  0.57%    113  earnest_check/expand.rs:268
+  0.55%    108  earnest_ir/eval.rs:490
+  0.55%    108  earnest_check/store/layout.rs:63
+  0.54%    106  earnest_check/store/layout.rs:153
+  0.54%    106  earnest_check/store/codec.rs:118
+  0.52%    103  earnest_check/explore/part.rs:186
+# samples with no earnest frame, by perf symbol and innermost line
+  2.54%    502  <earnest_check::explore::part::PartSink>::offer_encoded  [vec/mod.rs:?]
+  0.44%     87  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [util.rs:24]
+  0.35%     69  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [x86/sse2.rs:1570]
+  0.28%     56  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [raw.rs:1754]
+  0.22%     43  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [control/bitmask.rs:40]
+  0.14%     28  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableyE14reserve_rehashNCNvMNtNtCs6WLDDI7QwVe_13earnest_check  [x86/sse2.rs:1570]
+  0.13%     26  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [control/tag.rs:17]
+  0.12%     24  earnest_check::store::level::write_level::{closure#0}  [store/level.rs:?]

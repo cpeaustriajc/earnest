@@ -1,0 +1,13 @@
+
+ Performance counter stats for 'true':
+
+   <not supported>      cycles                                                                
+   <not supported>      instructions                                                          
+   <not supported>      cache-misses                                                          
+
+       0.002132432 seconds time elapsed
+
+       0.001813000 seconds user
+       0.000000000 seconds sys
+
+

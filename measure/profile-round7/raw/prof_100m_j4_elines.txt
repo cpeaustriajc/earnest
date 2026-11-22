@@ -1,0 +1,35 @@
+# total samples 53080
+ 19.74%  10476  earnest_check/store/level.rs:118
+  8.98%   4767  earnest_check/explore/part.rs:125
+  7.71%   4090  earnest_check/store/rows.rs:17
+  4.92%   2614  earnest_check/store/index.rs:48
+  3.64%   1932  earnest_check/store/level.rs:124
+  1.84%    978  earnest_ir/code/num.rs:95
+  1.16%    614  earnest_check/store/layout.rs:75
+  0.95%    505  earnest_check/explore/part.rs:133
+  0.91%    485  earnest_check/explore/part.rs:289
+  0.90%    480  earnest_check/expand.rs:734
+  0.87%    462  earnest_ir/code/mod.rs:115
+  0.86%    457  earnest_check/explore/part.rs:175
+  0.86%    454  earnest_check/store/index.rs:15
+  0.80%    425  earnest_ir/code/cond.rs:168
+  0.72%    383  earnest_check/explore/part.rs:238
+  0.64%    339  earnest_check/store/layout.rs:45
+  0.63%    337  earnest_ir/code/mod.rs:141
+  0.61%    325  earnest_check/explore/part.rs:245
+  0.61%    324  earnest_check/expand.rs:531
+  0.61%    324  earnest_check/store/layout.rs:61
+  0.59%    314  earnest_check/store/codec.rs:116
+  0.50%    267  earnest_check/expand.rs:268
+  0.50%    267  earnest_check/explore/part.rs:246
+  0.50%    263  earnest_check/expand.rs:610
+  0.48%    255  earnest_check/store/layout.rs:153
+# samples with no earnest frame, by perf symbol and innermost line
+  5.90%   3134  <earnest_check::explore::part::PartSink>::offer_encoded  [vec/mod.rs:?]
+  0.38%    201  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [util.rs:24]
+  0.25%    134  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [x86/sse2.rs:1570]
+  0.18%     95  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [control/bitmask.rs:40]
+  0.14%     74  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [raw.rs:1754]
+  0.12%     64  earnest_check::store::level::write_level::{closure#0}  [store/level.rs:?]
+  0.08%     45  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableyE14reserve_rehashNCNvMNtNtCs6WLDDI7QwVe_13earnest_check  [x86/sse2.rs:1570]
+  0.08%     42  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableyE14reserve_rehashNCNvMNtNtCs6WLDDI7QwVe_13earnest_check  [util.rs:24]

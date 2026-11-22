@@ -1,0 +1,14 @@
+diff --git a/crates/earnest_check/src/store/rows.rs b/crates/earnest_check/src/store/rows.rs
+index 45c78fe..230f773 100644
+--- a/crates/earnest_check/src/store/rows.rs
++++ b/crates/earnest_check/src/store/rows.rs
+@@ -10,6 +10,9 @@ fn word_of(chunk: &[u8]) -> u64 {
+     if let Ok(whole) = <[u8; WORD_BYTES]>::try_from(chunk) {
+         return u64::from_le_bytes(whole);
+     }
++    if let Ok(half) = <[u8; 4]>::try_from(chunk) {
++        return u64::from(u32::from_le_bytes(half));
++    }
+     let mut whole = [0; WORD_BYTES];
+     if let Some(start) = whole.get_mut(..chunk.len()) {
+         start.copy_from_slice(chunk);

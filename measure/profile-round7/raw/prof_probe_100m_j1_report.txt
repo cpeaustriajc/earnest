@@ -1,0 +1,14 @@
+    30.28%  [.] <earnest_check::explore::Search>::work                                                                                      
+    23.97%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                     
+    18.69%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_
+     4.16%  [.] <earnest_ir::code::Code>::scalar                                                                                            
+     3.14%  [.] <earnest_check::store::Store>::read_state                                                                                   
+     2.60%  [.] earnest_check::store::level::write_level::{closure#0}                                                                       
+     2.56%  [.] <earnest_ir::code::cond::Cond>::leaf                                                                                        
+     2.14%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                  
+     1.81%  [k] clear_page_erms                                                                                                             
+     1.50%  [k] exc_page_fault                                                                                                              
+     1.43%  [.] __memset_avx512_unaligned_erms                                                                                              
+     1.39%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<ear
+     1.03%  [.] <earnest_check::store::level::Winners>::of                                                                                  
+     0.93%  [.] __memmove_avx512_unaligned_erms                                                                                             

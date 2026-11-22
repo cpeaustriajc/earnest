@@ -1,0 +1,513 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 4K of event 'cpu-clock'
+# Event count (approx.): 42639173808
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    23.48%  [.] <earnest_check::explore::Search>::work                                                                                                               -      -            
+            |          
+            |--3.02%--<earnest_check::explore::part::Part>::file_by_shard (inlined)
+            |          <earnest_check::explore::Search>::expand_ids (inlined)
+            |          <earnest_check::explore::Search>::take_parts (inlined)
+            |          <earnest_check::explore::Search>::work::{closure#0} (inlined)
+            |          <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          <earnest_check::explore::Search>::work
+            |          <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+            |          <earnest_check::explore::Search>::spread_level (inlined)
+            |          <earnest_check::explore::Search>::spread_round (inlined)
+            |          <earnest_check::explore::Search>::level
+            |          <earnest_check::explore::Search>::run (inlined)
+            |          earnest_check::explore::explore
+            |          earnest::run::explore_each::{closure#0} (inlined)
+            |          earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |          std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |          <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |          <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <std::sys::thread::unix::Thread>::new::thread_start
+            |          start_thread
+            |          clone3
+            |          
+            |--2.56%--<earnest_check::expand::Expand>::state::<earnest_check::explore::part::PartSink> (inlined)
+            |          <earnest_check::explore::Search>::expand_ids (inlined)
+            |          <earnest_check::explore::Search>::take_parts (inlined)
+            |          <earnest_check::explore::Search>::work::{closure#0} (inlined)
+            |          <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          <earnest_check::explore::Search>::work
+            |          <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+            |          <earnest_check::explore::Search>::spread_level (inlined)
+            |          <earnest_check::explore::Search>::spread_round (inlined)
+            |          <earnest_check::explore::Search>::level
+            |          <earnest_check::explore::Search>::run (inlined)
+            |          earnest_check::explore::explore
+            |          earnest::run::explore_each::{closure#0} (inlined)
+            |          earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |          std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |          <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |          <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <std::sys::thread::unix::Thread>::new::thread_start
+            |          start_thread
+            |          clone3
+            |          
+             --2.37%--<earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::try_input::<false> (inlined)
+                       <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::action (inlined)
+                       <earnest_check::expand::Expand>::state::<earnest_check::explore::part::PartSink> (inlined)
+                       <earnest_check::explore::Search>::expand_ids (inlined)
+                       <earnest_check::explore::Search>::take_parts (inlined)
+                       <earnest_check::explore::Search>::work::{closure#0} (inlined)
+                       <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       <earnest_check::explore::Search>::work
+                       <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+                       <earnest_check::explore::Search>::spread_level (inlined)
+                       <earnest_check::explore::Search>::spread_round (inlined)
+                       <earnest_check::explore::Search>::level
+                       <earnest_check::explore::Search>::run (inlined)
+                       earnest_check::explore::explore
+                       earnest::run::explore_each::{closure#0} (inlined)
+                       earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+                       std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+                       <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                       <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <std::sys::thread::unix::Thread>::new::thread_start
+                       start_thread
+                       clone3
+
+    22.22%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                         -      -            
+            |          
+            |--8.90%--<earnest_check::explore::part::PartSink>::offer_encoded
+            |          <earnest_check::explore::part::PartSink as earnest_check::expand::Successors>::offer_row (inlined)
+            |          <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::try_input::<false> (inlined)
+            |          <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::action (inlined)
+            |          <earnest_check::expand::Expand>::state::<earnest_check::explore::part::PartSink> (inlined)
+            |          <earnest_check::explore::Search>::expand_ids (inlined)
+            |          <earnest_check::explore::Search>::take_parts (inlined)
+            |          <earnest_check::explore::Search>::work::{closure#0} (inlined)
+            |          <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |          <earnest_check::explore::Search>::work
+            |          <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+            |          <earnest_check::explore::Search>::spread_level (inlined)
+            |          <earnest_check::explore::Search>::spread_round (inlined)
+            |          <earnest_check::explore::Search>::level
+            |          <earnest_check::explore::Search>::run (inlined)
+            |          earnest_check::explore::explore
+            |          earnest::run::explore_each::{closure#0} (inlined)
+            |          earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |          std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |          <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |          <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <std::sys::thread::unix::Thread>::new::thread_start
+            |          start_thread
+            |          clone3
+            |          
+            |--5.10%--core::core_arch::x86::sse2::_mm_movemask_epi8 (inlined)
+            |          |          
+            |           --5.08%--<hashbrown::control::group::sse2::Group>::match_tag (inlined)
+            |                     |          
+            |                      --4.69%--<hashbrown::raw::RawTableInner>::find_or_find_insert_index_inner (inlined)
+            |                                <hashbrown::raw::RawTable<u64>>::find_or_find_insert_index::<<earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#0}, <earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#1}> (inlined)
+            |                                <hashbrown::table::HashTable<u64>>::entry::<<earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#0}, <earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#1}> (inlined)
+            |                                <earnest_check::explore::part::PartSink>::offer_unseen_word (inlined)
+            |                                <earnest_check::explore::part::PartSink>::offer_unseen (inlined)
+            |                                <earnest_check::explore::part::PartSink>::offer_encoded
+            |                                <earnest_check::explore::part::PartSink as earnest_check::expand::Successors>::offer_row (inlined)
+            |                                <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::try_input::<false> (inlined)
+            |                                <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::action (inlined)
+            |                                <earnest_check::expand::Expand>::state::<earnest_check::explore::part::PartSink> (inlined)
+            |                                <earnest_check::explore::Search>::expand_ids (inlined)
+            |                                <earnest_check::explore::Search>::take_parts (inlined)
+            |                                <earnest_check::explore::Search>::work::{closure#0} (inlined)
+            |                                <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |                                std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+            |                                std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+            |                                <earnest_check::explore::Search>::work
+            |                                <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+            |                                std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+            |                                <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |                                std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+            |                                std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+            |                                std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+            |                                <earnest_check::explore::Search>::spread_level (inlined)
+            |                                <earnest_check::explore::Search>::spread_round (inlined)
+            |                                <earnest_check::explore::Search>::level
+            |                                <earnest_check::explore::Search>::run (inlined)
+            |                                earnest_check::explore::explore
+            |                                earnest::run::explore_each::{closure#0} (inlined)
+            |                                earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |                                std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |                                std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |                                <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |                                std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |                                std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |                                std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |                                <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |                                <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                <std::sys::thread::unix::Thread>::new::thread_start
+            |                                start_thread
+            |                                clone3
+            |          
+             --2.25%--<hashbrown::control::tag::Tag>::full (inlined)
+                       <hashbrown::raw::RawTableInner>::find_or_find_insert_index_inner (inlined)
+                       <hashbrown::raw::RawTable<u64>>::find_or_find_insert_index::<<earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#0}, <earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#1}> (inlined)
+                       <hashbrown::table::HashTable<u64>>::entry::<<earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#0}, <earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#1}> (inlined)
+                       <earnest_check::explore::part::PartSink>::offer_unseen_word (inlined)
+                       <earnest_check::explore::part::PartSink>::offer_unseen (inlined)
+                       <earnest_check::explore::part::PartSink>::offer_encoded
+                       <earnest_check::explore::part::PartSink as earnest_check::expand::Successors>::offer_row (inlined)
+                       <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::try_input::<false> (inlined)
+                       <earnest_check::expand::Expansion<earnest_check::explore::part::PartSink>>::action (inlined)
+                       <earnest_check::expand::Expand>::state::<earnest_check::explore::part::PartSink> (inlined)
+                       <earnest_check::explore::Search>::expand_ids (inlined)
+                       <earnest_check::explore::Search>::take_parts (inlined)
+                       <earnest_check::explore::Search>::work::{closure#0} (inlined)
+                       <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       <earnest_check::explore::Search>::work
+                       <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+                       <earnest_check::explore::Search>::spread_level (inlined)
+                       <earnest_check::explore::Search>::spread_round (inlined)
+                       <earnest_check::explore::Search>::level
+                       <earnest_check::explore::Search>::run (inlined)
+                       earnest_check::explore::explore
+                       earnest::run::explore_each::{closure#0} (inlined)
+                       earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+                       std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+                       <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                       <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <std::sys::thread::unix::Thread>::new::thread_start
+                       start_thread
+                       clone3
+
+    17.84%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                    -      -            
+            |          
+            |--5.92%--core::core_arch::x86::sse2::_mm_movemask_epi8 (inlined)
+            |          |          
+            |           --5.71%--<hashbrown::control::group::sse2::Group>::match_tag (inlined)
+            |                     |          
+            |                      --5.66%--<hashbrown::raw::RawTableInner>::find_or_find_insert_index_inner (inlined)
+            |                                <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::find_or_find_insert_index::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+            |                                <hashbrown::table::HashTable<earnest_check::store::index::Key<u32>>>::entry::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+            |                                <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0} (inlined)
+            |                                earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}
+            |                                <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#0} (inlined)
+            |                                <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3} (inlined)
+            |                                std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0} (inlined)
+            |                                <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+            |                                std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>> (inlined)
+            |                                std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+            |                                std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()> (inlined)
+            |                                <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run
+            |                                earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}> (inlined)
+            |                                <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level (inlined)
+            |                                <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::place_level (inlined)
+            |                                <earnest_check::store::index::Index>::place_level (inlined)
+            |                                <earnest_check::store::Store>::place_level (inlined)
+            |                                <earnest_check::explore::Search>::merge_spread (inlined)
+            |                                <earnest_check::explore::Search>::merge_any (inlined)
+            |                                <earnest_check::explore::Search>::spread_round (inlined)
+            |                                <earnest_check::explore::Search>::level
+            |                                <earnest_check::explore::Search>::run (inlined)
+            |                                earnest_check::explore::explore
+            |                                earnest::run::explore_each::{closure#0} (inlined)
+            |                                earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |                                std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |                                std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |                                <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |                                std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |                                std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |                                std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |                                <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |                                <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |                                <std::sys::thread::unix::Thread>::new::thread_start
+            |                                start_thread
+            |                                clone3
+            |          
+            |--5.15%--<earnest_check::store::index::Key<u32> as earnest_check::store::index::Filed>::holds (inlined)
+            |          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0} (inlined)
+            |          <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::find_or_find_insert_index::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>::{closure#0} (inlined)
+            |          <hashbrown::raw::RawTableInner>::find_or_find_insert_index_inner (inlined)
+            |          <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::find_or_find_insert_index::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+            |          <hashbrown::table::HashTable<earnest_check::store::index::Key<u32>>>::entry::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+            |          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0} (inlined)
+            |          earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}
+            |          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#0} (inlined)
+            |          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3} (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+            |          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+            |          std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()> (inlined)
+            |          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run
+            |          earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}> (inlined)
+            |          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level (inlined)
+            |          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::place_level (inlined)
+            |          <earnest_check::store::index::Index>::place_level (inlined)
+            |          <earnest_check::store::Store>::place_level (inlined)
+            |          <earnest_check::explore::Search>::merge_spread (inlined)
+            |          <earnest_check::explore::Search>::merge_any (inlined)
+            |          <earnest_check::explore::Search>::spread_round (inlined)
+            |          <earnest_check::explore::Search>::level
+            |          <earnest_check::explore::Search>::run (inlined)
+            |          earnest_check::explore::explore
+            |          earnest::run::explore_each::{closure#0} (inlined)
+            |          earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+            |          std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+            |          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+            |          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+            |          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+            |          <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+            |          <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+            |          <std::sys::thread::unix::Thread>::new::thread_start
+            |          start_thread
+            |          clone3
+            |          
+             --2.13%--<core::num::nonzero::NonZero<u16>>::trailing_zeros (inlined)
+                       <hashbrown::control::bitmask::BitMask>::nonzero_trailing_zeros (inlined)
+                       <hashbrown::control::bitmask::BitMask>::lowest_set_bit (inlined)
+                       |          
+                        --2.06%--<hashbrown::control::bitmask::BitMaskIter as core::iter::traits::iterator::Iterator>::next (inlined)
+                                  <hashbrown::raw::RawTableInner>::find_or_find_insert_index_inner (inlined)
+                                  <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::find_or_find_insert_index::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+                                  <hashbrown::table::HashTable<earnest_check::store::index::Key<u32>>>::entry::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+                                  <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0} (inlined)
+                                  earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}
+                                  <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#0} (inlined)
+                                  <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3} (inlined)
+                                  std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0} (inlined)
+                                  <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                                  std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+                                  std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>> (inlined)
+                                  std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+                                  std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()> (inlined)
+                                  <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run
+                                  earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}> (inlined)
+                                  <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level (inlined)
+                                  <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::place_level (inlined)
+                                  <earnest_check::store::index::Index>::place_level (inlined)
+                                  <earnest_check::store::Store>::place_level (inlined)
+                                  <earnest_check::explore::Search>::merge_spread (inlined)
+                                  <earnest_check::explore::Search>::merge_any (inlined)
+                                  <earnest_check::explore::Search>::spread_round (inlined)
+                                  <earnest_check::explore::Search>::level
+                                  <earnest_check::explore::Search>::run (inlined)
+                                  earnest_check::explore::explore
+                                  earnest::run::explore_each::{closure#0} (inlined)
+                                  earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+                                  std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+                                  std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+                                  <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                                  std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                                  std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+                                  std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                                  std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+                                  <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                                  <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                                  <std::sys::thread::unix::Thread>::new::thread_start
+                                  start_thread
+                                  clone3
+
+     8.15%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                       -      -            
+            |          
+             --7.40%--earnest_check::store::rows::word_of (inlined)
+                       <earnest_check::store::rows::Rows>::unpack
+                       <earnest_check::store::Store>::read_state
+                       <earnest_check::explore::Search>::expand_ids (inlined)
+                       <earnest_check::explore::Search>::take_parts (inlined)
+                       <earnest_check::explore::Search>::work::{closure#0} (inlined)
+                       <<earnest_check::explore::Search>::work::{closure#0} as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<<earnest_check::explore::Search>::work::{closure#0}>, ()> (inlined)
+                       <earnest_check::explore::Search>::work
+                       <earnest_check::explore::Search>::spread_level::{closure#0} (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::Search>::spread_level::{closure#0}, ()>::{closure#0}>, ()> (inlined)
+                       std::thread::scoped::scope::<<earnest_check::explore::Search>::spread_level::{closure#0}, ()> (inlined)
+                       <earnest_check::explore::Search>::spread_level (inlined)
+                       <earnest_check::explore::Search>::spread_round (inlined)
+                       <earnest_check::explore::Search>::level
+                       <earnest_check::explore::Search>::run (inlined)
+                       earnest_check::explore::explore
+                       earnest::run::explore_each::{closure#0} (inlined)
+                       earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+                       std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+                       <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+                       std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                       std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+                       <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                       <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                       <std::sys::thread::unix::Thread>::new::thread_start
+                       start_thread
+                       clone3
+
+     4.57%  [k] clear_page_erms                                                                                                                                                                          -      -            
+            |
+            ---get_page_from_freelist
+               __alloc_frozen_pages_noprof
+               alloc_pages_mpol
+               vma_alloc_folio_noprof
+               do_anonymous_page
+               __handle_mm_fault
+               handle_mm_fault
+               exc_page_fault
+               asm_exc_page_fault
+               |          
+                --2.73%--core::ptr::copy_nonoverlapping::<u8> (inlined)
+                          <hashbrown::raw::RawTableInner>::resize_inner::<allocator_api2::stable::alloc::global::Global> (inlined)
+                          <hashbrown::raw::RawTableInner>::reserve_rehash_inner::<allocator_api2::stable::alloc::global::Global> (inlined)
+                          <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>
+                          <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+                          <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::find_or_find_insert_index::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+                          <hashbrown::table::HashTable<earnest_check::store::index::Key<u32>>>::entry::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#0}, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}> (inlined)
+                          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0} (inlined)
+                          earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}
+                          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#0} (inlined)
+                          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3} (inlined)
+                          std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0} (inlined)
+                          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+                          std::panicking::catch_unwind::<(), core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>> (inlined)
+                          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::scoped::scope<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()>::{closure#0}>, ()> (inlined)
+                          std::thread::scoped::scope::<<earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run::{closure#3}, ()> (inlined)
+                          <earnest_check::explore::workers::Crew as earnest_check::store::level::Spread>::run
+                          earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}> (inlined)
+                          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level (inlined)
+                          <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::place_level (inlined)
+                          <earnest_check::store::index::Index>::place_level (inlined)
+                          <earnest_check::store::Store>::place_level (inlined)
+                          <earnest_check::explore::Search>::merge_spread (inlined)
+                          <earnest_check::explore::Search>::merge_any (inlined)
+                          <earnest_check::explore::Search>::spread_round (inlined)
+                          <earnest_check::explore::Search>::level
+                          <earnest_check::explore::Search>::run (inlined)
+                          earnest_check::explore::explore
+                          earnest::run::explore_each::{closure#0} (inlined)
+                          earnest::workers::run_each::<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0} (inlined)
+                          std::sys::backtrace::__rust_begin_short_backtrace::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>
+                          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0} (inlined)
+                          <core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                          std::panicking::catch_unwind::do_call::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                          std::panicking::catch_unwind::<alloc::vec::Vec<(usize, earnest::run::Ran)>, core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>> (inlined)
+                          std::panic::catch_unwind::<core::panic::unwind_safe::AssertUnwindSafe<std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1}::{closure#0}>, alloc::vec::Vec<(usize, earnest::run::Ran)>> (inlined)
+                          std::thread::lifecycle::spawn_unchecked::<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} (inlined)
+                          <std::thread::lifecycle::spawn_unchecked<earnest::workers::run_each<earnest::run::Search, earnest::run::Ran, earnest::run::explore_each::{closure#0}>::{closure#0}::{closure#0}::{closure#0}, alloc::vec::Vec<(usize, earnest::run::Ran)>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                          <alloc::boxed::Box<dyn core::ops::function::FnOnce<(), Output = ()> + core::marker::Send> as core::ops::function::FnOnce<()>>::call_once (inlined)
+                          <std::sys::thread::unix::Thread>::new::thread_start
+                          start_thread
+                          clone3
+
+     4.16%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                  -      -            
+     2.64%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     2.61%  [.] <earnest_ir::code::cond::Cond>::leaf                                                                                                                           -      -            
+     2.51%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                     -      -            
+     1.60%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>  -      -            
+     1.57%  [.] __memset_avx512_unaligned_erms                                                                                                                                                           -      -            
+     1.57%  [k] exc_page_fault                                                                                                                                                                           -      -            
+            |
+            ---asm_exc_page_fault
+
+     1.55%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                          -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

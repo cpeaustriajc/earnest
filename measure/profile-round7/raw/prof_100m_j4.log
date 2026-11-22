@@ -1,0 +1,17 @@
+## machine before 2026-11-22T16:00:43Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087        1014        6872          12        8543       15073
+loadavg: 1.26 1.27 1.48 1/113 11323
+gnutime wall=14.30 user=48.64 sys=4.61 maxrss_kb=1654092
+      "status": "pass",
+      "states": 100000000,
+[ perf record: Woken up 14 times to write data ]
+[ perf record: Captured and wrote 3.835 MB /SCRATCH/prof/100m_j4.data (53080 samples) ]
+## machine after 2026-11-22T16:00:58Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087        1049        6832          12        8547       15038
+loadavg: 1.87 1.40 1.52 1/118 12029

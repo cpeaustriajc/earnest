@@ -1,0 +1,585 @@
+{
+ "total": 39686,
+ "groups": {
+  "c": 13451,
+  "a": 7940,
+  "d": 7467,
+  "b": 5872,
+  "f": 2731,
+  "e": 1173,
+  "g": 1052
+ },
+ "subgroups": [
+  [
+   "c",
+   "part table: hashbrown in explore/part.rs",
+   4926
+  ],
+  [
+   "a",
+   "index: hashbrown in store/level.rs",
+   4723
+  ],
+  [
+   "d",
+   "eval: earnest_ir",
+   4393
+  ],
+  [
+   "b",
+   "rows: store/rows.rs",
+   4033
+  ],
+  [
+   "c",
+   "parts/claim: explore/part.rs",
+   3662
+  ],
+  [
+   "d",
+   "eval: expand.rs",
+   3068
+  ],
+  [
+   "c",
+   "parts/claim (by name)",
+   2894
+  ],
+  [
+   "a",
+   "index: store/index.rs",
+   2608
+  ],
+  [
+   "f",
+   "kernel: page faults",
+   2066
+  ],
+  [
+   "c",
+   "parts/claim: store/level.rs",
+   1921
+  ],
+  [
+   "e",
+   "hash: store/layout.rs mix/hash_words",
+   1173
+  ],
+  [
+   "b",
+   "rows: store/layout.rs",
+   1038
+  ],
+  [
+   "g",
+   "libc memmove/memset (caller not resolved)",
+   942
+  ],
+  [
+   "a",
+   "index: hashbrown outlined ({closure#1}>)",
+   600
+  ],
+  [
+   "b",
+   "rows: store/codec.rs",
+   491
+  ],
+  [
+   "f",
+   "alloc: libc memmove inside realloc",
+   284
+  ],
+  [
+   "f",
+   "kernel: mmap/munmap/madvise",
+   267
+  ],
+  [
+   "b",
+   "rows: store.rs read_state",
+   255
+  ],
+  [
+   "f",
+   "alloc: libc malloc/realloc/free",
+   112
+  ],
+  [
+   "g",
+   "loop: explore/workers.rs",
+   58
+  ],
+  [
+   "c",
+   "part table: hashbrown outlined ()",
+   48
+  ],
+  [
+   "b",
+   "rows (by name)",
+   41
+  ],
+  [
+   "g",
+   "kernel: thread start/exit, exec",
+   35
+  ],
+  [
+   "b",
+   "rows: store.rs outside",
+   10
+  ],
+  [
+   "d",
+   "eval (by name)",
+   6
+  ],
+  [
+   "a",
+   "index: hashbrown in store/index.rs",
+   6
+  ],
+  [
+   "g",
+   "libc other: unlink_chunk.isra.0",
+   5
+  ],
+  [
+   "b",
+   "rows: store.rs wide_state",
+   4
+  ],
+  [
+   "g",
+   "libc other: __mprotect",
+   3
+  ],
+  [
+   "g",
+   "libc other: cfree@GLIBC_2.2.5",
+   3
+  ],
+  [
+   "f",
+   "alloc: Rust side (raw_vec, drop)",
+   2
+  ],
+  [
+   "a",
+   "index: store.rs place",
+   2
+  ],
+  [
+   "g",
+   "other dso: /usr/bin/dash",
+   1
+  ],
+  [
+   "g",
+   "libc other: _dl_relocate_object",
+   1
+  ],
+  [
+   "a",
+   "index: hashbrown in store.rs",
+   1
+  ],
+  [
+   "g",
+   "other dso: [vdso]",
+   1
+  ],
+  [
+   "g",
+   "threads/locks: std",
+   1
+  ],
+  [
+   "g",
+   "other user: <serde_json::ser::Compound<&mut alloc::vec::Vec<u8>, serde_json::ser::CompactFormatter> as serde_core::ser::SerializeStr",
+   1
+  ],
+  [
+   "g",
+   "other dso: /usr/bin/time",
+   1
+  ]
+ ],
+ "kernel_sites": [
+  [
+   "kernel: page faults",
+   "libc.so.6",
+   934
+  ],
+  [
+   "kernel: page faults",
+   "parts/claim: explore/part.rs",
+   595
+  ],
+  [
+   "kernel: page faults",
+   "index: hashbrown outlined ({closure#1}>)",
+   381
+  ],
+  [
+   "kernel: mmap/munmap/madvise",
+   "libc.so.6",
+   267
+  ],
+  [
+   "kernel: page faults",
+   "parts/claim: store/level.rs",
+   156
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "eval: expand.rs",
+   6
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "rows: store/rows.rs",
+   6
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "index: hashbrown in store/level.rs",
+   5
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "index: store/index.rs",
+   5
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "parts/claim: explore/part.rs",
+   3
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "part table: hashbrown in explore/part.rs",
+   3
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "libc.so.6",
+   2
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "parts/claim: store/level.rs",
+   2
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "hash: store/layout.rs mix/hash_words",
+   1
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "rows: store/layout.rs",
+   1
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "index: hashbrown outlined ({closure#1}>)",
+   1
+  ]
+ ],
+ "symbols": [
+  [
+   "_RNvMs1_NtNtCs6WLDDI7QwVe_13earnest_check7explore7workersNtB7_6Search4work",
+   9337,
+   {
+    "g": 58,
+    "d": 4619,
+    "e": 1128,
+    "c": 2473,
+    "b": 715,
+    "a": 344
+   }
+  ],
+  [
+   "_RNvMNtNtCs6WLDDI7QwVe_13earnest_check7explore4partNtB2_8PartSink13offer_encoded",
+   8896,
+   {
+    "c": 8896
+   }
+  ],
+  [
+   "_RNCINvNtNtCs6WLDDI7QwVe_13earnest_check5store5level6gatherINtNtCs3BN1jqgSbDf_5alloc3vec3VecIBV_jEENCNvMs_B4_INtNtB6_5index6ShardsINtB1L_3KeymEE11claim_level0Es_0B8_",
+   7684,
+   {
+    "a": 6986,
+    "c": 698
+   }
+  ],
+  [
+   "_RNvMNtNtCs6WLDDI7QwVe_13earnest_check5store4rowsNtB2_4Rows6unpack",
+   3803,
+   {
+    "b": 3803
+   }
+  ],
+  [
+   "_RNvMNtCseJVEDqkKr5B_10earnest_ir4codeNtB2_4Code6scalar",
+   1753,
+   {
+    "d": 1753
+   }
+  ],
+  [
+   "_RNCNvNtNtCs6WLDDI7QwVe_13earnest_check5store5level11write_level0B7_",
+   1147,
+   {
+    "c": 917,
+    "b": 230
+   }
+  ],
+  [
+   "_RNvMNtCs6WLDDI7QwVe_13earnest_check5storeNtB2_5Store10read_state",
+   1124,
+   {
+    "b": 1123,
+    "a": 1
+   }
+  ],
+  [
+   "_RNvMs_NtNtCseJVEDqkKr5B_10earnest_ir4code4condNtB4_4Cond4leaf",
+   1091,
+   {
+    "d": 1091
+   }
+  ],
+  [
+   "__memset_avx512_unaligned_erms (libc)",
+   698,
+   {
+    "g": 698
+   }
+  ],
+  [
+   "_RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE14reserve_rehashNCNCNvMs_NtBU_5levelINtBS_6ShardsBP_E11claim_level0s_0EBW_",
+   641,
+   {
+    "a": 600,
+    "e": 41
+   }
+  ],
+  [
+   "[k] exc_page_fault",
+   591,
+   {
+    "f": 591
+   }
+  ],
+  [
+   "__memmove_avx512_unaligned_erms (libc)",
+   528,
+   {
+    "f": 284,
+    "g": 244
+   }
+  ],
+  [
+   "_RNvMs0_NtNtCs6WLDDI7QwVe_13earnest_check5store5levelNtB5_7Winners2of",
+   419,
+   {
+    "c": 419
+   }
+  ],
+  [
+   "[k] _raw_spin_lock",
+   334,
+   {
+    "f": 334
+   }
+  ],
+  [
+   "[k] memcg1_commit_charge",
+   248,
+   {
+    "f": 248
+   }
+  ],
+  [
+   "[k] _raw_spin_unlock_irqrestore",
+   157,
+   {
+    "f": 151,
+    "g": 6
+   }
+  ],
+  [
+   "[k] __list_del_entry_valid_or_report",
+   144,
+   {
+    "f": 144
+   }
+  ],
+  [
+   "[k] clear_page_erms",
+   124,
+   {
+    "f": 124
+   }
+  ],
+  [
+   "[k] __pte_offset_map_lock",
+   113,
+   {
+    "f": 113
+   }
+  ],
+  [
+   "[k] unmap_page_range",
+   80,
+   {
+    "f": 80
+   }
+  ],
+  [
+   "_RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableyE14reserve_rehashNCNvMNtNtCs6WLDDI7QwVe_13earnest_check7explore4partNtB1c_8PartSink17offer_unseen_words_0EB1g_",
+   51,
+   {
+    "c": 48,
+    "e": 3
+   }
+  ],
+  [
+   "[k] do_anonymous_page",
+   49,
+   {
+    "f": 49
+   }
+  ],
+  [
+   "malloc (libc)",
+   36,
+   {
+    "f": 36
+   }
+  ],
+  [
+   "[k] __handle_mm_fault",
+   35,
+   {
+    "f": 35
+   }
+  ],
+  [
+   "[k] __raw_callee_save___pv_queued_spin_unlock",
+   35,
+   {
+    "f": 35
+   }
+  ],
+  [
+   "_int_malloc (libc)",
+   35,
+   {
+    "f": 35
+   }
+  ],
+  [
+   "_int_free_merge_chunk (libc)",
+   27,
+   {
+    "f": 27
+   }
+  ],
+  [
+   "[k] ___pte_offset_map",
+   26,
+   {
+    "f": 26
+   }
+  ],
+  [
+   "[k] get_mem_cgroup_from_mm",
+   25,
+   {
+    "f": 25
+   }
+  ],
+  [
+   "[k] lock_vma_under_rcu",
+   25,
+   {
+    "f": 25
+   }
+  ],
+  [
+   "[k] mas_walk",
+   21,
+   {
+    "f": 21
+   }
+  ],
+  [
+   "[k] get_page_from_freelist",
+   20,
+   {
+    "f": 20
+   }
+  ],
+  [
+   "[k] folio_add_new_anon_rmap",
+   17,
+   {
+    "f": 17
+   }
+  ],
+  [
+   "[k] _raw_spin_trylock",
+   17,
+   {
+    "f": 17
+   }
+  ],
+  [
+   "[k] __lruvec_stat_mod_folio",
+   16,
+   {
+    "f": 16
+   }
+  ],
+  [
+   "[k] __alloc_frozen_pages_noprof",
+   15,
+   {
+    "f": 15
+   }
+  ],
+  [
+   "[k] mod_memcg_lruvec_state",
+   14,
+   {
+    "f": 14
+   }
+  ],
+  [
+   "[k] try_charge_memcg",
+   14,
+   {
+    "f": 14
+   }
+  ],
+  [
+   "[k] free_unref_folios",
+   12,
+   {
+    "f": 12
+   }
+  ],
+  [
+   "[k] __folio_batch_add_and_move",
+   11,
+   {
+    "f": 11
+   }
+  ]
+ ]
+}

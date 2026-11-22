@@ -1,0 +1,13 @@
+# Rows.*unpack: 10 of 4136 samples (0.24%)
+  0.24%  earnest_check::explore::explore < earnest::run::explore_each::{closure#0} < ::workers::run_each::::{closure#0}::{closure#0}::{closure#0}
+# ^__mem(set|move): 65 of 4136 samples (1.57%)
+  1.47%  earnest_check::explore::explore < earnest::run::explore_each::{closure#0} < ::workers::run_each::::{closure#0}::{closure#0}::{closure#0}
+  0.10%  earnest_check::store::level::write_level < <earnest_check::store::index::Shards>::place_level < earnest_check::explore::explore
+# exc_page_fault|asm_exc_page_fault|clear_page: 254 of 4136 samples (6.14%)
+  3.02%  tore::index::Shards>::claim_level::{closure#0}::{closure#1}> < tore::index::Shards>::claim_level::{closure#0}::{closure#1}> < tore::index::Shards>::claim_level::{closure#0}::{closure#1}>
+  1.55%  earnest_check::store::level::write_level < <earnest_check::store::index::Shards>::place_level < earnest_check::explore::explore
+  0.68%  earnest_check::explore::explore < earnest::run::explore_each::{closure#0} < ::workers::run_each::::{closure#0}::{closure#0}::{closure#0}
+  0.46%  rnest_check::store::index::Shards>::claim_level::{closure#0} < tore::index::Shards>::claim_level::{closure#0}>::{closure#1} < nest_check::store::index::Shards>::claim_level::{closure#0}>
+  0.27%  earnest_check::explore::part::move_row < earnest_check::explore::explore < earnest::run::explore_each::{closure#0}
+  0.10%  rnest_check::store::index::Shards>::place_level::{closure#0} < tore::index::Shards>::place_level::{closure#0}>::{closure#1} < nest_check::store::index::Shards>::place_level::{closure#0}>
+  0.07%  earnest_check::explore::part::append_row < earnest_check::explore::explore < earnest::run::explore_each::{closure#0}

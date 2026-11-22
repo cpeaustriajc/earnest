@@ -1,0 +1,14 @@
+## machine before 2026-11-22T16:14:16Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         764        6622          12        9043       15322
+loadavg: 0.85 0.97 1.15 1/109 31799
+      "status": "pass",
+      "states": 100000000,
+## machine after 2026-11-22T16:15:07Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         809        6575          12        9045       15277
+loadavg: 0.94 0.97 1.14 1/112 31820

@@ -1,0 +1,32 @@
+## machine before 2026-11-22T15:41:47Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         943        6966          12        8507       15143
+loadavg: 3.76 3.27 1.96 5/138 29698
+{"event": "start", "loadavg": "3.76 3.27 1.96 6/137 29699", "utc": "2026-11-22T15:41:47Z"}
+{"event": "warmup", "build": "old", "model": "grid_100m", "jobs": 1, "wall": 49.03, "user": 44.396, "sys": 4.323, "cpu": 48.719, "mib": 1621.0, "exit": 0, "status": "pass", "states": 100000000, "ms": 49014, "invol": 134, "vol": 3, "minflt": 2620490}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 1, "round": 1, "wall": 50.353, "user": 45.555, "sys": 4.705, "cpu": 50.26, "mib": 1621.1, "exit": 0, "status": "pass", "states": 100000000, "ms": 50342, "invol": 133, "vol": 4, "minflt": 2620482}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 1, "round": 1, "wall": 41.227, "user": 38.659, "sys": 2.375, "cpu": 41.034, "mib": 1726.7, "exit": 0, "status": "pass", "states": 100000000, "ms": 41189, "invol": 106, "vol": 4, "minflt": 1377882}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 1, "round": 2, "wall": 52.785, "user": 47.839, "sys": 4.674, "cpu": 52.513, "mib": 1621.1, "exit": 0, "status": "pass", "states": 100000000, "ms": 52772, "invol": 145, "vol": 4, "minflt": 2620482}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 1, "round": 2, "wall": 40.188, "user": 37.48, "sys": 2.494, "cpu": 39.975, "mib": 1726.9, "exit": 0, "status": "pass", "states": 100000000, "ms": 40164, "invol": 90, "vol": 4, "minflt": 1377886}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 1, "round": 3, "wall": 48.549, "user": 43.776, "sys": 4.498, "cpu": 48.274, "mib": 1621.0, "exit": 0, "status": "pass", "states": 100000000, "ms": 48537, "invol": 119, "vol": 4, "minflt": 2620484}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 1, "round": 3, "wall": 39.954, "user": 37.375, "sys": 2.364, "cpu": 39.74, "mib": 1726.7, "exit": 0, "status": "pass", "states": 100000000, "ms": 39931, "invol": 98, "vol": 4, "minflt": 1377879}
+{"event": "summary", "build": "old", "model": "grid_100m", "jobs": 1, "n": 3, "wall": [50.353, 48.549, 52.785], "cpu": [50.26, 48.274, 52.513], "user": [45.555, 43.776, 47.839], "sys": [4.674, 4.498, 4.705], "mib": [1621.1, 1621.0, 1621.1], "statuses": [["pass", 100000000, 0]]}
+{"event": "summary", "build": "new", "model": "grid_100m", "jobs": 1, "n": 3, "wall": [40.188, 39.954, 41.227], "cpu": [39.975, 39.74, 41.034], "user": [37.48, 37.375, 38.659], "sys": [2.375, 2.364, 2.494], "mib": [1726.7, 1726.7, 1726.9], "statuses": [["pass", 100000000, 0]]}
+{"event": "warmup", "build": "old", "model": "grid_100m", "jobs": 4, "wall": 15.762, "user": 53.275, "sys": 5.151, "cpu": 58.426, "mib": 1634.1, "exit": 0, "status": "pass", "states": 100000000, "ms": 15755, "invol": 1197, "vol": 1081, "minflt": 2819263}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 4, "round": 1, "wall": 15.357, "user": 51.849, "sys": 5.19, "cpu": 57.039, "mib": 1637.3, "exit": 0, "status": "pass", "states": 100000000, "ms": 15351, "invol": 1327, "vol": 1143, "minflt": 2803405}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 4, "round": 1, "wall": 13.451, "user": 46.133, "sys": 4.052, "cpu": 50.186, "mib": 1613.8, "exit": 0, "status": "pass", "states": 100000000, "ms": 13444, "invol": 1223, "vol": 649, "minflt": 2209856}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 4, "round": 2, "wall": 15.978, "user": 53.959, "sys": 5.527, "cpu": 59.486, "mib": 1639.9, "exit": 0, "status": "pass", "states": 100000000, "ms": 15971, "invol": 1229, "vol": 1206, "minflt": 2804738}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 4, "round": 2, "wall": 13.57, "user": 46.335, "sys": 4.247, "cpu": 50.583, "mib": 1612.3, "exit": 0, "status": "pass", "states": 100000000, "ms": 13564, "invol": 1311, "vol": 726, "minflt": 2305548}
+{"event": "run", "build": "old", "model": "grid_100m", "jobs": 4, "round": 3, "wall": 18.397, "user": 62.52, "sys": 5.481, "cpu": 68.002, "mib": 1631.1, "exit": 0, "status": "pass", "states": 100000000, "ms": 18389, "invol": 1349, "vol": 1010, "minflt": 2769886}
+{"event": "run", "build": "new", "model": "grid_100m", "jobs": 4, "round": 3, "wall": 14.437, "user": 49.302, "sys": 4.151, "cpu": 53.453, "mib": 1611.7, "exit": 0, "status": "pass", "states": 100000000, "ms": 14430, "invol": 1237, "vol": 648, "minflt": 2112405}
+{"event": "summary", "build": "old", "model": "grid_100m", "jobs": 4, "n": 3, "wall": [15.978, 15.357, 18.397], "cpu": [59.486, 57.039, 68.002], "user": [53.959, 51.849, 62.52], "sys": [5.481, 5.19, 5.527], "mib": [1637.3, 1631.1, 1639.9], "statuses": [["pass", 100000000, 0]]}
+{"event": "summary", "build": "new", "model": "grid_100m", "jobs": 4, "n": 3, "wall": [13.57, 13.451, 14.437], "cpu": [50.583, 50.186, 53.453], "user": [46.335, 46.133, 49.302], "sys": [4.151, 4.052, 4.247], "mib": [1612.3, 1611.7, 1613.8], "statuses": [["pass", 100000000, 0]]}
+{"event": "end", "loadavg": "3.68 2.51 1.96 1/111 2242", "utc": "2026-11-22T15:48:56Z"}
+## machine after 2026-11-22T15:48:56Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         743        7167          12        8509       15343
+loadavg: 3.68 2.51 1.96 1/112 2249

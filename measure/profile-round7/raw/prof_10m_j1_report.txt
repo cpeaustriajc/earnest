@@ -1,0 +1,37 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 14K of event 'cpu-clock'
+# Event count (approx.): 14800800786
+#
+# Overhead  Symbol                                                                                                                                                                                                                                            IPC   [IPC Coverage]
+# ........  ................................................................................................................................................................................................................................................  ....................
+#
+    24.20%  [.] <earnest_check::explore::Search>::work                                                                                                                                                                    -      -            
+    19.55%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<usize>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                                                                         -      -            
+    18.05%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                                                                              -      -            
+     4.87%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                                                                       -      -            
+     4.47%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                                                                            -      -            
+     4.13%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                                                                          -      -            
+     3.81%  [.] <earnest_check::store::Store>::read_state                                                                                                                                                                             -      -            
+     3.34%  [.] <earnest_ir::code::cond::Cond>::leaf                                                                                                                                                                                -      -            
+     2.68%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>                                                       -      -            
+     1.93%  [k] exc_page_fault                                                                                                                                                                                                                                -      -            
+     1.83%  [.] __memset_avx512_unaligned_erms                                                                                                                                                                                                                -      -            
+     1.81%  [.] <earnest_check::store::level::Winners>::of                                                                                                                                                                         -      -            
+     1.41%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                                                                               -      -            
+     0.97%  [k] _raw_spin_lock                                                                                                                                                                                                                                -      -            
+     0.86%  [.] malloc                                                                                                                                                                                                                                        -      -            
+     0.57%  [k] __list_del_entry_valid_or_report                                                                                                                                                                                                              -      -            
+     0.56%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                                                                                   -      -            
+     0.55%  [k] memcg1_commit_charge                                                                                                                                                                                                                          -      -            
+     0.39%  [k] unmap_page_range                                                                                                                                                                                                                              -      -            
+     0.35%  [k] __pte_offset_map_lock                                                                                                                                                                                                                         -      -            
+     0.33%  [.] <earnest_check::store::Store>::place                                                                                                                                                                                   -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

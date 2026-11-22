@@ -1,0 +1,23 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'cpu-clock'
+# Event count (approx.): 7315315308
+#
+# Overhead  Symbol                                                                                                                                                                                                                                IPC   [IPC Coverage]
+# ........  ....................................................................................................................................................................................................................................  ....................
+#
+    42.38%  [.] <earnest_check::explore::Search>::level                                                                                                                                                                  -      -            
+    30.13%  [.] <earnest_ir::code::num::Num>::rest                                                                                                                                                                     -      -            
+    19.79%  [.] <earnest_check::expand::Seen>::first_row                                                                                                                                                                -      -            
+     3.53%  [.] <earnest_check::store::Store>::place                                                                                                                                                                       -      -            
+     1.53%  [.] <earnest_ir::code::num::Num>::eval                                                                                                                                           -      -            
+     0.81%  [.] <earnest_check::explore::here::HereSink>::place_row                                                                                                                                                       -      -            
+     0.36%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                                                           -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#
