@@ -158,9 +158,6 @@ impl Search<'_> {
             }
         }
         judged.add(here.marks, here.through);
-        Ran {
-            end: here.end,
-            workers: 1,
-        }
+        Ran { end: here.end }
     }
 }
