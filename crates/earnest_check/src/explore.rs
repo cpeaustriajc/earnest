@@ -218,8 +218,7 @@ impl Search<'_> {
                         kept,
                         new: self.store.len().saturating_sub(before),
                     };
-                    judged.marks.extend(merged.marks);
-                    judged.through = judged.through.max(merged.through);
+                    judged.add(merged.marks, merged.through);
                     match expansion.left_over {
                         Some(left) if self.reason.is_none() => {
                             let taken = left.start.saturating_sub(rest.start);
@@ -252,8 +251,7 @@ impl Search<'_> {
                     workers: 1,
                 };
             }
-            judged.marks.extend(here.marks);
-            judged.through = judged.through.max(here.through);
+            judged.add(here.marks, here.through);
             rest.start = here.through;
             if here.handed {
                 spread =

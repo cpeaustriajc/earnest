@@ -58,9 +58,7 @@ impl Shared {
                 .kept_rows_that_fit
                 .is_some_and(|fit| self.kept_rows.load(Ordering::SeqCst) > fit)
     }
-}
 
-impl Shared {
     fn take_part(&self, level: &Level, parts: usize) -> Option<usize> {
         let mut part = self.next.load(Ordering::SeqCst);
         loop {
@@ -123,7 +121,7 @@ impl Search<'_> {
             asked,
             kept_rows_that_fit: (asked == Asked::Everything)
                 .then(|| self.estimated_kept_rows_that_fit()),
-            fewest_states: fewest_states.max(1),
+            fewest_states,
         };
         let parts = level.cuts.len().saturating_sub(1);
         if parts <= 1 {
