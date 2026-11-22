@@ -759,8 +759,12 @@ impl Expand<'_> {
 
 #[cfg(test)]
 mod tests {
+    use super::{Asked, Base, Budget, Expand, Move, Scratch, Successors, Whence, Width};
     use super::{Seen, chosen, input_count, told_apart_from_earlier, turn};
+    use crate::store::{Lookup, Store};
     use earnest_ir::{Action, Expr, Input};
+    use earnest_ir::{Code, Fault, Field, Frame, Math, Model, Op, Order, View, eval, truth};
+    use earnest_value::Symbols;
     use earnest_value::{Domain, Value};
 
     fn input(name: &str, slot: usize, values: Vec<Value>) -> Input {
@@ -881,6 +885,414 @@ mod tests {
             tried,
             vec![0, 1, 4, 5],
             "the combinations with b at 20 repeat those with b at 10"
+        );
+    }
+
+    const SEARCH_SLOTS: usize = 4;
+    const FAST: usize = 0;
+    const SLOW: usize = 1;
+    const SLOWEST: usize = 2;
+    const BOUND: usize = 3;
+
+    type Next = (usize, usize, Vec<Value>);
+
+    #[derive(Debug, PartialEq)]
+    struct Expanded {
+        next: Vec<Next>,
+        trouble: Option<(Whence, Fault)>,
+        cut_short: bool,
+        stuck: bool,
+        width: Width,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Handed {
+        Packed,
+        AsValues,
+    }
+
+    struct Gathered<'s> {
+        store: &'s Store,
+        next: Vec<Next>,
+    }
+
+    impl Successors for Gathered<'_> {
+        fn offer(
+            &mut self,
+            action: usize,
+            input: usize,
+            base: Base<'_>,
+            updates: &[(usize, Value)],
+        ) -> bool {
+            let mut next = base.values.to_vec();
+            for (position, value) in updates {
+                if let Some(place) = next.get_mut(*position) {
+                    *place = value.clone();
+                }
+            }
+            self.next.push((action, input, next));
+            true
+        }
+
+        fn offer_row(&mut self, action: usize, input: usize, row: &[u64], _: u64) -> bool {
+            self.next
+                .push((action, input, self.store.values_of(row).into_vec()));
+            true
+        }
+    }
+
+    fn wheels() -> Vec<Field> {
+        let mut symbols = Symbols::default();
+        ["x", "y"]
+            .iter()
+            .map(|name| Field {
+                name: (*name).to_owned(),
+                sym: symbols.intern(name),
+                domain: Domain::Int { lo: 0, hi: 99 },
+                starts: vec![Value::Int(0)],
+            })
+            .collect()
+    }
+
+    fn model_of(actions: Vec<Action>) -> Model {
+        Model {
+            name: "Wheels".to_owned(),
+            file: "wheels.model.ts".to_owned(),
+            line: 1,
+            symbols: Symbols::default(),
+            fields: wheels(),
+            actions,
+            rules: Vec::new(),
+            ends: Vec::new(),
+            view: View::default(),
+        }
+    }
+
+    fn acting(inputs: Vec<Input>, guard: Expr, updates: &[Option<Expr>]) -> Action {
+        let exprs = std::iter::once(guard).chain(updates.iter().flatten().cloned());
+        let mut codes = Code::together(exprs).into_iter();
+        let guard = codes.next().expect("the guard comes first");
+        let updates = updates
+            .iter()
+            .map(|update| update.as_ref().and_then(|_| codes.next()))
+            .collect();
+        Action {
+            id: "act".to_owned(),
+            label: "acts".to_owned(),
+            line: 1,
+            inputs,
+            guard,
+            updates,
+            slots: SEARCH_SLOTS,
+        }
+    }
+
+    fn int(number: i64) -> Expr {
+        Expr::Const(Value::Int(number))
+    }
+
+    fn yes() -> Expr {
+        Expr::Const(Value::Bool(true))
+    }
+
+    fn math(math: Math, left: Expr, right: Expr) -> Expr {
+        Expr::Apply(Op::Math(math), vec![left, right])
+    }
+
+    fn plus(left: Expr, right: Expr) -> Expr {
+        math(Math::Add, left, right)
+    }
+
+    fn below(left: Expr, right: Expr) -> Expr {
+        Expr::Apply(Op::Order(Order::Less), vec![left, right])
+    }
+
+    fn states() -> Vec<Vec<Value>> {
+        [(0, 0), (5, 9), (2, 3), (5, 9)]
+            .iter()
+            .map(|(x, y)| vec![Value::Int(*x), Value::Int(*y)])
+            .collect()
+    }
+
+    fn searched(model: &Model, handed: Handed) -> Vec<Expanded> {
+        let store = Store::new(&model.fields, 100, Lookup::Presence);
+        let moves = Move::all(model, store.layout());
+        let expand = Expand {
+            model,
+            moves: &moves,
+            only_rule: None,
+            slots: SEARCH_SLOTS,
+            asked: Asked::Everything,
+            budget: Budget {
+                deadline: None,
+                successors: usize::MAX,
+            },
+        };
+        let mut scratch = Scratch::default();
+        states()
+            .iter()
+            .map(|state| {
+                let mut row = Vec::new();
+                assert!(store.encode(state, &mut row), "the state is in the domain");
+                let mut sink = Gathered {
+                    store: &store,
+                    next: Vec::new(),
+                };
+                let base = Base {
+                    values: state,
+                    row: match handed {
+                        Handed::Packed => Some(row.as_slice()),
+                        Handed::AsValues => None,
+                    },
+                };
+                let mark = expand.state(base, None, &mut sink, &mut scratch);
+                Expanded {
+                    next: sink.next,
+                    trouble: mark.trouble,
+                    cut_short: mark.cut_short,
+                    stuck: mark.stuck,
+                    width: mark.width,
+                }
+            })
+            .collect()
+    }
+
+    fn worked_out(model: &Model, state: &[Value]) -> Expanded {
+        let mut found = Expanded {
+            next: Vec::new(),
+            trouble: None,
+            cut_short: false,
+            stuck: false,
+            width: Width::Narrow,
+        };
+        let (mut enabled, mut unsure) = (false, false);
+        for (position, action) in model.actions.iter().enumerate() {
+            let mut met: Vec<Vec<Value>> = Vec::new();
+            for combination in 0..input_count(action) {
+                let mut frame = Frame::new(state, SEARCH_SLOTS);
+                for (each, value) in action.inputs.iter().zip(chosen(action, combination)) {
+                    frame.put(each.slot, value.cloned().unwrap());
+                }
+                let noted = |whence: Whence, fault: Fault, found: &mut Expanded| {
+                    found.trouble.get_or_insert((whence, fault));
+                    found.cut_short = true;
+                };
+                match truth(action.guard.expr(), &mut frame) {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(fault) => {
+                        noted(Whence::Guard(position), fault, &mut found);
+                        unsure = true;
+                        continue;
+                    }
+                }
+                enabled = true;
+                let mut next = state.to_vec();
+                let mut faulted = false;
+                for (field, update) in action.updates.iter().enumerate() {
+                    let Some(update) = update else {
+                        continue;
+                    };
+                    match eval(update.expr(), &mut frame) {
+                        Ok(value) => {
+                            if let Some(place) = next.get_mut(field) {
+                                *place = value;
+                            }
+                        }
+                        Err(fault) => {
+                            noted(Whence::Update(position), fault, &mut found);
+                            faulted = true;
+                            break;
+                        }
+                    }
+                }
+                if frame.computed_beyond_32_bits() {
+                    found.width = Width::Beyond32Bits;
+                }
+                if !faulted && !met.contains(&next) {
+                    met.push(next.clone());
+                    found.next.push((position, combination, next));
+                }
+            }
+        }
+        found.stuck = !enabled && !unsure;
+        found
+    }
+
+    fn agrees_with_every_combination_worked_out(case: &str, actions: Vec<Action>) {
+        let model = model_of(actions);
+        let expected: Vec<Expanded> = states()
+            .iter()
+            .map(|state| worked_out(&model, state))
+            .collect();
+        for handed in [Handed::Packed, Handed::AsValues] {
+            assert_eq!(
+                searched(&model, handed),
+                expected,
+                "{case}, the state handed {handed:?}"
+            );
+        }
+    }
+
+    fn two_inputs() -> Vec<Input> {
+        vec![
+            input("a", FAST, numbers(&[0, 1, 2])),
+            input("b", SLOW, numbers(&[0, 1, 2])),
+        ]
+    }
+
+    fn three_inputs() -> Vec<Input> {
+        vec![
+            input("a", FAST, numbers(&[0, 1])),
+            input("b", SLOW, numbers(&[0, 1, 2])),
+            input("c", SLOWEST, numbers(&[0, 1])),
+        ]
+    }
+
+    #[test]
+    fn an_update_that_reads_only_the_slow_input_gives_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "x reads b, y reads a",
+            vec![acting(
+                two_inputs(),
+                yes(),
+                &[
+                    Some(plus(Expr::Field(0), Expr::Local(SLOW))),
+                    Some(Expr::Local(FAST)),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn an_update_that_reads_only_the_fast_input_gives_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "x reads a, y is kept",
+            vec![acting(
+                two_inputs(),
+                yes(),
+                &[Some(plus(Expr::Field(0), Expr::Local(FAST))), None],
+            )],
+        );
+    }
+
+    #[test]
+    fn an_update_that_reads_no_input_gives_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "x reads no input, y reads a",
+            vec![acting(
+                two_inputs(),
+                yes(),
+                &[
+                    Some(plus(Expr::Field(0), int(1))),
+                    Some(plus(Expr::Field(1), Expr::Local(FAST))),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn a_guard_and_updates_on_slow_inputs_of_three_give_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "the guard reads b, x reads c, y reads b and c",
+            vec![acting(
+                three_inputs(),
+                below(Expr::Local(SLOW), int(2)),
+                &[
+                    Some(plus(Expr::Field(0), Expr::Local(SLOWEST))),
+                    Some(plus(
+                        plus(Expr::Field(1), Expr::Local(SLOW)),
+                        Expr::Local(SLOWEST),
+                    )),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn an_update_that_reads_a_slot_the_guard_binds_gives_what_every_combination_gives() {
+        let guard = Expr::Bind {
+            slot: BOUND,
+            value: Box::new(plus(Expr::Local(FAST), Expr::Local(SLOW))),
+            body: Box::new(below(Expr::Local(BOUND), int(3))),
+        };
+        agrees_with_every_combination_worked_out(
+            "the guard binds a + b, x reads it, y reads b",
+            vec![acting(
+                two_inputs(),
+                guard,
+                &[Some(Expr::Local(BOUND)), Some(Expr::Local(SLOW))],
+            )],
+        );
+    }
+
+    #[test]
+    fn an_update_that_faults_for_some_values_of_a_slow_input_gives_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "x divides by b, y reads a",
+            vec![acting(
+                two_inputs(),
+                yes(),
+                &[
+                    Some(math(Math::Divide, Expr::Field(0), Expr::Local(SLOW))),
+                    Some(Expr::Local(FAST)),
+                ],
+            )],
+        );
+    }
+
+    #[test]
+    fn a_guard_that_faults_for_some_values_of_a_slow_input_gives_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "the guard divides by c, x reads a, y reads b",
+            vec![acting(
+                three_inputs(),
+                below(
+                    math(Math::Divide, Expr::Field(1), Expr::Local(SLOWEST)),
+                    int(50),
+                ),
+                &[Some(Expr::Local(FAST)), Some(Expr::Local(SLOW))],
+            )],
+        );
+    }
+
+    #[test]
+    fn an_action_that_overwrites_a_slow_input_gives_what_every_combination_gives() {
+        let guard = Expr::Choose(
+            Box::new(Expr::Apply(Op::Equal, vec![Expr::Local(FAST), int(0)])),
+            Box::new(Expr::Bind {
+                slot: SLOW,
+                value: Box::new(int(7)),
+                body: Box::new(yes()),
+            }),
+            Box::new(yes()),
+        );
+        agrees_with_every_combination_worked_out(
+            "the guard puts 7 in the slot of b when a is 0, y reads b",
+            vec![acting(
+                two_inputs(),
+                guard,
+                &[Some(Expr::Local(FAST)), Some(Expr::Local(SLOW))],
+            )],
+        );
+    }
+
+    #[test]
+    fn two_actions_one_after_the_other_each_give_what_every_combination_gives() {
+        agrees_with_every_combination_worked_out(
+            "the second action uses the slots of the first",
+            vec![
+                acting(
+                    two_inputs(),
+                    below(Expr::Local(SLOW), int(2)),
+                    &[Some(plus(Expr::Field(0), Expr::Local(SLOW))), None],
+                ),
+                acting(
+                    three_inputs(),
+                    yes(),
+                    &[None, Some(plus(Expr::Local(SLOW), Expr::Local(SLOWEST)))],
+                ),
+            ],
         );
     }
 }
