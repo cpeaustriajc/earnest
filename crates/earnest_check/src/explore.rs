@@ -317,7 +317,6 @@ impl Search<'_> {
     }
 
     fn record(&mut self, id: usize, expanded: &Mark) {
-        self.judged = self.judged.max(id.saturating_add(1));
         self.computed_beyond_32_bits |= expanded.width == Width::Beyond32Bits;
         self.cut_short |= expanded.cut_short;
         if let Some(field) = expanded.outside {
