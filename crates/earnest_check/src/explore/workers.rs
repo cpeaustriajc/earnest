@@ -321,3 +321,61 @@ impl Spread for Crew<'_> {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Level, Shared};
+    use crate::expand::Asked;
+    use std::sync::atomic::Ordering;
+
+    const PARTS: usize = 3;
+    const KEPT_ROWS_THAT_FIT: usize = 5;
+
+    fn level_of_three_parts() -> Level {
+        Level {
+            frontier: 0..30,
+            cuts: vec![0, 10, 20, 30],
+            deadline: None,
+            asked: Asked::Everything,
+            kept_rows_that_fit: Some(KEPT_ROWS_THAT_FIT),
+            fewest_states: 1,
+        }
+    }
+
+    fn shared_after_the_first_part(kept_rows: usize) -> Shared {
+        let shared = Shared::default();
+        shared.next.store(1, Ordering::SeqCst);
+        shared.kept_rows.store(kept_rows, Ordering::SeqCst);
+        shared
+    }
+
+    #[test]
+    fn a_part_is_not_taken_once_the_kept_rows_outgrow_what_fits() {
+        let shared = shared_after_the_first_part(KEPT_ROWS_THAT_FIT + 1);
+        assert_eq!(
+            shared.take_part(&level_of_three_parts(), PARTS),
+            None,
+            "the rest of the level is held back"
+        );
+        assert_eq!(
+            shared.next.load(Ordering::SeqCst),
+            1,
+            "a part held back is left for a later round, not claimed"
+        );
+    }
+
+    #[test]
+    fn a_part_is_taken_while_the_kept_rows_fit() {
+        let shared = shared_after_the_first_part(KEPT_ROWS_THAT_FIT);
+        assert_eq!(
+            shared.take_part(&level_of_three_parts(), PARTS),
+            Some(1),
+            "the next part"
+        );
+        assert_eq!(
+            shared.next.load(Ordering::SeqCst),
+            2,
+            "the part taken is claimed"
+        );
+    }
+}
