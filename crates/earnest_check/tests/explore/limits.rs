@@ -245,6 +245,11 @@ fn same_outcome_with_every_crew(model: &Model, base: &Limits, worker_counts: &[u
             alone,
             "one worker and {IDLE_HELPERS} helpers, graph kept: {keep_graph}"
         );
+        assert_eq!(
+            explore(model, &with(1, Some(Helpers::new(0)), keep_graph)),
+            alone,
+            "one worker and no idle helper, graph kept: {keep_graph}"
+        );
         alone
     };
     let with_graph = alone_and_with_every_crew(true);
@@ -1154,4 +1159,70 @@ fn a_time_stop_in_the_last_pass_keeps_every_state_judged_before_it_on_every_work
              workers"
         );
     }
+}
+
+const STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS: i64 = 65_536;
+const CHILDREN_OF_PAIRS_OF_STARTS: i64 = STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS / 2;
+const LATE_CHILD: i64 = CHILDREN_OF_PAIRS_OF_STARTS - 3;
+const LIMITS_INSIDE_THE_CHILDREN: usize = 6;
+
+fn starts_whose_pairs_share_a_child() -> Model {
+    let mut sketch = Sketch::new();
+    let every_start: Vec<i64> = (0..STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS).collect();
+    let n = sketch.number(
+        "n",
+        0,
+        STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS - 1,
+        &every_start,
+    );
+    let flipped = sketch.boolean("flipped", &[false]);
+    let halved = apply(Op::Math(Math::Divide), &n, int(2));
+    sketch.action(
+        "flipHalf",
+        not(&flipped),
+        &[(&flipped, yes()), (&n, halved)],
+    );
+    sketch.end("flipped", flipped.clone());
+    sketch.rule("neverFlippedLate", not(&both(flipped, is(&n, LATE_CHILD))));
+    sketch.model()
+}
+
+#[test]
+fn a_lone_thread_with_a_handle_matches_row_by_row_at_every_state_limit_near_a_wide_level() {
+    let model = starts_whose_pairs_share_a_child();
+    let starts = usize::try_from(STARTS_OF_A_LEVEL_A_LONE_THREAD_TAKES_IN_PARTS).unwrap_or(0);
+    let children = usize::try_from(CHILDREN_OF_PAIRS_OF_STARTS).unwrap_or(0);
+    let states = starts + children;
+    let inside = (1..=LIMITS_INSIDE_THE_CHILDREN)
+        .map(|share| starts + children * share / (LIMITS_INSIDE_THE_CHILDREN + 1));
+    let near_the_ends = [
+        starts - 1,
+        starts,
+        starts + 1,
+        starts + 2,
+        states - 1,
+        states,
+        states + 1,
+    ];
+    for max_states in near_the_ends.into_iter().chain(inside) {
+        let row_by_row = explore(&model, &with_states(max_states));
+        let lone = Limits {
+            helpers: Some(Helpers::new(0)),
+            ..with_states(max_states)
+        };
+        assert_eq!(
+            explore(&model, &lone),
+            row_by_row,
+            "state limit {max_states}"
+        );
+        assert_eq!(
+            row_by_row.states,
+            max_states.min(states),
+            "state limit {max_states}"
+        );
+    }
+    let whole = explore(&model, &with_states(states + 1));
+    assert_eq!(whole.status, Status::Fail);
+    assert_eq!(whole.reason, None);
+    assert_eq!(whole.rules[0].verdict, Verdict::Broken);
 }
