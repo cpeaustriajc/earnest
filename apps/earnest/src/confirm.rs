@@ -142,8 +142,7 @@ pub(crate) fn differences(
             counting
                 .errors
                 .first()
-                .map(|error| format!(" ({error})"))
-                .unwrap_or_default()
+                .map_or_default(|error| format!(" ({error})"))
         )),
     }
     for ours in &result.rules {
@@ -163,8 +162,7 @@ pub(crate) fn differences(
                     .run
                     .errors
                     .first()
-                    .map(|error| format!(" ({error})"))
-                    .unwrap_or_default()
+                    .map_or_default(|error| format!(" ({error})"))
             ));
         }
     }

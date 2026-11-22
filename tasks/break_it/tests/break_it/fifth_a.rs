@@ -16,9 +16,14 @@ fn binary() -> PathBuf {
     Sandbox::with(&[]).verify(&[]);
     let test = env::current_exe().expect("a test knows where its own binary is");
     let folder = test
-        .parent()
+        .ancestors()
+        .find(|folder| {
+            folder
+                .file_name()
+                .is_some_and(|name| name == "deps" || name == "build")
+        })
         .and_then(Path::parent)
-        .expect("a test binary sits in `deps` under the folder of its build profile");
+        .expect("a test binary sits in `deps` or `build` under the folder of its build profile");
     folder.join(format!("earnest{}", env::consts::EXE_SUFFIX))
 }
 
@@ -60,15 +65,12 @@ fn run_in_folders(files: &[(&str, &str)], arguments: &[&str]) -> Ran {
 }
 
 fn names(listed: &Value) -> Vec<String> {
-    listed
-        .as_array()
-        .map(|all| {
-            all.iter()
-                .filter_map(Value::as_str)
-                .map(|path| path.trim_start_matches("./").to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
+    listed.as_array().map_or_default(|all| {
+        all.iter()
+            .filter_map(Value::as_str)
+            .map(|path| path.trim_start_matches("./").to_owned())
+            .collect()
+    })
 }
 
 #[test]

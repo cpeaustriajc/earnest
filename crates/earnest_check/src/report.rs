@@ -74,8 +74,7 @@ impl Search<'_> {
         chain.reverse();
         let start = chain
             .first()
-            .map(|id| self.named(&self.store.state(*id)))
-            .unwrap_or_default();
+            .map_or_default(|id| self.named(&self.store.state(*id)));
         let steps = chain
             .windows(2)
             .filter_map(|pair| {
