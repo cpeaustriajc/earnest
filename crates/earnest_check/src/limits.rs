@@ -17,11 +17,11 @@ pub struct Limits {
     /// fewer whose states took long to expand in the level before, as when each state tries
     /// many inputs. 0 counts as 1. The outcome is the same for every number. A search left
     /// with one thread, no helper being idle, that keeps no graph takes a level of 16,384
-    /// states or more in parts on its own, 14 parts at a time: it merges what 14 parts found
-    /// before it takes the next 14, so it holds the new states of 14 parts at most, and it
-    /// takes the next round and the next level with the buffers of the last. Several threads
-    /// take a level in parts in one round, short of the state limit, and hold its new states
-    /// until they merge them.
+    /// states or more in parts on its own, in rounds of 32 parts, half the most parts it cuts a
+    /// level into: it merges what a round found before it takes the next, so it holds the new
+    /// states of half of its widest levels at most, and it takes the next round and the next
+    /// level with the buffers of the last. Several threads take a level in parts in one round, short of the state limit, and
+    /// hold its new states until they merge them.
     pub jobs: usize,
     /// Idle threads the search may borrow, on top of `jobs`, for the parts of each level it
     /// spreads. It borrows when it starts to spread a level and whenever a thread is about to

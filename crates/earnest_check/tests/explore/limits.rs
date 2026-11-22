@@ -1546,7 +1546,7 @@ const FOLDED_OF_A_LEVEL_TAKEN_IN_ROUNDS: i64 = STARTS_OF_A_LEVEL_TAKEN_IN_ROUNDS
 const STATES_OF_A_LEVEL_TAKEN_IN_ROUNDS: usize = 150_000;
 const STATES_BEFORE_THE_SECOND_WIDE_LEVEL: usize = 60_000;
 const STATES_BEFORE_THE_LAST_LEVEL: usize = 135_000;
-const STARTS_WITH_A_SLOW_STATE_IN_THE_THIRD_ROUND: i64 = 40_000;
+const STARTS_WITH_A_SLOW_STATE_IN_THE_SECOND_ROUND: i64 = 40_000;
 
 fn a_model_whose_wide_levels_are_taken_in_rounds() -> Model {
     let starts = STARTS_OF_A_LEVEL_TAKEN_IN_ROUNDS;
@@ -1627,6 +1627,7 @@ fn a_state_limit_inside_a_wide_level_a_lone_thread_takes_in_rounds_gives_the_sam
 }
 
 #[test]
-fn a_time_stop_in_the_third_round_of_a_level_a_lone_thread_takes_in_rounds_leaves_nothing_behind() {
-    a_time_stop_in_a_later_round_of_a_level_of(STARTS_WITH_A_SLOW_STATE_IN_THE_THIRD_ROUND);
+fn a_time_stop_in_the_second_round_of_a_level_a_lone_thread_takes_in_rounds_leaves_nothing_behind()
+{
+    a_time_stop_in_a_later_round_of_a_level_of(STARTS_WITH_A_SLOW_STATE_IN_THE_SECOND_ROUND);
 }
