@@ -37,9 +37,7 @@ pub(crate) struct Arrow {
 pub(crate) struct Search<'a> {
     pub(crate) model: &'a Model,
     pub(crate) limits: &'a Limits,
-    slots: usize,
-    moves: Vec<Move<'a>>,
-    layout: RowLayout,
+    expander: Expander<'a>,
     pub(crate) store: Store,
     pub(crate) notes: Vec<Note>,
     pub(crate) arrows: Vec<Arrow>,
@@ -53,6 +51,35 @@ pub(crate) struct Search<'a> {
     pub(crate) cut_short: bool,
     judged: usize,
     last_spread_merge: SpreadMerge,
+}
+
+struct Expander<'a> {
+    moves: Vec<Move<'a>>,
+    layout: RowLayout,
+    slots: usize,
+}
+
+impl Expander<'_> {
+    fn expand<'s>(
+        &'s self,
+        model: &'s Model,
+        limits: &'s Limits,
+        deadline: Option<Instant>,
+        asked: Asked,
+    ) -> Expand<'s> {
+        Expand {
+            model,
+            moves: &self.moves,
+            layout: &self.layout,
+            only_rule: limits.only_rule.as_deref(),
+            slots: self.slots,
+            asked,
+            budget: Budget {
+                deadline,
+                successors: limits.max_states,
+            },
+        }
+    }
 }
 
 const FEWEST_STATES_OF_A_ROUND: usize = 1;
@@ -95,9 +122,11 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
     let mut search = Search {
         model,
         limits,
-        slots,
-        moves: Move::all(model, store.layout()),
-        layout: store.layout().clone(),
+        expander: Expander {
+            moves: Move::all(model, store.layout()),
+            layout: store.layout().clone(),
+            slots,
+        },
         store,
         notes: Vec::new(),
         arrows: Vec::new(),
@@ -174,18 +203,8 @@ impl Search<'_> {
     }
 
     fn expand(&self, deadline: Option<Instant>, asked: Asked) -> Expand<'_> {
-        Expand {
-            model: self.model,
-            moves: &self.moves,
-            layout: &self.layout,
-            only_rule: self.limits.only_rule.as_deref(),
-            slots: self.slots,
-            asked,
-            budget: Budget {
-                deadline,
-                successors: self.limits.max_states,
-            },
-        }
+        self.expander
+            .expand(self.model, self.limits, deadline, asked)
     }
 
     fn level(

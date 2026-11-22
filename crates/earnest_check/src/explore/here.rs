@@ -1,6 +1,6 @@
 use super::encode::{encode_next, with_updates};
 use super::{Arrow, STATES_BETWEEN_CLOCK_READS, Search};
-use crate::expand::{Asked, Base, Budget, Clock, Expand, Mark, Scratch, Successors};
+use crate::expand::{Asked, Base, Clock, Mark, Scratch, Successors};
 use crate::helpers::Helpers;
 use crate::store::{Placed, Store};
 use earnest_value::Value;
@@ -103,18 +103,9 @@ impl Search<'_> {
         asked: Asked,
         helpers: Option<&Helpers>,
     ) -> Here {
-        let expand = Expand {
-            model: self.model,
-            moves: &self.moves,
-            layout: &self.layout,
-            only_rule: self.limits.only_rule.as_deref(),
-            slots: self.slots,
-            asked,
-            budget: Budget {
-                deadline,
-                successors: self.limits.max_states,
-            },
-        };
+        let expand = self
+            .expander
+            .expand(self.model, self.limits, deadline, asked);
         let mut here = Here {
             stopped: false,
             full: false,
@@ -149,7 +140,7 @@ impl Search<'_> {
                 break;
             }
             let is_row = sink.store.read_state(id, &mut row, &mut state);
-            let outside = sink.store.outside(id, &row, &self.model.fields);
+            let outside = sink.store.outside(id, &row, &expand.model.fields);
             sink.from = id;
             let base = Base {
                 values: &state,
