@@ -29,10 +29,8 @@ impl Code {
     /// Prepares `expr` for evaluation. The cost is one walk over the expression.
     #[must_use]
     pub fn new(expr: Expr) -> Self {
-        Self::together([expr])
-            .into_iter()
-            .next()
-            .unwrap_or_else(|| unreachable!())
+        let shared = Shared::of(std::slice::from_ref(&expr));
+        Self::prepared(expr, &shared)
     }
 
     /// Prepares expressions that are evaluated one after another in one frame, such as an
