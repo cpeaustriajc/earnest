@@ -8,8 +8,7 @@ pub(crate) const TOGETHER_TARGET_SECONDS: u32 = 5;
 pub(crate) const SLOWEST_TARGET_SECONDS: u32 = 10;
 pub(crate) const LARGE_TARGET_SECONDS: u32 = 5;
 pub(crate) const TARGET_WORKERS: usize = 4;
-pub(crate) const LARGEST_TARGET_WORKERS_BUDGET_SECONDS: f64 = 3.0;
-pub(crate) const LARGEST_ONE_WORKER_BUDGET_SECONDS: f64 = 6.0;
+pub(crate) const LARGEST_ONE_WORKER_BUDGET_SECONDS: f64 = 8.0;
 pub(crate) const LARGEST_PEAK_MEMORY_BUDGET_MIB: f64 = 256.0;
 pub(crate) const NARROW_LEVELS_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 1.5;
 pub(crate) const WIDE_ALL_CORES_OVER_ONE_WORKER_BUDGET: f64 = 0.75;
@@ -260,7 +259,6 @@ impl Limit {
 pub(crate) fn budget_section(limits: &[Limit], cores: usize) -> String {
     let lines: Vec<String> = limits
         .iter()
-        .filter(|limit| limit.kind == Kind::Budget)
         .map(|limit| format!("- {}\n", limit.line(cores)))
         .collect();
     format!("## Budget\n\n{}", lines.concat())

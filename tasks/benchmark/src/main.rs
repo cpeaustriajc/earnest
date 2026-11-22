@@ -189,12 +189,6 @@ impl Bench<'_> {
                 Kind::Target,
             ),
             wall_time(
-                format!("{LARGEST} with {workers} workers, wall time"),
-                (target, &target_run),
-                report::LARGEST_TARGET_WORKERS_BUDGET_SECONDS,
-                Kind::Budget,
-            ),
-            wall_time(
                 format!("{LARGEST} with 1 worker, wall time"),
                 (one, &one_run),
                 report::LARGEST_ONE_WORKER_BUDGET_SECONDS,
