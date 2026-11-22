@@ -60,15 +60,12 @@ fn run_in_folders(files: &[(&str, &str)], arguments: &[&str]) -> Ran {
 }
 
 fn names(listed: &Value) -> Vec<String> {
-    listed
-        .as_array()
-        .map(|all| {
-            all.iter()
-                .filter_map(Value::as_str)
-                .map(|path| path.trim_start_matches("./").to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
+    listed.as_array().map_or_default(|all| {
+        all.iter()
+            .filter_map(Value::as_str)
+            .map(|path| path.trim_start_matches("./").to_owned())
+            .collect()
+    })
 }
 
 #[test]

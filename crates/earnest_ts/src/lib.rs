@@ -212,7 +212,7 @@ impl<'s> Reader<'s> {
     }
 
     fn syntax_error(&mut self, span: Option<Span>, message: &str) {
-        let found = span.map(|at| self.quoted(at)).unwrap_or_default();
+        let found = span.map_or_default(|at| self.quoted(at));
         let feature = if found.is_empty() {
             "syntax error"
         } else {

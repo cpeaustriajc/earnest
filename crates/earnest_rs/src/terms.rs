@@ -728,8 +728,7 @@ impl Reader<'_> {
             .path
             .segments
             .last()
-            .map(|segment| name_of(&segment.ident))
-            .unwrap_or_default();
+            .map_or_default(|segment| name_of(&segment.ident));
         let message = if PRINTING.contains(&name.as_str()) {
             "printing is input and output, which is outside the library"
         } else if name == "format" {

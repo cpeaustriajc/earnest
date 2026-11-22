@@ -374,12 +374,9 @@ impl Walk<'_, '_> {
                 Ty::Bool
             }
             ([name], _) if self.reader.functions.contains(name) => {
-                let wanted: Vec<Ty> = self
-                    .reader
-                    .fn_params
-                    .get(name)
-                    .map(|params| params.iter().map(|ty| self.reader.ty_of(ty)).collect())
-                    .unwrap_or_default();
+                let wanted: Vec<Ty> = self.reader.fn_params.get(name).map_or_default(|params| {
+                    params.iter().map(|ty| self.reader.ty_of(ty)).collect()
+                });
                 self.arguments(&arguments, &wanted);
                 self.reader
                     .fn_types
@@ -559,8 +556,7 @@ impl Walk<'_, '_> {
                 .reader
                 .method_params
                 .get(name)
-                .map(|params| params.iter().map(|ty| self.reader.ty_of(ty)).collect())
-                .unwrap_or_default(),
+                .map_or_default(|params| params.iter().map(|ty| self.reader.ty_of(ty)).collect()),
             _ => Vec::new(),
         }
     }
