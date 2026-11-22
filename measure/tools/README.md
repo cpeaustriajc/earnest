@@ -20,3 +20,10 @@ The scripts are as they ran on the Mac. Their paths are placeholders: `/SCRATCH`
 | `models/corridor.model.ts` | 11,820,300 states in 20,000 levels of at most 600 states; ends in `fail`. Run with `--max-states 20000000`. |
 | `models/lights.model.ts` | 3,000,000 states; its guards compare a text field with constants. |
 | `models/grid_100m.model.ts` | 100 million states, about 1.4 GiB. |
+
+## Ported to Linux
+
+| File | What it does |
+| --- | --- |
+| `scripts/linux/turn.py` | Times builds in turn and prints, for each model and worker count, the sorted wall times, their median, the median CPU time and the median peak memory. Run it in a folder that holds the model files: `python3 turn.py base=/path/earnest,new=/path/earnest 7 grid_10m:1,grid_10m:4`. |
+| `scripts/linux/sweep.py` | The sweep of `sweep.py` and `sw5b.py` with the level ends read from `models/sweep/levels.json`: `TIP=/path/earnest REF=/path/earnest python3 sweep.py big4.model.ts`. |
