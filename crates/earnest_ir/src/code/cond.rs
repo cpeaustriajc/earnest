@@ -200,6 +200,7 @@ impl Cond {
     #[inline]
     pub(super) fn eval(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
+            Self::Within(within) => within.holds(frame.state),
             Self::AllWithin(tests) => {
                 for test in tests {
                     if !test.holds(frame.state)? {
