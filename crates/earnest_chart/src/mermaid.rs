@@ -1,5 +1,6 @@
 use crate::select::{ARROW_LIMIT, Selection, marked, select};
 use earnest_check::{Graph, Node};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 const INDENT: &str = "    ";
@@ -133,29 +134,50 @@ struct Drawing<'a> {
     selection: Selection,
     groups: Vec<&'a str>,
     group_of: Vec<Option<usize>>,
+    members: Vec<Vec<usize>>,
+    homes: Vec<Vec<usize>>,
 }
 
 impl<'a> Drawing<'a> {
     fn new(graph: &'a Graph, limit: usize) -> Self {
         let selection = select(graph, limit);
         let mut groups: Vec<&'a str> = Vec::new();
+        let mut known: HashMap<&'a str, usize> = HashMap::new();
         let mut group_of = vec![None; graph.nodes.len()];
         for state in &selection.states {
             let Some(group) = graph.nodes[*state].group.as_deref() else {
                 continue;
             };
-            let known = groups.iter().position(|known| *known == group);
-            group_of[*state] = Some(known.unwrap_or(groups.len()));
-            if known.is_none() {
+            let next = groups.len();
+            let place = *known.entry(group).or_insert(next);
+            if place == next {
                 groups.push(group);
             }
+            group_of[*state] = Some(place);
+        }
+        let slot = |group: Option<usize>| group.unwrap_or(groups.len());
+        let mut members = vec![Vec::new(); groups.len().saturating_add(1)];
+        for state in &selection.states {
+            members[slot(group_of[*state])].push(*state);
+        }
+        let mut homes = vec![Vec::new(); groups.len().saturating_add(1)];
+        for position in &selection.arrows {
+            let edge = &graph.edges[*position];
+            let home = group_of[edge.from].filter(|_| group_of[edge.from] == group_of[edge.to]);
+            homes[slot(home)].push(*position);
         }
         Self {
             graph,
             selection,
             groups,
             group_of,
+            members,
+            homes,
         }
+    }
+
+    fn slot(&self, group: Option<usize>) -> usize {
+        group.unwrap_or(self.groups.len())
     }
 
     fn states(&self) -> impl Iterator<Item = (usize, &'a Node)> {
@@ -166,8 +188,9 @@ impl<'a> Drawing<'a> {
     }
 
     fn within(&self, group: Option<usize>) -> impl Iterator<Item = (usize, &'a Node)> {
-        self.states()
-            .filter(move |(state, _)| self.group_of[*state] == group)
+        self.members[self.slot(group)]
+            .iter()
+            .map(|state| (*state, &self.graph.nodes[*state]))
     }
 
     fn arrows(&self, group: Option<usize>, indent: &str) -> Vec<String> {
@@ -176,13 +199,8 @@ impl<'a> Drawing<'a> {
             .filter(|(_, node)| node.start)
             .map(|(state, _)| format!("{indent}[*] --> s{state}"))
             .collect();
-        for position in &self.selection.arrows {
+        for position in &self.homes[self.slot(group)] {
             let edge = &self.graph.edges[*position];
-            let home = self.group_of[edge.from]
-                .filter(|_| self.group_of[edge.from] == self.group_of[edge.to]);
-            if home != group {
-                continue;
-            }
             let labels: Vec<String> = edge
                 .labels
                 .iter()
