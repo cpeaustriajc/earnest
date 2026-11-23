@@ -1,5 +1,6 @@
 use earnest_check::{Edge, Graph, Node};
-use std::collections::VecDeque;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, VecDeque};
 
 /// The most arrows a chart draws, not counting the arrows from and to `[*]`.
 pub const ARROW_LIMIT: usize = 20;
@@ -73,8 +74,12 @@ pub(crate) fn select(graph: &Graph, limit: usize) -> Selection {
         if !marked(node) || (!node.start && into[target].is_none()) {
             continue;
         }
-        let whole = route(graph, &into, &kept, target);
         let room = limit.saturating_sub(count);
+        if room == 0 {
+            drawn[target] |= into[target].is_none_or(|position| kept[position]);
+            continue;
+        }
+        let whole = route(graph, &into, &kept, target);
         let left_out = whole.len().saturating_sub(room);
         let arrows = whole.get(left_out..).unwrap_or_default();
         count = count.saturating_add(arrows.len());
@@ -89,16 +94,27 @@ pub(crate) fn select(graph: &Graph, limit: usize) -> Selection {
             reached[edge.to] = true;
         }
     }
+    let mut next: BinaryHeap<Reverse<usize>> = reached
+        .iter()
+        .zip(&leaving)
+        .filter(|(from, _)| **from)
+        .flat_map(|(_, arrows)| arrows.iter().copied().map(Reverse))
+        .collect();
     while count < limit {
-        let Some((position, edge)) =
-            sound(graph).find(|(position, edge)| !kept[*position] && reached[edge.from])
-        else {
+        let Some(Reverse(position)) = next.pop() else {
             break;
         };
+        if kept[position] {
+            continue;
+        }
+        let edge = &graph.edges[position];
         kept[position] = true;
         drawn[edge.from] = true;
         drawn[edge.to] = true;
-        reached[edge.to] = true;
+        if !reached[edge.to] {
+            reached[edge.to] = true;
+            next.extend(leaving[edge.to].iter().copied().map(Reverse));
+        }
         count = count.saturating_add(1);
     }
     let beyond = graph
