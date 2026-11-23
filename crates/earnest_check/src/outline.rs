@@ -209,15 +209,10 @@ impl Search<'_> {
                 }
                 None => NO_GROUP,
             };
-            let (spots, text) = (&outline.spots, &outline.text);
+            let known = &*outline;
             let label_of = |at: u32| {
                 let at = usize::try_from(at).ok()?;
-                let begin = at
-                    .checked_sub(1)
-                    .and_then(|before| spots.get(before))
-                    .map_or(0, |spot| spot.label_end);
-                let spot = spots.get(at)?;
-                Some((spot.group, text.get(begin..spot.label_end)?))
+                Some((known.spots.get(at)?.group, known.label(at)))
             };
             let place = match places.entry(
                 spot_hash(group_id, &label),

@@ -16,14 +16,14 @@ fn word_of(chunk: &[u8]) -> u64 {
     if let Ok(whole) = <[u8; WORD_BYTES]>::try_from(chunk) {
         return u64::from_le_bytes(whole);
     }
-    if let (Some(first), Some(last)) = (chunk.first_chunk(), chunk.last_chunk()) {
+    if let (Some(first), Some(last)) = (chunk.first_chunk::<4>(), chunk.last_chunk::<4>()) {
         return joined(
             u32::from_le_bytes(*first),
             u32::from_le_bytes(*last),
             chunk.len(),
         );
     }
-    if let (Some(first), Some(last)) = (chunk.first_chunk(), chunk.last_chunk()) {
+    if let (Some(first), Some(last)) = (chunk.first_chunk::<2>(), chunk.last_chunk::<2>()) {
         return joined(
             u16::from_le_bytes(*first),
             u16::from_le_bytes(*last),
