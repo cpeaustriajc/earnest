@@ -9,7 +9,11 @@ Builds both, then compares their printed output, with times taken out, in two wa
   more, by the tree
   at 1, 2, 4 and 10 workers against the commit at 1 worker;
 - every model file of `tasks/models`, `tasks/benchmark/models` and `tasks/conformance`, by
-  `verify` and by `report`, at 1 and at 4 workers, the tree against the commit at the same number.
+  `verify` with room for 20 million states and by `report` at its default limit, at 1 and at 4
+  workers, the tree against the commit at the same number.
+
+A run that panics or is ended by a signal, such as the kernel's for lack of memory, is a
+difference.
 
 Prints one line for each sweep and one for the model files, with the runs of the tree and the
 differences, then the first differences, and exits 1 when there is any.
@@ -53,6 +57,11 @@ def run(binary, args, path):
     return done.returncode, without_times(done.stdout), done.stderr
 
 
+def ended(result):
+    code, _, errors = result
+    return code >= 0 and "panick" not in errors
+
+
 def build(folder, target):
     subprocess.run(["cargo", "build", "--release", "--locked", "-p", "earnest-cli"], cwd=folder, check=True,
                    env={**os.environ, "CARGO_TARGET_DIR": target})
@@ -90,10 +99,10 @@ def sweep_one(binaries, job):
     path, limit, mode = job
     args = MODES[mode] + ["--max-states", str(limit)]
     expected = run(commit, args + ["--jobs", "1"], path)
-    found = []
+    found = [] if ended(expected) else [f"{os.path.basename(path)} {mode} --max-states {limit}: the commit"]
     for workers in SWEEP_WORKERS:
         got = run(tree, args + ["--jobs", str(workers)], path)
-        if got[:2] != expected[:2] or "panick" in got[2]:
+        if got[:2] != expected[:2] or not ended(got):
             found.append(f"{os.path.basename(path)} {mode} --max-states {limit} --jobs {workers}")
     return len(SWEEP_WORKERS), found
 
@@ -101,9 +110,10 @@ def sweep_one(binaries, job):
 def file_one(binaries, job):
     tree, commit = binaries
     path, mode, workers = job
-    args = MODES[mode] + ["--max-states", str(LARGEST_STATE_LIMIT), "--jobs", str(workers)]
+    limit = ["--max-states", str(LARGEST_STATE_LIMIT)] if mode == "verify" else []
+    args = MODES[mode] + limit + ["--jobs", str(workers)]
     expected, got = run(commit, args, path), run(tree, args, path)
-    same = got[:2] == expected[:2] and "panick" not in got[2]
+    same = got[:2] == expected[:2] and ended(got) and ended(expected)
     return 1, [] if same else [f"{os.path.relpath(path, ROOT)} {mode} --jobs {workers}"]
 
 
