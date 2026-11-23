@@ -19,9 +19,9 @@ states by default; the other cases use the default.
 `--runs <n>` is the number of measured runs of each case (default 5, after one run that is not
 counted) and `--binary <path>` the `earnest` to measure (default `target/release/earnest`). With
 `--counts` it counts instructions in place of measuring time (see "Instructions" below), and with
-`--counts --record` it writes those counts down. The
-binary runs `earnest verify --no-cache --json` in an empty temporary folder, so nothing is served
-from a cache and nothing is written to the repository, and prints Markdown:
+`--counts --record` it writes those counts down. The binary runs `earnest verify --no-cache --json`
+in an empty temporary folder, so nothing is served from a cache and nothing is written to the
+repository, and prints Markdown:
 
 - the scaled models in TypeScript and in Rust, with their median wall time, states per second
   and peak memory;
@@ -107,7 +107,8 @@ file in both runs, a part that no worker shortens, so a faster search would move
 its limit; `wide` leaves room for four CPUs that are two cores of two threads. The benchmark wants
 a machine that does nothing else; a missed line is measured once more and judged by the better of
 the two. When a line fails, make the change faster or take it back. A limit changes only with the
-owner's word.
+owner's word. What was tried in the search and not kept, and how to judge a speed change, is in
+`TRIED.md`.
 
 ### Instructions
 
