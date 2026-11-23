@@ -111,8 +111,89 @@ impl Kit {
 struct RowKit {
     row: Vec<u64>,
     met: HashTable<usize>,
-    met_words: HashTable<u64>,
+    recent_words: RecentWords,
     met_raw: FxHashSet<Box<[Value]>>,
+}
+
+const RECENT_SLOTS: usize = 1 << 16;
+const MOST_SPARE_TABLES: usize = 64;
+
+static SPARE_TABLES: Mutex<Vec<Vec<u64>>> = Mutex::new(Vec::new());
+
+#[derive(Default)]
+struct RecentWords {
+    slots: Vec<u64>,
+    written: usize,
+}
+
+fn slot_of(hash: u64, slots: usize) -> usize {
+    usize::try_from(hash).unwrap_or(0) & slots.wrapping_sub(1)
+}
+
+fn empty_slot(at: usize) -> u64 {
+    u64::try_from(at ^ 1).unwrap_or(0)
+}
+
+fn empty_slots() -> Vec<u64> {
+    (0..RECENT_SLOTS).map(empty_slot).collect()
+}
+
+impl RecentWords {
+    fn ready(&mut self) {
+        if self.slots.is_empty() {
+            self.slots = SPARE_TABLES
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .pop()
+                .unwrap_or_else(empty_slots);
+        }
+    }
+
+    #[inline]
+    fn met(&mut self, hash: u64) -> bool {
+        let at = slot_of(hash, self.slots.len());
+        let Some(slot) = self.slots.get_mut(at) else {
+            return false;
+        };
+        if *slot == hash {
+            return true;
+        }
+        *slot = hash;
+        self.written += 1;
+        false
+    }
+
+    fn forget(&mut self, part: &Part) {
+        if self.written == 0 {
+            return;
+        }
+        let count = self.slots.len();
+        if part.crowded || part.hashes.len() >= count / 4 {
+            for (at, slot) in self.slots.iter_mut().enumerate() {
+                *slot = empty_slot(at);
+            }
+        } else {
+            for hash in &part.hashes {
+                let at = slot_of(*hash, count);
+                if let Some(slot) = self.slots.get_mut(at) {
+                    *slot = empty_slot(at);
+                }
+            }
+        }
+        self.written = 0;
+    }
+}
+
+impl Drop for RecentWords {
+    fn drop(&mut self) {
+        if self.written > 0 || self.slots.len() != RECENT_SLOTS {
+            return;
+        }
+        let mut spare = SPARE_TABLES.lock().unwrap_or_else(PoisonError::into_inner);
+        if spare.len() < MOST_SPARE_TABLES {
+            spare.push(std::mem::take(&mut self.slots));
+        }
+    }
 }
 
 struct PartSink<'a> {
@@ -191,15 +272,9 @@ impl PartSink<'_> {
 
     #[inline]
     fn offer_unseen_word(&mut self, action: usize, word: u64, hash: u64) -> bool {
-        let met = self.kit.met_words.entry(
-            hash,
-            |earlier| *earlier == word,
-            |earlier| hash_words(&[*earlier]),
-        );
-        let hashbrown::hash_table::Entry::Vacant(vacant) = met else {
+        if self.kit.recent_words.met(hash) {
             return false;
-        };
-        vacant.insert(word);
+        }
         self.add_fresh(action, &[word], hash);
         true
     }
@@ -409,11 +484,24 @@ impl Search<'_> {
         deadline: Option<Instant>,
         asked: Asked,
         kit: &mut Kit,
+        part: Part,
+    ) -> Part {
+        kit.rows.recent_words.ready();
+        let part = self.fill_part(ids, deadline, asked, kit, part);
+        kit.rows.recent_words.forget(&part);
+        part
+    }
+
+    fn fill_part(
+        &self,
+        ids: Range<usize>,
+        deadline: Option<Instant>,
+        asked: Asked,
+        kit: &mut Kit,
         mut part: Part,
     ) -> Part {
         let expand = self.expand(deadline, asked);
         kit.rows.met.clear();
-        kit.rows.met_words.clear();
         kit.rows.met_raw.clear();
         let (fresh_before, states_before) = kit.fresh_per_state;
         let expected = (ids.len() * fresh_before)
@@ -479,10 +567,267 @@ impl Search<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Part, PartSink, RowKit, Spares};
-    use crate::store::{Lookup, SHARD_COUNT, Store};
+    use super::{FreshRows, Part, PartSink, RECENT_SLOTS, RecentWords, RowKit, Spares};
+    use crate::expand::Successors;
+    use crate::store::{Fresh, Lookup, SHARD_COUNT, Spread, Store, hash_words};
     use earnest_ir::Field;
     use earnest_value::{Domain, Symbols, Value};
+    use std::collections::{HashMap, HashSet};
+
+    struct OneThread;
+
+    impl Spread for OneThread {
+        fn run(&self, tasks: usize, job: &(dyn Fn(usize) + Sync)) {
+            for task in 0..tasks {
+                job(task);
+            }
+        }
+    }
+
+    fn fields_of(names: &[&str], hi: i64) -> Vec<Field> {
+        let mut symbols = Symbols::default();
+        names
+            .iter()
+            .map(|name| Field {
+                name: (*name).to_owned(),
+                sym: symbols.intern(name),
+                domain: Domain::Int { lo: 0, hi },
+                starts: vec![Value::Int(0)],
+            })
+            .collect()
+    }
+
+    fn row_of(store: &Store, values: &[i64]) -> Vec<u64> {
+        let values: Vec<Value> = values.iter().map(|value| Value::Int(*value)).collect();
+        let mut row = Vec::new();
+        assert!(
+            store.encode(&values, &mut row),
+            "every value is in its domain"
+        );
+        row
+    }
+
+    struct Offer {
+        from: usize,
+        values: Vec<i64>,
+    }
+
+    fn offers_of(
+        parts: usize,
+        per_part: usize,
+        first: usize,
+        spread: i64,
+        arity: usize,
+    ) -> Vec<Vec<Offer>> {
+        let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+        (0..parts)
+            .map(|part| {
+                (0..per_part)
+                    .map(|at| {
+                        let values = (0..arity)
+                            .map(|_| {
+                                seed = seed
+                                    .wrapping_mul(6_364_136_223_846_793_005)
+                                    .wrapping_add(1_442_695_040_888_963_407);
+                                i64::try_from(seed >> 33).unwrap_or(0) % spread
+                            })
+                            .collect();
+                        Offer {
+                            from: first + part * 4 + at % 4,
+                            values,
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn part_of(store: &Store, kit: &mut RowKit, first: usize, offers: &[Offer]) -> (Part, usize) {
+        let mut sink = PartSink {
+            store,
+            graph: false,
+            from: 0,
+            from_offset: 0,
+            counted: 0,
+            kit,
+            part: Part {
+                first,
+                ..Part::default()
+            },
+        };
+        sink.kit.recent_words.ready();
+        let mut counted = 0;
+        for offer in offers {
+            sink.from = offer.from;
+            sink.from_offset = u32::try_from(offer.from - first).expect("a small offset");
+            let row = row_of(store, &offer.values);
+            counted += usize::from(sink.offer_row(0, 0, &row, hash_words(&row)));
+        }
+        let mut part = sink.part;
+        part.expanded = 4;
+        part.file_by_shard(store.layout().words(), &mut FreshRows::default());
+        kit.recent_words.forget(&part);
+        (part, counted)
+    }
+
+    struct Reference {
+        ids: HashMap<Vec<u64>, usize>,
+        parents: Vec<Option<usize>>,
+    }
+
+    impl Reference {
+        fn place(&mut self, row: Vec<u64>, parent: Option<usize>) {
+            let next = self.parents.len();
+            if let std::collections::hash_map::Entry::Vacant(vacant) = self.ids.entry(row) {
+                vacant.insert(next);
+                self.parents.push(parent);
+            }
+        }
+    }
+
+    fn a_level_in_parts_is_the_level_row_by_row(names: &[&str], hi: i64, spread: i64) {
+        let fields = fields_of(names, hi);
+        let mut store = Store::new(&fields, 10_000, Lookup::Presence);
+        let mut by_rows = Store::new(&fields, 10_000, Lookup::Presence);
+        let mut reference = Reference {
+            ids: HashMap::new(),
+            parents: Vec::new(),
+        };
+        let arity = names.len();
+        let known: Vec<Vec<i64>> = (0..16).map(|at| vec![at % spread; arity]).collect();
+        for values in &known {
+            let row = row_of(&store, values);
+            let hash = hash_words(&row);
+            store.place(&row, hash, None, usize::MAX);
+            by_rows.place(&row, hash, None, usize::MAX);
+            reference.place(row, None);
+        }
+        let first = 0;
+        let offers = offers_of(3, 400, first, spread, arity);
+        let mut kit = RowKit::default();
+        let mut parts = Vec::new();
+        let mut all_counted = 0;
+        for offered in &offers {
+            let (part, counted) = part_of(&store, &mut kit, first, offered);
+            assert!(!part.crowded, "a small part is not crowded");
+            all_counted += counted;
+            parts.push(part);
+        }
+        for offered in &offers {
+            for offer in offered {
+                let row = row_of(&store, &offer.values);
+                by_rows.place(&row, hash_words(&row), Some(offer.from), usize::MAX);
+                reference.place(row, Some(offer.from));
+            }
+        }
+        let fresh: Vec<Fresh<'_>> = parts
+            .iter()
+            .map(|part| Fresh {
+                count: part.fresh,
+                rows: &part.rows,
+                hashes: &part.hashes,
+                first: part.first,
+                froms: &part.froms,
+                ordinals: &part.ordinals,
+                shard_starts: &part.shard_starts,
+            })
+            .collect();
+        let before = store.len();
+        let new = reference.parents.len() - before;
+        assert!(new > 100, "the offers find many new rows");
+        assert!(
+            all_counted >= new,
+            "every new row was counted by the part that found it first"
+        );
+        assert_eq!(
+            store.place_level(&fresh, &OneThread, before + new - 1),
+            None,
+            "one state short of the limit, nothing is placed"
+        );
+        assert_eq!(store.len(), before, "the level is taken back whole");
+        assert_eq!(
+            store.place_level(&fresh, &OneThread, before + new),
+            Some(new),
+            "every row new to the level, once"
+        );
+        assert_eq!(store.len(), reference.parents.len(), "the counts agree");
+        for (id, parent) in reference.parents.iter().enumerate() {
+            assert_eq!(store.parent(id), *parent, "the parent of {id}");
+            assert_eq!(store.state(id), by_rows.state(id), "the state of {id}");
+        }
+        let distinct: HashSet<Vec<i64>> = offers
+            .iter()
+            .flatten()
+            .map(|offer| offer.values.clone())
+            .collect();
+        assert!(
+            distinct.len() < offers.iter().map(Vec::len).sum(),
+            "some offers repeat"
+        );
+    }
+
+    #[test]
+    fn a_level_of_one_word_rows_taken_in_parts_gives_the_ids_and_parents_of_the_level_row_by_row() {
+        a_level_in_parts_is_the_level_row_by_row(&["a", "b", "c"], 999, 9);
+    }
+
+    #[test]
+    fn a_level_of_rows_of_several_words_taken_in_parts_gives_the_ids_and_parents_of_the_level_row_by_row()
+     {
+        a_level_in_parts_is_the_level_row_by_row(&["a", "b"], 1 << 40, 23);
+    }
+
+    #[test]
+    fn the_hashes_of_distinct_one_word_rows_differ() {
+        let edges = [u64::MAX, u64::MAX - 1, 1 << 63, (1 << 63) - 1];
+        let words: HashSet<u64> = (0..1_u64 << 18)
+            .chain(edges)
+            .chain((0..1_u64 << 12).map(|at| at << 40))
+            .collect();
+        let hashes: HashSet<u64> = words.iter().map(|word| hash_words(&[*word])).collect();
+        assert_eq!(hashes.len(), words.len(), "no two words share a hash");
+    }
+
+    #[test]
+    fn recent_words_meet_a_row_let_in_and_never_one_that_was_not() {
+        let mut recent = RecentWords::default();
+        recent.ready();
+        let hashes: Vec<u64> = (0..1_u64 << 18).map(|word| hash_words(&[word])).collect();
+        let fresh = hashes.iter().filter(|hash| !recent.met(**hash)).count();
+        assert_eq!(fresh, hashes.len(), "nothing is met before it was let in");
+        let mut empty = RecentWords::default();
+        empty.ready();
+        for at in 0..RECENT_SLOTS {
+            let mark = u64::try_from(at).expect("a slot fits a u64");
+            assert!(
+                !empty.met(mark),
+                "the mark of an empty slot is not met as a hash"
+            );
+        }
+        let last = hashes.last().copied().unwrap_or(0);
+        assert!(recent.met(last), "the row let in last is met again");
+    }
+
+    #[test]
+    fn recent_words_forget_every_row_of_a_part_and_everything_after_a_crowded_one() {
+        for crowded in [false, true] {
+            let mut recent = RecentWords::default();
+            recent.ready();
+            let hashes: Vec<u64> = (0..100_u64).map(|word| hash_words(&[word])).collect();
+            for hash in &hashes {
+                assert!(!recent.met(*hash), "a new row");
+            }
+            let part = Part {
+                hashes: if crowded { Vec::new() } else { hashes.clone() },
+                crowded,
+                ..Part::default()
+            };
+            recent.forget(&part);
+            for hash in &hashes {
+                assert!(!recent.met(*hash), "forgotten, so new again");
+            }
+        }
+    }
 
     #[test]
     fn a_part_counts_its_fresh_rows_in_32_bits_and_is_crowded_past_them() {
