@@ -115,8 +115,11 @@ impl<F: Filed> Shards<F> {
     }
 
     fn claim_level(&mut self, rows: &Rows, at: &Level<'_>) -> Vec<Won> {
-        let tables: Vec<Mutex<&mut HashTable<F>>> =
-            self.tables.iter_mut().map(Mutex::new).collect();
+        let tables: Vec<Mutex<&mut HashTable<F>>> = self
+            .tables
+            .iter_mut()
+            .map(|shard| Mutex::new(&mut shard.table))
+            .collect();
         gather(at.spread, SHARD_COUNT, |shard| {
             let mut won = Vec::with_capacity(at.parts.len());
             let Some(table) = tables.get(shard) else {
@@ -145,8 +148,11 @@ impl<F: Filed> Shards<F> {
     }
 
     fn unclaim_level(&mut self, rows: &Rows, at: &Level<'_>, wins: &[Won]) {
-        let tables: Vec<Mutex<&mut HashTable<F>>> =
-            self.tables.iter_mut().map(Mutex::new).collect();
+        let tables: Vec<Mutex<&mut HashTable<F>>> = self
+            .tables
+            .iter_mut()
+            .map(|shard| Mutex::new(&mut shard.table))
+            .collect();
         at.spread.run(tables.len(), &|shard| {
             let (Some(table), Some(won)) = (tables.get(shard), wins.get(shard)) else {
                 return;
@@ -172,8 +178,11 @@ impl<F: Filed> Shards<F> {
         maps: &[Winners],
         bases: &[usize],
     ) {
-        let tables: Vec<Mutex<&mut HashTable<F>>> =
-            self.tables.iter_mut().map(Mutex::new).collect();
+        let tables: Vec<Mutex<&mut HashTable<F>>> = self
+            .tables
+            .iter_mut()
+            .map(|shard| Mutex::new(&mut shard.table))
+            .collect();
         at.spread.run(tables.len(), &|shard| {
             let (Some(table), Some(won)) = (tables.get(shard), wins.get(shard)) else {
                 return;
@@ -318,4 +327,340 @@ fn gather<R: Send + Default>(
         .into_iter()
         .map(|slot| slot.into_inner().unwrap_or_else(PoisonError::into_inner))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::index::{Key, NarrowId, Shard, WideId};
+    use super::{Fresh, Spread};
+    use crate::store::{Lookup, SHARD_COUNT, Store, hash_words, shard_of};
+    use earnest_ir::Field;
+    use earnest_value::{Domain, Symbols, Value};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const CACHE_LINE_PAIR: usize = 128;
+
+    struct InOrder;
+
+    impl Spread for InOrder {
+        fn run(&self, tasks: usize, job: &(dyn Fn(usize) + Sync)) {
+            (0..tasks).for_each(job);
+        }
+    }
+
+    struct Backwards;
+
+    impl Spread for Backwards {
+        fn run(&self, tasks: usize, job: &(dyn Fn(usize) + Sync)) {
+            (0..tasks).rev().for_each(job);
+        }
+    }
+
+    struct Crowd {
+        threads: usize,
+        each_task_to_a_fixed_thread: bool,
+    }
+
+    impl Spread for Crowd {
+        fn run(&self, tasks: usize, job: &(dyn Fn(usize) + Sync)) {
+            let next = AtomicUsize::new(0);
+            let threads = self.threads;
+            std::thread::scope(|scope| {
+                for thread in 0..threads {
+                    let next = &next;
+                    let fixed = self.each_task_to_a_fixed_thread;
+                    scope.spawn(move || {
+                        if fixed {
+                            (thread..tasks).step_by(threads).for_each(job);
+                            return;
+                        }
+                        loop {
+                            let task = next.fetch_add(1, Ordering::Relaxed);
+                            if task >= tasks {
+                                return;
+                            }
+                            job(task);
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    fn spreads() -> Vec<(&'static str, Box<dyn Spread>)> {
+        vec![
+            ("in order", Box::new(InOrder)),
+            ("backwards", Box::new(Backwards)),
+            (
+                "4 threads from a counter",
+                Box::new(Crowd {
+                    threads: 4,
+                    each_task_to_a_fixed_thread: false,
+                }),
+            ),
+            (
+                "3 threads, each task to a fixed thread",
+                Box::new(Crowd {
+                    threads: 3,
+                    each_task_to_a_fixed_thread: true,
+                }),
+            ),
+            (
+                "10 threads from a counter",
+                Box::new(Crowd {
+                    threads: 10,
+                    each_task_to_a_fixed_thread: false,
+                }),
+            ),
+        ]
+    }
+
+    fn fields_of(names: &[&str], hi: i64) -> Vec<Field> {
+        let mut symbols = Symbols::default();
+        names
+            .iter()
+            .map(|name| Field {
+                name: (*name).to_owned(),
+                sym: symbols.intern(name),
+                domain: Domain::Int { lo: 0, hi },
+                starts: vec![Value::Int(0)],
+            })
+            .collect()
+    }
+
+    fn row_of(store: &Store, values: &[i64]) -> Vec<u64> {
+        let values: Vec<Value> = values.iter().map(|value| Value::Int(*value)).collect();
+        let mut row = Vec::new();
+        assert!(
+            store.encode(&values, &mut row),
+            "every value is in its domain"
+        );
+        row
+    }
+
+    struct FiledPart {
+        rows: Vec<u64>,
+        hashes: Vec<u64>,
+        froms: Vec<u32>,
+        ordinals: Vec<u32>,
+        shard_starts: Vec<usize>,
+        first: usize,
+    }
+
+    impl FiledPart {
+        fn of(found: &[(Vec<u64>, u32)], first: usize, words: usize) -> Self {
+            let mut order: Vec<usize> = (0..found.len()).collect();
+            order.sort_by_key(|at| shard_of(hash_words(&found[*at].0)));
+            let mut shard_starts = vec![0; SHARD_COUNT + 1];
+            for (row, _) in found {
+                shard_starts[shard_of(hash_words(row)) + 1] += 1;
+            }
+            for shard in 0..SHARD_COUNT {
+                shard_starts[shard + 1] += shard_starts[shard];
+            }
+            let mut filed = Self {
+                rows: Vec::with_capacity(found.len() * words),
+                hashes: Vec::with_capacity(found.len()),
+                froms: Vec::with_capacity(found.len()),
+                ordinals: Vec::with_capacity(found.len()),
+                shard_starts,
+                first,
+            };
+            for at in order {
+                let (row, from) = &found[at];
+                filed.rows.extend_from_slice(row);
+                filed.hashes.push(hash_words(row));
+                filed.froms.push(*from);
+                filed
+                    .ordinals
+                    .push(u32::try_from(at).expect("a small part"));
+            }
+            filed
+        }
+
+        fn fresh(&self) -> Fresh<'_> {
+            Fresh {
+                count: self.hashes.len(),
+                rows: &self.rows,
+                hashes: &self.hashes,
+                first: self.first,
+                froms: &self.froms,
+                ordinals: &self.ordinals,
+                shard_starts: &self.shard_starts,
+            }
+        }
+    }
+
+    const PARTS: usize = 7;
+    const ROWS_A_PART_FINDS: usize = 600;
+    const STATES_A_PART_EXPANDS: usize = 5;
+    const KNOWN: i64 = 40;
+
+    fn found_in_parts(store: &Store, arity: usize, spread: i64) -> Vec<Vec<(Vec<u64>, u32)>> {
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        (0..PARTS)
+            .map(|_| {
+                (0..ROWS_A_PART_FINDS)
+                    .filter_map(|at| {
+                        let values: Vec<i64> = (0..arity)
+                            .map(|_| {
+                                seed = seed
+                                    .wrapping_mul(6_364_136_223_846_793_005)
+                                    .wrapping_add(1_442_695_040_888_963_407);
+                                i64::try_from(seed >> 33).unwrap_or(0) % spread
+                            })
+                            .collect();
+                        let from = u32::try_from(at % STATES_A_PART_EXPANDS).expect("small");
+                        let row = row_of(store, &values);
+                        store
+                            .find(&row, hash_words(&row))
+                            .is_none()
+                            .then_some((row, from))
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn store_with_known_rows(fields: &[Field], lookup: Lookup, arity: usize) -> Store {
+        let mut store = Store::new(fields, 1_000_000, lookup);
+        for known in 0..KNOWN {
+            let row = row_of(&store, &vec![known; arity]);
+            store.place(&row, hash_words(&row), None, usize::MAX);
+        }
+        store
+    }
+
+    fn any_assignment_of_shards_to_threads_is_the_level_row_by_row(
+        names: &[&str],
+        hi: i64,
+        spread: i64,
+        lookup: Lookup,
+    ) {
+        let fields = fields_of(names, hi);
+        let arity = names.len();
+        let mut by_rows = store_with_known_rows(&fields, lookup, arity);
+        let words = by_rows.layout().words();
+        let before = by_rows.len();
+        let found = found_in_parts(&by_rows, arity, spread);
+        let firsts: Vec<usize> = (0..PARTS)
+            .map(|part| part * STATES_A_PART_EXPANDS)
+            .collect();
+        for (part, rows) in found.iter().enumerate() {
+            for (row, from) in rows {
+                let parent = firsts[part] + usize::try_from(*from).expect("small");
+                by_rows.place(row, hash_words(row), Some(parent), usize::MAX);
+            }
+        }
+        let new = by_rows.len() - before;
+        assert!(new > 100, "the parts find many new rows");
+        assert!(
+            found.iter().all(|rows| rows.len() > ROWS_A_PART_FINDS / 2),
+            "most rows a part finds are not known before the level"
+        );
+        assert!(
+            new < PARTS * ROWS_A_PART_FINDS,
+            "some rows are found twice, within a part or across parts"
+        );
+        let filed: Vec<FiledPart> = found
+            .iter()
+            .zip(&firsts)
+            .map(|(rows, first)| FiledPart::of(rows, *first, words))
+            .collect();
+        let fresh: Vec<Fresh<'_>> = filed.iter().map(FiledPart::fresh).collect();
+        for (name, spread) in spreads() {
+            let case = format!("{names:?}, {lookup:?}, {name}");
+            let mut store = store_with_known_rows(&fields, lookup, arity);
+            assert_eq!(
+                store.place_level(&fresh, spread.as_ref(), before + new - 1),
+                None,
+                "{case}: one state short of the limit, nothing is placed"
+            );
+            assert_eq!(store.len(), before, "{case}: the level is taken back whole");
+            assert_eq!(
+                store.place_level(&fresh, spread.as_ref(), usize::MAX),
+                Some(new),
+                "{case}: every row new to the level, once"
+            );
+            assert_eq!(store.len(), by_rows.len(), "{case}: the counts agree");
+            for id in 0..store.len() {
+                assert_eq!(
+                    store.parent(id),
+                    by_rows.parent(id),
+                    "{case}: parent of {id}"
+                );
+                assert_eq!(store.state(id), by_rows.state(id), "{case}: state of {id}");
+            }
+            for rows in &found {
+                for (row, _) in rows {
+                    assert!(
+                        store.find(row, hash_words(row)).is_some(),
+                        "{case}: a row of the level is known after it"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_level_of_one_word_keys_claimed_by_any_assignment_of_shards_to_threads_is_the_level_row_by_row()
+     {
+        any_assignment_of_shards_to_threads_is_the_level_row_by_row(
+            &["a", "b", "c"],
+            999,
+            9,
+            Lookup::Presence,
+        );
+    }
+
+    #[test]
+    fn a_level_of_rows_of_several_words_claimed_by_any_assignment_of_shards_to_threads_is_the_level_row_by_row()
+     {
+        any_assignment_of_shards_to_threads_is_the_level_row_by_row(
+            &["a", "b"],
+            1 << 40,
+            23,
+            Lookup::Presence,
+        );
+    }
+
+    #[test]
+    fn a_level_filed_by_id_with_any_assignment_of_shards_to_threads_is_the_level_row_by_row() {
+        any_assignment_of_shards_to_threads_is_the_level_row_by_row(
+            &["a", "b", "c"],
+            999,
+            9,
+            Lookup::Id,
+        );
+    }
+
+    #[test]
+    fn no_two_shard_tables_share_a_pair_of_cache_lines() {
+        let layouts = [
+            (
+                std::mem::align_of::<Shard<Key<u32>>>(),
+                std::mem::size_of::<Shard<Key<u32>>>(),
+            ),
+            (
+                std::mem::align_of::<Shard<Key<u64>>>(),
+                std::mem::size_of::<Shard<Key<u64>>>(),
+            ),
+            (
+                std::mem::align_of::<Shard<NarrowId>>(),
+                std::mem::size_of::<Shard<NarrowId>>(),
+            ),
+            (
+                std::mem::align_of::<Shard<WideId>>(),
+                std::mem::size_of::<Shard<WideId>>(),
+            ),
+        ];
+        for (align, size) in layouts {
+            assert!(
+                align >= CACHE_LINE_PAIR && size % CACHE_LINE_PAIR == 0,
+                "the count a claim writes into one shard's table at every new row must not sit \
+                 beside a neighbour's, claimed at the same time on another core: with 4 workers \
+                 that made each row of the claim cost twice what it costs with 1"
+            );
+        }
+    }
 }

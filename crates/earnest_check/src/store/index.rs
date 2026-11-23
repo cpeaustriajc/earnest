@@ -118,26 +118,37 @@ pub(super) enum Claim {
 }
 
 #[derive(Debug)]
+#[repr(align(128))]
+pub(super) struct Shard<F> {
+    pub(super) table: HashTable<F>,
+}
+
+#[derive(Debug)]
 pub(super) struct Shards<F> {
-    pub(super) tables: Vec<HashTable<F>>,
+    pub(super) tables: Vec<Shard<F>>,
 }
 
 impl<F: Filed> Shards<F> {
     fn new() -> Self {
         Self {
-            tables: (0..SHARD_COUNT).map(|_| HashTable::new()).collect(),
+            tables: (0..SHARD_COUNT)
+                .map(|_| Shard {
+                    table: HashTable::new(),
+                })
+                .collect(),
         }
     }
 
     fn find(&self, rows: &Rows, row: &[u64], hash: u64) -> Option<Found> {
         self.tables
             .get(shard_of(hash))?
+            .table
             .find(hash, |filed| filed.holds(rows, row))
             .map(|filed| Found { id: filed.id() })
     }
 
     fn claim(&mut self, rows: &Rows, row: &[u64], hash: u64, id: Option<usize>) -> Claim {
-        let Some(table) = self.tables.get_mut(shard_of(hash)) else {
+        let Some(Shard { table }) = self.tables.get_mut(shard_of(hash)) else {
             return Claim::Full;
         };
         match table.entry(
@@ -160,7 +171,7 @@ impl<F: Filed> Shards<F> {
 
     fn forget(&mut self, rows: &Rows, kept: usize, filed: &[usize], words: usize) {
         if !F::HOLDS_ROW {
-            for table in &mut self.tables {
+            for Shard { table } in &mut self.tables {
                 table.retain(|filed| filed.id().is_none_or(|id| id < kept));
             }
             return;
@@ -169,7 +180,7 @@ impl<F: Filed> Shards<F> {
         for id in filed {
             rows.unpack(*id, &mut row, words);
             let hash = hash_words(&row);
-            if let Some(table) = self.tables.get_mut(shard_of(hash))
+            if let Some(Shard { table }) = self.tables.get_mut(shard_of(hash))
                 && let Ok(found) = table.find_entry(hash, |filed| filed.holds(rows, &row))
             {
                 found.remove();
