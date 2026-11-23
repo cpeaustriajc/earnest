@@ -61,6 +61,9 @@ record-counts:
     cargo build --release --locked -p earnest-cli
     cargo run --release --locked -p earnest_benchmark -- --counts --record
 
+same-answers commit:
+    python3 -I tasks/answers/same.py {{ commit }}
+
 verify:
     cargo verus focus
 
