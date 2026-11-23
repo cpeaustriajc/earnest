@@ -5,3 +5,8 @@
 node_modules
 /packages/*/dist
 /packages/*/.package.next.json
+/apps/docs/dist
+/apps/docs/.astro
+!/apps/docs/
+!/apps/docs/src/content/docs/
+/apps/docs/.cloudflare

@@ -148,14 +148,14 @@ numbers show in the diff. A share above changes only with the owner's word.
 
 ## Results
 
-Last run: the release build of commit fc4d8fb, `--runs 5`, in the `check` job of pull request 15.
+Last run: the release build of commit bf3cb46, `--runs 5`, in the `check` job of pull request 15.
 
 Machine: a GitHub-hosted `ubuntu-latest` runner (image `ubuntu-26.04`), which GitHub documents as
 4 vCPUs and 16 GB on x86-64 for a public repository. The benchmark counted 4 cores. The runner
 shares its host, so other work there adds noise to every number below. Every later run of the
 `check` job prints its own numbers in the step `just benchmark`.
 
-Seventeen runs of the `check` job. The first four measured the same search code: their commits
+Twenty runs of the `check` job. The first four measured the same search code: their commits
 differ only in tests, in this file and in the first line of the benchmark output, which names the
 processor from 433b987 on. The run of 906e76c is the first with the search code that writes the
 updates of an action into a copy of the packed row. The run of 2963116 is the first with the
@@ -175,7 +175,18 @@ number expressions as a chain of steps and tells the rows of one state's action 
 it writes. The run of fc84df4 is the first whose two ratio lines of the budget divide search
 times. The run of 6c76546 is the first with the search code in which one thread takes a wide level
 in rounds of 32 parts. The run of fc4d8fb adds the fixes of the last review, which change nothing
-that these models reach.
+that these models reach. The runs of 79ece4d and 3058cf4 measured the search code of fc4d8fb:
+79ece4d adds a line to the ignore file and 3058cf4 changes only this file.
+
+The run of bf3cb46 is the first and only run on a runner with the search code of the two rounds
+after 3058cf4: the direct read of a short row (e94680b), the evaluator's direct writes (f19f2f5),
+`earnest report` from an outline (2d99734), the part's table that forgets (89de199), the index's
+tables on cache lines of their own (f3ce61d), the packed path (0ee0be2), worker threads joined
+(cfb7949) and the general path's loop compiled on its own (45b99d7). No job ran for the commits
+between: pull request 15 was in conflict with `main` from the merge of the docs site until
+c293f53, and the job of c293f53 was cancelled by the push of bf3cb46. So the run of bf3cb46 shows
+all eight changes at once, the sum and not each step; the steps were timed on cloud machines, and
+pull request 15 holds those numbers.
 
 | Commit | Processor | `grid_10m`, 4 workers | `grid_10m`, 1 worker | `grid_1m` | `wide` |
 |---|---|---:|---:|---:|---:|
@@ -196,75 +207,83 @@ that these models reach.
 | fc84df4 | Intel(R) Xeon(R) 6975P-C | 1.228 s | 2.476 s | 0.123 s | 0.123 s |
 | 6c76546 | AMD EPYC 9V74 80-Core Processor | 1.346 s | 3.163 s | 0.138 s | 0.148 s |
 | fc4d8fb | INTEL(R) XEON(R) PLATINUM 8573C | 1.536 s | 3.070 s | 0.155 s | 0.159 s |
+| 79ece4d | Intel(R) Xeon(R) 6975P-C | 1.225 s | 2.432 s | 0.123 s | 0.121 s |
+| 3058cf4 | Intel(R) Xeon(R) 6975P-C | 1.148 s | 2.225 s | 0.121 s | 0.118 s |
+| bf3cb46 | AMD EPYC 7763 64-Core Processor | 1.085 s | 2.464 s | 0.116 s | 0.176 s |
 
-`grid_10m` with 4 workers took between 1.2 s and 2.4 s, against the target of under 5 s. The same
+`grid_10m` with 4 workers took between 1.1 s and 2.4 s, against the target of under 5 s. The same
 code took up to 1.9 times as long in one run as in another, so two builds can be compared only on
 one machine. The runners have five kinds of processor, which explains a part of that spread. The
 speed of a runner also changes within a run: the run of 433b987 shows a speed-up of 4.79 on 4
 cores. The runs of 4c25766, ca9e11a and 6c76546, all built with Rust 1.100.0, had the same
 processor, an AMD EPYC 9V74, and are the one fair line across this work on a runner: `grid_10m`
 took 1.658 s, 1.638 s and 1.346 s with 4 workers and 5.841 s, 3.783 s and 3.163 s with 1 worker.
-The sections below are as the run of fc4d8fb printed them.
+The runs of fc4d8fb, 79ece4d and 3058cf4 measured the same search code, the first on an Intel
+Xeon Platinum 8573C and the other two on an Intel Xeon 6975P-C: `grid_10m` took 1.536 s, 1.225 s
+and 1.148 s with 4 workers. The run of bf3cb46 had the processor of the run of 2963116, an AMD
+EPYC 7763; 2963116 was built with Rust 1.97.0 and bf3cb46 with Rust 1.100.0. `grid_10m` took
+2.124 s and 1.085 s with 4 workers and 7.580 s and 2.464 s with 1 worker. The sections below are as
+the run of bf3cb46 printed them.
 
-Cores: 4 (INTEL(R) XEON(R) PLATINUM 8573C). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.
+Cores: 4 (AMD EPYC 7763 64-Core Processor). Runs per model: 5 after one unmeasured run. Wall time includes starting the process and reading the files; peak memory is the largest resident set of any run.
 
 ### Scaled models
 
 | Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
 |---|---|---:|---:|---:|---:|
-| Grid1k | TypeScript | 1,000 | 0.002 | 424,989 | 5.6 |
-| Grid1k | Rust | 1,000 | 0.003 | 295,072 | 6.3 |
-| Ledger | TypeScript | 36,400 | 0.038 | 949,920 | 7.0 |
-| Ledger | Rust | 36,400 | 0.039 | 926,137 | 7.6 |
-| Wide | TypeScript | 10,000 | 0.159 | 62,881 | 7.4 |
-| Wide | Rust | 10,000 | 0.157 | 63,694 | 7.8 |
-| NarrowLevels | TypeScript | 1,020,300 | 0.163 | 6,265,005 | 23.6 |
-| NarrowLevels | Rust | 1,020,300 | 0.168 | 6,083,824 | 24.3 |
-| Grid100k | TypeScript | 100,000 | 0.021 | 4,770,764 | 7.8 |
-| Grid100k | Rust | 100,000 | 0.022 | 4,612,758 | 8.5 |
-| Grid1m | TypeScript | 1,000,000 | 0.155 | 6,456,361 | 27.8 |
-| Grid1m | Rust | 1,000,000 | 0.159 | 6,303,302 | 28.5 |
-| Grid10m | TypeScript | 10,000,000 | 1.530 | 6,537,126 | 189.0 |
-| Grid10m | Rust | 10,000,000 | 1.547 | 6,462,240 | 192.1 |
+| Grid1k | TypeScript | 1,000 | 0.002 | 413,052 | 5.4 |
+| Grid1k | Rust | 1,000 | 0.002 | 414,765 | 4.9 |
+| Ledger | TypeScript | 36,400 | 0.016 | 2,337,078 | 7.9 |
+| Ledger | Rust | 36,400 | 0.016 | 2,312,432 | 8.2 |
+| Wide | TypeScript | 10,000 | 0.176 | 56,846 | 7.7 |
+| Wide | Rust | 10,000 | 0.171 | 58,482 | 8.2 |
+| NarrowLevels | TypeScript | 1,020,300 | 0.134 | 7,626,130 | 23.5 |
+| NarrowLevels | Rust | 1,020,300 | 0.133 | 7,651,293 | 24.4 |
+| Grid100k | TypeScript | 100,000 | 0.019 | 5,225,206 | 8.5 |
+| Grid100k | Rust | 100,000 | 0.021 | 4,713,646 | 9.6 |
+| Grid1m | TypeScript | 1,000,000 | 0.116 | 8,634,609 | 28.3 |
+| Grid1m | Rust | 1,000,000 | 0.116 | 8,597,786 | 29.1 |
+| Grid10m | TypeScript | 10,000,000 | 1.100 | 9,094,687 | 192.0 |
+| Grid10m | Rust | 10,000,000 | 1.080 | 9,262,149 | 194.0 |
 
 ### The 12 mixed models, each alone
 
 | Model | Language | States | Median wall time (s) | States per second | Peak memory (MiB) |
 |---|---|---:|---:|---:|---:|
-| counter100 | TypeScript | 100 | 0.002 | 42,607 | 5.7 |
-| traffic | TypeScript | 30 | 0.002 | 12,992 | 5.8 |
-| plane | TypeScript | 400 | 0.002 | 171,821 | 5.8 |
-| basket | TypeScript | 16 | 0.002 | 6,875 | 5.7 |
-| mailbox4 | TypeScript | 31 | 0.002 | 13,460 | 5.7 |
-| trail3 | TypeScript | 40 | 0.002 | 17,278 | 5.7 |
-| shelf | TypeScript | 64 | 0.002 | 27,187 | 5.6 |
-| seats | TypeScript | 18 | 0.002 | 7,689 | 5.7 |
-| votes | TypeScript | 21 | 0.002 | 9,067 | 5.8 |
-| pairs | TypeScript | 120 | 0.002 | 50,933 | 5.8 |
-| ledger | TypeScript | 36,400 | 0.038 | 949,920 | 7.0 |
-| wide | TypeScript | 10,000 | 0.159 | 62,881 | 7.4 |
+| counter100 | TypeScript | 100 | 0.002 | 41,135 | 5.4 |
+| traffic | TypeScript | 30 | 0.002 | 12,448 | 5.4 |
+| plane | TypeScript | 400 | 0.002 | 165,975 | 5.6 |
+| basket | TypeScript | 16 | 0.002 | 6,617 | 5.5 |
+| mailbox4 | TypeScript | 31 | 0.002 | 12,905 | 5.4 |
+| trail3 | TypeScript | 40 | 0.002 | 16,570 | 5.4 |
+| shelf | TypeScript | 64 | 0.004 | 18,275 | 6.0 |
+| seats | TypeScript | 18 | 0.002 | 7,471 | 5.4 |
+| votes | TypeScript | 21 | 0.002 | 8,746 | 5.4 |
+| pairs | TypeScript | 120 | 0.002 | 49,979 | 5.6 |
+| ledger | TypeScript | 36,400 | 0.016 | 2,337,078 | 7.9 |
+| wide | TypeScript | 10,000 | 0.176 | 56,846 | 7.7 |
 
 ### Spec targets
 
-- 12 models together: 0.190 s, target under 5 s (a stand-in: these benchmark models, not the first app's 12)
-- slowest model alone: 0.159 s, target under 10 s (a stand-in: these benchmark models, not the first app's)
-- the 12 models in that one run: 47,240 states, peak memory 8.1 MiB
-- grid_10m with 4 workers: 1.536 s, peak memory 192.8 MiB, target under 5 s on 4 cores and 16 GB (this machine has 4 cores, at least the 4 of the target)
+- 12 models together: 0.184 s, target under 5 s (a stand-in: these benchmark models, not the first app's 12)
+- slowest model alone: 0.176 s, target under 10 s (a stand-in: these benchmark models, not the first app's)
+- the 12 models in that one run: 47,240 states, peak memory 8.2 MiB
+- grid_10m with 4 workers: 1.085 s, peak memory 193.0 MiB, target under 5 s on 4 cores and 16 GB (this machine has 4 cores, at least the 4 of the target)
 
 ### One large model on one worker and on all cores
 
-- grid_10m: 1 worker 3.070 s, 4 workers (all cores) 1.530 s, speed-up 2.01x
+- grid_10m: 1 worker 2.464 s, 4 workers (all cores) 1.100 s, speed-up 2.24x
 
 ### R12: many models and one large model in one run
 
-- the 13 models in one run: 0.309 s; the large model (grid_1m) alone: 0.155 s; the slowest of the 12 alone (wide): 0.159 s
-- R12 asks for about as long as the largest model alone: the one run took 1.94x the longest of them alone (wide)
-- peak memory 31.4 MiB
+- the 13 models in one run: 0.273 s; the large model (grid_1m) alone: 0.116 s; the slowest of the 12 alone (wide): 0.176 s
+- R12 asks for about as long as the largest model alone: the one run took 1.55x the longest of them alone (wide)
+- peak memory 30.9 MiB
 
 ### Budget
 
-- grid_10m with 4 workers, wall time: 1.536 s, target under 5.000 s: met
-- grid_10m with 1 worker, wall time: 3.070 s, budget under 8.000 s: met
-- grid_10m, peak memory, the larger of 4 workers and 1 worker (4 workers): 192.8 MiB, budget under 256.0 MiB: met
-- narrow_levels, search time with all cores (0.159 s) over search time with 1 worker (0.159 s): 1.00x, budget at most 1.50x: met
-- wide, search time with all cores (0.156 s) over search time with 1 worker (0.323 s): 0.48x, budget at most 0.75x: met
+- grid_10m with 4 workers, wall time: 1.085 s, target under 5.000 s: met
+- grid_10m with 1 worker, wall time: 2.464 s, budget under 8.000 s: met
+- grid_10m, peak memory, the larger of 4 workers and 1 worker (4 workers): 193.0 MiB, budget under 256.0 MiB: met
+- narrow_levels, search time with all cores (0.131 s) over search time with 1 worker (0.137 s): 0.96x, budget at most 1.50x: met
+- wide, search time with all cores (0.172 s) over search time with 1 worker (0.426 s): 0.40x, budget at most 0.75x: met
