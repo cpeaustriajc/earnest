@@ -76,15 +76,20 @@ pub fn skipped_section(skipped: &[String]) -> Option<String> {
     ))
 }
 
-fn model(section: &Section<'_>, max_arrows: usize) -> String {
+/// A model's section with its chart drawn already, for [`report_with_charts`].
+#[derive(Clone, Copy, Debug)]
+pub struct Charted<'a> {
+    /// What the report says about the model.
+    pub section: Section<'a>,
+    /// The model's chart, as [`chart_with_limit`](crate::chart_with_limit) or
+    /// [`chart_outline`](crate::chart_outline) draws it. The section has no chart without it.
+    pub chart: Option<&'a str>,
+}
+
+fn model(charted: &Charted<'_>) -> String {
+    let section = &charted.section;
     let mut blocks = vec![format!("## {}", prose(section.name)), result_line(section)];
-    blocks.extend(
-        section
-            .outcome
-            .graph
-            .as_ref()
-            .map(|graph| chart_with_limit(graph, max_arrows)),
-    );
+    blocks.extend(charted.chart.map(str::to_owned));
     let detail = detail_lines(section.outcome);
     if !detail.is_empty() {
         blocks.push(fenced(&detail));
@@ -122,10 +127,37 @@ pub fn report_with_limit(
     changes: Option<&RuleChanges<'_>>,
     max_arrows: usize,
 ) -> String {
-    let mut blocks: Vec<String> = sections
+    let charts: Vec<Option<String>> = sections
         .iter()
-        .map(|section| model(section, max_arrows))
+        .map(|section| {
+            section
+                .outcome
+                .graph
+                .as_ref()
+                .map(|graph| chart_with_limit(graph, max_arrows))
+        })
         .collect();
+    let charted: Vec<Charted<'_>> = sections
+        .iter()
+        .zip(&charts)
+        .map(|(section, chart)| Charted {
+            section: *section,
+            chart: chart.as_deref(),
+        })
+        .collect();
+    report_with_charts(&charted, unreadable, changes)
+}
+
+/// [`report`] with each model's chart drawn by the caller, as one that kept an
+/// [`Outline`](earnest_check::Outline) in place of the graph draws it with
+/// [`chart_outline`](crate::chart_outline). The graph of an outcome is not read.
+#[must_use]
+pub fn report_with_charts(
+    sections: &[Charted<'_>],
+    unreadable: &[Unreadable<'_>],
+    changes: Option<&RuleChanges<'_>>,
+) -> String {
+    let mut blocks: Vec<String> = sections.iter().map(model).collect();
     if !unreadable.is_empty() {
         let lines: Vec<String> = unreadable.iter().flat_map(unread_lines).collect();
         blocks.push(format!("## Unreadable files\n\n{}", fenced(&lines)));
