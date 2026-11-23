@@ -1,0 +1,34 @@
+# total samples 8893
+  5.06%    450  earnest_ir/code/chain.rs:28
+  5.04%    448  earnest_check/store/index.rs:154
+  4.84%    430  earnest_check/expand.rs:1027
+  3.31%    294  earnest_check/expand.rs:950
+  3.04%    270  earnest_ir/code/chain.rs:296
+  2.97%    264  earnest_ir/code/chain.rs:295
+  2.65%    236  earnest_check/expand.rs:1022
+  2.61%    232  earnest_ir/code/chain.rs:291
+  2.50%    222  earnest_check/expand.rs:814
+  2.41%    214  earnest_ir/code/num.rs:254
+  2.35%    209  earnest_ir/code/num.rs:253
+  2.18%    194  earnest_ir/eval.rs:149
+  2.08%    185  earnest_check/expand.rs:1028
+  2.06%    183  earnest_check/expand.rs:722
+  2.02%    180  earnest_check/expand.rs:420
+  1.97%    175  earnest_ir/code/chain.rs:133
+  1.77%    157  earnest_check/expand.rs:460
+  1.56%    139  earnest_ir/code/num.rs:284
+  1.55%    138  earnest_check/expand.rs:1004
+  1.46%    130  earnest_ir/code/chain.rs:26
+  1.43%    127  earnest_ir/code/chain.rs:294
+  1.43%    127  earnest_ir/code/chain.rs:150
+  1.42%    126  earnest_check/expand.rs:1031
+  1.39%    124  earnest_check/store/index.rs:48
+  1.36%    121  earnest_check/expand.rs:464
+# samples with no earnest frame, by perf symbol and innermost line
+  0.48%     43  <earnest_ir::code::num::Num>::rest  [code/num.rs:?]
+  0.11%     10  <earnest_ir::code::num::Num>::rest  [eval.rs:?]
+  0.01%      1  earnest_check::store::decode  [iter/adapters/zip.rs:?]
+  0.01%      1  _RINvXs3_NtCs4UOS4DmIeFS_10serde_core2deINtNtCs8uuN1nrGffB_4core6marker11PhantomDataNtNtCsds4avH53D4l_7earnest  [de/mod.rs:821]
+  0.01%      1  alloc::fmt::format::format_inner  [fmt.rs:652]
+  0.01%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [x86/sse2.rs:1570]
+  0.01%      1  _RINvMsa_NtCs28BlhQOHDyh_9hashbrown3rawNtB6_13RawTableInner22fallible_with_capacityNtNtNtNtCs72WJZnJAVYh_14all  [stable/alloc/global.rs:23]

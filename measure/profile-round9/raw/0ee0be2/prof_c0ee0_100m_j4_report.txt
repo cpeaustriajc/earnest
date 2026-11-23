@@ -1,0 +1,32 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 39K of event 'cpu-clock'
+# Event count (approx.): 39382382343
+#
+# Overhead  Symbol                                                                                                                                                                                         IPC   [IPC Coverage]
+# ........  .............................................................................................................................................................................................  ....................
+#
+    35.87%  [.] <earnest_check::explore::Search>::work                                                                                                                 -      -            
+    24.85%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#1}>::{closure#1}                    -      -            
+    17.36%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                        -      -            
+     3.58%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                       -      -            
+     3.11%  [k] exc_page_fault                                                                                                                                                                             -      -            
+     2.36%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#1}::{closure#1}>  -      -            
+     1.51%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                         -      -            
+     1.21%  [.] __memset_avx512_unaligned_erms                                                                                                                                                             -      -            
+     1.09%  [k] memcg1_commit_charge                                                                                                                                                                       -      -            
+     0.92%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                                -      -            
+     0.86%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     0.77%  [.] <earnest_check::store::level::Winners>::of                                                                                                                      -      -            
+     0.70%  [k] clear_page_erms                                                                                                                                                                            -      -            
+     0.69%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                            -      -            
+     0.56%  [k] _raw_spin_lock                                                                                                                                                                             -      -            
+     0.42%  [.] <earnest_check::store::Store>::outside                                                                                                                            -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

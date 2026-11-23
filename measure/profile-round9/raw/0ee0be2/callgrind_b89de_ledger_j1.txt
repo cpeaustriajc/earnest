@@ -1,0 +1,11 @@
+==28975== Callgrind, a call-graph generating cache profiler
+==28975== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==28975== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==28975== Command: /SCRATCH/bin89/earnest verify --no-cache --json --jobs 1 --max-states 200000000 ledger.model.ts
+==28975== 
+==28975== For interactive control, run 'callgrind_control -h'.
+==28975== 
+==28975== Events    : Ir
+==28975== Collected : 510356715
+==28975== 
+==28975== I   refs:      510,356,715

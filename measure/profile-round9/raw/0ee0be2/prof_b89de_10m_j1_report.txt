@@ -1,0 +1,32 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 17K of event 'cpu-clock'
+# Event count (approx.): 17626626609
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    35.67%  [.] <earnest_check::explore::Search>::work                                                                                                               -      -            
+    22.25%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                    -      -            
+    15.75%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                      -      -            
+     5.02%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     4.05%  [.] <earnest_ir::code::cond::Cond>::eval                                                                                                                          -      -            
+     3.90%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                     -      -            
+     3.21%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>  -      -            
+     1.38%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                       -      -            
+     1.16%  [.] <earnest_check::store::level::Winners>::of                                                                                                                    -      -            
+     1.04%  [.] __memset_avx512_unaligned_erms                                                                                                                                                           -      -            
+     1.02%  [k] exc_page_fault                                                                                                                                                                           -      -            
+     0.73%  [.] <earnest_check::store::Store>::outside                                                                                                                            -      -            
+     0.65%  [.] malloc                                                                                                                                                                                   -      -            
+     0.40%  [k] memcg1_commit_charge                                                                                                                                                                     -      -            
+     0.34%  [k] _raw_spin_lock                                                                                                                                                                           -      -            
+     0.32%  [.] <earnest_check::store::Store>::place                                                                                                                              -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

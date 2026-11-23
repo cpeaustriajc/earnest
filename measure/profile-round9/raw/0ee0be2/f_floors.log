@@ -1,0 +1,1750 @@
+## machine before 2026-11-23T09:13:32Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         511       14500          12        1312       15575
+loadavg: 1.71 1.20 0.51 2/110 2038
+# sha256
+# 316664ac3662fa2b520c3551168a03e549c3741da0be73b3a912e2bafb2a848b  /SCRATCH/bin/floor_par
+# conf
+# # The floors a second pass needs on a new machine: the best of each kind from floors_par.conf, and the generating alone
+# serial_huge 7 HUGE=1 -- serial
+# serial_4k 7 HUGE=0 -- serial
+# shared4_huge 7 HUGE=1 CHUNK=4096 DIST=16 -- shared 4
+# shared4_4k 7 HUGE=0 CHUNK=256 DIST=16 -- shared 4
+# parts4_huge 7 HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0 -- 4
+# gen1 7 -- gen 1
+# gen4 7 -- gen 4
+# serial_huge 8 HUGE=1 -- serial
+# serial_4k 8 HUGE=0 -- serial
+# shared4_huge 8 HUGE=1 CHUNK=256 DIST=16 -- shared 4
+# shared4_4k 8 HUGE=0 CHUNK=256 DIST=16 -- shared 4
+# parts4_huge 8 HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0 -- 4
+# gen1 8 -- gen 1
+# gen4 8 -- gen 4
+# loadavg_before=1.73 1.21 0.51 1/110 2046 utc=2026-11-23T09:13:33Z
+### run label=serial_huge wheels=7 round=0 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.9373
+run_cpu_s=1.9350
+run_sys_s=0.1720
+huge=1 prefault=1
+gnutime wall=2.01 user=1.82 sys=0.18 maxrss_kb=283896 minflt=37701
+### end exit=0
+### run label=serial_huge wheels=7 round=1 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.9738
+run_cpu_s=1.9665
+run_sys_s=0.1063
+huge=1 prefault=1
+gnutime wall=2.03 user=1.90 sys=0.11 maxrss_kb=283880 minflt=37701
+### end exit=0
+### run label=serial_4k wheels=7 round=1 env='HUGE=0' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.0620
+run_cpu_s=2.0223
+run_sys_s=0.1949
+huge=0 prefault=1
+gnutime wall=2.13 user=1.88 sys=0.20 maxrss_kb=283892 minflt=99018
+### end exit=0
+### run label=shared4_huge wheels=7 round=1 env='HUGE=1 CHUNK=4096 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=994ef70c03e1b8dc
+parent_checksum=a95666676bea1bc4
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.6911
+run_cpu_s=2.2703
+run_sys_s=0.2336
+huge=1 prefault=1
+threads=4
+chunk=4096 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.4885
+copy_s=0.0993
+grow_s=0.0966
+gnutime wall=0.77 user=2.09 sys=0.24 maxrss_kb=280648 minflt=41855
+### end exit=0
+### run label=shared4_4k wheels=7 round=1 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=70d011cb002594b4
+parent_checksum=df40e628c13c3303
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7389
+run_cpu_s=2.5386
+run_sys_s=0.2615
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5362
+copy_s=0.0984
+grow_s=0.0922
+gnutime wall=0.83 user=2.34 sys=0.28 maxrss_kb=279612 minflt=103172
+### end exit=0
+### run label=parts4_huge wheels=7 round=1 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.9246
+run_cpu_s=3.0541
+run_sys_s=0.2940
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=63000000
+step1_known=0
+step1_s=0.1979
+step2_s=0.6104
+serial_s=0.0781
+step3_s=0.0379
+rest_s=0.0002
+gnutime wall=0.99 user=2.80 sys=0.30 maxrss_kb=331348 minflt=112518
+### end exit=0
+### run label=gen1 wheels=7 round=1 env='' args='gen 1'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.1614
+run_cpu_s=2.6242
+run_sys_s=0.2041
+huge=0 prefault=1
+threads=1
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1614
+gen_sys_s=0.0001
+search_before_gen_s=2.4694
+gnutime wall=2.71 user=2.48 sys=0.21 maxrss_kb=283892 minflt=99018
+### end exit=0
+### run label=gen4 wheels=7 round=1 env='' args='gen 4'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.0324
+run_cpu_s=2.7200
+run_sys_s=0.2238
+huge=0 prefault=1
+threads=4
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1213
+gen_sys_s=0.0000
+search_before_gen_s=2.5902
+gnutime wall=2.71 user=2.56 sys=0.23 maxrss_kb=283896 minflt=99031
+### end exit=0
+### run label=serial_huge wheels=7 round=2 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.8209
+run_cpu_s=1.8053
+run_sys_s=0.1553
+huge=1 prefault=1
+gnutime wall=1.87 user=1.69 sys=0.16 maxrss_kb=283884 minflt=37699
+### end exit=0
+### run label=serial_4k wheels=7 round=2 env='HUGE=0' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.8910
+run_cpu_s=1.8876
+run_sys_s=0.1438
+huge=0 prefault=1
+gnutime wall=1.97 user=1.79 sys=0.15 maxrss_kb=283876 minflt=99019
+### end exit=0
+### run label=shared4_huge wheels=7 round=2 env='HUGE=1 CHUNK=4096 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=a5bcaab667e02b53
+parent_checksum=cb6414ea6262c939
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7007
+run_cpu_s=2.2582
+run_sys_s=0.2241
+huge=1 prefault=1
+threads=4
+chunk=4096 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.4761
+copy_s=0.1297
+grow_s=0.0896
+gnutime wall=0.76 user=2.08 sys=0.23 maxrss_kb=278972 minflt=41640
+### end exit=0
+### run label=shared4_4k wheels=7 round=2 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=7c3dc26f6afd2369
+parent_checksum=2c2e3c0dc22038b1
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7469
+run_cpu_s=2.5418
+run_sys_s=0.2970
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5361
+copy_s=0.1007
+grow_s=0.0935
+gnutime wall=0.84 user=2.32 sys=0.30 maxrss_kb=279876 minflt=103284
+### end exit=0
+### run label=parts4_huge wheels=7 round=2 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.0623
+run_cpu_s=3.0336
+run_sys_s=0.2651
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=63000000
+step1_known=0
+step1_s=0.2160
+step2_s=0.7281
+serial_s=0.0801
+step3_s=0.0379
+rest_s=0.0002
+gnutime wall=1.15 user=2.83 sys=0.27 maxrss_kb=331104 minflt=112319
+### end exit=0
+### run label=gen1 wheels=7 round=2 env='' args='gen 1'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.1107
+run_cpu_s=2.4669
+run_sys_s=0.1881
+huge=0 prefault=1
+threads=1
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1104
+gen_sys_s=0.0000
+search_before_gen_s=2.3609
+gnutime wall=2.53 user=2.32 sys=0.19 maxrss_kb=283892 minflt=99018
+### end exit=0
+### run label=gen4 wheels=7 round=2 env='' args='gen 4'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.0326
+run_cpu_s=2.1475
+run_sys_s=0.1989
+huge=0 prefault=1
+threads=4
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1271
+gen_sys_s=0.0000
+search_before_gen_s=2.0570
+gnutime wall=2.14 user=1.99 sys=0.20 maxrss_kb=283808 minflt=99033
+### end exit=0
+### run label=serial_huge wheels=7 round=3 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.6587
+run_cpu_s=1.6353
+run_sys_s=0.1624
+huge=1 prefault=1
+gnutime wall=1.71 user=1.51 sys=0.16 maxrss_kb=283900 minflt=37697
+### end exit=0
+### run label=serial_4k wheels=7 round=3 env='HUGE=0' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.0240
+run_cpu_s=2.0059
+run_sys_s=0.1678
+huge=0 prefault=1
+gnutime wall=2.11 user=1.90 sys=0.17 maxrss_kb=283872 minflt=99021
+### end exit=0
+### run label=shared4_huge wheels=7 round=3 env='HUGE=1 CHUNK=4096 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=5fbd7a604c3189e0
+parent_checksum=1bf8fab60e6cff27
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7141
+run_cpu_s=2.1517
+run_sys_s=0.2018
+huge=1 prefault=1
+threads=4
+chunk=4096 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.4843
+copy_s=0.1265
+grow_s=0.0909
+gnutime wall=0.76 user=1.99 sys=0.20 maxrss_kb=279028 minflt=41757
+### end exit=0
+### run label=shared4_4k wheels=7 round=3 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=667ef0156556edc9
+parent_checksum=4b39f4acee9b4770
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7612
+run_cpu_s=2.4618
+run_sys_s=0.2604
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5481
+copy_s=0.0909
+grow_s=0.1089
+gnutime wall=0.85 user=2.26 sys=0.27 maxrss_kb=278888 minflt=103065
+### end exit=0
+### run label=parts4_huge wheels=7 round=3 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.9226
+run_cpu_s=3.1114
+run_sys_s=0.3175
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=63000000
+step1_known=0
+step1_s=0.2102
+step2_s=0.5917
+serial_s=0.0861
+step3_s=0.0344
+rest_s=0.0002
+gnutime wall=1.01 user=2.85 sys=0.32 maxrss_kb=331200 minflt=112528
+### end exit=0
+### run label=gen1 wheels=7 round=3 env='' args='gen 1'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.1587
+run_cpu_s=2.5652
+run_sys_s=0.2318
+huge=0 prefault=1
+threads=1
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1583
+gen_sys_s=0.0000
+search_before_gen_s=2.4027
+gnutime wall=2.64 user=2.39 sys=0.24 maxrss_kb=283892 minflt=99018
+### end exit=0
+### run label=gen4 wheels=7 round=3 env='' args='gen 4'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.0355
+run_cpu_s=2.2125
+run_sys_s=0.2003
+huge=0 prefault=1
+threads=4
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1371
+gen_sys_s=0.0000
+search_before_gen_s=2.0765
+gnutime wall=2.17 user=2.06 sys=0.21 maxrss_kb=283852 minflt=99031
+### end exit=0
+### run label=serial_huge wheels=7 round=4 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.8431
+run_cpu_s=1.8418
+run_sys_s=0.1440
+huge=1 prefault=1
+gnutime wall=1.91 user=1.76 sys=0.15 maxrss_kb=283856 minflt=37701
+### end exit=0
+### run label=serial_4k wheels=7 round=4 env='HUGE=0' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.4018
+run_cpu_s=2.4093
+run_sys_s=0.2206
+huge=0 prefault=1
+gnutime wall=2.49 user=2.25 sys=0.23 maxrss_kb=283896 minflt=99019
+### end exit=0
+### run label=shared4_huge wheels=7 round=4 env='HUGE=1 CHUNK=4096 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=6f1e22c3e1d744b7
+parent_checksum=14387a06d3540469
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.8184
+run_cpu_s=2.1464
+run_sys_s=0.1824
+huge=1 prefault=1
+threads=4
+chunk=4096 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5820
+copy_s=0.0946
+grow_s=0.1063
+gnutime wall=0.89 user=2.03 sys=0.19 maxrss_kb=281056 minflt=42135
+### end exit=0
+### run label=shared4_4k wheels=7 round=4 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=89021d9a678aaae2
+parent_checksum=d79357a66b451280
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7509
+run_cpu_s=2.2324
+run_sys_s=0.1934
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5125
+copy_s=0.0934
+grow_s=0.1306
+gnutime wall=0.82 user=2.08 sys=0.20 maxrss_kb=280224 minflt=103139
+### end exit=0
+### run label=parts4_huge wheels=7 round=4 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.8116
+run_cpu_s=2.7727
+run_sys_s=0.2278
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=63000000
+step1_known=0
+step1_s=0.1649
+step2_s=0.5453
+serial_s=0.0704
+step3_s=0.0308
+rest_s=0.0001
+gnutime wall=0.88 user=2.59 sys=0.23 maxrss_kb=331164 minflt=112102
+### end exit=0
+### run label=gen1 wheels=7 round=4 env='' args='gen 1'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.1704
+run_cpu_s=2.4824
+run_sys_s=0.2640
+huge=0 prefault=1
+threads=1
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1703
+gen_sys_s=0.0000
+search_before_gen_s=2.3129
+gnutime wall=2.56 user=2.28 sys=0.27 maxrss_kb=283860 minflt=99021
+### end exit=0
+### run label=gen4 wheels=7 round=4 env='' args='gen 4'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.0312
+run_cpu_s=1.8769
+run_sys_s=0.1543
+huge=0 prefault=1
+threads=4
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1118
+gen_sys_s=0.0000
+search_before_gen_s=1.8135
+gnutime wall=1.90 user=1.77 sys=0.16 maxrss_kb=283780 minflt=99030
+### end exit=0
+### run label=serial_huge wheels=7 round=5 env='HUGE=1' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.8570
+run_cpu_s=1.8426
+run_sys_s=0.1714
+huge=1 prefault=1
+gnutime wall=1.91 user=1.71 sys=0.17 maxrss_kb=283920 minflt=37700
+### end exit=0
+### run label=serial_4k wheels=7 round=5 env='HUGE=0' args='serial'
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.0830
+run_cpu_s=2.0715
+run_sys_s=0.2036
+huge=0 prefault=1
+gnutime wall=2.15 user=1.92 sys=0.21 maxrss_kb=283876 minflt=99020
+### end exit=0
+### run label=shared4_huge wheels=7 round=5 env='HUGE=1 CHUNK=4096 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=61fd9bd4b88d3386
+parent_checksum=af79ec07dc304426
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.7422
+run_cpu_s=2.1724
+run_sys_s=0.2058
+huge=1 prefault=1
+threads=4
+chunk=4096 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.5165
+copy_s=0.0981
+grow_s=0.1045
+gnutime wall=0.82 user=2.03 sys=0.21 maxrss_kb=280076 minflt=41947
+### end exit=0
+### run label=shared4_4k wheels=7 round=5 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=7
+states=10000000
+levels=64
+checksum=2afc996214a9ae68
+parent_checksum=0d237fd27a77017c
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.6613
+run_cpu_s=2.2168
+run_sys_s=0.2373
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=63000000
+grows=16
+expand_s=0.4685
+copy_s=0.0857
+grow_s=0.0847
+gnutime wall=0.73 user=2.03 sys=0.24 maxrss_kb=279516 minflt=103113
+### end exit=0
+### run label=parts4_huge wheels=7 round=5 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.3029
+run_cpu_s=2.7880
+run_sys_s=0.2670
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=63000000
+step1_known=0
+step1_s=0.3106
+step2_s=0.8097
+serial_s=0.0979
+step3_s=0.0845
+rest_s=0.0003
+gnutime wall=1.37 user=2.56 sys=0.27 maxrss_kb=331280 minflt=112681
+### end exit=0
+### run label=gen1 wheels=7 round=5 env='' args='gen 1'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.1727
+run_cpu_s=2.2502
+run_sys_s=0.2153
+huge=0 prefault=1
+threads=1
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1726
+gen_sys_s=0.0001
+search_before_gen_s=2.0959
+gnutime wall=2.35 user=2.09 sys=0.22 maxrss_kb=283860 minflt=99021
+### end exit=0
+### run label=gen4 wheels=7 round=5 env='' args='gen 4'
+variant=gen
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+set_checksum=b4b67c709b34e433/9a0013722c3e2d53
+bad_parents=0
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=0.0371
+run_cpu_s=2.4191
+run_sys_s=0.2121
+huge=0 prefault=1
+threads=4
+successors=63000000
+hash_sum=1ed5002420c8facb
+gen_cpu_s=0.1459
+gen_sys_s=0.0039
+search_before_gen_s=2.2666
+gnutime wall=2.38 user=2.27 sys=0.22 maxrss_kb=283864 minflt=99033
+### end exit=0
+### run label=serial_huge wheels=8 round=0 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.1158
+run_cpu_s=26.6930
+run_sys_s=2.5612
+huge=1 prefault=1
+gnutime wall=27.99 user=24.91 sys=2.64 maxrss_kb=4265028 minflt=305342
+### end exit=0
+### run label=serial_huge wheels=8 round=1 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.0039
+run_cpu_s=26.7970
+run_sys_s=2.2422
+huge=1 prefault=1
+gnutime wall=27.74 user=25.21 sys=2.32 maxrss_kb=4265140 minflt=305340
+### end exit=0
+### run label=serial_4k wheels=8 round=1 env='HUGE=0' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=35.0332
+run_cpu_s=34.9604
+run_sys_s=4.2436
+huge=0 prefault=1
+gnutime wall=36.03 user=31.51 sys=4.32 maxrss_kb=4265012 minflt=1345736
+### end exit=0
+### run label=shared4_huge wheels=8 round=1 env='HUGE=1 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=427e05c109b978fa
+parent_checksum=27dc5b5d43bdfb74
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=12.5537
+run_cpu_s=32.4526
+run_sys_s=2.7915
+huge=1 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=9.4345
+copy_s=1.1542
+grow_s=1.9090
+gnutime wall=13.46 user=30.49 sys=2.84 maxrss_kb=4350660 minflt=324014
+### end exit=0
+### run label=shared4_4k wheels=8 round=1 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=96b311340538cc58
+parent_checksum=d4f699e4d9188187
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=17.9050
+run_cpu_s=34.5716
+run_sys_s=3.6758
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=13.5890
+copy_s=1.1703
+grow_s=2.9383
+gnutime wall=18.92 user=31.75 sys=3.72 maxrss_kb=4348272 minflt=1363743
+### end exit=0
+### run label=parts4_huge wheels=8 round=1 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=18.7358
+run_cpu_s=35.0142
+run_sys_s=3.0026
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=720000000
+step1_known=0
+step1_s=4.5545
+step2_s=12.2794
+serial_s=1.1829
+step3_s=0.7189
+rest_s=0.0001
+gnutime wall=19.57 user=32.67 sys=3.07 maxrss_kb=4149152 minflt=708522
+### end exit=0
+### run label=gen1 wheels=8 round=1 env='' args='gen 1'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=1.5093
+run_cpu_s=34.8925
+run_sys_s=3.3994
+huge=0 prefault=1
+threads=1
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.4999
+gen_sys_s=0.0000
+search_before_gen_s=33.5087
+gnutime wall=35.63 user=32.00 sys=3.45 maxrss_kb=4265200 minflt=1345736
+### end exit=0
+### run label=gen4 wheels=8 round=1 env='' args='gen 4'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=0.4213
+run_cpu_s=34.6207
+run_sys_s=3.3272
+huge=0 prefault=1
+threads=4
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.6522
+gen_sys_s=0.0000
+search_before_gen_s=33.0829
+gnutime wall=34.40 user=32.06 sys=3.38 maxrss_kb=4265168 minflt=1345749
+### end exit=0
+### run label=serial_huge wheels=8 round=2 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.0819
+run_cpu_s=26.9380
+run_sys_s=2.4553
+huge=1 prefault=1
+gnutime wall=27.86 user=25.19 sys=2.51 maxrss_kb=4265200 minflt=305341
+### end exit=0
+### run label=serial_4k wheels=8 round=2 env='HUGE=0' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=33.8050
+run_cpu_s=33.3359
+run_sys_s=3.5465
+huge=0 prefault=1
+gnutime wall=34.64 user=30.50 sys=3.60 maxrss_kb=4265072 minflt=1345734
+### end exit=0
+### run label=shared4_huge wheels=8 round=2 env='HUGE=1 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=536d4612de75b2d9
+parent_checksum=c0a1d3ef759716eb
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=15.0386
+run_cpu_s=30.5329
+run_sys_s=2.6981
+huge=1 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=11.5315
+copy_s=1.4098
+grow_s=1.9720
+gnutime wall=15.69 user=28.43 sys=2.74 maxrss_kb=4347188 minflt=323014
+### end exit=0
+### run label=shared4_4k wheels=8 round=2 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=6bb75237e40ed0d0
+parent_checksum=15448c2b50b5fd1e
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=11.9384
+run_cpu_s=33.2584
+run_sys_s=3.5375
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=8.9020
+copy_s=0.7989
+grow_s=2.1066
+gnutime wall=12.74 user=30.39 sys=3.58 maxrss_kb=4350788 minflt=1364372
+### end exit=0
+### run label=parts4_huge wheels=8 round=2 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=11.9626
+run_cpu_s=32.6797
+run_sys_s=2.9006
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=720000000
+step1_known=0
+step1_s=2.4001
+step2_s=8.2689
+serial_s=0.8599
+step3_s=0.4336
+rest_s=0.0001
+gnutime wall=12.83 user=30.49 sys=2.98 maxrss_kb=4150116 minflt=709351
+### end exit=0
+### run label=gen1 wheels=8 round=2 env='' args='gen 1'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=1.8211
+run_cpu_s=33.2006
+run_sys_s=3.3089
+huge=0 prefault=1
+threads=1
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.7456
+gen_sys_s=0.0009
+search_before_gen_s=31.7646
+gnutime wall=34.25 user=30.40 sys=3.37 maxrss_kb=4265020 minflt=1345736
+### end exit=0
+### run label=gen4 wheels=8 round=2 env='' args='gen 4'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=0.5618
+run_cpu_s=33.7867
+run_sys_s=3.3239
+huge=0 prefault=1
+threads=4
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.5423
+gen_sys_s=0.0001
+search_before_gen_s=32.4321
+gnutime wall=33.67 user=30.99 sys=3.41 maxrss_kb=4265204 minflt=1345748
+### end exit=0
+### run label=serial_huge wheels=8 round=3 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=29.0559
+run_cpu_s=28.8658
+run_sys_s=2.7519
+huge=1 prefault=1
+gnutime wall=29.81 user=26.77 sys=2.83 maxrss_kb=4265036 minflt=305340
+### end exit=0
+### run label=serial_4k wheels=8 round=3 env='HUGE=0' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=32.2213
+run_cpu_s=32.0700
+run_sys_s=3.3193
+huge=0 prefault=1
+gnutime wall=33.29 user=29.65 sys=3.42 maxrss_kb=4265064 minflt=1345735
+### end exit=0
+### run label=shared4_huge wheels=8 round=3 env='HUGE=1 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=5e42883bb0d85ba7
+parent_checksum=44871572b939da2c
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=8.9767
+run_cpu_s=32.6654
+run_sys_s=2.7345
+huge=1 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=6.7641
+copy_s=0.9772
+grow_s=1.2220
+gnutime wall=9.69 user=30.57 sys=2.79 maxrss_kb=4338320 minflt=320858
+### end exit=0
+### run label=shared4_4k wheels=8 round=3 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=484906d6f60e6c1a
+parent_checksum=f33fbca8f2aced86
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=9.6806
+run_cpu_s=35.3693
+run_sys_s=3.5095
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=7.2745
+copy_s=0.8789
+grow_s=1.4188
+gnutime wall=10.52 user=32.54 sys=3.56 maxrss_kb=4340488 minflt=1361829
+### end exit=0
+### run label=parts4_huge wheels=8 round=3 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=10.2981
+run_cpu_s=37.6452
+run_sys_s=2.8717
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=720000000
+step1_known=0
+step1_s=2.2519
+step2_s=6.9305
+serial_s=0.8032
+step3_s=0.3123
+rest_s=0.0002
+gnutime wall=11.18 user=35.49 sys=2.95 maxrss_kb=4148020 minflt=708363
+### end exit=0
+### run label=gen1 wheels=8 round=3 env='' args='gen 1'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=1.4521
+run_cpu_s=33.1162
+run_sys_s=3.4264
+huge=0 prefault=1
+threads=1
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.4508
+gen_sys_s=0.0000
+search_before_gen_s=31.7795
+gnutime wall=34.00 user=30.32 sys=3.50 maxrss_kb=4265108 minflt=1345736
+### end exit=0
+### run label=gen4 wheels=8 round=3 env='' args='gen 4'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=0.3766
+run_cpu_s=32.8210
+run_sys_s=3.6146
+huge=0 prefault=1
+threads=4
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.4766
+gen_sys_s=0.0000
+search_before_gen_s=31.6437
+gnutime wall=33.13 user=30.13 sys=3.71 maxrss_kb=4264988 minflt=1345746
+### end exit=0
+### run label=serial_huge wheels=8 round=4 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=25.9878
+run_cpu_s=25.8254
+run_sys_s=2.3931
+huge=1 prefault=1
+gnutime wall=26.80 user=24.12 sys=2.48 maxrss_kb=4265088 minflt=305343
+### end exit=0
+### run label=serial_4k wheels=8 round=4 env='HUGE=0' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=30.1513
+run_cpu_s=30.0135
+run_sys_s=3.1334
+huge=0 prefault=1
+gnutime wall=31.00 user=27.56 sys=3.19 maxrss_kb=4265204 minflt=1345736
+### end exit=0
+### run label=shared4_huge wheels=8 round=4 env='HUGE=1 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=da3bfa274bcdffee
+parent_checksum=d88c3d3ce76514e5
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=7.9783
+run_cpu_s=28.7331
+run_sys_s=2.2208
+huge=1 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=6.0356
+copy_s=0.8718
+grow_s=1.0585
+gnutime wall=8.72 user=27.18 sys=2.27 maxrss_kb=4341916 minflt=321782
+### end exit=0
+### run label=shared4_4k wheels=8 round=4 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=d658848a4967b21f
+parent_checksum=48033eae26a0e157
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=9.3299
+run_cpu_s=34.0668
+run_sys_s=3.1985
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=6.9907
+copy_s=0.8714
+grow_s=1.3749
+gnutime wall=10.16 user=31.58 sys=3.24 maxrss_kb=4338096 minflt=1361248
+### end exit=0
+### run label=parts4_huge wheels=8 round=4 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=9.1561
+run_cpu_s=33.1253
+run_sys_s=2.6206
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=720000000
+step1_known=0
+step1_s=1.6021
+step2_s=6.4998
+serial_s=0.7694
+step3_s=0.2847
+rest_s=0.0001
+gnutime wall=9.84 user=31.07 sys=2.66 maxrss_kb=4147008 minflt=707950
+### end exit=0
+### run label=gen1 wheels=8 round=4 env='' args='gen 1'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=1.6820
+run_cpu_s=32.4982
+run_sys_s=3.2251
+huge=0 prefault=1
+threads=1
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.6627
+gen_sys_s=0.0013
+search_before_gen_s=31.0190
+gnutime wall=33.34 user=29.78 sys=3.29 maxrss_kb=4265180 minflt=1345738
+### end exit=0
+### run label=gen4 wheels=8 round=4 env='' args='gen 4'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=0.4632
+run_cpu_s=32.2510
+run_sys_s=3.1945
+huge=0 prefault=1
+threads=4
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.8372
+gen_sys_s=0.0044
+search_before_gen_s=30.5810
+gnutime wall=31.87 user=29.76 sys=3.26 maxrss_kb=4265140 minflt=1345750
+### end exit=0
+### run label=serial_huge wheels=8 round=5 env='HUGE=1' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=26.4461
+run_cpu_s=26.1749
+run_sys_s=2.2480
+huge=1 prefault=1
+gnutime wall=27.17 user=24.57 sys=2.31 maxrss_kb=4265188 minflt=305342
+### end exit=0
+### run label=serial_4k wheels=8 round=5 env='HUGE=0' args='serial'
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=29.9170
+run_cpu_s=29.8420
+run_sys_s=3.1013
+huge=0 prefault=1
+gnutime wall=30.67 user=27.35 sys=3.15 maxrss_kb=4265184 minflt=1345737
+### end exit=0
+### run label=shared4_huge wheels=8 round=5 env='HUGE=1 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=f3a8ff3c806377ff
+parent_checksum=ad9e241751e161ac
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=8.4011
+run_cpu_s=30.3980
+run_sys_s=2.2303
+huge=1 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=6.3870
+copy_s=0.9138
+grow_s=1.0864
+gnutime wall=9.35 user=29.02 sys=2.32 maxrss_kb=4336116 minflt=320347
+### end exit=0
+### run label=shared4_4k wheels=8 round=5 env='HUGE=0 CHUNK=256 DIST=16' args='shared 4'
+variant=shared
+wheels=8
+states=100000000
+levels=73
+checksum=393884dd7f49cf97
+parent_checksum=683795227e83e130
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=10.0079
+run_cpu_s=36.6656
+run_sys_s=3.4202
+huge=0 prefault=1
+threads=4
+chunk=256 dist=16 bits0=4
+successors=720000000
+grows=19
+expand_s=7.5675
+copy_s=0.8743
+grow_s=1.4504
+gnutime wall=11.00 user=34.08 sys=3.47 maxrss_kb=4335852 minflt=1360666
+### end exit=0
+### run label=parts4_huge wheels=8 round=5 env='HUGE=1 SHARD_BITS=6 PART=16384 FILTER=0' args='4'
+variant=4
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=10.0742
+run_cpu_s=36.3965
+run_sys_s=2.8247
+huge=1 prefault=1
+threads=4
+shard_bits=6 part=16384 filter=0
+successors=720000000
+step1_known=0
+step1_s=2.0390
+step2_s=6.9010
+serial_s=0.8123
+step3_s=0.3218
+rest_s=0.0002
+gnutime wall=10.74 user=34.11 sys=2.88 maxrss_kb=4148856 minflt=708238
+### end exit=0
+### run label=gen1 wheels=8 round=5 env='' args='gen 1'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=1.4952
+run_cpu_s=33.5925
+run_sys_s=3.3786
+huge=0 prefault=1
+threads=1
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.4611
+gen_sys_s=0.0000
+search_before_gen_s=32.3556
+gnutime wall=34.53 user=30.75 sys=3.44 maxrss_kb=4265028 minflt=1345735
+### end exit=0
+### run label=gen4 wheels=8 round=5 env='' args='gen 4'
+variant=gen
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+set_checksum=7ef5d63824502cfa/b7d36332c451f4a4
+bad_parents=0
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=0.4653
+run_cpu_s=33.8275
+run_sys_s=3.3401
+huge=0 prefault=1
+threads=4
+successors=720000000
+hash_sum=8bb675eacdaf5626
+gen_cpu_s=1.8091
+gen_sys_s=0.0031
+search_before_gen_s=32.1449
+gnutime wall=33.53 user=31.20 sys=3.44 maxrss_kb=4265180 minflt=1345750
+### end exit=0
+# loadavg_after=1.35 2.02 1.86 1/110 27277 utc=2026-11-23T09:28:49Z
+## machine after 2026-11-23T09:28:49Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         740       13324          12        2295       15346
+loadavg: 1.35 2.02 1.86 1/110 27285

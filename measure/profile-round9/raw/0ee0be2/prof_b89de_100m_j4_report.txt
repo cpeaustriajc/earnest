@@ -1,0 +1,33 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 51K of event 'cpu-clock'
+# Event count (approx.): 51957957906
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    32.74%  [.] <earnest_check::explore::Search>::work                                                                                                               -      -            
+    28.73%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                    -      -            
+    14.34%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                      -      -            
+     4.26%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     3.44%  [.] <earnest_ir::code::cond::Cond>::eval                                                                                                                          -      -            
+     2.62%  [k] exc_page_fault                                                                                                                                                                           -      -            
+     2.51%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                     -      -            
+     1.74%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>  -      -            
+     0.98%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                       -      -            
+     0.89%  [.] __memset_avx512_unaligned_erms                                                                                                                                                           -      -            
+     0.88%  [k] memcg1_commit_charge                                                                                                                                                                     -      -            
+     0.68%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                              -      -            
+     0.68%  [.] <earnest_check::store::Store>::outside                                                                                                                            -      -            
+     0.66%  [k] _raw_spin_lock                                                                                                                                                                           -      -            
+     0.58%  [.] <earnest_check::store::level::Winners>::of                                                                                                                    -      -            
+     0.55%  [k] clear_page_erms                                                                                                                                                                          -      -            
+     0.50%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                          -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

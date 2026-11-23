@@ -1,0 +1,29 @@
+## machine before 2026-11-23T09:58:51Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         988       13015          12        2357       15098
+loadavg: 1.61 1.64 1.76 1/108 24832
+gnutime wall=3.48 user=2.80 sys=0.12 maxrss_kb=191488
+      "status": "pass",
+      "states": 10000000,
+gnutime wall=3.49 user=3.34 sys=0.12 maxrss_kb=191460
+      "status": "pass",
+      "states": 10000000,
+gnutime wall=3.69 user=3.50 sys=0.11 maxrss_kb=191356
+      "status": "pass",
+      "states": 10000000,
+gnutime wall=3.95 user=3.76 sys=0.12 maxrss_kb=191364
+      "status": "pass",
+      "states": 10000000,
+gnutime wall=3.62 user=3.45 sys=0.12 maxrss_kb=191452
+      "status": "pass",
+      "states": 10000000,
+[ perf record: Woken up 4 times to write data ]
+[ perf record: Captured and wrote 1.199 MB /SCRATCH/prof/b89de_10m_j1.data (17609 samples) ]
+## machine after 2026-11-23T09:59:10Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         812       13186          12        2362       15275
+loadavg: 1.35 1.58 1.74 1/108 24873

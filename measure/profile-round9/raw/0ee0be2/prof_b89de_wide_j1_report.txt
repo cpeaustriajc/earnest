@@ -1,0 +1,21 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 7K of event 'cpu-clock'
+# Event count (approx.): 7953953946
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    54.69%  [.] <earnest_check::explore::Search>::level                                                                                                                         -      -            
+    34.21%  [.] <earnest_ir::code::num::Num>::rest                                                                                                                            -      -            
+     7.89%  [.] <earnest_check::store::Store>::place                                                                                                                              -      -            
+     1.12%  [.] <earnest_check::explore::here::HereSink>::place_row                                                                                                              -      -            
+     0.63%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                  -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

@@ -1,0 +1,618 @@
+{
+ "total": 8893,
+ "groups": {
+  "d": 7798,
+  "a": 700,
+  "g": 188,
+  "e": 144,
+  "f": 44,
+  "b": 18,
+  "a?": 1
+ },
+ "subgroups": [
+  [
+   "d",
+   "eval: expand.rs",
+   4364
+  ],
+  [
+   "d",
+   "eval: earnest_ir/code/chain.rs",
+   2259
+  ],
+  [
+   "d",
+   "eval: earnest_ir/code/num.rs",
+   718
+  ],
+  [
+   "a",
+   "index: hashbrown in store/index.rs",
+   448
+  ],
+  [
+   "d",
+   "eval: earnest_ir/eval.rs",
+   210
+  ],
+  [
+   "d",
+   "eval: earnest_ir/code/mod.rs",
+   192
+  ],
+  [
+   "a",
+   "index: store/index.rs",
+   189
+  ],
+  [
+   "e",
+   "hash: store/layout.rs mix/hash_words",
+   144
+  ],
+  [
+   "g",
+   "loop: explore/here.rs",
+   125
+  ],
+  [
+   "a",
+   "index: store.rs place",
+   58
+  ],
+  [
+   "d",
+   "eval (by name)",
+   53
+  ],
+  [
+   "f",
+   "kernel: page faults",
+   19
+  ],
+  [
+   "g",
+   "kernel: thread start/exit, exec",
+   14
+  ],
+  [
+   "f",
+   "kernel: mmap/munmap/madvise",
+   14
+  ],
+  [
+   "b",
+   "rows: store/layout.rs",
+   12
+  ],
+  [
+   "f",
+   "alloc: libc malloc/realloc/free",
+   11
+  ],
+  [
+   "g",
+   "libc other: cfree@GLIBC_2.2.5",
+   7
+  ],
+  [
+   "g",
+   "libc other: get_common_cache_info.constprop.0",
+   7
+  ],
+  [
+   "g",
+   "kernel: file i/o",
+   6
+  ],
+  [
+   "b",
+   "rows: store/rows.rs",
+   5
+  ],
+  [
+   "a",
+   "index: hashbrown in store.rs",
+   4
+  ],
+  [
+   "g",
+   "libc memmove/memset (caller not resolved)",
+   3
+  ],
+  [
+   "g",
+   "libc other: check_match",
+   3
+  ],
+  [
+   "g",
+   "libc other: do_lookup_x",
+   2
+  ],
+  [
+   "g",
+   "libc other: _dl_relocate_object",
+   2
+  ],
+  [
+   "g",
+   "libc other: handle_intel.constprop.0",
+   1
+  ],
+  [
+   "g",
+   "libc other: _dl_load_cache_lookup",
+   1
+  ],
+  [
+   "g",
+   "kernel: other (submit_bio_wait)",
+   1
+  ],
+  [
+   "g",
+   "libc other: __x86_cpu_features_ifunc",
+   1
+  ],
+  [
+   "g",
+   "other dso: /usr/bin/time",
+   1
+  ],
+  [
+   "g",
+   "kernel: other (__do_sys_prlimit64)",
+   1
+  ],
+  [
+   "b",
+   "rows: store.rs read_state",
+   1
+  ],
+  [
+   "g",
+   "other user: earnest_check::store::decode",
+   1
+  ],
+  [
+   "g",
+   "other user: <core::marker::PhantomData<earnest::run::Status> as serde_core::de::DeserializeSeed>::deserialize::<serde_json::value::V",
+   1
+  ],
+  [
+   "g",
+   "libc other: __stpncpy",
+   1
+  ],
+  [
+   "d",
+   "hashbrown in expand.rs",
+   1
+  ],
+  [
+   "g",
+   "libc other: __malloc_arena_thread_freeres",
+   1
+  ],
+  [
+   "d",
+   "eval: earnest_ir/code/cond.rs",
+   1
+  ],
+  [
+   "g",
+   "other user: alloc::fmt::format::format_inner",
+   1
+  ],
+  [
+   "g",
+   "libc other: _dl_map_object_from_fd",
+   1
+  ],
+  [
+   "g",
+   "libc other: strcmp",
+   1
+  ],
+  [
+   "g",
+   "kernel: other (do_syscall_64)",
+   1
+  ],
+  [
+   "a",
+   "index: hashbrown outlined ({closure#1}>)",
+   1
+  ],
+  [
+   "g",
+   "kernel: scheduling",
+   1
+  ],
+  [
+   "g",
+   "libc other: getenv",
+   1
+  ],
+  [
+   "g",
+   "libc other: intel_check_word.constprop.0",
+   1
+  ],
+  [
+   "g",
+   "other dso: [vdso]",
+   1
+  ],
+  [
+   "a?",
+   "hashbrown outlined, table not told: <hashbrown::raw::RawTableInner>::fallible_with_capacity::<allocator_api2::stable::alloc::global::Global>",
+   1
+  ],
+  [
+   "g",
+   "libc other: _nl_find_locale",
+   1
+  ]
+ ],
+ "kernel_sites": [
+  [
+   "kernel: page faults",
+   "libc.so.6",
+   13
+  ],
+  [
+   "kernel: mmap/munmap/madvise",
+   "ld-linux-x86-64.so.2",
+   8
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "eval: expand.rs",
+   7
+  ],
+  [
+   "kernel: file i/o",
+   "libc.so.6",
+   6
+  ],
+  [
+   "kernel: mmap/munmap/madvise",
+   "libc.so.6",
+   6
+  ],
+  [
+   "kernel: page faults",
+   "ld-linux-x86-64.so.2",
+   5
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "libc.so.6",
+   3
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "eval: earnest_ir/code/chain.rs",
+   2
+  ],
+  [
+   "kernel: thread start/exit, exec",
+   "eval: earnest_ir/code/num.rs",
+   2
+  ],
+  [
+   "kernel: other (submit_bio_wait)",
+   "libc.so.6",
+   1
+  ],
+  [
+   "kernel: page faults",
+   "grep",
+   1
+  ],
+  [
+   "kernel: other (__do_sys_prlimit64)",
+   "libc.so.6",
+   1
+  ],
+  [
+   "kernel: other (do_syscall_64)",
+   "libc.so.6",
+   1
+  ],
+  [
+   "kernel: scheduling",
+   "libc.so.6",
+   1
+  ]
+ ],
+ "symbols": [
+  [
+   "_RNvMs_NtCs6WLDDI7QwVe_13earnest_check7exploreNtB4_6Search5level",
+   5003,
+   {
+    "d": 4834,
+    "g": 13,
+    "e": 144,
+    "b": 12
+   }
+  ],
+  [
+   "_RNvMs3_NtNtCseJVEDqkKr5B_10earnest_ir4code3numNtB5_3Num4rest",
+   2962,
+   {
+    "d": 2962
+   }
+  ],
+  [
+   "_RNvMs_NtCs6WLDDI7QwVe_13earnest_check5storeNtB4_5Store5place",
+   700,
+   {
+    "a": 699,
+    "b": 1
+   }
+  ],
+  [
+   "_RNvMNtNtCs6WLDDI7QwVe_13earnest_check7explore4hereNtB2_8HereSink9place_row",
+   112,
+   {
+    "g": 112
+   }
+  ],
+  [
+   "cfree@GLIBC_2.2.5 (libc)",
+   7,
+   {
+    "g": 7
+   }
+  ],
+  [
+   "get_common_cache_info.constprop.0 (libc)",
+   7,
+   {
+    "g": 7
+   }
+  ],
+  [
+   "[k] _raw_spin_unlock_irqrestore",
+   6,
+   {
+    "g": 6
+   }
+  ],
+  [
+   "_RNvMNtNtCs6WLDDI7QwVe_13earnest_check5store4rowsNtB2_4Rows6unpack",
+   4,
+   {
+    "b": 4
+   }
+  ],
+  [
+   "__memset_avx512_unaligned_erms (libc)",
+   3,
+   {
+    "g": 3
+   }
+  ],
+  [
+   "[k] next_uptodate_folio",
+   3,
+   {
+    "f": 3
+   }
+  ],
+  [
+   "[k] handle_softirqs",
+   3,
+   {
+    "g": 3
+   }
+  ],
+  [
+   "_int_free (libc)",
+   3,
+   {
+    "f": 3
+   }
+  ],
+  [
+   "check_match (libc)",
+   3,
+   {
+    "g": 3
+   }
+  ],
+  [
+   "realloc (libc)",
+   3,
+   {
+    "f": 3
+   }
+  ],
+  [
+   "[k] page_counter_charge",
+   3,
+   {
+    "f": 3
+   }
+  ],
+  [
+   "[k] mas_preallocate",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "[k] _raw_spin_lock",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "_RNvNtCs6WLDDI7QwVe_13earnest_check5store6decode",
+   2,
+   {
+    "g": 1,
+    "b": 1
+   }
+  ],
+  [
+   "do_lookup_x (libc)",
+   2,
+   {
+    "g": 2
+   }
+  ],
+  [
+   "malloc (libc)",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "[k] sched_balance_update_blocked_averages",
+   2,
+   {
+    "g": 2
+   }
+  ],
+  [
+   "[k] exc_page_fault",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "[k] __rcu_read_lock",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "[k] filemap_map_pages",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "[k] memcg1_commit_charge",
+   2,
+   {
+    "f": 2
+   }
+  ],
+  [
+   "_dl_relocate_object (libc)",
+   2,
+   {
+    "g": 2
+   }
+  ],
+  [
+   "handle_intel.constprop.0 (libc)",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] __get_user_8",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "_dl_load_cache_lookup (libc)",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] down_write",
+   1,
+   {
+    "f": 1
+   }
+  ],
+  [
+   "[k] submit_bio_wait",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "__x86_cpu_features_ifunc (libc)",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] folio_add_file_rmap_ptes",
+   1,
+   {
+    "f": 1
+   }
+  ],
+  [
+   "[unknown] (/usr/bin/time)",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] __do_sys_prlimit64",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] atime_needs_update",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] prot_commit_flush_ptes",
+   1,
+   {
+    "f": 1
+   }
+  ],
+  [
+   "[k] finish_task_switch.isra.0",
+   1,
+   {
+    "g": 1
+   }
+  ],
+  [
+   "[k] __handle_mm_fault",
+   1,
+   {
+    "f": 1
+   }
+  ],
+  [
+   "_RINvXs3_NtCs4UOS4DmIeFS_10serde_core2deINtNtCs8uuN1nrGffB_4core6marker11PhantomDataNtNtCsds4avH53D4l_7earnest3run6StatusENtB6_15DeserializeSeed11deserializeNtNtCsf2i282BaK7E_10serde_json5value5ValueEB1n_",
+   1,
+   {
+    "g": 1
+   }
+  ]
+ ]
+}

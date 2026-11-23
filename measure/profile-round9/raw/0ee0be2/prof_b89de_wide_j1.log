@@ -1,0 +1,74 @@
+## machine before 2026-11-23T10:00:35Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087        1342       12558          12        2461       14745
+loadavg: 1.74 1.65 1.75 1/108 28447
+gnutime wall=0.48 user=0.46 sys=0.00 maxrss_kb=5312
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.36 user=0.35 sys=0.00 maxrss_kb=5728
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.37 user=0.36 sys=0.00 maxrss_kb=5684
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.39 user=0.38 sys=0.00 maxrss_kb=5756
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.52 user=0.52 sys=0.00 maxrss_kb=5504
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.36 user=0.35 sys=0.00 maxrss_kb=5808
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.35 user=0.33 sys=0.00 maxrss_kb=5472
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.40 user=0.37 sys=0.00 maxrss_kb=5648
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.36 user=0.34 sys=0.00 maxrss_kb=5572
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.39 user=0.38 sys=0.00 maxrss_kb=5596
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.43 user=0.43 sys=0.00 maxrss_kb=5676
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.44 user=0.41 sys=0.00 maxrss_kb=5520
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.48 user=0.48 sys=0.00 maxrss_kb=5704
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.34 user=0.32 sys=0.00 maxrss_kb=5644
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.33 user=0.32 sys=0.00 maxrss_kb=5596
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.38 user=0.37 sys=0.00 maxrss_kb=5652
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.37 user=0.36 sys=0.00 maxrss_kb=5780
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.46 user=0.45 sys=0.00 maxrss_kb=5644
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.37 user=0.35 sys=0.00 maxrss_kb=5412
+      "status": "pass",
+      "states": 10000,
+gnutime wall=0.35 user=0.34 sys=0.00 maxrss_kb=5560
+      "status": "pass",
+      "states": 10000,
+[ perf record: Woken up 1 times to write data ]
+[ perf record: Captured and wrote 0.575 MB /SCRATCH/prof/b89de_wide_j1.data (7946 samples) ]
+## machine after 2026-11-23T10:00:44Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087        1021       12878          12        2462       15065
+loadavg: 1.68 1.64 1.75 1/108 28558

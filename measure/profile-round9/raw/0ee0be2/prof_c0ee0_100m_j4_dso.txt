@@ -1,0 +1,19 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 39K of event 'cpu-clock'
+# Event count (approx.): 39382382343
+#
+# Overhead  Shared Object    
+# ........  .................
+#
+    87.60%  earnest-sym      
+    10.11%  [kernel.kallsyms]
+     2.29%  libc.so.6        
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

@@ -1,0 +1,37 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 13K of event 'cpu-clock'
+# Event count (approx.): 13507507494
+#
+# Overhead  Symbol                                                                                                                                                                                         IPC   [IPC Coverage]
+# ........  .............................................................................................................................................................................................  ....................
+#
+    32.89%  [.] <earnest_check::explore::Search>::work                                                                                                                 -      -            
+    24.04%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#1}>::{closure#1}                    -      -            
+    18.12%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                        -      -            
+     4.10%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#1}::{closure#1}>  -      -            
+     3.33%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                       -      -            
+     2.03%  [k] exc_page_fault                                                                                                                                                                             -      -            
+     1.76%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                         -      -            
+     1.28%  [.] __memset_avx512_unaligned_erms                                                                                                                                                             -      -            
+     1.10%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                                -      -            
+     0.96%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     0.78%  [k] memcg1_commit_charge                                                                                                                                                                       -      -            
+     0.70%  [k] _raw_spin_lock                                                                                                                                                                             -      -            
+     0.64%  [.] malloc                                                                                                                                                                                     -      -            
+     0.54%  [k] smp_call_function_many_cond                                                                                                                                                                -      -            
+     0.51%  [.] <earnest_check::store::level::Winners>::of                                                                                                                      -      -            
+     0.51%  [.] <earnest_check::store::Store>::outside                                                                                                                            -      -            
+     0.49%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                            -      -            
+     0.39%  [k] __list_del_entry_valid_or_report                                                                                                                                                           -      -            
+     0.36%  [k] unmap_page_range                                                                                                                                                                           -      -            
+     0.35%  [k] clear_page_erms                                                                                                                                                                            -      -            
+     0.31%  [.] _int_malloc                                                                                                                                                                                -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

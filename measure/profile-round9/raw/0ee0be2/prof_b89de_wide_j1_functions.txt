@@ -1,0 +1,30 @@
+ 23.37%   1857  expand.rs 
+ 12.08%    960  code/chain.rs run
+  7.65%    608  code/chain.rs get
+  7.14%    567  expand.rs every_input_told_apart
+  6.64%    528  code/num.rs rest
+  5.86%    466  store/index.rs claim
+  3.54%    281  expand.rs forget_turned
+  3.26%    259  expand.rs known_or_scalar
+  2.98%    237  code/chain.rs apply
+  2.87%    228  eval.rs put_copy
+  2.23%    177  code/mod.rs scalar
+  2.21%    176  expand.rs turn
+  2.14%    170  expand.rs put_inputs
+  2.06%    164  code/chain.rs remainder
+  2.05%    163  expand.rs action
+  1.99%    158  expand.rs first_codes
+  1.46%    116  code/chain.rs {closure#2}
+  1.09%     87  store/index.rs holds
+  0.94%     75  explore/here.rs place_row
+  0.92%     73  store.rs place
+  0.76%     60  store/layout.rs mix
+  0.70%     56  eval.rs out_of_time
+  0.67%     53  (no earnest line) <earnest_ir::code::num::Num>::rest
+  0.65%     52  code/chain.rs quotient
+  0.64%     51  store/layout.rs {closure#0}
+  0.63%     50  expand.rs {closure#0}
+  0.55%     44  code/num.rs eval
+  0.53%     42  expand.rs may_go_on_noting_a_time_stop
+  0.36%     29  store/layout.rs Copied>
+  0.18%     14  explore/here.rs 
