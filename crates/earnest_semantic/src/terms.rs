@@ -411,7 +411,11 @@ impl Lowerer<'_> {
     ) -> Lowering<(Expr, Expr, Option<IntType>)> {
         let ((left_term, first), (right_term, second)) = (left, right);
         self.mixed(&first.ty, &second.ty, place)?;
-        let ty = first.ty.int_type().or(second.ty.int_type()).or(fallback);
+        let ty = first
+            .ty
+            .int_type()
+            .or_else(|| second.ty.int_type())
+            .or(fallback);
         let lower = self.coerce(first, &Type::Int(ty), left_term.place)?;
         let upper = self.coerce(second, &Type::Int(ty), right_term.place)?;
         Ok((lower, upper, ty))

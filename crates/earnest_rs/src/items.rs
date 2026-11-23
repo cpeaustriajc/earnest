@@ -768,7 +768,7 @@ impl Reader<'_> {
             let span = signature
                 .inputs
                 .first()
-                .map_or(signature.paren_token.span.open(), Spanned::span);
+                .map_or_else(|| signature.paren_token.span.open(), Spanned::span);
             let seen = self.short_text(span);
             let feature = if seen.is_empty() {
                 format!("fn {}", signature.ident)

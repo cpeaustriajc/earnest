@@ -18,7 +18,7 @@ fn plain(name: &Ident) -> String {
     let written = name.to_string();
     written
         .strip_prefix(RAW)
-        .map_or(written.clone(), str::to_owned)
+        .map_or_else(|| written.clone(), str::to_owned)
 }
 
 fn is_ident(tree: Option<&TokenTree>, word: &str) -> bool {
