@@ -122,12 +122,13 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
             Lookup::Presence
         },
     );
+    let field_slots = store.slots();
     let mut search = Search {
         model,
         limits,
         expander: Expander {
-            moves: Move::all(model, store.layout(), &store.slots()),
-            from_rows: FromRows::of(model, &store),
+            moves: Move::all(model, store.layout(), &field_slots),
+            from_rows: FromRows::of(model, &store, &field_slots),
             slots,
         },
         store,

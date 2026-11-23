@@ -240,24 +240,22 @@ impl Packed {
         tried: &Tried,
     ) -> Option<Box<[Option<Self>]>> {
         let combinations = input_count(action);
-        if action.inputs.is_empty()
-            || combinations > MOST_PACKED_COMBINATIONS
-            || action.inputs_may_be_overwritten()
-        {
+        if combinations > MOST_PACKED_COMBINATIONS || action.inputs_may_be_overwritten() {
             return None;
         }
         (0..combinations)
             .map(|combination| {
+                let digits = digits_of(action, combination);
                 if let Tried::FirstOfEach(told) = tried
-                    && !told_apart_at(told, &digits_of(action, combination))
+                    && !told_apart_at(told, &digits)
                 {
                     return Some(None);
                 }
                 let inputs: Vec<(usize, Value)> = action
                     .inputs
                     .iter()
-                    .zip(chosen(action, combination))
-                    .map(|(input, value)| Some((input.slot, value?.clone())))
+                    .zip(&digits)
+                    .map(|(input, digit)| Some((input.slot, input.values.get(*digit)?.clone())))
                     .collect::<Option<_>>()?;
                 Self::of(action, updates, slots, &inputs).map(Some)
             })
@@ -287,18 +285,17 @@ pub(crate) struct FromRows {
 }
 
 impl FromRows {
-    pub(crate) fn of(model: &Model, store: &Store) -> Self {
-        let slots = store.slots();
+    pub(crate) fn of(model: &Model, store: &Store, slots: &[Option<Slot>]) -> Self {
         Self {
             rules: model
                 .rules
                 .iter()
-                .map(|rule| rule.holds.packed_test(&slots, &[]))
+                .map(|rule| rule.holds.packed_test(slots, &[]))
                 .collect(),
             ends: model
                 .ends
                 .iter()
-                .map(|end| end.when.packed_test(&slots, &[]))
+                .map(|end| end.when.packed_test(slots, &[]))
                 .collect(),
             decoder: store.decoder(),
         }
@@ -1455,8 +1452,9 @@ mod tests {
 
     fn searched(model: &Model, handed: Handed) -> Vec<Expanded> {
         let store = Store::new(&model.fields, 100, Lookup::Presence);
-        let moves = Move::all(model, store.layout(), &store.slots());
-        let from_rows = FromRows::of(model, &store);
+        let slots = store.slots();
+        let moves = Move::all(model, store.layout(), &slots);
+        let from_rows = FromRows::of(model, &store, &slots);
         let expand = Expand {
             model,
             moves: &moves,
@@ -2027,7 +2025,7 @@ mod tests {
         };
         let moves = Move::all(model, store.layout(), &slots);
         let from_rows = match path {
-            Path::FromRows => FromRows::of(model, &store),
+            Path::FromRows => FromRows::of(model, &store, &slots),
             Path::General => FromRows {
                 rules: vec![None; model.rules.len()],
                 ends: vec![None; model.ends.len()],
