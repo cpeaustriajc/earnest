@@ -44,6 +44,31 @@ impl Bound {
     }
 }
 
+/// An update that changes one whole-number field by a constant, from [`super::Code::field_step`],
+/// for a caller that writes the answer straight into a packed row.
+#[derive(Clone, Copy, Debug)]
+pub struct FieldStep {
+    math: Math,
+    bound: Bound,
+    field: usize,
+    number: i64,
+}
+
+impl FieldStep {
+    /// The answer of the update in `state`, when it has one without a fault and within 32 bits.
+    /// `None` otherwise: then [`super::Code::scalar`] gives the answer, or the fault, and its
+    /// effects on the frame. A `Some` is what [`super::Code::scalar`] gives, and that call would
+    /// change nothing in the frame.
+    #[inline]
+    #[must_use]
+    pub fn apply(self, state: &[Value]) -> Option<i64> {
+        let first = int_at(state, self.field).ok()?;
+        let answer = arithmetic(self.math, first, self.number).ok()?;
+        i32::try_from(answer).ok()?;
+        self.bound.check(answer).ok()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum Operand {
     Int(i64),
@@ -119,6 +144,23 @@ pub(super) fn pair(
 }
 
 impl Num {
+    pub(super) fn field_step(&self) -> Option<FieldStep> {
+        match self {
+            Self::FieldMath {
+                math,
+                bound,
+                field,
+                number,
+            } => Some(FieldStep {
+                math: *math,
+                bound: *bound,
+                field: *field,
+                number: *number,
+            }),
+            _ => None,
+        }
+    }
+
     fn of(expr: &Expr, shared: &Shared) -> Self {
         Self::shaped(expr, shared).unwrap_or_else(|| Self::Value(Box::new(Val::of(expr, shared))))
     }
