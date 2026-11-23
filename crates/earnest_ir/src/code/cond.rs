@@ -32,40 +32,9 @@ impl Wanted {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Within {
-    field: usize,
-    lowest: i64,
-    span: u64,
-}
-
-impl Within {
-    fn of(order: Order, field: usize, number: i64) -> Option<Self> {
-        let (lowest, highest) = match order {
-            Order::Less => (i64::MIN, number.checked_sub(1)?),
-            Order::LessOrEqual => (i64::MIN, number),
-            Order::Greater => (number.checked_add(1)?, i64::MAX),
-            Order::GreaterOrEqual => (number, i64::MAX),
-        };
-        Some(Self {
-            field,
-            lowest,
-            span: highest.wrapping_sub(lowest).cast_unsigned(),
-        })
-    }
-
-    #[inline]
-    fn holds(self, state: &[Value]) -> Result<bool, Fault> {
-        let number = int_at(state, self.field).map_err(Stop::fault)?;
-        Ok(number.wrapping_sub(self.lowest).cast_unsigned() <= self.span)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(super) enum Cond {
     Const(bool),
-    Within(Within),
-    AllWithin(Box<[Within]>),
     Order {
         order: Order,
         left: Operand,
@@ -118,7 +87,7 @@ impl Cond {
 
     pub(super) fn shaped(expr: &Expr, shared: &Shared) -> Option<Self> {
         match expr {
-            Expr::And(..) => Some(Self::all(joined_parts(expr, shared))),
+            Expr::And(..) => Some(Self::All(joined_parts(expr, shared))),
             Expr::Or(..) => Some(Self::Any(joined_parts(expr, shared))),
             Expr::Bind { slot, value, body } => {
                 let binding = Binding::of(*slot, value, Self::of(body, shared), shared);
@@ -126,14 +95,11 @@ impl Cond {
             }
             Expr::Apply(op, arguments) => match (op, arguments.as_slice()) {
                 (Op::Order(order), [Expr::Field(field), Expr::Const(Value::Int(number))]) => {
-                    Some(Within::of(*order, *field, *number).map_or(
-                        Self::FieldOrder {
-                            order: *order,
-                            field: *field,
-                            number: *number,
-                        },
-                        Self::Within,
-                    ))
+                    Some(Self::FieldOrder {
+                        order: *order,
+                        field: *field,
+                        number: *number,
+                    })
                 }
                 (Op::Order(order), [left, right]) => Some(Self::Order {
                     order: *order,
@@ -150,20 +116,6 @@ impl Cond {
                 _ => None,
             },
             _ => None,
-        }
-    }
-
-    fn all(parts: Box<[Self]>) -> Self {
-        let within = parts
-            .iter()
-            .map(|part| match part {
-                Self::Within(within) => Some(*within),
-                _ => None,
-            })
-            .collect::<Option<Box<[Within]>>>();
-        match within {
-            Some(tests) if tests.len() > 1 => Self::AllWithin(tests),
-            _ => Self::All(parts),
         }
     }
 
@@ -200,15 +152,15 @@ impl Cond {
     #[inline]
     pub(super) fn eval(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
-            Self::Within(within) => within.holds(frame.state),
-            Self::AllWithin(tests) => {
-                for test in tests {
-                    if !test.holds(frame.state)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
+            Self::FieldOrder {
+                order,
+                field,
+                number,
+            } => Ok(compare(
+                *order,
+                int_at(frame.state, *field).map_err(Stop::fault)?,
+                *number,
+            )),
             Self::All(parts) => {
                 for part in parts {
                     if !part.leaf(frame)? {
@@ -224,7 +176,6 @@ impl Cond {
     #[inline]
     fn leaf(&self, frame: &mut Frame<'_>) -> Result<bool, Fault> {
         match self {
-            Self::Within(within) => within.holds(frame.state),
             Self::FieldOrder {
                 order,
                 field,
@@ -272,12 +223,9 @@ impl Cond {
             }
             Self::Read(place) => as_bool(place.find(frame)?),
             Self::Not(inner) => Ok(!inner.eval(frame)?),
-            Self::Within(_)
-            | Self::AllWithin(_)
-            | Self::FieldOrder { .. }
-            | Self::Matches { .. }
-            | Self::All(_)
-            | Self::Const(_) => self.eval(frame),
+            Self::FieldOrder { .. } | Self::Matches { .. } | Self::All(_) | Self::Const(_) => {
+                self.eval(frame)
+            }
             Self::Any(parts) => {
                 for part in parts {
                     if part.eval(frame)? {
