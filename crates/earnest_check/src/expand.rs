@@ -193,13 +193,20 @@ pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
-    packed: Option<Packed>,
-    packed_inputs: Option<Box<[Option<Packed>]>>,
+    from_row: FromRow,
     seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
     refill: Refill,
     reuse: Option<Reuse>,
+}
+
+#[derive(Debug)]
+#[repr(u8)]
+enum FromRow {
+    Once(Packed),
+    Each(Box<[Option<Packed>]>),
+    Not,
 }
 
 #[derive(Debug)]
@@ -360,12 +367,12 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
-        let packed = action
-            .inputs
-            .is_empty()
-            .then(|| Packed::of(action, &updates, slots, &[]))
-            .flatten();
-        let packed_inputs = Packed::each_combination(action, &updates, slots, &tried);
+        let from_row = if action.inputs.is_empty() {
+            Packed::of(action, &updates, slots, &[]).map_or(FromRow::Not, FromRow::Once)
+        } else {
+            Packed::each_combination(action, &updates, slots, &tried)
+                .map_or(FromRow::Not, FromRow::Each)
+        };
         let seen_by = match &in_place {
             InPlace::Writes(writes)
                 if writes
@@ -399,8 +406,7 @@ impl<'a> Move<'a> {
             action,
             updates,
             in_place,
-            packed,
-            packed_inputs,
+            from_row,
             seen_by,
             combinations,
             tried,
@@ -786,17 +792,24 @@ struct Expansion<'e, 'v, S> {
 
 impl<S: Successors> Expansion<'_, '_, S> {
     fn action(&mut self, position: usize, planned: &Move<'_>) {
-        if let (Some(packed), Some(row)) = (&planned.packed, self.values.row) {
-            if self.may_go_on_noting_a_time_stop() && !self.try_packed(position, packed, row) {
-                self.try_input::<false>(position, planned, 0);
+        match (&planned.from_row, self.values.row) {
+            (FromRow::Once(packed), Some(row)) => {
+                if self.may_go_on_noting_a_time_stop() && !self.try_packed(position, packed, row) {
+                    self.try_input::<false>(position, planned, 0);
+                }
             }
-            return;
+            (FromRow::Each(combinations), Some(row)) => {
+                if !self.try_each_packed(position, combinations, row) {
+                    self.general(position, planned);
+                }
+            }
+            (FromRow::Once(_) | FromRow::Each(_) | FromRow::Not, _) => {
+                self.general(position, planned);
+            }
         }
-        if let (Some(combinations), Some(row)) = (&planned.packed_inputs, self.values.row)
-            && self.try_each_packed(position, combinations, row)
-        {
-            return;
-        }
+    }
+
+    fn general(&mut self, position: usize, planned: &Move<'_>) {
         if planned.repeats() {
             self.every_input_told_apart(position, planned);
         } else if planned.combinations == 1 && self.may_go_on_noting_a_time_stop() {
@@ -2370,8 +2383,9 @@ mod tests {
             let (model, states) = random_model(0x9E37_79B9_7F4A_7C15 ^ seed);
             let store = Store::new(&model.fields, 100, Lookup::Presence);
             for planned in Move::all(&model, store.layout(), &store.slots()) {
-                taken += usize::from(planned.packed.is_some());
-                taken_with_inputs += usize::from(planned.packed_inputs.is_some());
+                taken += usize::from(matches!(planned.from_row, super::FromRow::Once(_)));
+                taken_with_inputs +=
+                    usize::from(matches!(planned.from_row, super::FromRow::Each(_)));
             }
             let expected = judged(&model, Path::General, Given::ValuesAlone, &states);
             for path in [Path::FromRows, Path::General] {
@@ -2478,9 +2492,10 @@ mod tests {
         let store = Store::new(&model_of(Vec::new()).fields, 100, Lookup::Presence);
         let model = model_of(vec![up_to_the_top]);
         assert!(
-            Move::all(&model, store.layout(), &store.slots())[0]
-                .packed
-                .is_some(),
+            matches!(
+                Move::all(&model, store.layout(), &store.slots())[0].from_row,
+                super::FromRow::Once(_)
+            ),
             "a guard and updates of these shapes are taken from rows"
         );
     }
