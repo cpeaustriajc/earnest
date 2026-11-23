@@ -320,6 +320,8 @@ impl Search<'_> {
         }
         if level.keeps_spares {
             self.spares.keep_kit(kit);
+        } else {
+            self.spares.keep_table_of(kit);
         }
     }
 

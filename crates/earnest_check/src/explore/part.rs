@@ -53,6 +53,7 @@ struct FreshRows {
 pub(super) struct Spares {
     parts: Mutex<Vec<Part>>,
     kits: Mutex<Vec<Kit>>,
+    tables: Mutex<Vec<RecentWords>>,
 }
 
 impl Spares {
@@ -77,6 +78,25 @@ impl Spares {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(kit);
+    }
+
+    fn table(&self) -> RecentWords {
+        self.tables
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop()
+            .unwrap_or_default()
+    }
+
+    pub(super) fn keep_table_of(&self, kit: Kit) {
+        let table = kit.rows.recent_words;
+        if !table.is_clean() {
+            return;
+        }
+        let mut kept = self.tables.lock().unwrap_or_else(PoisonError::into_inner);
+        if kept.len() < MOST_SPARE_TABLES {
+            kept.push(table);
+        }
     }
 
     pub(super) fn keep(&self, parts: Vec<Part>, most: usize) {
@@ -119,12 +139,12 @@ const RECENT_SLOTS: usize = 1 << 16;
 const FEWEST_RECENT_SLOTS: usize = 1 << 10;
 const RECENT_GROWTH: usize = 4;
 const MOST_SPARE_TABLES: usize = 64;
-
-static SPARE_TABLES: Mutex<Vec<Vec<u64>>> = Mutex::new(Vec::new());
+const TRIES_FOR_A_MARK: u64 = 64;
 
 #[derive(Default)]
 struct RecentWords {
-    slots: Vec<u64>,
+    words: Vec<u64>,
+    marks: Option<[u64; 2]>,
     written: usize,
 }
 
@@ -132,37 +152,57 @@ fn slot_of(hash: u64, slots: usize) -> usize {
     usize::try_from(hash).unwrap_or(0) & slots.wrapping_sub(1)
 }
 
-fn empty_slot(at: usize) -> u64 {
-    u64::try_from(at ^ 1).unwrap_or(0)
+fn low_bit(hash: u64) -> usize {
+    usize::from(hash & 1 == 1)
 }
 
-fn empty_slots(count: usize) -> Vec<u64> {
-    (0..count).map(empty_slot).collect()
+fn marks() -> Option<[u64; 2]> {
+    let mut found = [None, None];
+    for word in 0..TRIES_FOR_A_MARK {
+        let side = found.get_mut(low_bit(hash_words(&[word])))?;
+        side.get_or_insert(word);
+        if let [Some(even), Some(odd)] = found {
+            return Some([even, odd]);
+        }
+    }
+    None
 }
 
 impl RecentWords {
+    fn is_clean(&self) -> bool {
+        self.written == 0
+    }
+
+    fn mark_of(marks: [u64; 2], at: usize) -> u64 {
+        let [even, odd] = marks;
+        if at & 1 == 1 { even } else { odd }
+    }
+
+    fn emptied(marks: [u64; 2], count: usize) -> Vec<u64> {
+        (0..count).map(|at| Self::mark_of(marks, at)).collect()
+    }
+
     fn ready(&mut self) {
-        if self.slots.is_empty() {
-            self.slots = SPARE_TABLES
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .pop()
-                .unwrap_or_else(|| empty_slots(FEWEST_RECENT_SLOTS));
+        if self.words.is_empty() {
+            self.marks = marks();
+            if let Some(marks) = self.marks {
+                self.words = Self::emptied(marks, FEWEST_RECENT_SLOTS);
+            }
         }
     }
 
     #[inline]
-    fn met(&mut self, hash: u64) -> bool {
-        let at = slot_of(hash, self.slots.len());
-        let Some(slot) = self.slots.get_mut(at) else {
+    fn met(&mut self, word: u64, hash: u64) -> bool {
+        let at = slot_of(hash, self.words.len());
+        let Some(slot) = self.words.get_mut(at) else {
             return false;
         };
-        if *slot == hash {
+        if *slot == word {
             return true;
         }
-        *slot = hash;
+        *slot = word;
         self.written += 1;
-        let count = self.slots.len();
+        let count = self.words.len();
         if self.written > count / 2 && count < RECENT_SLOTS {
             self.grow();
         }
@@ -171,48 +211,39 @@ impl RecentWords {
 
     #[cold]
     fn grow(&mut self) {
-        let count = self.slots.len().saturating_mul(RECENT_GROWTH);
-        let mut grown = empty_slots(count);
-        for (at, hash) in self.slots.iter().enumerate() {
-            if *hash != empty_slot(at)
-                && let Some(slot) = grown.get_mut(slot_of(*hash, count))
+        let Some(marks) = self.marks else {
+            return;
+        };
+        let count = self.words.len().saturating_mul(RECENT_GROWTH);
+        let mut grown = Self::emptied(marks, count);
+        for (at, word) in self.words.iter().enumerate() {
+            if *word != Self::mark_of(marks, at)
+                && let Some(slot) = grown.get_mut(slot_of(hash_words(&[*word]), count))
             {
-                *slot = *hash;
+                *slot = *word;
             }
         }
-        self.slots = grown;
+        self.words = grown;
     }
 
     fn forget(&mut self, part: &Part) {
-        if self.written == 0 {
+        let Some(marks) = self.marks.filter(|_| self.written > 0) else {
             return;
-        }
-        let count = self.slots.len();
+        };
+        let count = self.words.len();
         if part.crowded || part.hashes.len() >= count / 4 {
-            for (at, slot) in self.slots.iter_mut().enumerate() {
-                *slot = empty_slot(at);
+            for (at, slot) in self.words.iter_mut().enumerate() {
+                *slot = Self::mark_of(marks, at);
             }
         } else {
             for hash in &part.hashes {
                 let at = slot_of(*hash, count);
-                if let Some(slot) = self.slots.get_mut(at) {
-                    *slot = empty_slot(at);
+                if let Some(slot) = self.words.get_mut(at) {
+                    *slot = Self::mark_of(marks, at);
                 }
             }
         }
         self.written = 0;
-    }
-}
-
-impl Drop for RecentWords {
-    fn drop(&mut self) {
-        if self.written > 0 || self.slots.is_empty() {
-            return;
-        }
-        let mut spare = SPARE_TABLES.lock().unwrap_or_else(PoisonError::into_inner);
-        if spare.len() < MOST_SPARE_TABLES {
-            spare.push(std::mem::take(&mut self.slots));
-        }
     }
 }
 
@@ -292,7 +323,7 @@ impl PartSink<'_> {
 
     #[inline]
     fn offer_unseen_word(&mut self, action: usize, word: u64, hash: u64) -> bool {
-        if self.kit.recent_words.met(hash) {
+        if self.kit.recent_words.met(word, hash) {
             return false;
         }
         self.add_fresh(action, &[word], hash);
@@ -506,7 +537,10 @@ impl Search<'_> {
         kit: &mut Kit,
         part: Part,
     ) -> Part {
-        kit.rows.recent_words.ready();
+        if kit.rows.recent_words.words.is_empty() {
+            kit.rows.recent_words = self.spares.table();
+            kit.rows.recent_words.ready();
+        }
         let part = self.fill_part(ids, deadline, asked, kit, part);
         kit.rows.recent_words.forget(&part);
         part
@@ -587,7 +621,10 @@ impl Search<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FreshRows, Part, PartSink, RECENT_SLOTS, RecentWords, RowKit, Spares};
+    use super::{
+        FreshRows, Kit, MOST_SPARE_TABLES, Part, PartSink, RECENT_SLOTS, RecentWords, RowKit,
+        Spares,
+    };
     use crate::expand::Successors;
     use crate::store::{Fresh, Lookup, SHARD_COUNT, Spread, Store, hash_words};
     use earnest_ir::Field;
@@ -675,7 +712,9 @@ mod tests {
                 ..Part::default()
             },
         };
-        sink.kit.recent_words.ready();
+        if sink.kit.recent_words.words.is_empty() {
+            sink.kit.recent_words.ready();
+        }
         let mut counted = 0;
         for offer in offers {
             sink.from = offer.from;
@@ -797,75 +836,127 @@ mod tests {
         a_level_in_parts_is_the_level_row_by_row(&["a", "b"], 1 << 40, 23);
     }
 
-    #[test]
-    fn the_hashes_of_distinct_one_word_rows_differ() {
-        let edges = [u64::MAX, u64::MAX - 1, 1 << 63, (1 << 63) - 1];
-        let words: HashSet<u64> = (0..1_u64 << 18)
-            .chain(edges)
-            .chain((0..1_u64 << 12).map(|at| at << 40))
-            .collect();
-        let hashes: HashSet<u64> = words.iter().map(|word| hash_words(&[*word])).collect();
-        assert_eq!(hashes.len(), words.len(), "no two words share a hash");
+    fn ready_table() -> RecentWords {
+        let mut recent = RecentWords::default();
+        recent.ready();
+        assert!(
+            !recent.words.is_empty(),
+            "the hash gives marks of both parities"
+        );
+        recent
+    }
+
+    fn word_hashes(words: std::ops::Range<u64>) -> Vec<(u64, u64)> {
+        words.map(|word| (word, hash_words(&[word]))).collect()
     }
 
     #[test]
     fn recent_words_meet_a_row_let_in_and_never_one_that_was_not() {
-        let mut recent = RecentWords::default();
-        recent.ready();
-        let hashes: Vec<u64> = (0..1_u64 << 18).map(|word| hash_words(&[word])).collect();
-        let fresh = hashes.iter().filter(|hash| !recent.met(**hash)).count();
-        assert_eq!(fresh, hashes.len(), "nothing is met before it was let in");
-        let mut empty = RecentWords::default();
-        empty.ready();
-        for at in 0..RECENT_SLOTS {
-            let mark = u64::try_from(at).expect("a slot fits a u64");
+        let mut recent = ready_table();
+        let rows = word_hashes(0..1 << 18);
+        let fresh = rows
+            .iter()
+            .filter(|(word, hash)| !recent.met(*word, *hash))
+            .count();
+        assert_eq!(fresh, rows.len(), "nothing is met before it was let in");
+        let (word, hash) = rows.last().copied().unwrap_or((0, 0));
+        assert!(recent.met(word, hash), "the row let in last is met again");
+    }
+
+    #[test]
+    fn recent_words_tell_apart_two_words_that_share_a_hash() {
+        let mut recent = ready_table();
+        for hash in [0, 1, 7, 1 << 40, u64::MAX] {
+            assert!(!recent.met(10, hash), "a new row");
             assert!(
-                !empty.met(mark),
-                "the mark of an empty slot is not met as a hash"
+                !recent.met(11, hash),
+                "another row with the same hash is new too"
             );
+            assert!(recent.met(11, hash), "the row kept in that slot is met");
         }
-        let last = hashes.last().copied().unwrap_or(0);
-        assert!(recent.met(last), "the row let in last is met again");
+    }
+
+    #[test]
+    fn recent_words_meet_no_mark_of_an_empty_slot() {
+        let recent = ready_table();
+        let [even, odd] = recent.marks.unwrap_or([0, 0]);
+        assert_ne!(
+            hash_words(&[even]) & 1,
+            hash_words(&[odd]) & 1,
+            "the two marks land in slots of either parity"
+        );
+        let mut fresh = ready_table();
+        for (word, hash) in [even, odd].map(|word| (word, hash_words(&[word]))) {
+            assert!(!fresh.met(word, hash), "a mark, offered as a row, is new");
+        }
     }
 
     #[test]
     fn recent_words_grow_to_their_most_slots_and_still_meet_what_they_kept() {
-        let mut recent = RecentWords::default();
-        recent.ready();
-        let hashes: Vec<u64> = (0..1_u64 << 12).map(|word| hash_words(&[word])).collect();
-        for hash in &hashes {
-            assert!(!recent.met(*hash), "a new row");
+        let mut recent = ready_table();
+        let rows = word_hashes(0..1 << 12);
+        for (word, hash) in &rows {
+            assert!(!recent.met(*word, *hash), "a new row");
         }
-        let met = hashes.iter().filter(|hash| recent.met(**hash)).count();
+        let met = rows
+            .iter()
+            .filter(|(word, hash)| recent.met(*word, *hash))
+            .count();
         assert!(
-            met * 2 > hashes.len(),
+            met * 2 > rows.len(),
             "more than half the rows are met again after growing: {met}"
         );
-        for word in 1_u64 << 12..1 << 20 {
-            recent.met(hash_words(&[word]));
+        for (word, hash) in word_hashes(1 << 12..1 << 20) {
+            recent.met(word, hash);
         }
-        assert_eq!(recent.slots.len(), RECENT_SLOTS, "it grows no further");
+        assert_eq!(recent.words.len(), RECENT_SLOTS, "it grows no further");
     }
 
     #[test]
     fn recent_words_forget_every_row_of_a_part_and_everything_after_a_crowded_one() {
         for crowded in [false, true] {
-            let mut recent = RecentWords::default();
-            recent.ready();
-            let hashes: Vec<u64> = (0..100_u64).map(|word| hash_words(&[word])).collect();
-            for hash in &hashes {
-                assert!(!recent.met(*hash), "a new row");
+            let mut recent = ready_table();
+            let rows = word_hashes(0..100);
+            for (word, hash) in &rows {
+                assert!(!recent.met(*word, *hash), "a new row");
             }
             let part = Part {
-                hashes: if crowded { Vec::new() } else { hashes.clone() },
+                hashes: if crowded {
+                    Vec::new()
+                } else {
+                    rows.iter().map(|(_, hash)| *hash).collect()
+                },
                 crowded,
                 ..Part::default()
             };
             recent.forget(&part);
-            for hash in &hashes {
-                assert!(!recent.met(*hash), "forgotten, so new again");
+            assert!(recent.is_clean(), "nothing is left written");
+            for (word, hash) in &rows {
+                assert!(!recent.met(*word, *hash), "forgotten, so new again");
             }
         }
+    }
+
+    #[test]
+    fn spares_keep_only_clean_tables_and_no_more_than_their_most() {
+        let spares = Spares::default();
+        let mut dirty = Kit::default();
+        dirty.rows.recent_words = ready_table();
+        dirty.rows.recent_words.met(3, hash_words(&[3]));
+        spares.keep_table_of(dirty);
+        assert!(
+            spares.table().words.is_empty(),
+            "a table with rows of a part in it is not kept"
+        );
+        for _ in 0..=MOST_SPARE_TABLES {
+            let mut kit = Kit::default();
+            kit.rows.recent_words = ready_table();
+            spares.keep_table_of(kit);
+        }
+        let kept = std::iter::from_fn(|| Some(spares.table()))
+            .take_while(|table| !table.words.is_empty())
+            .count();
+        assert_eq!(kept, MOST_SPARE_TABLES, "the rest are dropped");
     }
 
     #[test]
