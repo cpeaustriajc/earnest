@@ -39,6 +39,21 @@ pub enum Coding {
     Listed(Vec<Value>),
 }
 
+impl Coding {
+    fn code(&self, value: &Value) -> Option<u64> {
+        match (self, value) {
+            (Self::Whole { lowest, highest }, Value::Int(number)) => {
+                Whole::of(*lowest, *highest)?.code(*number)
+            }
+            (Self::Truth, Value::Bool(flag)) => Some(u64::from(*flag)),
+            (Self::Listed(values), found) => {
+                u64::try_from(values.iter().position(|value| value == found)?).ok()
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Bits {
     word: usize,
@@ -267,7 +282,6 @@ enum Term {
 #[derive(Clone, Debug)]
 struct Arith {
     math: Math,
-    bound: Bound,
     left: Term,
     right: Term,
 }
@@ -286,7 +300,6 @@ impl Term {
             Expr::Apply(Op::Math(math), arguments) => match arguments.as_slice() {
                 [left, right] => Some(Self::Math(Box::new(Arith {
                     math: *math,
-                    bound: Bound::Any,
                     left: Self::of(left, fields)?,
                     right: Self::of(right, fields)?,
                 }))),
@@ -327,8 +340,7 @@ impl Arith {
         let left = self.left.get(row)?;
         let right = self.right.get(row)?;
         let answer = arithmetic(self.math, left, right).ok()?;
-        i32::try_from(answer).ok()?;
-        self.bound.check(answer).ok()
+        i32::try_from(answer).ok().map(i64::from)
     }
 }
 
@@ -740,34 +752,12 @@ impl Put {
         if frame.computed_beyond_32_bits() {
             return None;
         }
-        let code = match (into, value.ok()?) {
-            (Coding::Whole { lowest, highest }, Value::Int(number)) => {
-                Whole::of(*lowest, *highest)?.code(number)
-            }
-            (Coding::Truth, Value::Bool(flag)) => Some(u64::from(flag)),
-            (Coding::Listed(values), found) => values
-                .iter()
-                .position(|value| *value == found)
-                .and_then(|code| u64::try_from(code).ok()),
-            _ => None,
-        };
-        Some(code.map_or(Self::Outside, Self::Code))
+        Some(into.code(&value.ok()?).map_or(Self::Outside, Self::Code))
     }
 
     fn tabled(expr: &Expr, into: &Coding, fields: &Fields<'_>) -> Option<Self> {
-        let (from, answers) = fields.each_value(expr, |code, frame| {
-            let value = code.eval(frame).ok()?;
-            match (into, &value) {
-                (Coding::Whole { lowest, highest }, Value::Int(number)) => {
-                    Whole::of(*lowest, *highest)?.code(*number)
-                }
-                (Coding::Truth, Value::Bool(flag)) => Some(u64::from(*flag)),
-                (Coding::Listed(values), found) => {
-                    u64::try_from(values.iter().position(|value| value == found)?).ok()
-                }
-                _ => None,
-            }
-        })?;
+        let (from, answers) =
+            fields.each_value(expr, |code, frame| into.code(&code.eval(frame).ok()?))?;
         answers.iter().any(Option::is_some).then_some(())?;
         Some(Self::Table {
             from,
@@ -812,14 +802,10 @@ impl Put {
                 Expr::Const(Value::Bool(flag)) => Some(Self::Code(u64::from(*flag))),
                 _ => Some(Self::Truth(Test::of(expr, fields)?)),
             },
-            Coding::Listed(values) => match expr {
-                Expr::Const(constant) => Some(
-                    values
-                        .iter()
-                        .position(|value| value == constant)
-                        .and_then(|code| u64::try_from(code).ok())
-                        .map_or(Self::Outside, Self::Code),
-                ),
+            Coding::Listed(_) => match expr {
+                Expr::Const(constant) => {
+                    Some(into.code(constant).map_or(Self::Outside, Self::Code))
+                }
                 _ => None,
             },
         }
