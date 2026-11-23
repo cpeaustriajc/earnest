@@ -770,6 +770,7 @@ impl<'v> Values<'v> {
 
 const TICKS_BETWEEN_CLOCK_READS: u32 = 1024;
 
+#[derive(Clone, Copy)]
 struct Timer {
     deadline: Option<Instant>,
     ticks: u32,
@@ -790,13 +791,39 @@ impl Timer {
     }
 }
 
-struct Expansion<'e, 'v, S> {
-    values: &'e mut Values<'v>,
+#[derive(Clone, Copy)]
+struct Tally {
     timer: Timer,
     moving: Enabling,
-    found: &'e mut Mark,
-    budget: Budget,
+    most: usize,
     offered: usize,
+}
+
+impl Tally {
+    #[inline]
+    fn on_time_noting_a_stop(&mut self, found: &mut Mark) -> bool {
+        if self.timer.out_of_time() {
+            found.clock = Clock::Stopped;
+            return false;
+        }
+        true
+    }
+
+    #[inline]
+    fn has_room(&self) -> bool {
+        self.offered <= self.most
+    }
+
+    #[inline]
+    fn count(&mut self) {
+        self.offered = self.offered.saturating_add(1);
+    }
+}
+
+struct Expansion<'e, 'v, S> {
+    values: &'e mut Values<'v>,
+    tally: Tally,
+    found: &'e mut Mark,
     sink: &'e mut S,
     scratch: &'e mut Work,
 }
@@ -806,7 +833,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
         match (&planned.from_row, self.values.row) {
             (FromRow::Once(packed), Some(row)) => {
                 if self.may_go_on_noting_a_time_stop() && !self.try_packed(position, packed, row) {
-                    self.try_input::<false>(position, planned, 0);
+                    self.try_once(position, planned);
                 }
             }
             (FromRow::Each(combinations), Some(row)) => {
@@ -822,13 +849,45 @@ impl<S: Successors> Expansion<'_, '_, S> {
 
     fn general(&mut self, position: usize, planned: &Move<'_>) {
         if planned.repeats() {
-            self.every_input_told_apart(position, planned);
+            self.values.frame();
+            let origin = Origin {
+                position,
+                base: self.values.base(),
+            };
+            self.tally = every_input_told_apart(
+                planned,
+                origin,
+                self.values.frame(),
+                self.scratch,
+                self.found,
+                self.sink,
+                self.tally,
+            );
         } else if planned.combinations == 1 && self.may_go_on_noting_a_time_stop() {
             if !planned.action.inputs.is_empty() {
                 set_inputs(planned.action, 0, self.values.frame());
             }
-            self.try_input::<false>(position, planned, 0);
+            self.try_once(position, planned);
         }
+    }
+
+    fn try_once(&mut self, position: usize, planned: &Move<'_>) {
+        self.values.frame();
+        let origin = Origin {
+            position,
+            base: self.values.base(),
+        };
+        let mut trying = Trying::of(
+            planned,
+            origin,
+            self.values.frame(),
+            self.scratch,
+            self.found,
+            self.sink,
+            self.tally,
+        );
+        trying.try_input::<false>(0);
+        self.tally = trying.tally;
     }
 
     #[inline]
@@ -846,13 +905,13 @@ impl<S: Successors> Expansion<'_, '_, S> {
                     None => return false,
                 }
             }
-            self.moving.enabled = true;
+            self.tally.moving.enabled = true;
             let hash = hash_words(std::slice::from_ref(&next));
             if self
                 .sink
                 .offer_row(position, 0, std::slice::from_ref(&next), hash)
             {
-                self.offered = self.offered.saturating_add(1);
+                self.tally.count();
             }
             return true;
         }
@@ -868,8 +927,11 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 return false;
             }
         }
-        self.moving.enabled = true;
-        self.offer_row_once::<false>(position, 0, SeenBy::Rows, 0);
+        self.tally.moving.enabled = true;
+        let hash = hash_words(next);
+        if self.sink.offer_row(position, 0, next, hash) {
+            self.tally.count();
+        }
         true
     }
 
@@ -912,7 +974,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             if combination.is_none() || !self.scratch.lit.get(input).copied().unwrap_or(false) {
                 continue;
             }
-            self.moving.enabled = true;
+            self.tally.moving.enabled = true;
             let start = input.saturating_mul(words);
             let Some(next) = self.scratch.rows.get(start..start.saturating_add(words)) else {
                 continue;
@@ -921,22 +983,109 @@ impl<S: Successors> Expansion<'_, '_, S> {
             if self.scratch.seen.first_row(next, hash)
                 && self.sink.offer_row(position, input, next, hash)
             {
-                self.offered = self.offered.saturating_add(1);
+                self.tally.count();
             }
         }
         true
     }
 
-    fn every_input_told_apart(&mut self, position: usize, planned: &Move<'_>) {
-        self.scratch.seen.forget();
+    #[inline]
+    fn may_go_on_noting_a_time_stop(&mut self) -> bool {
+        self.tally.on_time_noting_a_stop(self.found) && self.tally.has_room() && !self.sink.done()
+    }
+
+    fn marked_end(&mut self, model: &Model, packed: &[Option<PackedTest>]) -> Enabling {
+        let mut ending = Enabling::default();
+        for (position, end) in model.ends.iter().enumerate() {
+            match self
+                .values
+                .judge(packed.get(position).and_then(Option::as_ref), &end.when)
+            {
+                Ok(true) => ending.enabled = true,
+                Ok(false) => {}
+                Err(fault) => {
+                    self.found.note(Whence::End(position), fault);
+                    ending.unsure = true;
+                }
+            }
+        }
+        ending
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Origin<'a> {
+    position: usize,
+    base: Base<'a>,
+}
+
+#[inline(never)]
+fn every_input_told_apart(
+    planned: &Move<'_>,
+    origin: Origin<'_>,
+    frame: &mut Frame<'_>,
+    work: &mut Work,
+    found: &mut Mark,
+    sink: &mut dyn Successors,
+    tally: Tally,
+) -> Tally {
+    let mut trying = Trying::of(planned, origin, frame, work, found, sink, tally);
+    trying.every_input_told_apart();
+    trying.tally
+}
+
+struct Trying<'t, 'v, S: ?Sized> {
+    planned: &'t Move<'t>,
+    origin: Origin<'t>,
+    frame: &'t mut Frame<'v>,
+    work: &'t mut Work,
+    found: &'t mut Mark,
+    sink: &'t mut S,
+    tally: Tally,
+    open: bool,
+}
+
+impl<'t, 'v, S: Successors + ?Sized> Trying<'t, 'v, S> {
+    #[inline]
+    fn of(
+        planned: &'t Move<'t>,
+        origin: Origin<'t>,
+        frame: &'t mut Frame<'v>,
+        work: &'t mut Work,
+        found: &'t mut Mark,
+        sink: &'t mut S,
+        tally: Tally,
+    ) -> Self {
+        let open = tally.has_room() && !sink.done();
+        Self {
+            planned,
+            origin,
+            frame,
+            work,
+            found,
+            sink,
+            tally,
+            open,
+        }
+    }
+
+    #[inline]
+    fn may_go_on_noting_a_time_stop(&mut self) -> bool {
+        self.tally.on_time_noting_a_stop(self.found) && self.open
+    }
+
+    #[inline]
+    fn every_input_told_apart(&mut self) {
+        let planned = self.planned;
+        self.work.seen.forget();
         let skipping = planned.skipping();
         let inputs = planned.action.inputs.as_slice();
-        let mut digits = std::mem::take(&mut self.scratch.digits);
+        let mut digits = std::mem::take(&mut self.work.digits);
         digits.clear();
         digits.resize(inputs.len(), 0);
         let mut turned = usize::MAX;
         let reuse = planned.reuse.as_ref();
-        self.scratch.known.start(reuse);
+        self.work.known.start(reuse);
         for input in 0..planned.combinations {
             if input > 0 {
                 turned = turned.max(turn(&mut digits, inputs));
@@ -953,55 +1102,42 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 Refill::Turned => turned,
                 Refill::Every => inputs.len(),
             };
-            put_inputs(inputs, &digits, count, self.values.frame());
+            put_inputs(inputs, &digits, count, self.frame);
             if let Some(reuse) = reuse {
-                self.scratch.known.forget_turned(reuse, turned);
+                self.work.known.forget_turned(reuse, turned);
             }
             turned = 0;
-            self.try_input::<true>(position, planned, input);
+            self.try_input::<true>(input);
         }
-        self.scratch.digits = digits;
+        self.work.digits = digits;
     }
 
     #[inline]
-    fn may_go_on_noting_a_time_stop(&mut self) -> bool {
-        if self.timer.out_of_time() {
-            self.found.clock = Clock::Stopped;
-            return false;
-        }
-        self.offered <= self.budget.successors && !self.sink.done()
-    }
-
-    #[inline]
-    fn try_input<const REPEATS: bool>(
-        &mut self,
-        position: usize,
-        planned: &Move<'_>,
-        input: usize,
-    ) {
+    fn try_input<const REPEATS: bool>(&mut self, input: usize) {
+        let planned = self.planned;
+        let Origin { position, base } = self.origin;
         let reusing = REPEATS && planned.reuse.is_some();
-        let frame = self.values.frame();
-        let guard = match (reusing, self.scratch.known.guard) {
+        let guard = match (reusing, self.work.known.guard) {
             (true, Some(answer)) => answer,
             (true, None) => {
-                let answer = planned.action.guard.truth(frame);
-                self.scratch.known.guard = Some(answer);
+                let answer = planned.action.guard.truth(self.frame);
+                self.work.known.guard = Some(answer);
                 answer
             }
-            (false, _) => planned.action.guard.truth(frame),
+            (false, _) => planned.action.guard.truth(self.frame),
         };
         match guard {
             Ok(true) => {}
             Ok(false) => return,
             Err(fault) => {
                 self.found.note(Whence::Guard(position), fault);
-                self.moving.unsure = true;
+                self.tally.moving.unsure = true;
                 return;
             }
         }
-        self.moving.enabled = true;
-        if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.values.row) {
-            let next = &mut self.scratch.next;
+        self.tally.moving.enabled = true;
+        if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, base.row) {
+            let next = &mut self.work.next;
             if let ([into], [word]) = (next.as_mut_slice(), row) {
                 *into = *word;
             } else {
@@ -1012,12 +1148,9 @@ impl<S: Successors> Expansion<'_, '_, S> {
             let mut codes = 0_u64;
             for (at, write) in writes.iter().enumerate() {
                 let place = (REPEATS && write.kept)
-                    .then(|| self.scratch.known.scalars.get_mut(at))
+                    .then(|| self.work.known.scalars.get_mut(at))
                     .flatten();
-                let number = match (
-                    write.holds,
-                    known_or_scalar(place, write.code, self.values.frame()),
-                ) {
+                let number = match (write.holds, known_or_scalar(place, write.code, self.frame)) {
                     (Holds::WholeNumber, Ok(Scalar::Int(number))) => number,
                     (Holds::TrueOrFalse, Ok(Scalar::Bool(flag))) => i64::from(flag),
                     (_, Err(fault)) => {
@@ -1043,25 +1176,23 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 }
             }
             if fits {
-                self.offer_row_once::<REPEATS>(position, input, planned.seen_by, codes);
+                self.offer_row_once::<REPEATS>(input, planned.seen_by, codes);
                 return;
             }
         }
-        let base = self.values.base();
         match next_updates(
             planned,
             base.values,
-            self.values.frame(),
-            &mut self.scratch.updates,
-            reusing.then_some(self.scratch.known.updates.as_mut_slice()),
+            self.frame,
+            &mut self.work.updates,
+            reusing.then_some(self.work.known.updates.as_mut_slice()),
         ) {
             Ok(()) => {
-                if (!REPEATS || self.scratch.seen.first_updates(&self.scratch.updates))
-                    && self
-                        .sink
-                        .offer(position, input, base, &self.scratch.updates)
-                {
-                    self.offered = self.offered.saturating_add(1);
+                if !REPEATS || self.work.seen.first_updates(&self.work.updates) {
+                    if self.sink.offer(position, input, base, &self.work.updates) {
+                        self.tally.count();
+                    }
+                    self.reopen();
                 }
             }
             Err(fault) => self.found.note(Whence::Update(position), fault),
@@ -1069,49 +1200,29 @@ impl<S: Successors> Expansion<'_, '_, S> {
     }
 
     #[inline]
-    fn offer_row_once<const REPEATS: bool>(
-        &mut self,
-        position: usize,
-        input: usize,
-        seen_by: SeenBy,
-        codes: u64,
-    ) {
-        let next = &self.scratch.next;
+    fn offer_row_once<const REPEATS: bool>(&mut self, input: usize, seen_by: SeenBy, codes: u64) {
+        let next = &self.work.next;
         let first = match (REPEATS, seen_by) {
             (false, _) => Some(hash_words(next)),
-            (true, SeenBy::WrittenCodes) => self
-                .scratch
-                .seen
-                .first_codes(codes)
-                .then(|| hash_words(next)),
+            (true, SeenBy::WrittenCodes) => {
+                self.work.seen.first_codes(codes).then(|| hash_words(next))
+            }
             (true, SeenBy::Rows) => {
                 let hash = hash_words(next);
-                self.scratch.seen.first_row(next, hash).then_some(hash)
+                self.work.seen.first_row(next, hash).then_some(hash)
             }
         };
-        if let Some(hash) = first
-            && self.sink.offer_row(position, input, next, hash)
-        {
-            self.offered = self.offered.saturating_add(1);
+        if let Some(hash) = first {
+            if self.sink.offer_row(self.origin.position, input, next, hash) {
+                self.tally.count();
+            }
+            self.reopen();
         }
     }
 
-    fn marked_end(&mut self, model: &Model, packed: &[Option<PackedTest>]) -> Enabling {
-        let mut ending = Enabling::default();
-        for (position, end) in model.ends.iter().enumerate() {
-            match self
-                .values
-                .judge(packed.get(position).and_then(Option::as_ref), &end.when)
-            {
-                Ok(true) => ending.enabled = true,
-                Ok(false) => {}
-                Err(fault) => {
-                    self.found.note(Whence::End(position), fault);
-                    ending.unsure = true;
-                }
-            }
-        }
-        ending
+    #[inline]
+    fn reopen(&mut self) {
+        self.open = self.tally.has_room() && !self.sink.done();
     }
 }
 
@@ -1173,15 +1284,17 @@ impl Expand<'_> {
         }
         let mut expansion = Expansion {
             values: &mut values,
-            timer: Timer {
-                deadline: self.budget.deadline,
-                ticks: 0,
-                expired: false,
+            tally: Tally {
+                timer: Timer {
+                    deadline: self.budget.deadline,
+                    ticks: 0,
+                    expired: false,
+                },
+                moving: Enabling::default(),
+                most: self.budget.successors,
+                offered: 0,
             },
-            moving: Enabling::default(),
             found: &mut found,
-            budget: self.budget,
-            offered: 0,
             sink,
             scratch: &mut scratch.work,
         };
@@ -1194,7 +1307,7 @@ impl Expand<'_> {
                 break;
             }
         }
-        let moving = expansion.moving;
+        let moving = expansion.tally.moving;
         if !moving.enabled {
             let ending = expansion.marked_end(model, &self.from_rows.ends);
             expansion.found.ended = ending.enabled;
