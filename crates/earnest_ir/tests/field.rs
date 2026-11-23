@@ -1,8 +1,10 @@
-//! An update of a field by a constant gives its answer through `FieldStep` without a frame. It
-//! must give an answer only where the reference walk gives that number without a fault and
-//! without a note of numbers beyond 32 bits.
+//! A comparison of a field with a constant is tested as one range of numbers, an `and` of such
+//! comparisons as a run of ranges, and an update of a field by a constant gives its answer
+//! through `FieldStep` without a frame. Each must give what the reference walk gives: the same
+//! truth or the same fault, and a `FieldStep` answer only where the walk gives that number
+//! without a fault and without a note of numbers beyond 32 bits.
 
-use earnest_ir::{Code, Expr, Frame, Math, Op, Order, eval};
+use earnest_ir::{Code, Expr, Fault, Frame, Math, Op, Order, eval, truth};
 use earnest_value::{IntType, MOST_SAFE_INTEGER, Value};
 
 const SLOTS: usize = 2;
@@ -50,6 +52,13 @@ fn constants() -> Vec<i64> {
     ]
 }
 
+const ORDERS: [Order; 4] = [
+    Order::Less,
+    Order::LessOrEqual,
+    Order::Greater,
+    Order::GreaterOrEqual,
+];
+
 const MATHS: [Math; 5] = [
     Math::Add,
     Math::Subtract,
@@ -79,6 +88,99 @@ fn int(number: i64) -> Expr {
 
 fn compared(order: Order, field: usize, number: i64) -> Expr {
     Expr::Apply(Op::Order(order), vec![Expr::Field(field), int(number)])
+}
+
+fn every_comparison() -> Vec<Expr> {
+    let mut all = Vec::new();
+    for order in ORDERS {
+        for field in fields() {
+            for number in constants() {
+                all.push(compared(order, field, number));
+            }
+        }
+    }
+    all
+}
+
+fn and(parts: &[Expr]) -> Expr {
+    parts
+        .iter()
+        .cloned()
+        .reduce(|left, right| Expr::And(Box::new(left), Box::new(right)))
+        .expect("at least one part")
+}
+
+struct Tested {
+    answer: Result<bool, Fault>,
+    beyond_32_bits: bool,
+}
+
+fn tested(test: impl FnOnce(&mut Frame<'_>) -> Result<bool, Fault>) -> Tested {
+    let state = state();
+    let mut frame = Frame::new(&state, SLOTS);
+    let answer = test(&mut frame);
+    Tested {
+        answer,
+        beyond_32_bits: frame.computed_beyond_32_bits(),
+    }
+}
+
+fn agrees_as_truth(expr: &Expr) {
+    let code = Code::new(expr.clone());
+    let prepared = tested(|frame| code.truth(frame));
+    let reference = tested(|frame| truth(expr, frame));
+    assert_eq!(prepared.answer, reference.answer, "the truth of {expr:?}");
+    assert!(
+        !prepared.beyond_32_bits && !reference.beyond_32_bits,
+        "a comparison notes nothing: {expr:?}"
+    );
+}
+
+#[test]
+fn a_comparison_of_a_field_with_a_constant_tells_what_the_walk_tells() {
+    for expr in every_comparison() {
+        agrees_as_truth(&expr);
+    }
+}
+
+#[test]
+fn an_and_of_comparisons_with_constants_stops_where_the_walk_stops() {
+    let picked: Vec<Expr> = [
+        (Order::Less, 0, 9),
+        (Order::LessOrEqual, 9, 9),
+        (Order::Greater, 1, -8),
+        (Order::GreaterOrEqual, 2, 1),
+        (Order::Less, 7, 3),
+        (Order::LessOrEqual, 8, 3),
+        (Order::Greater, 10, 3),
+        (Order::Less, 4, i64::MAX),
+        (Order::GreaterOrEqual, 5, i64::MIN),
+        (Order::Less, 3, i64::MIN),
+        (Order::Greater, 4, i64::MAX),
+    ]
+    .into_iter()
+    .map(|(order, field, number)| compared(order, field, number))
+    .collect();
+    for first in &picked {
+        for second in &picked {
+            agrees_as_truth(&and(&[first.clone(), second.clone()]));
+            for third in &picked {
+                agrees_as_truth(&and(&[first.clone(), second.clone(), third.clone()]));
+            }
+        }
+    }
+}
+
+#[test]
+fn an_and_that_mixes_comparisons_with_other_tests_tells_what_the_walk_tells() {
+    let other = Expr::Apply(
+        Op::Equal,
+        vec![Expr::Field(7), Expr::Const(Value::Bool(true))],
+    );
+    for comparison in [compared(Order::Less, 0, 9), compared(Order::Less, 0, 2)] {
+        agrees_as_truth(&and(&[other.clone(), comparison.clone()]));
+        agrees_as_truth(&and(&[comparison.clone(), other.clone(), comparison]));
+    }
 }
 
 fn wrapped(expr: &Expr) -> Vec<Expr> {
