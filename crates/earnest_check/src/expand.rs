@@ -146,6 +146,7 @@ struct Known {
 struct Reuse {
     guard: usize,
     updates: Vec<usize>,
+    kept_by_first: Vec<(usize, usize)>,
 }
 
 const CODE_BITS: u32 = 16;
@@ -174,6 +175,7 @@ struct Write<'a> {
     holds: Holds,
     code_mask: u64,
     placed: u64,
+    kept: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -343,9 +345,35 @@ impl<'a> Move<'a> {
             .enumerate()
             .filter_map(|(position, update)| Some((position, update.as_ref()?)))
             .collect::<Vec<_>>();
+        let refill = if action.inputs_may_be_overwritten() {
+            Refill::Every
+        } else {
+            Refill::Turned
+        };
+        let reuse = (refill == Refill::Turned)
+            .then(|| {
+                let updates: Vec<usize> = updates
+                    .iter()
+                    .map(|(_, code)| first_input_read(action, code))
+                    .collect();
+                let mut kept_by_first: Vec<(usize, usize)> = updates
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, first)| **first > 0)
+                    .map(|(at, first)| (*first, at))
+                    .collect();
+                kept_by_first.sort_unstable();
+                Reuse {
+                    guard: first_input_read(action, &action.guard),
+                    updates,
+                    kept_by_first,
+                }
+            })
+            .filter(|reuse| reuse.guard > 0 || !reuse.kept_by_first.is_empty());
         let in_place = updates
             .iter()
-            .map(|(position, code)| {
+            .enumerate()
+            .map(|(at, (position, code))| {
                 let (slot, holds) = match (layout.number(*position), layout.truth(*position)) {
                     (Some(slot), _) => (slot, Holds::WholeNumber),
                     (None, Some(slot)) => (slot, Holds::TrueOrFalse),
@@ -360,6 +388,10 @@ impl<'a> Move<'a> {
                     holds,
                     code_mask,
                     placed: code_mask.checked_shl(slot.shift).unwrap_or(0),
+                    kept: reuse
+                        .as_ref()
+                        .and_then(|reuse| reuse.updates.get(at))
+                        .is_some_and(|first| *first > 0),
                 })
             })
             .collect::<Option<Vec<_>>>()
@@ -381,24 +413,6 @@ impl<'a> Move<'a> {
             }
             InPlace::Writes(_) | InPlace::SomeUpdateHasNoSlot => SeenBy::Rows,
         };
-        let refill = if action.inputs_may_be_overwritten() {
-            Refill::Every
-        } else {
-            Refill::Turned
-        };
-        let reuse = (refill == Refill::Turned)
-            .then(|| Reuse {
-                guard: first_input_read(action, &action.guard),
-                updates: updates
-                    .iter()
-                    .map(|(_, code)| first_input_read(action, code))
-                    .collect(),
-            })
-            .filter(|reuse| {
-                std::iter::once(&reuse.guard)
-                    .chain(&reuse.updates)
-                    .any(|first| *first > 0)
-            });
         Self {
             action,
             updates,
@@ -493,14 +507,14 @@ impl Known {
         if reuse.guard < turned {
             self.guard = None;
         }
-        for ((scalar, place), first) in self
-            .scalars
-            .iter_mut()
-            .zip(self.updates.iter_mut())
-            .zip(&reuse.updates)
-        {
-            if *first < turned {
+        for (first, at) in &reuse.kept_by_first {
+            if *first >= turned {
+                break;
+            }
+            if let Some(scalar) = self.scalars.get_mut(*at) {
                 *scalar = None;
+            }
+            if let Some(place) = self.updates.get_mut(*at) {
                 *place = None;
             }
         }
@@ -997,8 +1011,8 @@ impl<S: Successors> Expansion<'_, '_, S> {
             let mut fits = true;
             let mut codes = 0_u64;
             for (at, write) in writes.iter().enumerate() {
-                let place = reusing
-                    .then(|| planned.kept(at, &mut self.scratch.known.scalars))
+                let place = (REPEATS && write.kept)
+                    .then(|| self.scratch.known.scalars.get_mut(at))
                     .flatten();
                 let number = match (
                     write.holds,
