@@ -102,7 +102,7 @@ def file_group(crate, path, fn):
         if path in ("store/rows.rs", "store/codec.rs", "store/layout.rs"):
             return "b", "rows: " + path
         if path == "store.rs":
-            if re.search(r"read_state|values_of|wide_state|encode|state\b", fn):
+            if re.search(r"read_state|read_values|decode|decoder|values_of|wide_state|encode|state\b", fn):  # 0ee0be2: the row hand-out (read_state, decode, read_values)
                 return "b", "rows: store.rs " + short(fn)
             if re.search(r"\bfind\b|place\b|claim", fn):
                 return "a", "index: store.rs " + short(fn)
