@@ -9,7 +9,7 @@ use crate::reading::{ModelFile, load, read};
 use crate::run::{Bounds, Graphs, Ran, Search, checked, explore_each};
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
-    RuleChange, RuleChanges, Section, Unreadable, chart_with_limit, one_line, report_with_limit,
+    Charted, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_charts,
     skipped_section,
 };
 use earnest_check::Status;
@@ -198,13 +198,11 @@ pub(crate) fn chart_command(arguments: &Chart) -> Result<Exit, String> {
     let ran = explore_each(
         &searched(&targets, rule),
         limits_of(&arguments.bounds),
-        Graphs::Kept,
+        Graphs::Charted {
+            max_arrows: arguments.arrows.max_arrows.get(),
+        },
     );
-    let charts: Vec<String> = ran
-        .iter()
-        .filter_map(|ran| ran.outcome.graph.as_ref())
-        .map(|graph| chart_with_limit(graph, arguments.arrows.max_arrows.get()))
-        .collect();
+    let charts: Vec<&str> = ran.iter().filter_map(|ran| ran.chart.as_deref()).collect();
     to_stdout(&charts.join("\n\n"));
     say_what_was_skipped(&skipped, &no_model);
     Ok(warn_of_unreadable(&files))
@@ -244,14 +242,23 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         .map_err(|error| refusing(&skipped, &no_model, model, rule, error))?;
     let targets = selected.targets;
     say_what_is_unread(&files, model, rule, &targets);
-    let ran = explore_each(&searched(&targets, rule), bounds, Graphs::Kept);
-    let sections: Vec<Section<'_>> = targets
+    let ran = explore_each(
+        &searched(&targets, rule),
+        bounds,
+        Graphs::Charted {
+            max_arrows: arguments.arrows.max_arrows.get(),
+        },
+    );
+    let sections: Vec<Charted<'_>> = targets
         .iter()
         .zip(&ran)
-        .map(|(target, ran)| Section {
-            name: &target.readable.model.name,
-            file: &target.file.path,
-            outcome: &ran.outcome,
+        .map(|(target, ran)| Charted {
+            section: Section {
+                name: &target.readable.model.name,
+                file: &target.file.path,
+                outcome: &ran.outcome,
+            },
+            chart: ran.chart.as_deref(),
         })
         .collect();
     let compared = arguments.base.as_deref().map(|base| {
@@ -290,12 +297,7 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
             problems: lines,
         })
         .collect();
-    let mut written = report_with_limit(
-        &sections,
-        &unreadable,
-        since.as_ref(),
-        arguments.arrows.max_arrows.get(),
-    );
+    let mut written = report_with_charts(&sections, &unreadable, since.as_ref());
     let left_out = (!no_model.is_empty()).then(|| no_model_section(&no_model));
     for section in skipped_section(&skipped).into_iter().chain(left_out) {
         if !written.is_empty() {
