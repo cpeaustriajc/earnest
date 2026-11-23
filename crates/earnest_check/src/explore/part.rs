@@ -149,7 +149,8 @@ struct RecentWords {
 }
 
 fn slot_of(hash: u64, slots: usize) -> usize {
-    usize::try_from(hash).unwrap_or(0) & slots.wrapping_sub(1)
+    let mask = u64::try_from(slots.wrapping_sub(1)).unwrap_or(u64::MAX);
+    usize::try_from(hash & mask).unwrap_or(0)
 }
 
 fn low_bit(hash: u64) -> usize {
@@ -622,8 +623,8 @@ impl Search<'_> {
 #[cfg(test)]
 mod tests {
     use super::{
-        FreshRows, Kit, MOST_SPARE_TABLES, Part, PartSink, RECENT_SLOTS, RecentWords, RowKit,
-        Spares,
+        FEWEST_RECENT_SLOTS, FreshRows, Kit, MOST_SPARE_TABLES, Part, PartSink, RECENT_SLOTS,
+        RecentWords, RowKit, Spares, slot_of,
     };
     use crate::expand::Successors;
     use crate::store::{Fresh, Lookup, SHARD_COUNT, Spread, Store, hash_words};
@@ -848,6 +849,20 @@ mod tests {
 
     fn word_hashes(words: std::ops::Range<u64>) -> Vec<(u64, u64)> {
         words.map(|word| (word, hash_words(&[word]))).collect()
+    }
+
+    #[test]
+    fn a_slot_keeps_the_low_bits_of_a_hash_of_any_width() {
+        for hash in [0, 1, 0xFFFF, 1 << 32, (1 << 40) | 5, u64::MAX, u64::MAX - 1] {
+            for slots in [FEWEST_RECENT_SLOTS, RECENT_SLOTS] {
+                let wanted = hash % u64::try_from(slots).expect("a small count");
+                assert_eq!(
+                    u64::try_from(slot_of(hash, slots)).ok(),
+                    Some(wanted),
+                    "hash {hash:#x}, {slots} slots"
+                );
+            }
+        }
     }
 
     #[test]

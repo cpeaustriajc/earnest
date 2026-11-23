@@ -41,9 +41,9 @@ pub struct Limits {
     pub keep_graph: bool,
     /// Whether a search that keeps its graph fills [`crate::Outcome::outline`] in place of
     /// [`crate::Outcome::graph`], which it then leaves `None`. An outline holds what a chart
-    /// needs in far less memory than the graph. A graph with 2^32 states or arrows or more has
-    /// no outline: the search fills [`crate::Outcome::graph`] instead. Nothing is filled
-    /// without [`Self::keep_graph`].
+    /// needs in far less memory than the graph. A search of 2^32 states or more, or whose graph
+    /// would have 2^32 edges or more, has no outline: the search fills
+    /// [`crate::Outcome::graph`] instead. Nothing is filled without [`Self::keep_graph`].
     pub outline: bool,
     /// Check only the rule with this id. The others are not evaluated and are left out of
     /// [`crate::Outcome::rules`]. An id no rule has leaves no rule checked.
