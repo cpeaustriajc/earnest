@@ -1,4 +1,3 @@
-use crate::outline::select_outline;
 use crate::plot::{Look, Plot};
 use crate::select::{ARROW_LIMIT, Selection, select};
 use earnest_check::{Graph, Outline};
@@ -369,5 +368,5 @@ pub fn chart_with_limit(graph: &Graph, limit: usize) -> String {
 /// [`Limits::outline`](earnest_check::Limits::outline) in place of its graph.
 #[must_use]
 pub fn chart_outline(outline: &Outline, limit: usize) -> String {
-    Drawing::new(outline, select_outline(outline, limit)).write()
+    Drawing::new(outline, select(outline, limit)).write()
 }

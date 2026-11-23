@@ -1,11 +1,14 @@
-use crate::select::marked;
-use earnest_check::{Graph, Outline};
+use earnest_check::{Graph, Node, Outline};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Look {
     pub(crate) start: bool,
     pub(crate) end: bool,
     pub(crate) marked: bool,
+}
+
+fn marked(node: &Node) -> bool {
+    !node.broken.is_empty() || !node.outside.is_empty()
 }
 
 pub(crate) trait Plot {

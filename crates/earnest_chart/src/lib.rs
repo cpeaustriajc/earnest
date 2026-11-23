@@ -11,7 +11,6 @@
 mod changes;
 mod markdown;
 mod mermaid;
-mod outline;
 mod plot;
 mod report;
 mod select;
