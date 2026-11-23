@@ -1,4 +1,5 @@
 use super::layout::Place;
+use earnest_ir::{Coding, Slot};
 use earnest_value::{Domain, Value};
 use rustc_hash::FxHashMap;
 
@@ -6,7 +7,7 @@ const MOST_LISTED_VALUES: u128 = 1 << 12;
 const GROWN_BITS: u32 = 32;
 const MOST_GROWN_VALUES: usize = 1 << GROWN_BITS;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Dict {
     values: Vec<Value>,
     inside: Vec<bool>,
@@ -27,7 +28,7 @@ impl Dict {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) enum Kind {
     Int { lo: i64, hi: i64 },
     Bool,
@@ -35,7 +36,7 @@ pub(super) enum Kind {
     Grown { dict: Dict, domain: Domain },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct Codec {
     pub(super) place: Place,
     pub(super) kind: Kind,
@@ -122,6 +123,24 @@ impl Codec {
             (Kind::Bool, Value::Bool(truth)) => *truth = code != 0,
             (_, slot) => *slot = self.value(code),
         }
+    }
+
+    pub(super) fn slot(&self) -> Option<Slot> {
+        let coding = match &self.kind {
+            Kind::Int { lo, hi } => Coding::Whole {
+                lowest: *lo,
+                highest: *hi,
+            },
+            Kind::Bool => Coding::Truth,
+            Kind::Listed(dict) => Coding::Listed(dict.values.clone()),
+            Kind::Grown { .. } => return None,
+        };
+        Some(Slot {
+            word: self.place.word,
+            shift: self.place.shift,
+            width: self.place.mask.trailing_ones(),
+            coding,
+        })
     }
 
     pub(super) fn inside(&self, code: u64) -> bool {

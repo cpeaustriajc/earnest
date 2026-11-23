@@ -5,7 +5,7 @@ mod level;
 mod rows;
 
 use codec::{Codec, Kind};
-use earnest_ir::Field;
+use earnest_ir::{Field, Slot};
 use earnest_value::{Domain, Value};
 use index::{Claim, Index};
 pub(crate) use index::{Found, Lookup, SHARD_COUNT, shard_of};
@@ -33,6 +33,28 @@ pub(crate) struct Store {
     grown: Vec<usize>,
     wide: FxHashMap<usize, Box<[Value]>>,
     wide_ids: FxHashMap<Box<[Value]>, usize>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Decoder {
+    codecs: Vec<Codec>,
+}
+
+impl Decoder {
+    pub(crate) fn decode(&self, row: &[u64], values: &mut Vec<Value>) {
+        decode(&self.codecs, row, values);
+    }
+}
+
+fn decode(codecs: &[Codec], row: &[u64], values: &mut Vec<Value>) {
+    if values.len() == codecs.len() {
+        for (codec, slot) in codecs.iter().zip(values.iter_mut()) {
+            codec.read_into(row, slot);
+        }
+    } else {
+        values.clear();
+        values.extend(codecs.iter().map(|codec| codec.value(codec.read(row))));
+    }
 }
 
 impl Store {
@@ -94,8 +116,18 @@ impl Store {
 
     pub(crate) fn state(&self, id: usize) -> Vec<Value> {
         let mut values = Vec::with_capacity(self.codecs.len());
-        self.read_state(id, &mut Vec::new(), &mut values);
+        self.read_values(id, &mut Vec::new(), &mut values);
         values
+    }
+
+    pub(crate) fn slots(&self) -> Vec<Option<Slot>> {
+        self.codecs.iter().map(Codec::slot).collect()
+    }
+
+    pub(crate) fn decoder(&self) -> Option<Decoder> {
+        self.grown.is_empty().then(|| Decoder {
+            codecs: self.codecs.clone(),
+        })
     }
 
     pub(crate) fn values_of(&self, row: &[u64]) -> Box<[Value]> {
@@ -106,6 +138,28 @@ impl Store {
     }
 
     pub(crate) fn read_state(
+        &self,
+        id: usize,
+        row: &mut Vec<u64>,
+        values: &mut Vec<Value>,
+    ) -> bool {
+        if !self.grown.is_empty() {
+            return self.read_values(id, row, values);
+        }
+        row.clear();
+        values.clear();
+        if id >= self.count {
+            return false;
+        }
+        if let Some(full) = self.wide_state(id) {
+            values.extend(full.iter().cloned());
+            return false;
+        }
+        self.rows.unpack(id, row, self.layout.words());
+        true
+    }
+
+    pub(crate) fn read_values(
         &self,
         id: usize,
         row: &mut Vec<u64>,
@@ -122,14 +176,7 @@ impl Store {
             return false;
         }
         self.rows.unpack(id, row, self.layout.words());
-        if values.len() == self.codecs.len() {
-            for (codec, slot) in self.codecs.iter().zip(values.iter_mut()) {
-                codec.read_into(row, slot);
-            }
-        } else {
-            values.clear();
-            values.extend(self.codecs.iter().map(|codec| codec.value(codec.read(row))));
-        }
+        decode(&self.codecs, row, values);
         true
     }
 
