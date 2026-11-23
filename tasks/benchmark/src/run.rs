@@ -150,17 +150,23 @@ pub(crate) fn run_once(job: &Job<'_>) -> Result<Sample, String> {
         .spawn()
         .map_err(|error| format!("{} did not start: {error}", job.binary.display()))?;
     let process = child.id();
-    let waiting = thread::spawn(move || child.wait_with_output());
-    let mut peak_kib = None;
-    while !waiting.is_finished() {
-        peak_kib = peak_kib.max(peak_of(process));
-        thread::sleep(POLL);
-    }
-    let wall = started.elapsed();
-    let output = waiting
-        .join()
-        .map_err(|_| "the thread that waits for the checker panicked".to_owned())?
-        .map_err(|error| format!("waiting for the checker failed: {error}"))?;
+    let (wall, peak_kib, waited) = thread::scope(|scope| {
+        let waiting = earnest_threads::start(scope, None, move || child.wait_with_output())
+            .map_err(|error| {
+                format!("the thread that waits for the checker did not start: {error}")
+            })?;
+        let mut peak_kib = None;
+        while !waiting.is_finished() {
+            peak_kib = peak_kib.max(peak_of(process));
+            thread::sleep(POLL);
+        }
+        let wall = started.elapsed();
+        let waited = waiting
+            .join()
+            .map_err(|_| "the thread that waits for the checker panicked".to_owned())?;
+        Ok::<_, String>((wall, peak_kib, waited))
+    })?;
+    let output = waited.map_err(|error| format!("waiting for the checker failed: {error}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         return Err(format!(

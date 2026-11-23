@@ -9,6 +9,7 @@ name = "benchmark"
 path = "src/main.rs"
 
 [dependencies]
+earnest_threads.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 

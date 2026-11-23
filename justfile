@@ -1,13 +1,16 @@
 default: check
 
 # One recipe per check. To add a check, write its recipe and name it here.
-check: format unused-dependencies dependencies lint typescript test verify models
+check: format unused-dependencies dependencies lint lint-library typescript test verify models
 
 format:
     cargo fmt --check
 
 lint:
     cargo clippy --all-targets --locked -- -D warnings
+
+lint-library:
+    CLIPPY_CONF_DIR=lints/threads cargo clippy --workspace --exclude earnest_threads --lib --bins --no-deps --locked -- -D warnings
 
 dependencies:
     cargo deny check

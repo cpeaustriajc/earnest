@@ -5,12 +5,13 @@ use crate::expand::Asked;
 use crate::helpers::{Helpers, Loan};
 use crate::limits::WORKER_STACK;
 use crate::store::Spread;
+use earnest_threads::Joined;
 use std::any::Any;
 use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
-use std::thread::{Scope, ScopedJoinHandle};
+use std::thread::Scope;
 use std::time::{Duration, Instant};
 
 const LEAST_TIME_OF_A_STATE: Duration = Duration::from_nanos(500);
@@ -115,7 +116,7 @@ impl Shared {
             && self.kept_rows.load(Ordering::SeqCst) > level.kept_rows_that_fit
     }
 
-    fn wait_for(&self, workers: Vec<ScopedJoinHandle<'_, ()>>) {
+    fn wait_for(&self, workers: Vec<Joined<'_, ()>>) {
         for worker in workers {
             if let Err(panic) = worker.join() {
                 self.panic
@@ -259,11 +260,11 @@ impl Search<'_> {
         level: &'env Level,
         shared: &'env Shared,
         loan: Option<Loan<'env>>,
-    ) -> ScopedJoinHandle<'scope, ()> {
-        std::thread::Builder::new()
-            .stack_size(WORKER_STACK)
-            .spawn_scoped(scope, move || self.work(scope, level, shared, loan))
-            .expect("a worker thread starts")
+    ) -> Joined<'scope, ()> {
+        earnest_threads::start(scope, Some(WORKER_STACK), move || {
+            self.work(scope, level, shared, loan);
+        })
+        .expect("a worker thread starts")
     }
 
     fn work<'scope, 'env>(
@@ -296,7 +297,7 @@ impl Search<'_> {
         scope: &'scope Scope<'scope, 'env>,
         level: &'env Level,
         shared: &'env Shared,
-        started: &mut Vec<ScopedJoinHandle<'scope, ()>>,
+        started: &mut Vec<Joined<'scope, ()>>,
     ) {
         let mut kit = self.spares.kit();
         loop {
@@ -346,7 +347,7 @@ impl Search<'_> {
         scope: &'scope Scope<'scope, 'env>,
         level: &'env Level,
         shared: &'env Shared,
-        started: &mut Vec<ScopedJoinHandle<'scope, ()>>,
+        started: &mut Vec<Joined<'scope, ()>>,
     ) {
         let Some(helpers) = self.limits.helpers.as_ref() else {
             return;
@@ -394,7 +395,9 @@ impl Spread for Crew<'_> {
         let borrowed = loan.as_ref().map_or(0, Loan::threads);
         std::thread::scope(|scope| {
             let started: Vec<_> = (1..own.saturating_add(borrowed))
-                .map(|_| scope.spawn(work))
+                .map(|_| {
+                    earnest_threads::start(scope, None, work).expect("a thread of the crew starts")
+                })
                 .collect();
             work();
             for worker in started {
