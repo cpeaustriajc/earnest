@@ -321,6 +321,7 @@ dependencies = [
  "earnest_ir",
  "earnest_rs",
  "earnest_semantic",
+ "earnest_threads",
  "earnest_tla",
  "earnest_ts",
  "predicates",
@@ -342,6 +343,7 @@ dependencies = [
 name = "earnest_benchmark"
 version = "0.1.0"
 dependencies = [
+ "earnest_threads",
  "serde_json",
  "tempfile",
 ]
@@ -375,6 +377,7 @@ dependencies = [
  "earnest_diagnostics",
  "earnest_ir",
  "earnest_semantic",
+ "earnest_threads",
  "earnest_value",
  "hashbrown",
  "rustc-hash",
@@ -440,6 +443,10 @@ dependencies = [
  "earnest_ir",
  "earnest_value",
 ]
+
+[[package]]
+name = "earnest_threads"
+version = "0.1.0"
 
 [[package]]
 name = "earnest_tla"

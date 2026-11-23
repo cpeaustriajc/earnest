@@ -51,19 +51,17 @@ where
     let mut done: Vec<(usize, R)> = thread::scope(|scope| {
         let workers: Vec<_> = (0..pool.crew)
             .map(|_| {
-                thread::Builder::new()
-                    .stack_size(WORKER_STACK)
-                    .spawn_scoped(scope, || {
-                        let mut mine = Vec::new();
-                        while let Some(position) = pool.claim() {
-                            if let Some(task) = tasks.get(position) {
-                                mine.push((position, work(task, &pool.helpers)));
-                            }
+                earnest_threads::start(scope, Some(WORKER_STACK), || {
+                    let mut mine = Vec::new();
+                    while let Some(position) = pool.claim() {
+                        if let Some(task) = tasks.get(position) {
+                            mine.push((position, work(task, &pool.helpers)));
                         }
-                        pool.retire();
-                        mine
-                    })
-                    .expect("a worker thread starts")
+                    }
+                    pool.retire();
+                    mine
+                })
+                .expect("a worker thread starts")
             })
             .collect();
         workers

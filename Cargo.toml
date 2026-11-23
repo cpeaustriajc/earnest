@@ -18,6 +18,7 @@ earnest_macros = { path = "crates/earnest_macros", version = "0.1.0" }
 earnest_rs = { path = "crates/earnest_rs", version = "0.1.0" }
 earnest_semantic = { path = "crates/earnest_semantic", version = "0.1.0" }
 earnest_tla = { path = "crates/earnest_tla", version = "0.1.0" }
+earnest_threads = { path = "crates/earnest_threads", version = "0.1.0" }
 earnest_ts = { path = "crates/earnest_ts", version = "0.1.0" }
 earnest_value = { path = "crates/earnest_value", version = "0.1.0" }
 
