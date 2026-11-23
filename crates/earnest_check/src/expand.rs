@@ -183,7 +183,7 @@ pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
-    direct: Option<Vec<(FieldStep, RangeSlot)>>,
+    direct: Option<Vec<(FieldStep, Write<'a>)>>,
     seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
@@ -260,7 +260,7 @@ impl<'a> Move<'a> {
                     (write.holds == Holds::WholeNumber)
                         .then(|| write.code.field_step())
                         .flatten()
-                        .map(|step| (step, write.slot))
+                        .map(|step| (step, *write))
                 })
                 .collect(),
             InPlace::Writes(_) | InPlace::SomeUpdateHasNoSlot => None,
@@ -756,7 +756,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
     }
 
     #[inline]
-    fn write_directly(&mut self, steps: &[(FieldStep, RangeSlot)], row: &[u64]) -> bool {
+    fn write_directly(&mut self, steps: &[(FieldStep, Write<'_>)], row: &[u64]) -> bool {
         let next = &mut self.scratch.next;
         if let ([into], [word]) = (next.as_mut_slice(), row) {
             *into = *word;
@@ -764,13 +764,16 @@ impl<S: Successors> Expansion<'_, '_, S> {
             next.clear();
             next.extend_from_slice(row);
         }
-        for (step, slot) in steps {
-            if !step
-                .apply(self.base.values)
-                .is_some_and(|number| slot.write(next, number))
-            {
+        for (step, write) in steps {
+            let (Some(code), Some(word)) = (
+                step.apply(self.base.values)
+                    .and_then(|number| write.slot.code(number)),
+                next.get_mut(write.slot.word),
+            ) else {
                 return false;
-            }
+            };
+            *word = (*word & !write.placed)
+                | (code.checked_shl(write.slot.shift).unwrap_or(0) & write.placed);
         }
         true
     }
