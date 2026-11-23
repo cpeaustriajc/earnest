@@ -139,8 +139,10 @@ case. Only the checker's binary is counted because the C library picks its `memc
 processor and differs between machines; it is 8% of `grid_1m` with 4 workers. What a count depends
 on besides the code: the compiler and the lock file (both pinned) and the case itself. The number of
 processors the process may use (`taskset -c 0`) and its environment (`env -i`) change nothing beyond
-the spread above. Whether the binary built on a runner executes exactly the instructions of one
-built elsewhere was not seen; the limits leave five times the spread or more for that.
+the spread above. A binary built on a GitHub runner executes what the binary of the records does,
+which a cloud machine built: in the first run of the `check` job with this step (`b34d504`) every
+case with 1 worker counted 7 instructions fewer than its record, `wide` with 4 workers 0.001% fewer
+and `grid_1m` with 4 workers 0.14% fewer.
 
 `just record-counts` writes the counts of the current build to `instructions.txt`. Run it only when
 the compiler changes or a change is meant to cost more or less, and say why in the commit: the new
