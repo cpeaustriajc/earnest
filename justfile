@@ -10,7 +10,8 @@ lint:
     cargo clippy --all-targets --locked -- -D warnings
 
 lint-library:
-    CLIPPY_CONF_DIR=lints/threads cargo clippy --workspace --exclude earnest_threads --lib --bins --no-deps --locked -- -D warnings
+    CLIPPY_CONF_DIR=lints/threads cargo clippy --workspace --exclude earnest_threads --exclude earnest_check --exclude earnest_ir --lib --bins --no-deps --locked -- -D warnings
+    CLIPPY_CONF_DIR=lints/search cargo clippy -p earnest_check -p earnest_ir --lib --no-deps --locked -- -D warnings
 
 dependencies:
     cargo deny check

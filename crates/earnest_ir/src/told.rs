@@ -2,7 +2,7 @@ use crate::eval::field_of;
 use crate::parts::{Binder, Binders, Scope};
 use crate::{Action, Code, Expr, Fault};
 use earnest_value::{Sym, Value};
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 impl Action {
     /// For each input, in order, and each of its values, in order: whether the guard and the
@@ -164,7 +164,7 @@ fn reads_fields_only(
 }
 
 fn first_of_each(values: &[Value], names: &[Sym]) -> Vec<bool> {
-    let mut seen: HashSet<Vec<Result<Value, Fault>>> = HashSet::new();
+    let mut seen: FxHashSet<Vec<Result<Value, Fault>>> = FxHashSet::default();
     values
         .iter()
         .map(|value| seen.insert(names.iter().map(|name| field_of(value, *name)).collect()))

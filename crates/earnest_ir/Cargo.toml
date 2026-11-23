@@ -6,6 +6,7 @@ publish.workspace = true
 
 [dependencies]
 earnest_value.workspace = true
+rustc-hash.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
