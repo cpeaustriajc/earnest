@@ -116,7 +116,7 @@ impl Code {
     #[inline]
     pub fn scalar(&self, frame: &mut Frame<'_>) -> Result<Scalar, Fault> {
         match &self.value {
-            Val::Num(num) => num.eval(frame).map(Scalar::Int).map_err(Stop::fault),
+            Val::Num(num) => num.rest(frame).map(Scalar::Int).map_err(Stop::fault),
             other => Self::other_scalar(other, frame),
         }
     }

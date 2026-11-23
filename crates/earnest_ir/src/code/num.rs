@@ -208,7 +208,7 @@ impl Num {
     }
 
     #[inline(never)]
-    fn rest(&self, frame: &mut Frame<'_>) -> Result<i64, Stop> {
+    pub(super) fn rest(&self, frame: &mut Frame<'_>) -> Result<i64, Stop> {
         match self {
             Self::Math {
                 math,
