@@ -1,5 +1,5 @@
 use crate::store::{RangeSlot, RowLayout, hash_words};
-use earnest_ir::{Action, Code, Fault, Frame, Input, Model, Scalar};
+use earnest_ir::{Action, Code, Fault, FieldStep, Frame, Input, Model, Scalar};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxBuildHasher;
@@ -183,6 +183,7 @@ pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
+    direct: Option<Vec<(FieldStep, RangeSlot)>>,
     seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
@@ -252,6 +253,18 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
+        let direct = match &in_place {
+            InPlace::Writes(writes) if action.inputs.is_empty() => writes
+                .iter()
+                .map(|write| {
+                    (write.holds == Holds::WholeNumber)
+                        .then(|| write.code.field_step())
+                        .flatten()
+                        .map(|step| (step, write.slot))
+                })
+                .collect(),
+            InPlace::Writes(_) | InPlace::SomeUpdateHasNoSlot => None,
+        };
         let seen_by = match &in_place {
             InPlace::Writes(writes)
                 if writes
@@ -285,6 +298,7 @@ impl<'a> Move<'a> {
             action,
             updates,
             in_place,
+            direct,
             seen_by,
             combinations,
             tried,
@@ -667,6 +681,13 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
         }
         self.moving.enabled = true;
+        if !REPEATS
+            && let (Some(steps), Some(row)) = (&planned.direct, self.base.row)
+            && self.write_directly(steps, row)
+        {
+            self.offer_row_once::<false>(position, input, planned.seen_by, 0);
+            return;
+        }
         if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.base.row) {
             let next = &mut self.scratch.next;
             if let ([into], [word]) = (next.as_mut_slice(), row) {
@@ -732,6 +753,26 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
             Err(fault) => self.found.note(Whence::Update(position), fault),
         }
+    }
+
+    #[inline]
+    fn write_directly(&mut self, steps: &[(FieldStep, RangeSlot)], row: &[u64]) -> bool {
+        let next = &mut self.scratch.next;
+        if let ([into], [word]) = (next.as_mut_slice(), row) {
+            *into = *word;
+        } else {
+            next.clear();
+            next.extend_from_slice(row);
+        }
+        for (step, slot) in steps {
+            if !step
+                .apply(self.base.values)
+                .is_some_and(|number| slot.write(next, number))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     #[inline]
@@ -860,7 +901,7 @@ mod tests {
     use earnest_ir::{Action, Expr, Input};
     use earnest_ir::{Code, Fault, Field, Frame, Math, Model, Op, Order, View, eval, truth};
     use earnest_value::Symbols;
-    use earnest_value::{Domain, Value};
+    use earnest_value::{Domain, IntType, Value};
 
     fn input(name: &str, slot: usize, values: Vec<Value>) -> Input {
         Input {
@@ -1242,6 +1283,98 @@ mod tests {
             input("b", SLOW, numbers(&[0, 1, 2])),
             input("c", SLOWEST, numbers(&[0, 1])),
         ]
+    }
+
+    fn changed(how: Math, field: usize, number: i64) -> Expr {
+        math(how, Expr::Field(field), int(number))
+    }
+
+    fn bounded(op: Op, inner: Expr) -> Expr {
+        Expr::Apply(op, vec![inner])
+    }
+
+    #[test]
+    fn an_action_without_inputs_that_changes_fields_by_constants_gives_what_its_updates_give() {
+        let cases = [
+            (
+                "x up, y down below its dial",
+                [
+                    Some(changed(Math::Add, 0, 1)),
+                    Some(changed(Math::Subtract, 1, 1)),
+                ],
+            ),
+            (
+                "x times three, y up to the end of its dial",
+                [
+                    Some(changed(Math::Multiply, 0, 3)),
+                    Some(changed(Math::Add, 1, 90)),
+                ],
+            ),
+            (
+                "x divided by zero",
+                [Some(changed(Math::Divide, 0, 0)), None],
+            ),
+            (
+                "y remainder by zero",
+                [None, Some(changed(Math::Remainder, 1, 0))],
+            ),
+            (
+                "x halved, y remainder by three",
+                [
+                    Some(changed(Math::Divide, 0, 2)),
+                    Some(changed(Math::Remainder, 1, 3)),
+                ],
+            ),
+            ("x below zero", [Some(changed(Math::Subtract, 0, 7)), None]),
+            (
+                "x beyond 32 bits",
+                [Some(changed(Math::Add, 0, 1 << 40)), None],
+            ),
+            (
+                "x past 64 bits",
+                [Some(changed(Math::Multiply, 0, i64::MAX)), None],
+            ),
+            (
+                "x past the safe integers",
+                [
+                    Some(bounded(Op::Safe, changed(Math::Multiply, 0, 1 << 52))),
+                    None,
+                ],
+            ),
+            (
+                "y past an i8",
+                [
+                    None,
+                    Some(bounded(
+                        Op::Fit(IntType::I8),
+                        changed(Math::Multiply, 1, 20),
+                    )),
+                ],
+            ),
+            (
+                "y within a u8",
+                [
+                    None,
+                    Some(bounded(Op::Fit(IntType::U8), changed(Math::Add, 1, 2))),
+                ],
+            ),
+            ("x from y", [Some(plus(Expr::Field(1), int(1))), None]),
+        ];
+        let both_low = Expr::And(
+            Box::new(below(Expr::Field(0), int(5))),
+            Box::new(Expr::Apply(
+                Op::Order(Order::LessOrEqual),
+                vec![Expr::Field(1), int(3)],
+            )),
+        );
+        for guard in [yes(), below(Expr::Field(0), int(5)), both_low] {
+            for (case, updates) in &cases {
+                agrees_with_every_combination_worked_out(
+                    case,
+                    vec![acting(Vec::new(), guard.clone(), updates)],
+                );
+            }
+        }
     }
 
     #[test]
