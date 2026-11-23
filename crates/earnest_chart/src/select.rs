@@ -20,23 +20,25 @@ struct Leaving {
 impl Leaving {
     fn new(plot: &impl Plot) -> Self {
         let boxes = plot.boxes();
-        let sound: Vec<(usize, usize)> = (0..plot.arrows())
-            .map(|at| (at, plot.ends(at)))
-            .filter(|(_, (from, to))| *from < boxes && *to < boxes)
-            .map(|(at, (from, _))| (at, from))
-            .collect();
+        let sound = |at: usize| {
+            let (from, to) = plot.ends(at);
+            (from < boxes && to < boxes).then_some(from)
+        };
         let mut first = vec![0_usize; boxes.saturating_add(1)];
-        for (_, from) in &sound {
-            first[from.saturating_add(1)] = first[from.saturating_add(1)].saturating_add(1);
+        for from in (0..plot.arrows()).filter_map(sound) {
+            first[from] = first[from].saturating_add(1);
         }
-        for at in 1..first.len() {
-            first[at] = first[at].saturating_add(first[at - 1]);
+        let mut total = 0_usize;
+        for end in &mut first {
+            total = total.saturating_add(*end);
+            *end = total;
         }
-        let mut next = first.clone();
-        let mut arrows = vec![0_usize; sound.len()];
-        for (at, from) in sound {
-            arrows[next[from]] = at;
-            next[from] = next[from].saturating_add(1);
+        let mut arrows = vec![0_usize; total];
+        for at in (0..plot.arrows()).rev() {
+            if let Some(from) = sound(at) {
+                first[from] = first[from].saturating_sub(1);
+                arrows[first[from]] = at;
+            }
         }
         Self { first, arrows }
     }

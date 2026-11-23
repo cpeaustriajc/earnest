@@ -1,6 +1,6 @@
 //! The Mermaid chart and Markdown report writer.
 //!
-//! [`chart`] draws a [`Graph`](earnest_check::Graph) as one fenced `mermaid` block, and
+//! [`chart`] draws a [`Graph`](earnest_check::Graph) as one fenced `mermaid` block,
 //! [`chart_outline`] draws the same chart from an [`Outline`](earnest_check::Outline), and
 //! [`report`] writes the Markdown an agent pastes into a PR body: one section per model and,
 //! when asked, the rule changes. [`path_lines`], [`detail_lines`] and [`rule_change_lines`] give
