@@ -116,6 +116,8 @@ struct RowKit {
 }
 
 const RECENT_SLOTS: usize = 1 << 16;
+const FEWEST_RECENT_SLOTS: usize = 1 << 10;
+const RECENT_GROWTH: usize = 4;
 const MOST_SPARE_TABLES: usize = 64;
 
 static SPARE_TABLES: Mutex<Vec<Vec<u64>>> = Mutex::new(Vec::new());
@@ -134,8 +136,8 @@ fn empty_slot(at: usize) -> u64 {
     u64::try_from(at ^ 1).unwrap_or(0)
 }
 
-fn empty_slots() -> Vec<u64> {
-    (0..RECENT_SLOTS).map(empty_slot).collect()
+fn empty_slots(count: usize) -> Vec<u64> {
+    (0..count).map(empty_slot).collect()
 }
 
 impl RecentWords {
@@ -145,7 +147,7 @@ impl RecentWords {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .pop()
-                .unwrap_or_else(empty_slots);
+                .unwrap_or_else(|| empty_slots(FEWEST_RECENT_SLOTS));
         }
     }
 
@@ -160,7 +162,25 @@ impl RecentWords {
         }
         *slot = hash;
         self.written += 1;
+        let count = self.slots.len();
+        if self.written > count / 2 && count < RECENT_SLOTS {
+            self.grow();
+        }
         false
+    }
+
+    #[cold]
+    fn grow(&mut self) {
+        let count = self.slots.len().saturating_mul(RECENT_GROWTH);
+        let mut grown = empty_slots(count);
+        for (at, hash) in self.slots.iter().enumerate() {
+            if *hash != empty_slot(at)
+                && let Some(slot) = grown.get_mut(slot_of(*hash, count))
+            {
+                *slot = *hash;
+            }
+        }
+        self.slots = grown;
     }
 
     fn forget(&mut self, part: &Part) {
@@ -186,7 +206,7 @@ impl RecentWords {
 
 impl Drop for RecentWords {
     fn drop(&mut self) {
-        if self.written > 0 || self.slots.len() != RECENT_SLOTS {
+        if self.written > 0 || self.slots.is_empty() {
             return;
         }
         let mut spare = SPARE_TABLES.lock().unwrap_or_else(PoisonError::into_inner);
@@ -806,6 +826,25 @@ mod tests {
         }
         let last = hashes.last().copied().unwrap_or(0);
         assert!(recent.met(last), "the row let in last is met again");
+    }
+
+    #[test]
+    fn recent_words_grow_to_their_most_slots_and_still_meet_what_they_kept() {
+        let mut recent = RecentWords::default();
+        recent.ready();
+        let hashes: Vec<u64> = (0..1_u64 << 12).map(|word| hash_words(&[word])).collect();
+        for hash in &hashes {
+            assert!(!recent.met(*hash), "a new row");
+        }
+        let met = hashes.iter().filter(|hash| recent.met(**hash)).count();
+        assert!(
+            met * 2 > hashes.len(),
+            "more than half the rows are met again after growing: {met}"
+        );
+        for word in 1_u64 << 12..1 << 20 {
+            recent.met(hash_words(&[word]));
+        }
+        assert_eq!(recent.slots.len(), RECENT_SLOTS, "it grows no further");
     }
 
     #[test]
