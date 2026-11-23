@@ -1061,6 +1061,15 @@ fn a_test_that_reads_one_field_of_few_values_is_answered_from_a_table_of_its_cod
             int(4),
         ],
     );
+    let faulting_let = bind(
+        4,
+        math(
+            Math::Divide,
+            int(10),
+            math(Math::Subtract, Expr::Field(2), int(2)),
+        ),
+        apply(Op::Order(Order::Less), vec![Expr::Local(4), int(4)]),
+    );
     let every_letter_red = Expr::Sweep {
         sweep: Sweep::Every,
         shelf: Shelf::Seq,
@@ -1091,6 +1100,7 @@ fn a_test_that_reads_one_field_of_few_values_is_answered_from_a_table_of_its_cod
         ),
         apply(Op::Order(Order::Less), vec![raised(), int(4)]),
         faulting,
+        faulting_let,
         every_letter_red,
         Expr::Sweep {
             sweep: Sweep::Some,
