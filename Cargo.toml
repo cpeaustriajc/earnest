@@ -69,6 +69,8 @@ fn_params_excessive_bools = "warn"
 struct_excessive_bools = "warn"
 clone_on_ref_ptr = "warn"
 redundant_clone = "warn"
+or_fun_call = "warn"
+set_contains_or_insert = "warn"
 rc_buffer = "warn"
 
 exhaustive_enums = "warn"

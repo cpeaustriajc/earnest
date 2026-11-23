@@ -826,7 +826,7 @@ impl Walk<'_, '_> {
             let ty = annotated
                 .clone()
                 .filter(Ty::is_known)
-                .unwrap_or(found.clone());
+                .unwrap_or_else(|| found.clone());
             let names = match pattern {
                 Pat::Ident(named) if !self.reader.is_constant_name(&name_of(&named.ident)) => {
                     vec![(name_of(&named.ident), ty)]
