@@ -10,3 +10,4 @@ node_modules
 !/apps/docs/
 !/apps/docs/src/content/docs/
 /apps/docs/.cloudflare
+__pycache__
