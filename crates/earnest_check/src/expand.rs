@@ -2203,7 +2203,11 @@ mod tests {
                 8 => match self.whole() {
                     Some(field) => Expr::Bind {
                         slot: BOUND,
-                        value: Box::new(plus(Expr::Field(field), int(1))),
+                        value: Box::new(if self.seed.below(2) == 0 {
+                            plus(Expr::Field(field), int(1))
+                        } else {
+                            math(Math::Divide, int(12), Expr::Field(field))
+                        }),
                         body: Box::new(Expr::Apply(
                             Op::Order(Order::Greater),
                             vec![Expr::Local(BOUND), int(self.constant(field))],
