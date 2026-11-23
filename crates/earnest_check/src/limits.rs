@@ -40,10 +40,10 @@ pub struct Limits {
     /// it off unless a chart is wanted. With [`Self::outline`] the search leaves an outline
     /// there instead.
     pub keep_graph: bool,
-    /// Where a search that keeps its graph leaves an [`Outline`](crate::Outline) of it in place of
-    /// [`crate::Outcome::graph`], which it then leaves `None`. An outline holds what a chart
-    /// needs in far less memory than the graph. A graph with 2^32 states or arrows or more has
-    /// no outline: the search fills [`crate::Outcome::graph`] and leaves the place empty.
+    /// Where a search that keeps its graph leaves an [`Outline`](crate::Outline) of it in
+    /// place of [`crate::Outcome::graph`], which it then leaves `None`. An outline holds what a
+    /// chart needs in far less memory than the graph. A graph with 2^32 states or arrows or more
+    /// has no outline: the search fills [`crate::Outcome::graph`] and leaves the place empty.
     /// Nothing is left without [`Self::keep_graph`].
     pub outline: Option<OutlineSlot>,
     /// Check only the rule with this id. The others are not evaluated and are left out of
