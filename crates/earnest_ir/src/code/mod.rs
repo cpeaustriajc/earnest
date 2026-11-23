@@ -148,25 +148,39 @@ impl Code {
     /// can be judged from the codes of the fields in `slots` alone: comparisons of whole-number
     /// fields with constants or with each other, possibly through arithmetic, a field of true
     /// or false read or compared, a field of listed values compared with a constant or with a
-    /// field of the same list, and `and`, `or`, `not` and `?:` of those. `None` for every other
-    /// expression, and for one that reads a field `slots` has no slot for or a local slot.
+    /// field of the same list, any expression that reads one field of at most 4096 values and
+    /// no local slot it does not bind, and `and`, `or`, `not` and `?:` of those. `None` for
+    /// every other expression.
     ///
     /// `slots` gives the slot of each field by position, `None` for a field the row does not
-    /// hold by a [`Coding`].
+    /// hold by a [`Coding`]. `inputs` gives the value of each local slot the expression reads
+    /// as an input, by slot; the test is then prepared for those values only, and is right only
+    /// if no part of the expression binds another value to those slots.
     #[must_use]
-    pub fn packed_test(&self, slots: &[Option<Slot>]) -> Option<PackedTest> {
-        PackedTest::of(&self.expr, slots)
+    pub fn packed_test(
+        &self,
+        slots: &[Option<Slot>],
+        inputs: &[(usize, Value)],
+    ) -> Option<PackedTest> {
+        PackedTest::of(&self.expr, slots, inputs)
     }
 
     /// The expression prepared as an update of field `field` that writes its answer from one
     /// packed row into another, when the answer can be worked out from the codes of the fields
-    /// in `slots` alone: a constant of the field, a whole number worked out as
-    /// [`Code::packed_test`] works out numbers, a test that [`Code::packed_test`] takes for a
-    /// field of true or false, a field with the same coding copied, and `?:` of those. `None`
-    /// otherwise, and when `slots` has no slot for `field`.
+    /// in `slots` alone: a whole number worked out as [`Code::packed_test`] works out numbers,
+    /// a test that [`Code::packed_test`] takes for a field of true or false, a field with the
+    /// same coding copied, any expression that reads one field of at most 4096 values or no
+    /// field and no loop, and `?:` of those. `None` otherwise, for an answer that is never a
+    /// value of the field, and when `slots` has no slot for `field`. `inputs` is as for
+    /// [`Code::packed_test`].
     #[must_use]
-    pub fn packed_update(&self, slots: &[Option<Slot>], field: usize) -> Option<PackedUpdate> {
-        PackedUpdate::of(&self.expr, slots, field)
+    pub fn packed_update(
+        &self,
+        slots: &[Option<Slot>],
+        field: usize,
+        inputs: &[(usize, Value)],
+    ) -> Option<PackedUpdate> {
+        PackedUpdate::of(&self.expr, slots, field, inputs)
     }
 
     /// Whether the expression is true in the state and locals of `frame`, for a guard or a rule.

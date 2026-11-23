@@ -126,6 +126,8 @@ pub(crate) struct Scratch {
 
 #[derive(Debug, Default)]
 struct Work {
+    rows: Vec<u64>,
+    lit: Vec<bool>,
     updates: Vec<(usize, Value)>,
     next: Vec<u64>,
     digits: Vec<usize>,
@@ -192,6 +194,7 @@ pub(crate) struct Move<'a> {
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
     packed: Option<Packed>,
+    packed_inputs: Option<Box<[Option<Packed>]>>,
     seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
@@ -205,19 +208,68 @@ struct Packed {
     updates: Vec<PackedUpdate>,
 }
 
+const MOST_PACKED_COMBINATIONS: usize = 64;
+
 impl Packed {
-    fn of(action: &Action, updates: &[(usize, &Code)], slots: &[Option<Slot>]) -> Option<Self> {
-        if !action.inputs.is_empty() {
-            return None;
-        }
+    fn of(
+        action: &Action,
+        updates: &[(usize, &Code)],
+        slots: &[Option<Slot>],
+        inputs: &[(usize, Value)],
+    ) -> Option<Self> {
         Some(Self {
-            guard: action.guard.packed_test(slots)?,
+            guard: action.guard.packed_test(slots, inputs)?,
             updates: updates
                 .iter()
-                .map(|(position, code)| code.packed_update(slots, *position))
+                .map(|(position, code)| code.packed_update(slots, *position, inputs))
                 .collect::<Option<_>>()?,
         })
     }
+
+    fn each_combination(
+        action: &Action,
+        updates: &[(usize, &Code)],
+        slots: &[Option<Slot>],
+        tried: &Tried,
+    ) -> Option<Box<[Option<Self>]>> {
+        let combinations = input_count(action);
+        if action.inputs.is_empty()
+            || combinations > MOST_PACKED_COMBINATIONS
+            || action.inputs_may_be_overwritten()
+        {
+            return None;
+        }
+        (0..combinations)
+            .map(|combination| {
+                if let Tried::FirstOfEach(told) = tried
+                    && !told_apart_at(told, &digits_of(action, combination))
+                {
+                    return Some(None);
+                }
+                let inputs: Vec<(usize, Value)> = action
+                    .inputs
+                    .iter()
+                    .zip(chosen(action, combination))
+                    .map(|(input, value)| Some((input.slot, value?.clone())))
+                    .collect::<Option<_>>()?;
+                Self::of(action, updates, slots, &inputs).map(Some)
+            })
+            .collect()
+    }
+}
+
+fn digits_of(action: &Action, combination: usize) -> Vec<usize> {
+    let mut rest = combination;
+    action
+        .inputs
+        .iter()
+        .map(|each| {
+            let count = each.values.len();
+            let digit = rest.checked_rem(count).unwrap_or(0);
+            rest = rest.checked_div(count).unwrap_or(0);
+            digit
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -234,12 +286,12 @@ impl FromRows {
             rules: model
                 .rules
                 .iter()
-                .map(|rule| rule.holds.packed_test(&slots))
+                .map(|rule| rule.holds.packed_test(&slots, &[]))
                 .collect(),
             ends: model
                 .ends
                 .iter()
-                .map(|end| end.when.packed_test(&slots))
+                .map(|end| end.when.packed_test(&slots, &[]))
                 .collect(),
             decoder: store.decoder(),
         }
@@ -308,7 +360,12 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
-        let packed = Packed::of(action, &updates, slots);
+        let packed = action
+            .inputs
+            .is_empty()
+            .then(|| Packed::of(action, &updates, slots, &[]))
+            .flatten();
+        let packed_inputs = Packed::each_combination(action, &updates, slots, &tried);
         let seen_by = match &in_place {
             InPlace::Writes(writes)
                 if writes
@@ -343,6 +400,7 @@ impl<'a> Move<'a> {
             updates,
             in_place,
             packed,
+            packed_inputs,
             seen_by,
             combinations,
             tried,
@@ -734,6 +792,11 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
             return;
         }
+        if let (Some(combinations), Some(row)) = (&planned.packed_inputs, self.values.row)
+            && self.try_each_packed(position, combinations, row)
+        {
+            return;
+        }
         if planned.repeats() {
             self.every_input_told_apart(position, planned);
         } else if planned.combinations == 1 && self.may_go_on_noting_a_time_stop() {
@@ -783,6 +846,60 @@ impl<S: Successors> Expansion<'_, '_, S> {
         }
         self.moving.enabled = true;
         self.offer_row_once::<false>(position, 0, SeenBy::Rows, 0);
+        true
+    }
+
+    fn try_each_packed(
+        &mut self,
+        position: usize,
+        combinations: &[Option<Packed>],
+        row: &[u64],
+    ) -> bool {
+        let words = row.len();
+        let (rows, lit) = (&mut self.scratch.rows, &mut self.scratch.lit);
+        rows.clear();
+        lit.clear();
+        for combination in combinations {
+            let Some(packed) = combination else {
+                lit.push(false);
+                rows.extend_from_slice(row);
+                continue;
+            };
+            let Some(enabled) = packed.guard.holds(row) else {
+                return false;
+            };
+            lit.push(enabled);
+            let start = rows.len();
+            rows.extend_from_slice(row);
+            if enabled {
+                let Some(next) = rows.get_mut(start..) else {
+                    return false;
+                };
+                if !packed.updates.iter().all(|update| update.write(row, next)) {
+                    return false;
+                }
+            }
+        }
+        self.scratch.seen.forget();
+        for (input, combination) in combinations.iter().enumerate() {
+            if !self.may_go_on_noting_a_time_stop() {
+                break;
+            }
+            if combination.is_none() || !self.scratch.lit.get(input).copied().unwrap_or(false) {
+                continue;
+            }
+            self.moving.enabled = true;
+            let start = input.saturating_mul(words);
+            let Some(next) = self.scratch.rows.get(start..start.saturating_add(words)) else {
+                continue;
+            };
+            let hash = hash_words(next);
+            if self.scratch.seen.first_row(next, hash)
+                && self.sink.offer_row(position, input, next, hash)
+            {
+                self.offered = self.offered.saturating_add(1);
+            }
+        }
         true
     }
 
@@ -2002,6 +2119,7 @@ mod tests {
     struct Shapes<'f> {
         fields: &'f [Field],
         seed: Seed,
+        locals: Vec<usize>,
     }
 
     impl Shapes<'_> {
@@ -2037,6 +2155,9 @@ mod tests {
             let Some(field) = self.whole() else {
                 return int(1);
             };
+            if !self.locals.is_empty() && self.seed.below(4) == 0 {
+                return Expr::Local(self.locals[self.seed.below(self.locals.len())]);
+            }
             match (depth, self.seed.below(5)) {
                 (0, _) | (_, 0 | 1) => Expr::Field(field),
                 (_, 2) => int(self.constant(field)),
@@ -2164,11 +2285,21 @@ mod tests {
         }
 
         fn action(&mut self, at: usize) -> Action {
+            let inputs = match self.seed.below(3) {
+                0 => vec![input("a", FAST, numbers(&[0, 1, 2]))],
+                1 => vec![
+                    input("a", FAST, numbers(&[0, 1])),
+                    input("b", SLOW, numbers(&[0, 1, 2])),
+                ],
+                _ => Vec::new(),
+            };
+            self.locals = inputs.iter().map(|each| each.slot).collect();
             let guard = self.test(2);
             let updates: Vec<Option<Expr>> = (0..self.fields.len())
                 .map(|into| (self.seed.below(3) == 0).then(|| self.update(into)))
                 .collect();
-            let mut made = acting(Vec::new(), guard, &updates);
+            self.locals.clear();
+            let mut made = acting(inputs, guard, &updates);
             made.id = format!("act{at}");
             made
         }
@@ -2194,6 +2325,7 @@ mod tests {
         let mut shapes = Shapes {
             fields: &fields,
             seed,
+            locals: Vec::new(),
         };
         let actions = (0..3).map(|at| shapes.action(at)).collect();
         let rules = (0..2)
@@ -2233,14 +2365,14 @@ mod tests {
 
     #[test]
     fn random_models_expand_from_rows_as_the_general_path_does() {
-        let mut taken = 0;
+        let (mut taken, mut taken_with_inputs) = (0, 0);
         for seed in 1..=300 {
             let (model, states) = random_model(0x9E37_79B9_7F4A_7C15 ^ seed);
             let store = Store::new(&model.fields, 100, Lookup::Presence);
-            taken += Move::all(&model, store.layout(), &store.slots())
-                .iter()
-                .filter(|planned| planned.packed.is_some())
-                .count();
+            for planned in Move::all(&model, store.layout(), &store.slots()) {
+                taken += usize::from(planned.packed.is_some());
+                taken_with_inputs += usize::from(planned.packed_inputs.is_some());
+            }
             let expected = judged(&model, Path::General, Given::ValuesAlone, &states);
             for path in [Path::FromRows, Path::General] {
                 for given in [Given::RowAlone, Given::RowAndValues, Given::ValuesAlone] {
@@ -2254,8 +2386,8 @@ mod tests {
             }
         }
         assert!(
-            taken > 300,
-            "most random actions are taken from rows: {taken}"
+            taken > 200 && taken_with_inputs > 100,
+            "many random actions are taken from rows: {taken} without inputs and {taken_with_inputs} with"
         );
     }
 

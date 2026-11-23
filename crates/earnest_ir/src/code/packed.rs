@@ -911,9 +911,71 @@ pub struct PackedTest {
     test: Test,
 }
 
+fn given(expr: &Expr, inputs: &[(usize, Value)]) -> Expr {
+    let each = |all: &[Expr]| all.iter().map(|part| given(part, inputs)).collect();
+    let named = |all: &[(earnest_value::Sym, Expr)]| {
+        all.iter()
+            .map(|(name, part)| (*name, given(part, inputs)))
+            .collect()
+    };
+    let boxed = |part: &Expr| Box::new(given(part, inputs));
+    match expr {
+        Expr::Local(slot) => inputs
+            .iter()
+            .find(|(input, _)| input == slot)
+            .map_or_else(|| expr.clone(), |(_, value)| Expr::Const(value.clone())),
+        Expr::Const(_) | Expr::Field(_) => expr.clone(),
+        Expr::Apply(op, arguments) => Expr::Apply(*op, each(arguments)),
+        Expr::And(left, right) => Expr::And(boxed(left), boxed(right)),
+        Expr::Or(left, right) => Expr::Or(boxed(left), boxed(right)),
+        Expr::Choose(test, yes, no) => Expr::Choose(boxed(test), boxed(yes), boxed(no)),
+        Expr::Bind { slot, value, body } => Expr::Bind {
+            slot: *slot,
+            value: boxed(value),
+            body: boxed(body),
+        },
+        Expr::Record(fields) => Expr::Record(named(fields)),
+        Expr::Get(inner, name) => Expr::Get(boxed(inner), *name),
+        Expr::With(base, changes) => Expr::With(boxed(base), named(changes)),
+        Expr::SetOf(items) => Expr::SetOf(each(items)),
+        Expr::SeqOf(items) => Expr::SeqOf(each(items)),
+        Expr::MapOf(entries) => Expr::MapOf(
+            entries
+                .iter()
+                .map(|(key, value)| (given(key, inputs), given(value, inputs)))
+                .collect(),
+        ),
+        Expr::Sweep {
+            sweep,
+            shelf,
+            slot,
+            source,
+            body,
+        } => Expr::Sweep {
+            sweep: *sweep,
+            shelf: *shelf,
+            slot: *slot,
+            source: boxed(source),
+            body: boxed(body),
+        },
+    }
+}
+
+fn with_inputs<'e>(expr: &'e Expr, inputs: &[(usize, Value)]) -> std::borrow::Cow<'e, Expr> {
+    if inputs.is_empty() {
+        std::borrow::Cow::Borrowed(expr)
+    } else {
+        std::borrow::Cow::Owned(given(expr, inputs))
+    }
+}
+
 impl PackedTest {
-    pub(super) fn of(expr: &Expr, slots: &[Option<Slot>]) -> Option<Self> {
-        Test::of(expr, &Fields { slots }).map(|test| Self { test })
+    pub(super) fn of(
+        expr: &Expr,
+        slots: &[Option<Slot>],
+        inputs: &[(usize, Value)],
+    ) -> Option<Self> {
+        Test::of(&with_inputs(expr, inputs), &Fields { slots }).map(|test| Self { test })
     }
 
     /// Whether the expression is true in the state packed in `row`, laid out as the slots the
@@ -939,9 +1001,14 @@ pub struct PackedUpdate {
 }
 
 impl PackedUpdate {
-    pub(super) fn of(expr: &Expr, slots: &[Option<Slot>], field: usize) -> Option<Self> {
+    pub(super) fn of(
+        expr: &Expr,
+        slots: &[Option<Slot>],
+        field: usize,
+        inputs: &[(usize, Value)],
+    ) -> Option<Self> {
         let slot = slots.get(field)?.as_ref()?;
-        let put = Put::of(expr, &slot.coding, &Fields { slots })?;
+        let put = Put::of(&with_inputs(expr, inputs), &slot.coding, &Fields { slots })?;
         (!matches!(put, Put::Outside)).then_some(Self {
             into: Bits::of(slot)?,
             put,
