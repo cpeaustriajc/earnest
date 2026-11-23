@@ -1,8 +1,7 @@
-//! A comparison of a field with a constant is tested as one range of numbers, an `and` of such
-//! comparisons as a run of ranges, and an update of a field by a constant gives its answer
-//! through `FieldStep` without a frame. Each must give what the reference walk gives: the same
-//! truth or the same fault, and a `FieldStep` answer only where the walk gives that number
-//! without a fault and without a note of numbers beyond 32 bits.
+//! A comparison of a field with a constant, an `and` of such comparisons and a field changed by a
+//! constant, each in the prepared form that evaluates it in one step, must give what the
+//! reference walk gives: the same truth, number or fault, and a note of numbers beyond 32 bits
+//! exactly where the walk notes one.
 
 use earnest_ir::{Code, Expr, Fault, Frame, Math, Op, Order, eval, truth};
 use earnest_value::{IntType, MOST_SAFE_INTEGER, Value};
@@ -194,64 +193,25 @@ fn wrapped(expr: &Expr) -> Vec<Expr> {
 }
 
 #[test]
-fn a_field_step_gives_only_answers_the_walk_gives_without_a_fault_or_a_note() {
+fn a_field_changed_by_a_constant_gives_what_the_walk_gives() {
     let state = state();
-    let (mut given, mut left_to_the_walk) = (0, 0);
     for math in MATHS {
         for field in fields() {
             for number in constants() {
                 let changed = Expr::Apply(Op::Math(math), vec![Expr::Field(field), int(number)]);
                 for expr in wrapped(&changed) {
-                    let code = Code::new(expr.clone());
-                    let step = code
-                        .field_step()
-                        .unwrap_or_else(|| panic!("a step for {expr:?}"));
-                    let mut frame = Frame::new(&state, SLOTS);
-                    let reference = eval(&expr, &mut frame);
-                    let noted = frame.computed_beyond_32_bits();
-                    if let Some(answer) = step.apply(&state) {
-                        given += 1;
-                        assert_eq!(reference, Ok(Value::Int(answer)), "the answer of {expr:?}");
-                        assert!(!noted, "an answer the walk notes for {expr:?}");
-                    } else {
-                        left_to_the_walk += 1;
-                        assert!(
-                            reference.is_err() || noted,
-                            "{expr:?} gives {reference:?} without a note, and the step gave none"
-                        );
-                    }
+                    let mut prepared = Frame::new(&state, SLOTS);
+                    let answer = Code::new(expr.clone()).eval(&mut prepared);
+                    let mut walked = Frame::new(&state, SLOTS);
+                    let reference = eval(&expr, &mut walked);
+                    assert_eq!(answer, reference, "the answer of {expr:?}");
+                    assert_eq!(
+                        prepared.computed_beyond_32_bits(),
+                        walked.computed_beyond_32_bits(),
+                        "the note of {expr:?}"
+                    );
                 }
             }
         }
-    }
-    assert!(
-        given > 0 && left_to_the_walk > 0,
-        "both kinds of case are met"
-    );
-}
-
-#[test]
-fn only_a_field_changed_by_a_constant_is_a_field_step() {
-    let not_steps = [
-        Expr::Field(0),
-        int(3),
-        Expr::Apply(Op::Math(Math::Add), vec![int(3), Expr::Field(0)]),
-        Expr::Apply(Op::Math(Math::Add), vec![Expr::Field(0), Expr::Field(1)]),
-        Expr::Apply(Op::Math(Math::Add), vec![Expr::Field(0), Expr::Local(0)]),
-        Expr::Apply(
-            Op::Math(Math::Add),
-            vec![
-                Expr::Apply(Op::Math(Math::Add), vec![Expr::Field(0), int(1)]),
-                int(1),
-            ],
-        ),
-        Expr::Apply(Op::Negate, vec![Expr::Field(0)]),
-        compared(Order::Less, 0, 9),
-    ];
-    for expr in not_steps {
-        assert!(
-            Code::new(expr.clone()).field_step().is_none(),
-            "no step for {expr:?}"
-        );
     }
 }

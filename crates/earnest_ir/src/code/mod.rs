@@ -8,7 +8,6 @@ mod val;
 use crate::{Expr, Fault, Frame};
 use cond::Cond;
 use earnest_value::Value;
-pub use num::FieldStep;
 use num::Stop;
 pub use packed::{Coding, PackedTest, PackedUpdate, Slot};
 use shared::Shared;
@@ -131,16 +130,6 @@ impl Code {
                 Value::Bool(flag) => Scalar::Bool(flag),
                 _ => Scalar::Other,
             }),
-        }
-    }
-
-    /// The expression as an update of one whole-number field by a constant, such as `s.a + 1`,
-    /// when it is one.
-    #[must_use]
-    pub fn field_step(&self) -> Option<FieldStep> {
-        match &self.value {
-            Val::Num(num) => num.field_step(),
-            _ => None,
         }
     }
 
