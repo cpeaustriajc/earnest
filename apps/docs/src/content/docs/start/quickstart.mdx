@@ -1,0 +1,40 @@
+---
+title: Quickstart
+description: Paste one prompt into a coding agent to install Earnest and check a first model.
+---
+
+import { Code } from "@astrojs/starlight/components";
+import prompt from "../../../prompt.md?raw";
+
+Open a coding agent, such as Claude Code, in your project. Paste this prompt. The agent installs the checker, writes one model next to your code, runs it, and reports what it found.
+
+<Code code={prompt} lang="md" title="Prompt for a coding agent" wrap />
+
+The same prompt is at [`/prompt.md`](/prompt.md) as plain text, so an agent can fetch it.
+
+## What you get back
+
+The agent changes only the model file, `.gitignore` and, for Rust, `Cargo.toml`. Its report has:
+
+- The model file, with each rule as one sentence.
+- The output of the final `earnest verify`.
+- Each bug in the app that the model found, with the path to it.
+- The parts of the code that the model leaves out.
+
+Read the rules first. A rule that says the wrong thing passes as easily as one that says the right thing.
+
+## Without an agent
+
+1. Install the checker.
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | sh
+   ```
+
+2. Write a model. Follow the tutorial [Write your first model](/tutorials/first-model/).
+
+3. Run the checker in your project.
+
+   ```sh
+   earnest verify
+   ```

@@ -1,7 +1,7 @@
 default: check
 
 # One recipe per check. To add a check, write its recipe and name it here.
-check: format unused-dependencies dependencies lint typescript test verify models
+check: format unused-dependencies dependencies lint typescript docs test verify models
 
 format:
     cargo fmt --check
@@ -24,6 +24,10 @@ typescript:
     bun run --cwd packages/cli typecheck
     bun run --cwd packages/cli format
     bun run --cwd packages/cli test
+
+docs:
+    bun install --frozen-lockfile
+    ASTRO_TELEMETRY_DISABLED=1 bun run --cwd apps/docs build
 
 test:
     cargo test --locked
