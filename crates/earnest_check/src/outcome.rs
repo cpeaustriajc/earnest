@@ -1,4 +1,5 @@
 use crate::graph::Graph;
+use crate::outline::Outline;
 use serde::{Serialize, Serializer};
 use serde_json::Value as Json;
 
@@ -159,4 +160,8 @@ pub struct Outcome {
     /// serialized.
     #[serde(skip)]
     pub graph: Option<Graph>,
+    /// What a chart needs of the states and arrows, held in far less memory than
+    /// [`Self::graph`], when the limits asked for an outline in its place. It is not serialized.
+    #[serde(skip)]
+    pub outline: Option<Outline>,
 }

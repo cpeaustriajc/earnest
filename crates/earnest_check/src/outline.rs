@@ -2,7 +2,6 @@ use crate::explore::{Note, Search};
 use hashbrown::hash_table::{Entry, HashTable};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::hash::BuildHasher;
-use std::sync::{Arc, Mutex, PoisonError};
 
 const NO_GROUP: u32 = u32::MAX;
 
@@ -25,13 +24,15 @@ struct Link {
 
 /// What a chart needs to know of a search's graph, held in a few flat lists instead of a
 /// string for every state and arrow: the boxes with their labels, groups, marks and state
-/// counts, and the arrows between them with their labels. Get one through [`Limits::outline`].
+/// counts, and the arrows between them with their labels. A search fills
+/// [`Outcome::outline`] when [`Limits::outline`] asks for it.
 ///
 /// Boxes and arrows are numbered as in [`Graph`]: in the order their first state was visited
 /// and their first action was taken. A box stands for every state with the same label and
 /// group, and an arrow for every action from a state of one box to a state of another.
 ///
 /// [`Limits::outline`]: crate::Limits::outline
+/// [`Outcome::outline`]: crate::Outcome::outline
 /// [`Graph`]: crate::Graph
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Outline {
@@ -141,27 +142,6 @@ impl Outline {
             .flatten()
             .filter_map(|step| usize::try_from(*step).ok())
             .filter_map(|step| self.steps.get(step).map(String::as_str))
-    }
-}
-
-/// The place a search leaves its [`Outline`] in, for [`Limits::outline`]. Every clone is the
-/// same place, so keep one and give a clone to the limits.
-///
-/// [`Limits::outline`]: crate::Limits::outline
-#[derive(Clone, Debug, Default)]
-pub struct OutlineSlot(Arc<Mutex<Option<Outline>>>);
-
-impl OutlineSlot {
-    /// The outline the last search left here, which leaves the place empty. `None` when no
-    /// search left one, as when its graph was too large to outline and it filled
-    /// [`Outcome::graph`](crate::Outcome::graph) instead.
-    #[must_use]
-    pub fn take(&self) -> Option<Outline> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
-    }
-
-    pub(crate) fn fill(&self, outline: Outline) {
-        *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(outline);
     }
 }
 
