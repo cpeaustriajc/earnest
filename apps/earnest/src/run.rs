@@ -1,6 +1,6 @@
 use crate::workers::run_each;
 use earnest_chart::{chart_outline, chart_with_limit, detail_lines};
-use earnest_check::{Limits, Outcome, OutlineSlot, explore};
+use earnest_check::{Limits, Outcome, explore};
 use earnest_ir::Model;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -52,21 +52,21 @@ pub(crate) struct Ran {
 
 pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Graphs) -> Vec<Ran> {
     run_each(searches, bounds.jobs, |search, helpers| {
-        let slot = OutlineSlot::default();
         let limits = Limits {
             max_states: bounds.max_states,
             time_limit: bounds.time_limit,
             jobs: 1,
             helpers: Some(helpers.clone()),
             keep_graph: graphs != Graphs::Dropped,
-            outline: (graphs != Graphs::Dropped).then(|| slot.clone()),
+            outline: graphs != Graphs::Dropped,
             only_rule: search.only_rule.map(str::to_owned),
         };
         let began = Instant::now();
         let mut outcome = explore(search.model, &limits);
         let elapsed = began.elapsed();
         let chart = match graphs {
-            Graphs::Charted { max_arrows } => slot
+            Graphs::Charted { max_arrows } => outcome
+                .outline
                 .take()
                 .map(|outline| chart_outline(&outline, max_arrows))
                 .or_else(|| {

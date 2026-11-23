@@ -4,6 +4,7 @@ use crate::graph::Graph;
 use crate::outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
 };
+use crate::outline::Outline;
 use earnest_value::Value;
 
 const STUCK: &str = "no action can happen here, and the model does not mark it as an end";
@@ -135,14 +136,16 @@ impl Search<'_> {
         findings
     }
 
-    fn graph_or_outline(&self) -> Option<Graph> {
-        if let Some(slot) = &self.limits.outline
+    fn graph_or_outline(&self) -> (Option<Graph>, Option<Outline>) {
+        if !self.limits.keep_graph {
+            return (None, None);
+        }
+        if self.limits.outline
             && let Some(outline) = self.outline()
         {
-            slot.fill(outline);
-            return None;
+            return (None, Some(outline));
         }
-        Some(self.graph())
+        (Some(self.graph()), None)
     }
 
     pub(crate) fn outcome(&self) -> Outcome {
@@ -167,6 +170,7 @@ impl Search<'_> {
             })
             .collect();
         let findings = self.findings();
+        let (graph, outline) = self.graph_or_outline();
         let failed =
             !findings.is_empty() || rules.iter().any(|rule| rule.verdict == Verdict::Broken);
         let status = match (failed, &self.reason) {
@@ -181,11 +185,8 @@ impl Search<'_> {
             findings,
             reason: self.reason.clone(),
             computes_beyond_32_bits: self.computed_beyond_32_bits,
-            graph: self
-                .limits
-                .keep_graph
-                .then(|| self.graph_or_outline())
-                .flatten(),
+            graph,
+            outline,
         }
     }
 }

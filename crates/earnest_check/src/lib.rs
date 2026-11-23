@@ -23,4 +23,4 @@ pub use limits::{Limits, WORKER_STACK, stopped_by_time_limit};
 pub use outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
 };
-pub use outline::{Outline, OutlineSlot};
+pub use outline::Outline;

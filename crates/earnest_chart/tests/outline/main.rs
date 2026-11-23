@@ -7,7 +7,7 @@ mod reference;
 use earnest_chart::{
     Charted, Section, chart_outline, chart_with_limit, report_with_charts, report_with_limit,
 };
-use earnest_check::{Graph, Limits, Outcome, Outline, OutlineSlot, explore};
+use earnest_check::{Graph, Limits, Outcome, Outline, explore};
 use earnest_ir::Model;
 use models::{Dice, random_model};
 
@@ -21,12 +21,12 @@ fn searched(model: &Model, max_states: usize) -> (Outcome, Graph, Outline) {
         ..Limits::default()
     };
     let mut whole = explore(model, &limits);
+    assert_eq!(whole.outline, None, "no outline was asked for");
     let graph = whole.graph.take().expect("the limits asked for the graph");
-    let slot = OutlineSlot::default();
-    let outlined = explore(
+    let mut outlined = explore(
         model,
         &Limits {
-            outline: Some(slot.clone()),
+            outline: true,
             ..limits
         },
     );
@@ -34,9 +34,11 @@ fn searched(model: &Model, max_states: usize) -> (Outcome, Graph, Outline) {
         outlined.graph, None,
         "the outline takes the place of the graph"
     );
+    let outline = outlined
+        .outline
+        .take()
+        .expect("a small graph has an outline");
     assert_eq!(outlined, whole, "the outline changes nothing else");
-    let outline = slot.take().expect("a small graph has an outline");
-    assert_eq!(slot.take(), None, "taking the outline empties the place");
     (whole, graph, outline)
 }
 
@@ -139,16 +141,15 @@ fn a_report_of_charts_drawn_from_outlines_is_the_report_of_the_graphs() {
 #[test]
 fn a_search_that_keeps_no_graph_leaves_no_outline() {
     let model = random_model(&mut Dice::new(1));
-    let slot = OutlineSlot::default();
     let outcome = explore(
         &model,
         &Limits {
-            outline: Some(slot.clone()),
+            outline: true,
             ..Limits::default()
         },
     );
     assert_eq!(outcome.graph, None, "no graph was asked for");
-    assert_eq!(slot.take(), None, "nor an outline");
+    assert_eq!(outcome.outline, None, "nor an outline");
 }
 
 #[test]
