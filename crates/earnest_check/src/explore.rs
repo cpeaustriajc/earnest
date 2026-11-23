@@ -6,7 +6,7 @@ mod part;
 mod starts;
 mod workers;
 
-use crate::expand::{Asked, Budget, Expand, Mark, Move, Whence, Width};
+use crate::expand::{Asked, Budget, Expand, FromRows, Mark, Move, Whence, Width};
 use crate::helpers::Helpers;
 use crate::limits::{Limits, TIME_LIMIT_REASON};
 use crate::outcome::Outcome;
@@ -58,6 +58,7 @@ pub(crate) struct Search<'a> {
 
 struct Expander<'a> {
     moves: Vec<Move<'a>>,
+    from_rows: FromRows,
     slots: usize,
 }
 
@@ -72,6 +73,7 @@ impl Expander<'_> {
         Expand {
             model,
             moves: &self.moves,
+            from_rows: &self.from_rows,
             only_rule: limits.only_rule.as_deref(),
             slots: self.slots,
             asked,
@@ -124,7 +126,8 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         model,
         limits,
         expander: Expander {
-            moves: Move::all(model, store.layout()),
+            moves: Move::all(model, store.layout(), &store.slots()),
+            from_rows: FromRows::of(model, &store),
             slots,
         },
         store,

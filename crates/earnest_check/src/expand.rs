@@ -1,5 +1,7 @@
-use crate::store::{RangeSlot, RowLayout, hash_words};
-use earnest_ir::{Action, Code, Fault, FieldStep, Frame, Input, Model, Scalar};
+use crate::store::{Decoder, RangeSlot, RowLayout, Store, hash_words};
+use earnest_ir::{
+    Action, Code, Fault, Frame, Input, Model, PackedTest, PackedUpdate, Scalar, Slot,
+};
 use earnest_value::Value;
 use hashbrown::HashTable;
 use rustc_hash::FxBuildHasher;
@@ -48,8 +50,8 @@ pub(crate) struct Budget {
 }
 
 impl Width {
-    fn of(frame: &Frame<'_>) -> Self {
-        if frame.computed_beyond_32_bits() {
+    fn of(frame: Option<&Frame<'_>>) -> Self {
+        if frame.is_some_and(Frame::computed_beyond_32_bits) {
             Self::Beyond32Bits
         } else {
             Self::Narrow
@@ -118,6 +120,12 @@ pub(crate) trait Successors {
 
 #[derive(Debug, Default)]
 pub(crate) struct Scratch {
+    values: Vec<Value>,
+    work: Work,
+}
+
+#[derive(Debug, Default)]
+struct Work {
     updates: Vec<(usize, Value)>,
     next: Vec<u64>,
     digits: Vec<usize>,
@@ -183,12 +191,59 @@ pub(crate) struct Move<'a> {
     action: &'a Action,
     updates: Vec<(usize, &'a Code)>,
     in_place: InPlace<'a>,
-    direct: Option<Vec<(FieldStep, Write<'a>)>>,
+    packed: Option<Packed>,
     seen_by: SeenBy,
     combinations: usize,
     tried: Tried,
     refill: Refill,
     reuse: Option<Reuse>,
+}
+
+#[derive(Debug)]
+struct Packed {
+    guard: PackedTest,
+    updates: Vec<PackedUpdate>,
+}
+
+impl Packed {
+    fn of(action: &Action, updates: &[(usize, &Code)], slots: &[Option<Slot>]) -> Option<Self> {
+        if !action.inputs.is_empty() {
+            return None;
+        }
+        Some(Self {
+            guard: action.guard.packed_test(slots)?,
+            updates: updates
+                .iter()
+                .map(|(position, code)| code.packed_update(slots, *position))
+                .collect::<Option<_>>()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FromRows {
+    rules: Vec<Option<PackedTest>>,
+    ends: Vec<Option<PackedTest>>,
+    decoder: Option<Decoder>,
+}
+
+impl FromRows {
+    pub(crate) fn of(model: &Model, store: &Store) -> Self {
+        let slots = store.slots();
+        Self {
+            rules: model
+                .rules
+                .iter()
+                .map(|rule| rule.holds.packed_test(&slots))
+                .collect(),
+            ends: model
+                .ends
+                .iter()
+                .map(|end| end.when.packed_test(&slots))
+                .collect(),
+            decoder: store.decoder(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,15 +260,15 @@ enum Tried {
 }
 
 impl<'a> Move<'a> {
-    pub(crate) fn all(model: &'a Model, layout: &RowLayout) -> Vec<Self> {
+    pub(crate) fn all(model: &'a Model, layout: &RowLayout, slots: &[Option<Slot>]) -> Vec<Self> {
         model
             .actions
             .iter()
-            .map(|action| Self::of(action, model.fields.len(), layout))
+            .map(|action| Self::of(action, model.fields.len(), layout, slots))
             .collect()
     }
 
-    fn of(action: &'a Action, fields: usize, layout: &RowLayout) -> Self {
+    fn of(action: &'a Action, fields: usize, layout: &RowLayout, slots: &[Option<Slot>]) -> Self {
         let combinations = input_count(action);
         let tried = if combinations <= 1 {
             Tried::Once
@@ -253,18 +308,7 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
-        let direct = match &in_place {
-            InPlace::Writes(writes) if action.inputs.is_empty() => writes
-                .iter()
-                .map(|write| {
-                    (write.holds == Holds::WholeNumber)
-                        .then(|| write.code.field_step())
-                        .flatten()
-                        .map(|step| (step, *write))
-                })
-                .collect(),
-            InPlace::Writes(_) | InPlace::SomeUpdateHasNoSlot => None,
-        };
+        let packed = Packed::of(action, &updates, slots);
         let seen_by = match &in_place {
             InPlace::Writes(writes)
                 if writes
@@ -298,7 +342,7 @@ impl<'a> Move<'a> {
             action,
             updates,
             in_place,
-            direct,
+            packed,
             seen_by,
             combinations,
             tried,
@@ -586,27 +630,160 @@ fn next_updates(
     Ok(())
 }
 
-struct Expansion<'s, 'f, S> {
-    base: Base<'s>,
+struct Values<'v> {
+    row: Option<&'v [u64]>,
+    given: &'v [Value],
+    spare: Option<&'v mut Vec<Value>>,
+    decoder: Option<&'v Decoder>,
+    fields: usize,
+    slots: usize,
+    deadline: Option<Instant>,
+    state: &'v [Value],
+    frame: Option<Frame<'v>>,
+}
+
+impl<'v> Values<'v> {
+    fn frame(&mut self) -> &mut Frame<'v> {
+        let Self {
+            row,
+            given,
+            spare,
+            decoder,
+            fields,
+            slots,
+            deadline,
+            state,
+            frame,
+        } = self;
+        frame.get_or_insert_with(|| {
+            let values: &'v [Value] = match (*row, spare.take()) {
+                (Some(row), Some(buffer)) if given.len() != *fields => {
+                    match decoder {
+                        Some(decoder) => decoder.decode(row, buffer),
+                        None => buffer.clear(),
+                    }
+                    let decoded: &'v Vec<Value> = buffer;
+                    decoded.as_slice()
+                }
+                _ => given,
+            };
+            *state = values;
+            Frame::new(values, *slots).until(*deadline)
+        })
+    }
+
+    fn base(&self) -> Base<'v> {
+        Base {
+            values: self.state,
+            row: self.row,
+        }
+    }
+
+    fn width(&self) -> Width {
+        Width::of(self.frame.as_ref())
+    }
+
+    fn judge(&mut self, packed: Option<&PackedTest>, code: &Code) -> Result<bool, Fault> {
+        if let (Some(test), Some(row)) = (packed, self.row)
+            && let Some(answer) = test.holds(row)
+        {
+            return Ok(answer);
+        }
+        code.truth(self.frame())
+    }
+}
+
+const TICKS_BETWEEN_CLOCK_READS: u32 = 1024;
+
+struct Timer {
+    deadline: Option<Instant>,
+    ticks: u32,
+    expired: bool,
+}
+
+impl Timer {
+    #[inline]
+    fn out_of_time(&mut self) -> bool {
+        let Some(limit) = self.deadline else {
+            return false;
+        };
+        self.ticks = self.ticks.wrapping_add(1);
+        if !self.expired && self.ticks.is_multiple_of(TICKS_BETWEEN_CLOCK_READS) {
+            self.expired = Instant::now() >= limit;
+        }
+        self.expired
+    }
+}
+
+struct Expansion<'e, 'v, S> {
+    values: &'e mut Values<'v>,
+    timer: Timer,
     moving: Enabling,
-    frame: Frame<'f>,
-    found: Mark,
+    found: &'e mut Mark,
     budget: Budget,
     offered: usize,
-    sink: &'s mut S,
-    scratch: &'s mut Scratch,
+    sink: &'e mut S,
+    scratch: &'e mut Work,
 }
 
 impl<S: Successors> Expansion<'_, '_, S> {
     fn action(&mut self, position: usize, planned: &Move<'_>) {
+        if let (Some(packed), Some(row)) = (&planned.packed, self.values.row) {
+            if self.may_go_on_noting_a_time_stop() && !self.try_packed(position, packed, row) {
+                self.try_input::<false>(position, planned, 0);
+            }
+            return;
+        }
         if planned.repeats() {
             self.every_input_told_apart(position, planned);
         } else if planned.combinations == 1 && self.may_go_on_noting_a_time_stop() {
             if !planned.action.inputs.is_empty() {
-                set_inputs(planned.action, 0, &mut self.frame);
+                set_inputs(planned.action, 0, self.values.frame());
             }
             self.try_input::<false>(position, planned, 0);
         }
+    }
+
+    #[inline]
+    fn try_packed(&mut self, position: usize, packed: &Packed, row: &[u64]) -> bool {
+        match packed.guard.holds(row) {
+            Some(true) => {}
+            Some(false) => return true,
+            None => return false,
+        }
+        if let [word] = row {
+            let mut next = *word;
+            for update in &packed.updates {
+                match update.write_word(row, next) {
+                    Some(written) => next = written,
+                    None => return false,
+                }
+            }
+            self.moving.enabled = true;
+            let hash = hash_words(std::slice::from_ref(&next));
+            if self
+                .sink
+                .offer_row(position, 0, std::slice::from_ref(&next), hash)
+            {
+                self.offered = self.offered.saturating_add(1);
+            }
+            return true;
+        }
+        let next = &mut self.scratch.next;
+        if let ([into], [word]) = (next.as_mut_slice(), row) {
+            *into = *word;
+        } else {
+            next.clear();
+            next.extend_from_slice(row);
+        }
+        for update in &packed.updates {
+            if !update.write(row, next) {
+                return false;
+            }
+        }
+        self.moving.enabled = true;
+        self.offer_row_once::<false>(position, 0, SeenBy::Rows, 0);
+        true
     }
 
     fn every_input_told_apart(&mut self, position: usize, planned: &Move<'_>) {
@@ -635,7 +812,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 Refill::Turned => turned,
                 Refill::Every => inputs.len(),
             };
-            put_inputs(inputs, &digits, count, &mut self.frame);
+            put_inputs(inputs, &digits, count, self.values.frame());
             if let Some(reuse) = reuse {
                 self.scratch.known.forget_turned(reuse, turned);
             }
@@ -647,7 +824,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
 
     #[inline]
     fn may_go_on_noting_a_time_stop(&mut self) -> bool {
-        if self.frame.out_of_time() {
+        if self.timer.out_of_time() {
             self.found.clock = Clock::Stopped;
             return false;
         }
@@ -662,14 +839,15 @@ impl<S: Successors> Expansion<'_, '_, S> {
         input: usize,
     ) {
         let reusing = REPEATS && planned.reuse.is_some();
+        let frame = self.values.frame();
         let guard = match (reusing, self.scratch.known.guard) {
             (true, Some(answer)) => answer,
             (true, None) => {
-                let answer = planned.action.guard.truth(&mut self.frame);
+                let answer = planned.action.guard.truth(frame);
                 self.scratch.known.guard = Some(answer);
                 answer
             }
-            (false, _) => planned.action.guard.truth(&mut self.frame),
+            (false, _) => planned.action.guard.truth(frame),
         };
         match guard {
             Ok(true) => {}
@@ -681,14 +859,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
             }
         }
         self.moving.enabled = true;
-        if !REPEATS
-            && let (Some(steps), Some(row)) = (&planned.direct, self.base.row)
-            && self.write_directly(steps, row)
-        {
-            self.offer_row_once::<false>(position, input, planned.seen_by, 0);
-            return;
-        }
-        if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.base.row) {
+        if let (InPlace::Writes(writes), Some(row)) = (&planned.in_place, self.values.row) {
             let next = &mut self.scratch.next;
             if let ([into], [word]) = (next.as_mut_slice(), row) {
                 *into = *word;
@@ -704,7 +875,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
                     .flatten();
                 let number = match (
                     write.holds,
-                    known_or_scalar(place, write.code, &mut self.frame),
+                    known_or_scalar(place, write.code, self.values.frame()),
                 ) {
                     (Holds::WholeNumber, Ok(Scalar::Int(number))) => number,
                     (Holds::TrueOrFalse, Ok(Scalar::Bool(flag))) => i64::from(flag),
@@ -735,10 +906,11 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 return;
             }
         }
+        let base = self.values.base();
         match next_updates(
             planned,
-            self.base.values,
-            &mut self.frame,
+            base.values,
+            self.values.frame(),
             &mut self.scratch.updates,
             reusing.then_some(self.scratch.known.updates.as_mut_slice()),
         ) {
@@ -746,36 +918,13 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 if (!REPEATS || self.scratch.seen.first_updates(&self.scratch.updates))
                     && self
                         .sink
-                        .offer(position, input, self.base, &self.scratch.updates)
+                        .offer(position, input, base, &self.scratch.updates)
                 {
                     self.offered = self.offered.saturating_add(1);
                 }
             }
             Err(fault) => self.found.note(Whence::Update(position), fault),
         }
-    }
-
-    #[inline]
-    fn write_directly(&mut self, steps: &[(FieldStep, Write<'_>)], row: &[u64]) -> bool {
-        let next = &mut self.scratch.next;
-        if let ([into], [word]) = (next.as_mut_slice(), row) {
-            *into = *word;
-        } else {
-            next.clear();
-            next.extend_from_slice(row);
-        }
-        for (step, write) in steps {
-            let (Some(code), Some(word)) = (
-                step.apply(self.base.values)
-                    .and_then(|number| write.slot.code(number)),
-                next.get_mut(write.slot.word),
-            ) else {
-                return false;
-            };
-            *word = (*word & !write.placed)
-                | (code.checked_shl(write.slot.shift).unwrap_or(0) & write.placed);
-        }
-        true
     }
 
     #[inline]
@@ -806,10 +955,13 @@ impl<S: Successors> Expansion<'_, '_, S> {
         }
     }
 
-    fn marked_end(&mut self, model: &Model) -> Enabling {
+    fn marked_end(&mut self, model: &Model, packed: &[Option<PackedTest>]) -> Enabling {
         let mut ending = Enabling::default();
         for (position, end) in model.ends.iter().enumerate() {
-            match end.when.truth(&mut self.frame) {
+            match self
+                .values
+                .judge(packed.get(position).and_then(Option::as_ref), &end.when)
+            {
                 Ok(true) => ending.enabled = true,
                 Ok(false) => {}
                 Err(fault) => {
@@ -825,6 +977,7 @@ impl<S: Successors> Expansion<'_, '_, S> {
 pub(crate) struct Expand<'a> {
     pub(crate) model: &'a Model,
     pub(crate) moves: &'a [Move<'a>],
+    pub(crate) from_rows: &'a FromRows,
     pub(crate) only_rule: Option<&'a str>,
     pub(crate) slots: usize,
     pub(crate) asked: Asked,
@@ -848,12 +1001,23 @@ impl Expand<'_> {
             found.cut_short = true;
             return found;
         }
-        let mut frame = Frame::new(base.values, self.slots).until(self.budget.deadline);
+        let mut values = Values {
+            row: base.row,
+            given: base.values,
+            spare: Some(&mut scratch.values),
+            decoder: self.from_rows.decoder.as_ref(),
+            fields: model.fields.len(),
+            slots: self.slots,
+            deadline: self.budget.deadline,
+            state: base.values,
+            frame: None,
+        };
         for (position, rule) in model.rules.iter().enumerate() {
             if self.only_rule.is_some_and(|wanted| wanted != rule.id) {
                 continue;
             }
-            match rule.holds.truth(&mut frame) {
+            let packed = self.from_rows.rules.get(position).and_then(Option::as_ref);
+            match values.judge(packed, &rule.holds) {
                 Ok(true) => {}
                 Ok(false) => found.broken.push(position),
                 Err(fault) => {
@@ -862,24 +1026,28 @@ impl Expand<'_> {
                 }
             }
         }
-        found.width = Width::of(&frame);
+        found.width = values.width();
         if self.asked == Asked::RulesOnly || found.clock == Clock::Stopped {
             return found;
         }
         let mut expansion = Expansion {
-            base,
+            values: &mut values,
+            timer: Timer {
+                deadline: self.budget.deadline,
+                ticks: 0,
+                expired: false,
+            },
             moving: Enabling::default(),
-            frame,
-            found,
+            found: &mut found,
             budget: self.budget,
             offered: 0,
             sink,
-            scratch,
+            scratch: &mut scratch.work,
         };
         for (position, planned) in self.moves.iter().enumerate() {
             expansion.action(position, planned);
             if expansion.found.clock == Clock::Stopped {
-                return expansion.found;
+                return found;
             }
             if expansion.sink.done() {
                 break;
@@ -887,22 +1055,24 @@ impl Expand<'_> {
         }
         let moving = expansion.moving;
         if !moving.enabled {
-            let ending = expansion.marked_end(model);
+            let ending = expansion.marked_end(model, &self.from_rows.ends);
             expansion.found.ended = ending.enabled;
             expansion.found.stuck = !ending.enabled && !ending.unsure && !moving.unsure;
         }
-        expansion.found.width = Width::of(&expansion.frame);
-        expansion.found
+        found.width = values.width();
+        found
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Asked, Base, Budget, Expand, Move, Scratch, Successors, Whence, Width};
+    use super::{Asked, Base, Budget, Expand, FromRows, Move, Scratch, Successors, Whence, Width};
     use super::{Seen, chosen, input_count, told_apart_from_earlier, turn};
     use crate::store::{Lookup, Store};
     use earnest_ir::{Action, Expr, Input};
-    use earnest_ir::{Code, Fault, Field, Frame, Math, Model, Op, Order, View, eval, truth};
+    use earnest_ir::{
+        Code, End, Fault, Field, Frame, Math, Model, Op, Order, Rule, View, eval, truth,
+    };
     use earnest_value::Symbols;
     use earnest_value::{Domain, IntType, Value};
 
@@ -1155,10 +1325,12 @@ mod tests {
 
     fn searched(model: &Model, handed: Handed) -> Vec<Expanded> {
         let store = Store::new(&model.fields, 100, Lookup::Presence);
-        let moves = Move::all(model, store.layout());
+        let moves = Move::all(model, store.layout(), &store.slots());
+        let from_rows = FromRows::of(model, &store);
         let expand = Expand {
             model,
             moves: &moves,
+            from_rows: &from_rows,
             only_rule: None,
             slots: SEARCH_SLOTS,
             asked: Asked::Everything,
@@ -1664,7 +1836,7 @@ mod tests {
             (wide_wheels_model_of(actions.to_vec()), super::SeenBy::Rows),
         ] {
             let store = Store::new(&model.fields, 100, Lookup::Presence);
-            let moves = Move::all(&model, store.layout());
+            let moves = Move::all(&model, store.layout(), &store.slots());
             assert_eq!(
                 moves
                     .iter()
@@ -1675,5 +1847,467 @@ mod tests {
                 model.fields.first().map(|field| &field.domain)
             );
         }
+    }
+
+    struct Seed(u64);
+
+    impl Seed {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, count: usize) -> usize {
+            usize::try_from(self.next() % u64::try_from(count).expect("a count")).expect("an index")
+        }
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct Judged {
+        next: Vec<Next>,
+        broken: Vec<usize>,
+        unjudged: Vec<usize>,
+        trouble: Option<(Whence, Fault)>,
+        ended: bool,
+        stuck: bool,
+        cut_short: bool,
+        width: Width,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Path {
+        FromRows,
+        General,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Given {
+        RowAlone,
+        RowAndValues,
+        ValuesAlone,
+    }
+
+    fn judged(model: &Model, path: Path, given: Given, states: &[Vec<Value>]) -> Vec<Judged> {
+        let store = Store::new(&model.fields, 100, Lookup::Presence);
+        let slots = match path {
+            Path::FromRows => store.slots(),
+            Path::General => vec![None; model.fields.len()],
+        };
+        let moves = Move::all(model, store.layout(), &slots);
+        let from_rows = match path {
+            Path::FromRows => FromRows::of(model, &store),
+            Path::General => FromRows {
+                rules: vec![None; model.rules.len()],
+                ends: vec![None; model.ends.len()],
+                decoder: store.decoder(),
+            },
+        };
+        let expand = Expand {
+            model,
+            moves: &moves,
+            from_rows: &from_rows,
+            only_rule: None,
+            slots: SEARCH_SLOTS,
+            asked: Asked::Everything,
+            budget: Budget {
+                deadline: None,
+                successors: usize::MAX,
+            },
+        };
+        let mut scratch = Scratch::default();
+        states
+            .iter()
+            .map(|state| {
+                let mut row = Vec::new();
+                assert!(store.encode(state, &mut row), "the state is in the domain");
+                let mut sink = Gathered {
+                    store: &store,
+                    next: Vec::new(),
+                };
+                let base = match given {
+                    Given::RowAlone => Base {
+                        values: &[],
+                        row: Some(row.as_slice()),
+                    },
+                    Given::RowAndValues => Base {
+                        values: state,
+                        row: Some(row.as_slice()),
+                    },
+                    Given::ValuesAlone => Base {
+                        values: state,
+                        row: None,
+                    },
+                };
+                let mark = expand.state(base, None, &mut sink, &mut scratch);
+                Judged {
+                    next: sink.next,
+                    broken: mark.broken,
+                    unjudged: mark.unjudged,
+                    trouble: mark.trouble,
+                    ended: mark.ended,
+                    stuck: mark.stuck,
+                    cut_short: mark.cut_short,
+                    width: mark.width,
+                }
+            })
+            .collect()
+    }
+
+    fn colours(symbols: &mut Symbols) -> Vec<Value> {
+        ["Red", "Green", "Amber"]
+            .iter()
+            .map(|name| Value::Str(symbols.intern(name)))
+            .collect()
+    }
+
+    const WIDE: i64 = 1 << 40;
+
+    fn random_domain(seed: &mut Seed, colours: &[Value]) -> Domain {
+        match seed.below(8) {
+            0 => Domain::Bool,
+            1 => Domain::OneOf(colours.to_vec()),
+            2 => Domain::Int { lo: -5, hi: 5 },
+            3 => Domain::Int {
+                lo: WIDE,
+                hi: WIDE + 9,
+            },
+            4 => Domain::Int {
+                lo: i64::MAX - 4,
+                hi: i64::MAX,
+            },
+            5 => Domain::Int { lo: 0, hi: 1 << 33 },
+            _ => Domain::Int { lo: 0, hi: 3 },
+        }
+    }
+
+    fn samples(domain: &Domain) -> Vec<Value> {
+        match domain {
+            Domain::Int { lo, hi } if hi.abs_diff(*lo) < 12 => {
+                (*lo..=*hi).map(Value::Int).collect()
+            }
+            Domain::Int { lo, hi } => [*lo, *lo + 1, *hi - 1, *hi]
+                .into_iter()
+                .map(Value::Int)
+                .collect(),
+            other => other.values(),
+        }
+    }
+
+    struct Shapes<'f> {
+        fields: &'f [Field],
+        seed: Seed,
+    }
+
+    impl Shapes<'_> {
+        fn of_kind(&mut self, wanted: fn(&Domain) -> bool) -> Option<usize> {
+            let all: Vec<usize> = (0..self.fields.len())
+                .filter(|at| wanted(&self.fields[*at].domain))
+                .collect();
+            (!all.is_empty()).then(|| all[self.seed.below(all.len())])
+        }
+
+        fn whole(&mut self) -> Option<usize> {
+            self.of_kind(|domain| matches!(domain, Domain::Int { .. }))
+        }
+
+        fn constant(&mut self, field: usize) -> i64 {
+            let Domain::Int { lo, hi } = self.fields[field].domain else {
+                return 0;
+            };
+            let near = [
+                lo,
+                hi,
+                lo.saturating_sub(1),
+                hi.saturating_add(1),
+                0,
+                1,
+                -1,
+                1 << 31,
+            ];
+            near[self.seed.below(near.len())]
+        }
+
+        fn number(&mut self, depth: usize) -> Expr {
+            let Some(field) = self.whole() else {
+                return int(1);
+            };
+            match (depth, self.seed.below(5)) {
+                (0, _) | (_, 0 | 1) => Expr::Field(field),
+                (_, 2) => int(self.constant(field)),
+                (_, 3) => math(
+                    [Math::Add, Math::Subtract, Math::Divide][self.seed.below(3)],
+                    self.number(depth - 1),
+                    self.number(depth - 1),
+                ),
+                _ => bounded(Op::Fit(IntType::I8), self.number(depth - 1)),
+            }
+        }
+
+        fn test(&mut self, depth: usize) -> Expr {
+            let choice = if depth == 0 {
+                self.seed.below(4)
+            } else {
+                self.seed.below(7)
+            };
+            match choice {
+                0 => match self.whole() {
+                    Some(field) => Expr::Apply(
+                        Op::Order(
+                            [
+                                Order::Less,
+                                Order::LessOrEqual,
+                                Order::Greater,
+                                Order::GreaterOrEqual,
+                            ][self.seed.below(4)],
+                        ),
+                        vec![Expr::Field(field), int(self.constant(field))],
+                    ),
+                    None => yes(),
+                },
+                1 => Expr::Apply(
+                    [Op::Equal, Op::Differ][self.seed.below(2)],
+                    vec![self.number(1), self.number(1)],
+                ),
+                2 => match self.of_kind(|domain| matches!(domain, Domain::Bool)) {
+                    Some(field) => Expr::Field(field),
+                    None => yes(),
+                },
+                3 => match self.of_kind(|domain| matches!(domain, Domain::OneOf(_))) {
+                    Some(field) => {
+                        let all = samples(&self.fields[field].domain);
+                        let value = all[self.seed.below(all.len())].clone();
+                        Expr::Apply(
+                            [Op::Equal, Op::Differ][self.seed.below(2)],
+                            vec![Expr::Field(field), Expr::Const(value)],
+                        )
+                    }
+                    None => yes(),
+                },
+                4 => Expr::And(
+                    Box::new(self.test(depth - 1)),
+                    Box::new(self.test(depth - 1)),
+                ),
+                5 => Expr::Or(
+                    Box::new(self.test(depth - 1)),
+                    Box::new(self.test(depth - 1)),
+                ),
+                _ => Expr::Apply(Op::Not, vec![self.test(depth - 1)]),
+            }
+        }
+
+        fn update(&mut self, into: usize) -> Expr {
+            match &self.fields[into].domain {
+                Domain::Bool => self.test(1),
+                Domain::OneOf(values) => {
+                    let values = values.clone();
+                    if self.seed.below(2) == 0 {
+                        Expr::Const(values[self.seed.below(values.len())].clone())
+                    } else {
+                        Expr::Choose(
+                            Box::new(self.test(1)),
+                            Box::new(Expr::Const(values[self.seed.below(values.len())].clone())),
+                            Box::new(Expr::Const(values[self.seed.below(values.len())].clone())),
+                        )
+                    }
+                }
+                _ => match self.seed.below(4) {
+                    0 => plus(Expr::Field(into), int(1)),
+                    1 => math(Math::Subtract, Expr::Field(into), int(1)),
+                    2 => int(self.constant(into)),
+                    _ => self.number(2),
+                },
+            }
+        }
+
+        fn action(&mut self, at: usize) -> Action {
+            let guard = self.test(2);
+            let updates: Vec<Option<Expr>> = (0..self.fields.len())
+                .map(|into| (self.seed.below(3) == 0).then(|| self.update(into)))
+                .collect();
+            let mut made = acting(Vec::new(), guard, &updates);
+            made.id = format!("act{at}");
+            made
+        }
+    }
+
+    fn random_model(seed: u64) -> (Model, Vec<Vec<Value>>) {
+        let mut symbols = Symbols::default();
+        let colours = colours(&mut symbols);
+        let mut seed = Seed(seed);
+        let count = 2 + seed.below(3);
+        let fields: Vec<Field> = (0..count)
+            .map(|at| {
+                let domain = random_domain(&mut seed, &colours);
+                let name = format!("f{at}");
+                Field {
+                    sym: symbols.intern(&name),
+                    name,
+                    starts: vec![samples(&domain)[0].clone()],
+                    domain,
+                }
+            })
+            .collect();
+        let mut shapes = Shapes {
+            fields: &fields,
+            seed,
+        };
+        let actions = (0..3).map(|at| shapes.action(at)).collect();
+        let rules = (0..2)
+            .map(|at| Rule {
+                id: format!("rule{at}"),
+                says: "holds".to_owned(),
+                line: 1,
+                text: String::new(),
+                holds: Code::new(shapes.test(2)),
+                slots: SEARCH_SLOTS,
+            })
+            .collect();
+        let ends = vec![End {
+            id: "done".to_owned(),
+            says: "done".to_owned(),
+            when: Code::new(shapes.test(1)),
+            slots: SEARCH_SLOTS,
+        }];
+        let mut seed = shapes.seed;
+        let states = (0..60)
+            .map(|_| {
+                fields
+                    .iter()
+                    .map(|field| {
+                        let all = samples(&field.domain);
+                        all[seed.below(all.len())].clone()
+                    })
+                    .collect()
+            })
+            .collect();
+        let mut model = model_of(actions);
+        model.fields = fields;
+        model.rules = rules;
+        model.ends = ends;
+        (model, states)
+    }
+
+    #[test]
+    fn random_models_expand_from_rows_as_the_general_path_does() {
+        let mut taken = 0;
+        for seed in 1..=300 {
+            let (model, states) = random_model(0x9E37_79B9_7F4A_7C15 ^ seed);
+            let store = Store::new(&model.fields, 100, Lookup::Presence);
+            taken += Move::all(&model, store.layout(), &store.slots())
+                .iter()
+                .filter(|planned| planned.packed.is_some())
+                .count();
+            let expected = judged(&model, Path::General, Given::ValuesAlone, &states);
+            for path in [Path::FromRows, Path::General] {
+                for given in [Given::RowAlone, Given::RowAndValues, Given::ValuesAlone] {
+                    assert_eq!(
+                        judged(&model, path, given, &states),
+                        expected,
+                        "model {seed} by {path:?} with {given:?}: {:?}",
+                        model.actions
+                    );
+                }
+            }
+        }
+        assert!(
+            taken > 300,
+            "most random actions are taken from rows: {taken}"
+        );
+    }
+
+    fn ranged(order: Order, field: usize, number: i64) -> Expr {
+        Expr::Apply(Op::Order(order), vec![Expr::Field(field), int(number)])
+    }
+
+    fn agrees_from_rows(case: &str, model: &Model, states: &[Vec<Value>]) {
+        let expected = judged(model, Path::General, Given::ValuesAlone, states);
+        for given in [Given::RowAlone, Given::RowAndValues] {
+            assert_eq!(
+                judged(model, Path::FromRows, given, states),
+                expected,
+                "{case} with {given:?}"
+            );
+        }
+    }
+
+    fn wheel_states() -> Vec<Vec<Value>> {
+        (0..=99)
+            .step_by(9)
+            .flat_map(|x| [0, 1, 50, 98, 99].map(|y| numbers(&[x, y])))
+            .collect()
+    }
+
+    #[test]
+    fn a_guard_that_faults_a_rule_that_breaks_an_end_and_a_stuck_state_are_marked_as_the_general_path_marks_them()
+     {
+        let faulting = acting(
+            Vec::new(),
+            Expr::Apply(
+                Op::Order(Order::Less),
+                vec![math(Math::Divide, int(10), Expr::Field(1)), int(3)],
+            ),
+            &[Some(plus(Expr::Field(0), int(1))), None],
+        );
+        let up_to_the_top = acting(
+            Vec::new(),
+            ranged(Order::Less, 0, 99),
+            &[Some(plus(Expr::Field(0), int(1))), Some(Expr::Field(0))],
+        );
+        let past_the_top = acting(
+            Vec::new(),
+            yes(),
+            &[None, Some(plus(Expr::Field(1), int(1)))],
+        );
+        let below_the_bottom = acting(
+            Vec::new(),
+            ranged(Order::Greater, 1, 49),
+            &[Some(math(Math::Subtract, Expr::Field(0), int(1))), None],
+        );
+        let beyond_32_bits = acting(
+            Vec::new(),
+            yes(),
+            &[
+                Some(math(
+                    Math::Subtract,
+                    plus(Expr::Field(0), int(1 << 40)),
+                    int(1 << 40),
+                )),
+                None,
+            ],
+        );
+        for (case, actions) in [
+            ("a guard that faults where y is 0", vec![faulting]),
+            ("x up to 99", vec![up_to_the_top.clone()]),
+            ("y past 99", vec![past_the_top]),
+            ("x below 0 when y is over 49", vec![below_the_bottom]),
+            ("x through a number beyond 32 bits", vec![beyond_32_bits]),
+        ] {
+            let mut model = model_of(actions);
+            model.rules = vec![Rule {
+                id: "low".to_owned(),
+                says: "x stays below 90".to_owned(),
+                line: 1,
+                text: String::new(),
+                holds: Code::new(ranged(Order::Less, 0, 90)),
+                slots: SEARCH_SLOTS,
+            }];
+            model.ends = vec![End {
+                id: "top".to_owned(),
+                says: "x is at the top".to_owned(),
+                when: Code::new(Expr::Apply(Op::Equal, vec![Expr::Field(0), int(99)])),
+                slots: SEARCH_SLOTS,
+            }];
+            agrees_from_rows(case, &model, &wheel_states());
+        }
+        let store = Store::new(&model_of(Vec::new()).fields, 100, Lookup::Presence);
+        let model = model_of(vec![up_to_the_top]);
+        assert!(
+            Move::all(&model, store.layout(), &store.slots())[0]
+                .packed
+                .is_some(),
+            "a guard and updates of these shapes are taken from rows"
+        );
     }
 }

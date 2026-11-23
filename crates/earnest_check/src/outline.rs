@@ -197,7 +197,7 @@ impl Search<'_> {
         let (mut row, mut values) = (Vec::new(), Vec::new());
         let (mut label, mut group) = (String::new(), String::new());
         for id in 0..self.store.len() {
-            self.store.read_state(id, &mut row, &mut values);
+            self.store.read_values(id, &mut row, &mut values);
             let state = values.as_slice();
             label.clear();
             self.write_state_label(state, &mut label);
