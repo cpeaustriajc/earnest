@@ -57,6 +57,7 @@ pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Grap
             jobs: 1,
             helpers: Some(helpers.clone()),
             keep_graph: graphs == Graphs::Kept,
+            outline: None,
             only_rule: search.only_rule.map(str::to_owned),
         };
         let began = Instant::now();

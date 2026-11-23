@@ -255,6 +255,7 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         jobs: bounds.jobs,
         helpers: None,
         keep_graph: false,
+        outline: None,
         only_rule: None,
     };
     explore(&Model { rules, ..model }, &limits)

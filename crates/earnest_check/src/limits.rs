@@ -1,4 +1,5 @@
 use crate::helpers::Helpers;
+use crate::outline::OutlineSlot;
 use std::time::Duration;
 
 /// How far a search may go and what it keeps.
@@ -36,8 +37,15 @@ pub struct Limits {
     /// borrowed.
     pub helpers: Option<Helpers>,
     /// Whether [`crate::Outcome::graph`] is filled. It costs memory for every arrow, so leave
-    /// it off unless a chart is wanted.
+    /// it off unless a chart is wanted. With [`Self::outline`] the search leaves an outline
+    /// there instead.
     pub keep_graph: bool,
+    /// Where a search that keeps its graph leaves an [`Outline`](crate::Outline) of it in place of
+    /// [`crate::Outcome::graph`], which it then leaves `None`. An outline holds what a chart
+    /// needs in far less memory than the graph. A graph with 2^32 states or arrows or more has
+    /// no outline: the search fills [`crate::Outcome::graph`] and leaves the place empty.
+    /// Nothing is left without [`Self::keep_graph`].
+    pub outline: Option<OutlineSlot>,
     /// Check only the rule with this id. The others are not evaluated and are left out of
     /// [`crate::Outcome::rules`]. An id no rule has leaves no rule checked.
     pub only_rule: Option<String>,
@@ -51,6 +59,7 @@ impl Default for Limits {
             jobs: 1,
             helpers: None,
             keep_graph: false,
+            outline: None,
             only_rule: None,
         }
     }
