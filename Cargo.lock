@@ -360,6 +360,8 @@ name = "earnest_chart"
 version = "0.1.0"
 dependencies = [
  "earnest_check",
+ "earnest_ir",
+ "earnest_value",
  "proptest",
  "serde",
  "serde_json",
