@@ -1,0 +1,30 @@
+ 35.03%   6405  store/level.rs {closure#0}
+  8.83%   1614  explore/part.rs met
+  4.15%    758  expand.rs 
+  3.18%    581  store/layout.rs mix
+  3.01%    550  code/num.rs int_at
+  2.95%    540  expand.rs write_directly
+  2.73%    500  store/index.rs holds
+  2.47%    452  (no earnest line) _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7
+  1.96%    359  explore/part.rs offer_encoded
+  1.81%    331  (no earnest line) _RNvMs1_NtNtCs6WLDDI7QwVe_13earnest_check7explore4partNtB5_8PartSink13
+  1.75%    320  explore/part.rs file_by_shard
+  1.50%    275  code/cond.rs eval
+  1.50%    275  explore/part.rs fill_part
+  1.37%    251  store/codec.rs read_into
+  1.36%    249  store/layout.rs Copied>
+  1.32%    241  expand.rs action
+  1.24%    226  store/layout.rs {closure#0}
+  0.97%    177  code/cond.rs holds
+  0.83%    152  explore/part.rs add_fresh
+  0.75%    137  store.rs read_state
+  0.66%    121  explore/part.rs forget
+  0.60%    110  expand.rs repeats
+  0.58%    106  code/num.rs apply
+  0.56%    102  code/mod.rs truth
+  0.54%     98  store/layout.rs code
+  0.51%     94  store/level.rs hash_of
+  0.51%     93  store/rows.rs unpack
+  0.46%     85  store/level.rs row_of
+  0.44%     81  explore/part.rs move_row
+  0.42%     76  store.rs outside

@@ -1,0 +1,33 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 15K of event 'cpu-clock'
+# Event count (approx.): 15375375360
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    24.73%  [.] <earnest_check::explore::Search>::work                                                                                                               -      -            
+    22.46%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                    -      -            
+    19.41%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                      -      -            
+     5.96%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                       -      -            
+     4.83%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                  -      -            
+     3.88%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     3.60%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                     -      -            
+     3.11%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>  -      -            
+     3.02%  [.] <earnest_ir::code::cond::Cond>::leaf                                                                                                                           -      -            
+     1.16%  [.] <earnest_check::store::level::Winners>::of                                                                                                                    -      -            
+     1.11%  [k] exc_page_fault                                                                                                                                                                           -      -            
+     1.05%  [.] __memset_avx512_unaligned_erms                                                                                                                                                           -      -            
+     0.85%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                          -      -            
+     0.81%  [.] malloc                                                                                                                                                                                   -      -            
+     0.43%  [k] _raw_spin_lock                                                                                                                                                                           -      -            
+     0.33%  [.] <earnest_check::store::Store>::outside                                                                                                                            -      -            
+     0.33%  [.] <earnest_check::store::Store>::place                                                                                                                              -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

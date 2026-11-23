@@ -107,6 +107,10 @@ def file_group(crate, path, fn):
             if re.search(r"\bfind\b|place\b|claim", fn):
                 return "a", "index: store.rs " + short(fn)
             return "b", "rows: store.rs " + short(fn)
+        if path == "explore/part.rs" and re.search(r"RecentWords", fn):
+            # 89de199: a part's table of one-word rows is RecentWords, an array, not hashbrown; it is the
+            # probe of a part's table, the same piece as "hashbrown in explore/part.rs" before
+            return "c", "part table: RecentWords in explore/part.rs"
         if path in ("explore/part.rs", "explore/merge.rs", "store/level.rs"):
             return "c", "parts/claim: " + path
         if path in ("expand.rs", "explore/encode.rs", "explore/choice.rs"):

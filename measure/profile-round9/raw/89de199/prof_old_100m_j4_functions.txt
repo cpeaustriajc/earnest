@@ -1,0 +1,30 @@
+ 23.30%  12284  store/level.rs {closure#0}
+ 18.26%   9627  explore/part.rs offer_unseen_word
+  7.70%   4059  store/rows.rs word_of
+  5.36%   2823  store/index.rs holds
+  4.79%   2523  expand.rs 
+  2.70%   1421  explore/part.rs file_by_shard
+  2.57%   1353  code/num.rs int_at
+  1.89%    995  explore/part.rs offer_encoded
+  1.51%    794  store/layout.rs mix
+  1.48%    781  explore/part.rs expand_ids
+  1.27%    669  (no earnest line) _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7
+  1.26%    663  expand.rs action
+  1.24%    652  code/cond.rs leaf
+  1.14%    599  code/cond.rs eval
+  1.13%    595  store/codec.rs read_into
+  1.11%    586  eval.rs compare
+  1.04%    550  store/layout.rs Copied>
+  1.01%    534  code/mod.rs scalar
+  0.75%    397  store/layout.rs {closure#0}
+  0.75%    396  store/index.rs shard_of
+  0.72%    379  explore/part.rs add_fresh
+  0.66%    347  explore/part.rs move_row
+  0.63%    332  expand.rs repeats
+  0.58%    304  eval.rs note
+  0.56%    296  code/num.rs eval
+  0.51%    269  store.rs read_state
+  0.46%    242  code/num.rs check
+  0.46%    241  store/rows.rs pack
+  0.43%    225  store/level.rs of
+  0.40%    209  store/rows.rs unpack

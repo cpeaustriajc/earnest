@@ -8,7 +8,8 @@
 import json, os, statistics, sys, tempfile, time
 
 ROUNDS = int(sys.argv[1])
-CHECKER = sys.argv[2]
+# CHECKER is one path, or name=path,name=path for several builds, which run in turn in each round
+CHECKERS = dict(p.split("=", 1) for p in sys.argv[2].split(",")) if "=" in sys.argv[2] else {"checker": sys.argv[2]}
 CASES = [(c.split(":")[0], int(c.split(":")[1])) for c in sys.argv[3].split(",")]
 FLOORS = json.load(open(sys.argv[4])) if len(sys.argv) > 4 else {}
 
@@ -29,8 +30,8 @@ def spawn(argv, env):
                       exit=status, minflt=usage.ru_minflt, invol=usage.ru_nivcsw, vol=usage.ru_nvcsw)
 
 
-def checker(model, jobs):
-    text, r = spawn([CHECKER, "verify", "--no-cache", "--json", "--jobs", str(jobs), "--max-states", "200000000",
+def checker(model, jobs, binary):
+    text, r = spawn([binary, "verify", "--no-cache", "--json", "--jobs", str(jobs), "--max-states", "200000000",
                      model + ".model.ts"], {})
     try:
         m = json.loads(text)["models"][0]
@@ -55,18 +56,20 @@ def p(**kw):
 
 
 p(event="start", loadavg=open("/proc/loadavg").read().strip(), utc=time.strftime("%FT%TZ", time.gmtime()),
-  checker=CHECKER, floors=FLOORS)
+  checkers=CHECKERS, floors=FLOORS)
 for model, jobs in CASES:
     key = f"{model}:{jobs}"
     spec = FLOORS.get(key)
-    p(event="warmup", build="checker", model=model, jobs=jobs, **checker(model, jobs))
+    for name, binary in CHECKERS.items():
+        p(event="warmup", build=name, model=model, jobs=jobs, **checker(model, jobs, binary))
     if spec:
         p(event="warmup", build="floor", model=model, jobs=jobs, **floor(spec))
-    seen = {"checker": []} | ({"floor": []} if spec else {})
+    seen = {name: [] for name in CHECKERS} | ({"floor": []} if spec else {})
     for r in range(1, ROUNDS + 1):
-        res = checker(model, jobs)
-        seen["checker"].append(res)
-        p(event="run", build="checker", model=model, jobs=jobs, round=r, **res)
+        for name, binary in CHECKERS.items():
+            res = checker(model, jobs, binary)
+            seen[name].append(res)
+            p(event="run", build=name, model=model, jobs=jobs, round=r, **res)
         if spec:
             res = floor(spec)
             seen["floor"].append(res)

@@ -348,7 +348,10 @@ The evidence for each mark:
    per successor with 1 worker (15.55 s) and 33.0 ns with 4 (23.75 s). That is 0.84 and 0.95 times the floor's
    whole store work per successor. **So the probing as a whole is at the floor's cost.** The gap between the
    store and the floor (11 s at 100M with 1 worker) is in the rows below, not in the probes.
-3. **The key compare in `Key::holds`: the program's own, at most 3.3 s (1 worker) and 3.0 s (4).** The index
+3. **Corrected in `RESULTS-89de199.md`, section 6: this mark was wrong.** For `grid`, `Key<u32>` holds the row in the
+   slot and no row is read from the store; the samples are the load of the key from `hashbrown`'s bucket, a second
+   cache line after the control bytes. The text below is kept as it was written.
+   **The key compare in `Key::holds`: the program's own, at most 3.3 s (1 worker) and 3.0 s (4).** The index
    holds ids, so to compare a key the probe found, the checker reads that state's row in `Rows`: a second memory
    access per look-up that finds a key. The floor keeps the key in the slot. **Measured:** 12.6 ns per
    candidate at 100M, 5.7 ns at 10M. **Reading:** a key in the slot makes the table larger (4 bytes of row

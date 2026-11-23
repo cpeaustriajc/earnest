@@ -1,0 +1,35 @@
+# total samples 6323
+  5.25%    332  earnest_check/store/index.rs:143
+  4.87%    308  earnest_check/expand.rs:726
+  4.52%    286  earnest_ir/code/chain.rs:28
+  4.05%    256  earnest_ir/code/chain.rs:295
+  3.73%    236  earnest_ir/code/chain.rs:296
+  2.99%    189  earnest_check/expand.rs:727
+  2.69%    170  earnest_check/expand.rs:643
+  2.67%    169  earnest_ir/code/chain.rs:25
+  2.40%    152  earnest_ir/code/chain.rs:294
+  2.39%    151  earnest_check/expand.rs:705
+  2.39%    151  earnest_ir/code/chain.rs:133
+  2.36%    149  earnest_ir/code/num.rs:253
+  2.31%    146  earnest_ir/eval.rs:149
+  2.20%    139  earnest_ir/code/chain.rs:83
+  2.09%    132  earnest_check/expand.rs:603
+  1.95%    123  earnest_check/expand.rs:356
+  1.82%    115  earnest_check/expand.rs:721
+  1.63%    103  earnest_check/expand.rs:391
+  1.57%     99  earnest_check/expand.rs:730
+  1.53%     97  earnest_ir/code/num.rs:254
+  1.49%     94  earnest_check/expand.rs:312
+  1.49%     94  earnest_check/expand.rs:701
+  1.47%     93  earnest_ir/code/num.rs:284
+  1.46%     92  earnest_ir/code/chain.rs:297
+  1.46%     92  earnest_check/store/index.rs:48
+# samples with no earnest frame, by perf symbol and innermost line
+  0.70%     44  <earnest_ir::code::num::Num>::rest  [code/num.rs:?]
+  0.09%      6  <earnest_ir::code::num::Num>::rest  [eval.rs:?]
+  0.08%      5  <earnest_ir::code::Code>::scalar  [code/mod.rs:?]
+  0.02%      1  <std::sys::pal::unix::time::Timespec>::now  [sys/pal/unix/time.rs:75]
+  0.02%      1  <alloc::raw_vec::RawVecInner>::finish_grow  [raw_vec/mod.rs:587]
+  0.02%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [util.rs:24]
+  0.02%      1  <earnest_check::store::rows::Rows>::unpack  [store/rows.rs:?]
+  0.02%      1  <earnest_check::store::Store>::read_state  [iter/adapters/zip.rs:?]

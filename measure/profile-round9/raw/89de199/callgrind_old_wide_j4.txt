@@ -1,0 +1,11 @@
+==18130== Callgrind, a call-graph generating cache profiler
+==18130== Copyright (C) 2002-2017, and GNU GPL'd, by Josef Weidendorfer et al.
+==18130== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==18130== Command: /SCRATCH/bin3058/earnest verify --no-cache --json --jobs 4 --max-states 200000000 wide.model.ts
+==18130== 
+==18130== For interactive control, run 'callgrind_control -h'.
+==18130== 
+==18130== Events    : Ir
+==18130== Collected : 4780008465
+==18130== 
+==18130== I   refs:      4,780,008,465

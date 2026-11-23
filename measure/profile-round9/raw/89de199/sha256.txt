@@ -1,0 +1,6 @@
+# sha256 of the builds of this pass
+9115e1c555dba69cc8f612caeddb21718e4fd8f1b026c2cf33a261c88eed401d  /SCRATCH/bin/earnest-new
+5f59969b58e37df39db5a440b5f7e867c085718dd9e4dd39d3ad92c5e487a3e6  /SCRATCH/bin/earnest-sym
+469213bdbb308a0fc2942a29f4c1805db66847bf27fa39dc5d503e83da896713  /SCRATCH/bin3058/earnest
+8afd814dc898bd53952814c3b0078e96e9a9ac0a2ecc39632efe4e8196208404  /SCRATCH/bin3058/earnest-sym
+316664ac3662fa2b520c3551168a03e549c3741da0be73b3a912e2bafb2a848b  /SCRATCH/bin/floor_par
