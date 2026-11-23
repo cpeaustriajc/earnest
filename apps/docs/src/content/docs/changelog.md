@@ -13,7 +13,7 @@ Measured on a Linux machine with 4 CPUs and 16 GB, on grids of counters:
 
 | Command | Before | Now |
 |---|---|---|
-| `verify`, 10 million states, 4 workers | 26.5 s, 2.7 GiB | 0.8 s, 0.2 GiB |
+| `verify`, 10 million states, 4 workers | 26.6 s, 2.7 GiB | 0.8 s, 0.2 GiB |
 | `verify`, 10 million states, 1 worker | 58 s, 2.7 GiB | 2.4 s, 0.2 GiB |
 | `verify`, 100 million states, 4 workers | did not fit in 16 GB | 9 s, 1.6 GiB |
 | `report`, 1 million states | 5.3 s, 1.7 GiB | 1.9 s, 0.4 GiB |
