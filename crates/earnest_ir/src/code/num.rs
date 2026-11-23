@@ -33,7 +33,7 @@ pub(super) enum Bound {
 }
 
 impl Bound {
-    fn check(self, number: i64) -> Result<i64, Fault> {
+    pub(super) fn check(self, number: i64) -> Result<i64, Fault> {
         match self {
             Self::Any => Ok(number),
             Self::Safe if is_safe(number) => Ok(number),

@@ -10,7 +10,7 @@ mod eval;
 mod parts;
 mod told;
 
-pub use code::{Code, FieldStep, Scalar};
+pub use code::{Code, Coding, FieldStep, PackedTest, PackedUpdate, Scalar, Slot};
 pub use eval::{Fault, Frame, eval, truth};
 
 use earnest_value::{Domain, IntType, Sym, Symbols, Value};

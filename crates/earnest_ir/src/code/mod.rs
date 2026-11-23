@@ -1,6 +1,7 @@
 mod chain;
 mod cond;
 mod num;
+mod packed;
 mod shared;
 mod val;
 
@@ -9,6 +10,7 @@ use cond::Cond;
 use earnest_value::Value;
 pub use num::FieldStep;
 use num::Stop;
+pub use packed::{Coding, PackedTest, PackedUpdate, Slot};
 use shared::Shared;
 use std::fmt;
 use val::Val;
@@ -140,6 +142,31 @@ impl Code {
             Val::Num(num) => num.field_step(),
             _ => None,
         }
+    }
+
+    /// The expression prepared as a test of a packed row, for a guard, a rule or an end, when it
+    /// can be judged from the codes of the fields in `slots` alone: comparisons of whole-number
+    /// fields with constants or with each other, possibly through arithmetic, a field of true
+    /// or false read or compared, a field of listed values compared with a constant or with a
+    /// field of the same list, and `and`, `or`, `not` and `?:` of those. `None` for every other
+    /// expression, and for one that reads a field `slots` has no slot for or a local slot.
+    ///
+    /// `slots` gives the slot of each field by position, `None` for a field the row does not
+    /// hold by a [`Coding`].
+    #[must_use]
+    pub fn packed_test(&self, slots: &[Option<Slot>]) -> Option<PackedTest> {
+        PackedTest::of(&self.expr, slots)
+    }
+
+    /// The expression prepared as an update of field `field` that writes its answer from one
+    /// packed row into another, when the answer can be worked out from the codes of the fields
+    /// in `slots` alone: a constant of the field, a whole number worked out as
+    /// [`Code::packed_test`] works out numbers, a test that [`Code::packed_test`] takes for a
+    /// field of true or false, a field with the same coding copied, and `?:` of those. `None`
+    /// otherwise, and when `slots` has no slot for `field`.
+    #[must_use]
+    pub fn packed_update(&self, slots: &[Option<Slot>], field: usize) -> Option<PackedUpdate> {
+        PackedUpdate::of(&self.expr, slots, field)
     }
 
     /// Whether the expression is true in the state and locals of `frame`, for a guard or a rule.
