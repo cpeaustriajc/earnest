@@ -1,6 +1,7 @@
+use super::Code;
 use super::num::Bound;
 use crate::eval::{arithmetic, compare};
-use crate::{Expr, Math, Op, Order};
+use crate::{Expr, Frame, Math, Op, Order};
 use earnest_value::Value;
 
 /// Where a packed row keeps the code of one field, and what the code stands for, as the caller
@@ -91,13 +92,128 @@ struct Fields<'a> {
     slots: &'a [Option<Slot>],
 }
 
+const MOST_TABLED_CODES: u64 = 1 << 12;
+
+const MOST_SWEPT_CONSTANTS: usize = 16;
+
+#[derive(Default)]
+struct Reads {
+    fields: Vec<usize>,
+    slots: usize,
+    sweeps: usize,
+}
+
+fn small_constant(source: &Expr) -> bool {
+    match source {
+        Expr::Const(Value::Seq(items)) => items.len() <= MOST_SWEPT_CONSTANTS,
+        Expr::Const(Value::Set(items)) => items.len() <= MOST_SWEPT_CONSTANTS,
+        _ => false,
+    }
+}
+
+impl Reads {
+    fn of(expr: &Expr, bound: &mut Vec<usize>, reads: &mut Self) -> Option<()> {
+        match expr {
+            Expr::Field(index) => {
+                if !reads.fields.contains(index) {
+                    reads.fields.push(*index);
+                }
+            }
+            Expr::Local(slot) => {
+                bound.contains(slot).then_some(())?;
+            }
+            Expr::Bind { slot, value, body } => {
+                Self::of(value, bound, reads)?;
+                reads.slots = reads.slots.max(slot.checked_add(1)?);
+                bound.push(*slot);
+                let body = Self::of(body, bound, reads);
+                bound.pop();
+                body?;
+            }
+            Expr::Sweep {
+                slot, source, body, ..
+            } => {
+                let mut swept = Self::default();
+                Self::of(source, bound, &mut swept)?;
+                let mut inside = Self::default();
+                bound.push(*slot);
+                let body = Self::of(body, bound, &mut inside);
+                bound.pop();
+                body?;
+                let bounded =
+                    !swept.fields.is_empty() || small_constant(source) && inside.sweeps == 0;
+                bounded.then_some(())?;
+                for field in swept.fields.into_iter().chain(inside.fields) {
+                    if !reads.fields.contains(&field) {
+                        reads.fields.push(field);
+                    }
+                }
+                reads.slots = reads
+                    .slots
+                    .max(swept.slots)
+                    .max(inside.slots)
+                    .max(slot.checked_add(1)?);
+                reads.sweeps = reads.sweeps + swept.sweeps + inside.sweeps + 1;
+            }
+            _ => {
+                let mut fine = true;
+                expr.each_part(&mut |part| {
+                    fine = fine && Self::of(part, bound, reads).is_some();
+                });
+                fine.then_some(())?;
+            }
+        }
+        Some(())
+    }
+}
+
 impl Fields<'_> {
     fn slot(&self, expr: &Expr) -> Option<(Bits, &Coding)> {
         let Expr::Field(index) = expr.plain() else {
             return None;
         };
-        let slot = self.slots.get(*index)?.as_ref()?;
+        self.slot_at(*index)
+    }
+
+    fn slot_at(&self, index: usize) -> Option<(Bits, &Coding)> {
+        let slot = self.slots.get(index)?.as_ref()?;
         Some((Bits::of(slot)?, &slot.coding))
+    }
+
+    fn each_value<T>(
+        &self,
+        expr: &Expr,
+        mut answer: impl FnMut(&Code, &mut Frame<'_>) -> Option<T>,
+    ) -> Option<(Bits, Vec<Option<T>>)> {
+        let mut reads = Reads::default();
+        Reads::of(expr, &mut Vec::new(), &mut reads)?;
+        let [field] = reads.fields.as_slice() else {
+            return None;
+        };
+        let (bits, coding) = self.slot_at(*field)?;
+        let values = match coding {
+            Coding::Whole { lowest, highest } => (highest.abs_diff(*lowest) < MOST_TABLED_CODES)
+                .then(|| (*lowest..=*highest).map(Value::Int).collect::<Vec<_>>())?,
+            Coding::Truth => vec![Value::Bool(false), Value::Bool(true)],
+            Coding::Listed(values) => values.clone(),
+        };
+        if u64::try_from(values.len()).ok()? > MOST_TABLED_CODES {
+            return None;
+        }
+        let code = Code::new(expr.clone());
+        let mut state = vec![Value::Null; field.checked_add(1)?];
+        let answers = values
+            .into_iter()
+            .map(|value| {
+                if let Some(place) = state.get_mut(*field) {
+                    *place = value;
+                }
+                let mut frame = Frame::new(&state, reads.slots);
+                let found = answer(&code, &mut frame);
+                found.filter(|_| !frame.computed_beyond_32_bits())
+            })
+            .collect();
+        Some((bits, answers))
     }
 
     fn whole(&self, expr: &Expr) -> Option<(Bits, Whole)> {
@@ -261,6 +377,11 @@ enum Test {
         second: Bits,
         sense: Sense,
     },
+    Table {
+        bits: Bits,
+        truth: Box<[u64]>,
+        known: Box<[u64]>,
+    },
     All(Box<[Self]>),
     Any(Box<[Self]>),
     Not(Box<Self>),
@@ -278,6 +399,44 @@ fn flipped(order: Order) -> Order {
 
 impl Test {
     fn of(expr: &Expr, fields: &Fields<'_>) -> Option<Self> {
+        Self::shaped(expr, fields).or_else(|| Self::tabled(expr, fields))
+    }
+
+    fn tabled(expr: &Expr, fields: &Fields<'_>) -> Option<Self> {
+        let (bits, answers) = fields.each_value(expr, |code, frame| code.truth(frame).ok())?;
+        answers.iter().any(Option::is_some).then_some(())?;
+        let words = answers.len().div_ceil(64);
+        let mut truth = vec![0_u64; words];
+        let mut known = vec![0_u64; words];
+        for (code, answer) in answers.iter().enumerate() {
+            let (word, bit) = (code / 64, 1_u64 << (code % 64));
+            if let (Some(flag), Some(truths), Some(knowns)) =
+                (answer, truth.get_mut(word), known.get_mut(word))
+            {
+                *knowns |= bit;
+                if *flag {
+                    *truths |= bit;
+                }
+            }
+        }
+        if let ([set], [all]) = (truth.as_slice(), known.as_slice())
+            && answers.iter().all(Option::is_some)
+        {
+            let (set, all) = (*set, *all);
+            return Some(match set {
+                0 => Self::Const(false),
+                _ if set == all => Self::Const(true),
+                _ => Self::Among { bits, set },
+            });
+        }
+        Some(Self::Table {
+            bits,
+            truth: truth.into_boxed_slice(),
+            known: known.into_boxed_slice(),
+        })
+    }
+
+    fn shaped(expr: &Expr, fields: &Fields<'_>) -> Option<Self> {
         match expr.plain() {
             Expr::Const(Value::Bool(flag)) => Some(Self::Const(*flag)),
             Expr::Field(_) => Self::among(expr, fields, |value| match value {
@@ -343,6 +502,7 @@ impl Test {
     fn sure(&self) -> bool {
         match self {
             Self::Const(_) | Self::Within { .. } | Self::Same { .. } => true,
+            Self::Table { .. } => false,
             Self::Among { bits, .. } => bits.mask < u64::from(u64::BITS),
             Self::Order { left, right, .. } | Self::Equal { left, right, .. } => {
                 left.sure() && right.sure()
@@ -511,6 +671,12 @@ impl Test {
                 second,
                 sense,
             } => Some(sense.says(first.read(row)?, second.read(row)?)),
+            Self::Table { bits, truth, known } => {
+                let code = usize::try_from(bits.read(row)?).ok()?;
+                let (word, bit) = (code / 64, 1_u64 << (code % 64));
+                (known.get(word)? & bit != 0)
+                    .then(|| truth.get(word).is_some_and(|set| set & bit != 0))
+            }
             Self::All(parts) => {
                 for part in parts {
                     if !part.holds(row)? {
@@ -548,13 +714,71 @@ enum Put {
     Number { term: Term, whole: Whole },
     Truth(Test),
     Copy(Bits),
+    Table { from: Bits, codes: Box<[u64]> },
     Choose(Box<(Test, Self, Self)>),
 }
+
+const NO_CODE: u64 = u64::MAX;
 
 const MOST_MOVED_CODE: i128 = 1 << 62;
 
 impl Put {
     fn of(expr: &Expr, into: &Coding, fields: &Fields<'_>) -> Option<Self> {
+        Self::shaped(expr, into, fields)
+            .or_else(|| Self::tabled(expr, into, fields))
+            .or_else(|| Self::constant(expr, into))
+    }
+
+    fn constant(expr: &Expr, into: &Coding) -> Option<Self> {
+        let mut reads = Reads::default();
+        Reads::of(expr, &mut Vec::new(), &mut reads)?;
+        if !reads.fields.is_empty() || reads.sweeps > 0 {
+            return None;
+        }
+        let mut frame = Frame::new(&[], reads.slots);
+        let value = Code::new(expr.clone()).eval(&mut frame);
+        if frame.computed_beyond_32_bits() {
+            return None;
+        }
+        let code = match (into, value.ok()?) {
+            (Coding::Whole { lowest, highest }, Value::Int(number)) => {
+                Whole::of(*lowest, *highest)?.code(number)
+            }
+            (Coding::Truth, Value::Bool(flag)) => Some(u64::from(flag)),
+            (Coding::Listed(values), found) => values
+                .iter()
+                .position(|value| *value == found)
+                .and_then(|code| u64::try_from(code).ok()),
+            _ => None,
+        };
+        Some(code.map_or(Self::Outside, Self::Code))
+    }
+
+    fn tabled(expr: &Expr, into: &Coding, fields: &Fields<'_>) -> Option<Self> {
+        let (from, answers) = fields.each_value(expr, |code, frame| {
+            let value = code.eval(frame).ok()?;
+            match (into, &value) {
+                (Coding::Whole { lowest, highest }, Value::Int(number)) => {
+                    Whole::of(*lowest, *highest)?.code(*number)
+                }
+                (Coding::Truth, Value::Bool(flag)) => Some(u64::from(*flag)),
+                (Coding::Listed(values), found) => {
+                    u64::try_from(values.iter().position(|value| value == found)?).ok()
+                }
+                _ => None,
+            }
+        })?;
+        answers.iter().any(Option::is_some).then_some(())?;
+        Some(Self::Table {
+            from,
+            codes: answers
+                .into_iter()
+                .map(|answer| answer.unwrap_or(NO_CODE))
+                .collect(),
+        })
+    }
+
+    fn shaped(expr: &Expr, into: &Coding, fields: &Fields<'_>) -> Option<Self> {
         let expr = expr.plain();
         if let Expr::Choose(test, yes, no) = expr {
             return Some(Self::Choose(Box::new((
@@ -658,6 +882,10 @@ impl Put {
             Self::Number { term, whole } => whole.code(term.get(row)?),
             Self::Truth(test) => test.holds(row).map(u64::from),
             Self::Copy(from) => from.read(row),
+            Self::Table { from, codes } => {
+                let code = *codes.get(usize::try_from(from.read(row)?).ok()?)?;
+                (code != NO_CODE).then_some(code)
+            }
             Self::Choose(branches) => {
                 if branches.0.holds(row)? {
                     branches.1.code(row)

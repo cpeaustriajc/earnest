@@ -1071,7 +1071,7 @@ mod tests {
     use crate::store::{Lookup, Store};
     use earnest_ir::{Action, Expr, Input};
     use earnest_ir::{
-        Code, End, Fault, Field, Frame, Math, Model, Op, Order, Rule, View, eval, truth,
+        Code, End, Fault, Field, Frame, Math, Model, Op, Order, Rule, SeqOp, View, eval, truth,
     };
     use earnest_value::Symbols;
     use earnest_value::{Domain, IntType, Value};
@@ -1965,8 +1965,12 @@ mod tests {
     const WIDE: i64 = 1 << 40;
 
     fn random_domain(seed: &mut Seed, colours: &[Value]) -> Domain {
-        match seed.below(8) {
+        match seed.below(9) {
             0 => Domain::Bool,
+            7 => Domain::Seq {
+                item: Box::new(Domain::OneOf(colours.to_vec())),
+                max: 2,
+            },
             1 => Domain::OneOf(colours.to_vec()),
             2 => Domain::Int { lo: -5, hi: 5 },
             3 => Domain::Int {
@@ -2049,9 +2053,30 @@ mod tests {
             let choice = if depth == 0 {
                 self.seed.below(4)
             } else {
-                self.seed.below(7)
+                self.seed.below(9)
             };
             match choice {
+                7 => match self.of_kind(|domain| matches!(domain, Domain::Seq { .. })) {
+                    Some(field) => Expr::Apply(
+                        Op::Order(Order::Less),
+                        vec![
+                            Expr::Apply(Op::Seq(SeqOp::Size), vec![Expr::Field(field)]),
+                            int(i64::try_from(self.seed.below(3)).expect("a small number")),
+                        ],
+                    ),
+                    None => yes(),
+                },
+                8 => match self.whole() {
+                    Some(field) => Expr::Bind {
+                        slot: BOUND,
+                        value: Box::new(plus(Expr::Field(field), int(1))),
+                        body: Box::new(Expr::Apply(
+                            Op::Order(Order::Greater),
+                            vec![Expr::Local(BOUND), int(self.constant(field))],
+                        )),
+                    },
+                    None => yes(),
+                },
                 0 => match self.whole() {
                     Some(field) => Expr::Apply(
                         Op::Order(
@@ -2100,6 +2125,23 @@ mod tests {
         fn update(&mut self, into: usize) -> Expr {
             match &self.fields[into].domain {
                 Domain::Bool => self.test(1),
+                Domain::Seq { .. } => match self.seed.below(3) {
+                    0 => Expr::Apply(Op::Seq(SeqOp::Shift), vec![Expr::Field(into)]),
+                    1 => Expr::SeqOf(Vec::new()),
+                    _ => {
+                        let item = samples(&self.fields[into].domain)
+                            .into_iter()
+                            .find_map(|value| match value {
+                                Value::Seq(items) => items.first().cloned(),
+                                _ => None,
+                            })
+                            .unwrap_or(Value::Null);
+                        Expr::Apply(
+                            Op::Seq(SeqOp::Push),
+                            vec![Expr::Field(into), Expr::Const(item)],
+                        )
+                    }
+                },
                 Domain::OneOf(values) => {
                     let values = values.clone();
                     if self.seed.below(2) == 0 {

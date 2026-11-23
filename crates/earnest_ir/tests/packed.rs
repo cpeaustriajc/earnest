@@ -5,7 +5,9 @@
 //! field. The rows are packed here by hand, and the fields sit at the start, the middle and the
 //! end of a word and in a second word.
 
-use earnest_ir::{Code, Coding, Expr, Frame, Math, Op, Order, Slot, eval, truth};
+use earnest_ir::{
+    Code, Coding, Expr, Frame, Math, Op, Order, SeqOp, Shelf, Slot, Sweep, eval, truth,
+};
 use earnest_value::{IntType, Symbols, Value};
 
 const ORDERS: [Order; 4] = [
@@ -32,6 +34,7 @@ const BOUNDS: [Option<IntType>; 4] = [
 
 const PAST_32_BITS: i64 = 1 << 31;
 const WIDE: i64 = 1 << 40;
+const LOCAL_SLOTS: usize = 8;
 
 #[derive(Clone, Debug)]
 struct Field {
@@ -222,13 +225,13 @@ struct Tally {
 }
 
 fn walked_truth(expr: &Expr, state: &[Value]) -> (Result<bool, earnest_ir::Fault>, bool) {
-    let mut frame = Frame::new(state, 0);
+    let mut frame = Frame::new(state, LOCAL_SLOTS);
     let answer = truth(expr, &mut frame);
     (answer, frame.computed_beyond_32_bits())
 }
 
 fn walked_value(expr: &Expr, state: &[Value]) -> (Result<Value, earnest_ir::Fault>, bool) {
-    let mut frame = Frame::new(state, 0);
+    let mut frame = Frame::new(state, LOCAL_SLOTS);
     let answer = eval(expr, &mut frame);
     (answer, frame.computed_beyond_32_bits())
 }
@@ -638,7 +641,6 @@ fn a_test_the_row_cannot_judge_is_not_prepared() {
         Expr::Field(2),
         Expr::Local(0),
         apply(Op::Order(Order::Less), vec![Expr::Field(1), int(1)]),
-        apply(Op::Order(Order::Less), vec![Expr::Field(2), int(1)]),
         apply(Op::Order(Order::Less), vec![Expr::Field(0), Expr::Local(0)]),
         apply(Op::Equal, vec![Expr::Field(0), Expr::Field(1)]),
         apply(Op::Equal, vec![Expr::Field(5), int(1)]),
@@ -956,5 +958,259 @@ fn random_update(fields: &[Field], into: usize, seed: &mut Seed, depth: usize) -
         Coding::Truth => Some(random_test(fields, seed, 1)),
         Coding::Listed(values) => Some(Expr::Const(values[seed.below(values.len())].clone())),
         _ => None,
+    }
+}
+
+fn queues(letters: &[Value], longest: usize) -> Vec<Value> {
+    let mut all = vec![Vec::new()];
+    let mut grown = vec![Vec::new()];
+    for _ in 0..longest {
+        grown = grown
+            .iter()
+            .flat_map(|queue: &Vec<Value>| {
+                letters.iter().map(move |letter| {
+                    let mut longer = queue.clone();
+                    longer.push(letter.clone());
+                    longer
+                })
+            })
+            .collect();
+        all.extend(grown.iter().cloned());
+    }
+    all.into_iter().map(Value::seq).collect()
+}
+
+fn tallies(symbols: &mut Symbols) -> (Vec<Value>, earnest_value::Sym, earnest_value::Sym) {
+    let (first, second) = (symbols.intern("a"), symbols.intern("b"));
+    let all = (0..4)
+        .flat_map(|a| {
+            (0..3)
+                .map(move |b| Value::record(vec![(first, Value::Int(a)), (second, Value::Int(b))]))
+        })
+        .collect();
+    (all, first, second)
+}
+
+fn bind(slot: usize, value: Expr, body: Expr) -> Expr {
+    Expr::Bind {
+        slot,
+        value: Box::new(value),
+        body: Box::new(body),
+    }
+}
+
+struct Tabled {
+    fields: Vec<Field>,
+    letters: Vec<Value>,
+    first: earnest_value::Sym,
+    second: earnest_value::Sym,
+}
+
+fn tabled_fields() -> Tabled {
+    let mut symbols = Symbols::default();
+    let letters = lights(&mut symbols);
+    let (records, first, second) = tallies(&mut symbols);
+    let fields = vec![
+        listed(queues(&letters, 3)),
+        listed(records),
+        whole(0, 5),
+        listed(vec![Value::Int(1), Value::Int(2), Value::Int(7)]),
+        whole(-2, 9),
+    ];
+    Tabled {
+        fields,
+        letters,
+        first,
+        second,
+    }
+}
+
+fn raised() -> Expr {
+    bind(
+        0,
+        apply(Op::Safe, vec![math(Math::Add, Expr::Field(2), int(1))]),
+        Expr::Choose(
+            Box::new(apply(
+                Op::Order(Order::Greater),
+                vec![Expr::Local(0), int(4)],
+            )),
+            Box::new(int(4)),
+            Box::new(Expr::Local(0)),
+        ),
+    )
+}
+
+#[test]
+fn a_test_that_reads_one_field_of_few_values_is_answered_from_a_table_of_its_codes() {
+    let Tabled {
+        fields,
+        letters,
+        first,
+        second,
+    } = tabled_fields();
+    let size = apply(Op::Seq(SeqOp::Size), vec![Expr::Field(0)]);
+    let get = |name| Expr::Get(Box::new(Expr::Field(1)), name);
+    let faulting = apply(
+        Op::Order(Order::Less),
+        vec![
+            math(
+                Math::Divide,
+                int(10),
+                math(Math::Subtract, Expr::Field(2), int(2)),
+            ),
+            int(4),
+        ],
+    );
+    let every_letter_red = Expr::Sweep {
+        sweep: Sweep::Every,
+        shelf: Shelf::Seq,
+        slot: 1,
+        source: Box::new(Expr::Field(0)),
+        body: Box::new(apply(
+            Op::Equal,
+            vec![Expr::Local(1), Expr::Const(letters[0].clone())],
+        )),
+    };
+    let tests = vec![
+        apply(Op::Equal, vec![size.clone(), int(0)]),
+        apply(Op::Order(Order::Less), vec![size.clone(), int(3)]),
+        apply(Op::Not, vec![apply(Op::Equal, vec![size.clone(), int(2)])]),
+        apply(Op::Order(Order::Less), vec![get(first), int(3)]),
+        Expr::And(
+            Box::new(apply(Op::Order(Order::Less), vec![get(second), int(2)])),
+            Box::new(apply(Op::Equal, vec![size, int(1)])),
+        ),
+        apply(Op::Order(Order::Less), vec![Expr::Field(3), int(2)]),
+        bind(
+            2,
+            Expr::Field(2),
+            apply(
+                Op::Order(Order::GreaterOrEqual),
+                vec![Expr::Local(2), int(2)],
+            ),
+        ),
+        apply(Op::Order(Order::Less), vec![raised(), int(4)]),
+        faulting,
+        every_letter_red,
+        Expr::Sweep {
+            sweep: Sweep::Some,
+            shelf: Shelf::Seq,
+            slot: 3,
+            source: Box::new(Expr::Const(Value::seq(letters))),
+            body: Box::new(apply(
+                Op::Seq(SeqOp::Includes),
+                vec![Expr::Field(0), Expr::Local(3)],
+            )),
+        },
+        Expr::Or(
+            Box::new(apply(Op::Order(Order::Less), vec![Expr::Field(4), int(0)])),
+            Box::new(apply(
+                Op::Order(Order::Less),
+                vec![math(Math::Remainder, Expr::Field(4), int(3)), int(1)],
+            )),
+        ),
+    ];
+    let mut tally = Tally::default();
+    check_tests(&fields, &tests, &mut tally);
+    assert!(
+        tally.answered > 0 && tally.left > 0,
+        "both kinds of case are met"
+    );
+}
+
+#[test]
+fn an_update_that_reads_one_field_of_few_values_is_written_from_a_table_of_its_codes() {
+    let Tabled {
+        fields,
+        letters,
+        first,
+        second,
+    } = tabled_fields();
+    let size = apply(Op::Seq(SeqOp::Size), vec![Expr::Field(0)]);
+    let get = |name| Expr::Get(Box::new(Expr::Field(1)), name);
+    let mut tally = Tally::default();
+    let with = |name, change: Expr| {
+        (
+            1,
+            Expr::With(Box::new(Expr::Field(1)), vec![(name, change)]),
+        )
+    };
+    let updates = vec![
+        (0, apply(Op::Seq(SeqOp::Shift), vec![Expr::Field(0)])),
+        (
+            0,
+            apply(
+                Op::Seq(SeqOp::Push),
+                vec![Expr::Field(0), Expr::Const(letters[1].clone())],
+            ),
+        ),
+        with(
+            first,
+            apply(Op::Safe, vec![math(Math::Add, get(first), int(1))]),
+        ),
+        with(second, math(Math::Subtract, get(second), int(1))),
+        (2, raised()),
+        (2, size),
+        (4, Expr::Field(3)),
+        (0, Expr::SeqOf(Vec::new())),
+        (0, Expr::SeqOf(vec![Expr::Const(letters[2].clone())])),
+        (4, math(Math::Add, int(2), int(3))),
+        (
+            2,
+            bind(
+                3,
+                math(Math::Multiply, Expr::Field(2), int(2)),
+                Expr::Local(3),
+            ),
+        ),
+    ];
+    check_updates(&fields, &updates, &mut tally);
+}
+
+#[test]
+fn an_expression_of_no_field_of_two_fields_or_of_a_constant_sweep_is_not_tabled() {
+    let mut symbols = Symbols::default();
+    let letters = lights(&mut symbols);
+    let fields = vec![
+        listed(queues(&letters, 2)),
+        listed(queues(&letters, 2)),
+        whole(0, (1 << 20) - 1),
+    ];
+    let slots = laid_out(&fields, 0);
+    let size = |of: Expr| apply(Op::Seq(SeqOp::Size), vec![of]);
+    let below = |left: Expr, right: Expr| apply(Op::Order(Order::Less), vec![left, right]);
+    let constant = Expr::Const(Value::seq(vec![Value::Int(1), Value::Int(2)]));
+    let many = Expr::Const(Value::seq((0..17).map(Value::Int).collect()));
+    let not_tabled = [
+        below(size(Expr::Field(0)), size(Expr::Field(1))),
+        bind(0, Expr::Field(2), below(Expr::Local(0), int(3))),
+        below(size(constant.clone()), int(2)),
+        below(size(Expr::Field(0)), Expr::Local(5)),
+        Expr::Sweep {
+            sweep: Sweep::Every,
+            shelf: Shelf::Seq,
+            slot: 0,
+            source: Box::new(many),
+            body: Box::new(below(size(Expr::Field(0)), Expr::Local(0))),
+        },
+        Expr::Sweep {
+            sweep: Sweep::Every,
+            shelf: Shelf::Seq,
+            slot: 0,
+            source: Box::new(constant.clone()),
+            body: Box::new(Expr::Sweep {
+                sweep: Sweep::Some,
+                shelf: Shelf::Seq,
+                slot: 1,
+                source: Box::new(constant),
+                body: Box::new(below(size(Expr::Field(0)), Expr::Local(1))),
+            }),
+        },
+    ];
+    for expr in not_tabled {
+        assert!(
+            Code::new(expr.clone()).packed_test(&slots).is_none(),
+            "no packed test for {expr:?}"
+        );
     }
 }
