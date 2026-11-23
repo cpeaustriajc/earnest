@@ -1,0 +1,35 @@
+# total samples 40608
+ 17.81%   7233  earnest_check/explore/part.rs:194
+ 11.28%   4580  earnest_check/store/rows.rs:17
+ 10.65%   4324  earnest_check/store/level.rs:131
+  7.24%   2942  earnest_check/store/index.rs:48
+  2.10%    854  earnest_ir/code/num.rs:97
+  1.77%    720  earnest_check/explore/part.rs:244
+  1.58%    643  earnest_check/store/layout.rs:75
+  1.40%    568  earnest_check/explore/part.rs:202
+  1.15%    465  earnest_check/explore/part.rs:364
+  1.11%    452  earnest_ir/code/cond.rs:168
+  1.10%    447  earnest_check/expand.rs:594
+  1.08%    437  earnest_check/expand.rs:302
+  1.07%    434  earnest_check/expand.rs:829
+  0.88%    359  earnest_ir/code/cond.rs:157
+  0.86%    351  earnest_ir/code/num.rs:98
+  0.86%    348  earnest_check/store/index.rs:15
+  0.85%    346  earnest_check/store/level.rs:137
+  0.80%    324  earnest_check/store/layout.rs:61
+  0.70%    283  earnest_check/expand.rs:673
+  0.68%    276  earnest_ir/code/mod.rs:117
+  0.67%    274  earnest_ir/eval.rs:133
+  0.66%    267  earnest_check/store/codec.rs:118
+  0.66%    266  earnest_check/explore/part.rs:473
+  0.64%    261  earnest_check/explore/part.rs:380
+  0.62%    250  earnest_ir/code/mod.rs:116
+# samples with no earnest frame, by perf symbol and innermost line
+  0.47%    192  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [util.rs:24]
+  0.29%    117  <earnest_check::explore::part::PartSink>::offer_encoded  [vec/mod.rs:?]
+  0.26%    105  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [x86/sse2.rs:1570]
+  0.24%     99  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [raw.rs:1754]
+  0.16%     65  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [control/bitmask.rs:40]
+  0.12%     47  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [control/tag.rs:17]
+  0.08%     34  <earnest_check::store::Store>::read_state  [iter/adapters/zip.rs:?]
+  0.07%     28  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [num/nonzero.rs:628]

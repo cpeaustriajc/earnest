@@ -1,0 +1,4 @@
+# floor_par cands P (scripts/floor_par.rs, mode added after the timed floors): distinct successors per part, P parts per level of 16,384 states or more
+states=100000000 parts=32 successors=720000000 candidates=226518212 
+states=100000000 parts=64 successors=720000000 candidates=259529952 
+states=10000000 parts=64 successors=63000000 candidates=26004553 

@@ -1,0 +1,32 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 15K of event 'cpu-clock'
+# Event count (approx.): 15835835820
+#
+# Overhead  Symbol                                                                                                                                                                                       IPC   [IPC Coverage]
+# ........  ...........................................................................................................................................................................................  ....................
+#
+    33.81%  [.] earnest_check::store::level::gather::<alloc::vec::Vec<alloc::vec::Vec<u32>>, <earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}>::{closure#1}                    -      -            
+    20.11%  [.] <earnest_check::explore::Search>::work                                                                                                               -      -            
+    17.30%  [.] <earnest_check::explore::part::PartSink>::offer_encoded                                                                                                      -      -            
+     4.14%  [.] <earnest_ir::code::Code>::scalar                                                                                                                                  -      -            
+     3.67%  [.] <earnest_check::store::rows::Rows>::unpack                                                                                                                       -      -            
+     3.19%  [.] <earnest_check::store::Store>::read_state                                                                                                                        -      -            
+     2.76%  [.] <earnest_ir::code::cond::Cond>::leaf                                                                                                                           -      -            
+     2.55%  [.] <hashbrown::raw::RawTable<earnest_check::store::index::Key<u32>>>::reserve_rehash::<<earnest_check::store::index::Shards<earnest_check::store::index::Key<u32>>>::claim_level::{closure#0}::{closure#1}>  -      -            
+     2.00%  [.] earnest_check::store::level::write_level::{closure#0}                                                                                                                     -      -            
+     1.26%  [k] exc_page_fault                                                                                                                                                                           -      -            
+     1.02%  [.] __memmove_avx512_unaligned_erms                                                                                                                                                          -      -            
+     0.76%  [.] __memset_avx512_unaligned_erms                                                                                                                                                           -      -            
+     0.74%  [k] _raw_spin_unlock_irqrestore                                                                                                                                                              -      -            
+     0.59%  [k] _raw_spin_lock                                                                                                                                                                           -      -            
+     0.58%  [.] malloc                                                                                                                                                                                   -      -            
+     0.47%  [.] <hashbrown::raw::RawTable<u64>>::reserve_rehash::<<earnest_check::explore::part::PartSink>::offer_unseen_word::{closure#1}>                 -      -            
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

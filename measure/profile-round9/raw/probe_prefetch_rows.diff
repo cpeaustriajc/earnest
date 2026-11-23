@@ -1,0 +1,16 @@
+diff --git a/crates/earnest_check/src/store/rows.rs b/crates/earnest_check/src/store/rows.rs
+index 45c78fe..47181c2 100644
+--- a/crates/earnest_check/src/store/rows.rs
++++ b/crates/earnest_check/src/store/rows.rs
+@@ -45,6 +45,11 @@ impl Rows {
+ 
+     pub(super) fn unpack(&self, id: usize, row: &mut Vec<u64>, words: usize) {
+         row.clear();
++        // scratch probe: prefetch the row 512 ids ahead
++        #[cfg(target_arch = "x86_64")]
++        if let Some(ahead) = self.bytes.get(id.saturating_add(512).saturating_mul(self.stride)) {
++            unsafe { core::arch::x86_64::_mm_prefetch(ahead as *const u8 as *const i8, core::arch::x86_64::_MM_HINT_T0) };
++        }
+         let bytes = self.bytes_of(id);
+         if words == 1 {
+             row.push(word_of(bytes));

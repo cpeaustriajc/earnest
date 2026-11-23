@@ -1072,6 +1072,56 @@ fn run_gen(wheels: u32, threads: usize) -> (Outcome, String) {
     (out, extra)
 }
 
+
+// ---------------------------------------------------------------------------------------------------
+// `cands P`: not a floor but a count, for reading the checker's profile. After a serial search (not
+// timed), each level is cut into P parts of equal width (levels narrower than 16,384 states are one part,
+// as a lone thread of the checker takes them row by row), and the distinct successors of each part are
+// counted: what a part's table lets through to the index. The checker's ids are in its own order, so this
+// is an estimate of its count of look-ups in the index, not the count.
+// ---------------------------------------------------------------------------------------------------
+fn run_cands(wheels: u32, parts: usize) -> (Outcome, String) {
+    let base = run_serial(wheels, true);
+    let low = low_mask(wheels);
+    let st = &base.states;
+    // level ends: a state's level is its parent's plus one; ids are in breadth-first order
+    let mut depth = vec![0u16; st.len()];
+    let mut ends = Vec::new();
+    for i in 1..st.len() {
+        depth[i] = depth[base.parents[i] as usize] + 1;
+        if depth[i] != depth[i - 1] { ends.push(i); }
+    }
+    ends.push(st.len());
+    let mut lo = 0usize;
+    let mut cands = 0u64;
+    let mut succ = 0u64;
+    let mut set: std::collections::HashSet<u64> = Default::default();
+    for &hi in &ends {
+        let w = hi - lo;
+        let p = if w >= 16384 { parts } else { 1 };
+        let per = w.div_ceil(p);
+        let mut a = lo;
+        while a < hi {
+            let b = (a + per).min(hi);
+            set.clear();
+            for &s in &st[a..b] {
+                let mut m = !(s & (s >> 3)) & low;
+                while m != 0 {
+                    let bit = m & m.wrapping_neg();
+                    m ^= bit;
+                    succ += 1;
+                    set.insert(s + bit);
+                }
+            }
+            cands += set.len() as u64;
+            a = b;
+        }
+        lo = hi;
+    }
+    let extra = format!("parts={}\nsuccessors={}\ncandidates={}\nlevels_seen={}", parts, succ, cands, ends.len());
+    (base, extra)
+}
+
 fn rusage() -> (f64, f64) {
     #[repr(C)]
     struct Tv {
@@ -1152,6 +1202,7 @@ fn main() {
         "serial" => (run_serial(wheels, use_prefetch), String::new()),
         "shared" => run_shared(wheels, nth, chunk, dist, bits0),
         "gen" => run_gen(wheels, nth),
+        "cands" => run_cands(wheels, nth),
         n => {
             let threads: usize = n.parse().expect("serial, shared N, gen N or a number of threads");
             let ParOutcome { out, tm, successors, hits } =

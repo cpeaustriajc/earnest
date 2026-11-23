@@ -1,0 +1,32 @@
+# total samples 5303
+  4.73%    251  earnest_check/expand.rs:705
+  4.51%    239  earnest_check/store/index.rs:143
+  4.11%    218  earnest_ir/code/chain.rs:296
+  3.85%    204  earnest_ir/code/chain.rs:28
+  3.68%    195  earnest_ir/code/chain.rs:295
+  3.00%    159  earnest_check/expand.rs:629
+  2.75%    146  earnest_check/expand.rs:684
+  2.73%    145  earnest_check/expand.rs:589
+  2.58%    137  earnest_ir/code/chain.rs:25
+  2.58%    137  earnest_ir/code/num.rs:211
+  2.49%    132  earnest_check/expand.rs:700
+  2.26%    120  earnest_check/expand.rs:706
+  2.21%    117  earnest_ir/code/chain.rs:83
+  2.15%    114  earnest_ir/code/chain.rs:294
+  2.13%    113  earnest_check/expand.rs:342
+  2.02%    107  earnest_ir/code/chain.rs:133
+  1.98%    105  earnest_check/expand.rs:680
+  1.90%    101  earnest_ir/code/chain.rs:150
+  1.90%    101  earnest_ir/eval.rs:149
+  1.89%    100  earnest_check/expand.rs:709
+  1.64%     87  earnest_check/expand.rs:467
+  1.64%     87  earnest_ir/code/num.rs:242
+  1.45%     77  earnest_check/expand.rs:298
+  1.43%     76  earnest_check/expand.rs:468
+  1.38%     73  earnest_ir/code/chain.rs:297
+# samples with no earnest frame, by perf symbol and innermost line
+  0.68%     36  <earnest_ir::code::num::Num>::rest  [code/num.rs:?]
+  0.15%      8  <earnest_ir::code::Code>::scalar  [code/mod.rs:?]
+  0.15%      8  <earnest_ir::code::num::Num>::rest  [eval.rs:?]
+  0.02%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [x86/sse2.rs:1570]
+  0.02%      1  _RINvMs6_NtCs28BlhQOHDyh_9hashbrown3rawINtB6_8RawTableINtNtNtCs6WLDDI7QwVe_13earnest_check5store5index3KeymEE1  [raw.rs:1754]
