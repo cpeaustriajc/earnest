@@ -17,7 +17,9 @@ cargo run --release --locked -p earnest_benchmark -- --runs 5
 states by default; the other cases use the default.
 
 `--runs <n>` is the number of measured runs of each case (default 5, after one run that is not
-counted) and `--binary <path>` the `earnest` to measure (default `target/release/earnest`). The
+counted) and `--binary <path>` the `earnest` to measure (default `target/release/earnest`). With
+`--counts` it counts instructions in place of measuring time (see "Instructions" below), and with
+`--counts --record` it writes those counts down. The
 binary runs `earnest verify --no-cache --json` in an empty temporary folder, so nothing is served
 from a cache and nothing is written to the repository, and prints Markdown:
 
@@ -106,6 +108,41 @@ its limit; `wide` leaves room for four CPUs that are two cores of two threads. T
 a machine that does nothing else; a missed line is measured once more and judged by the better of
 the two. When a line fails, make the change faster or take it back. A limit changes only with the
 owner's word.
+
+### Instructions
+
+A clock on a shared machine moves 5% to 10% between runs, and as much again when the compiler
+merely places a loop elsewhere, so it cannot see a change of 1% to 5%; a count of instructions
+can. `just counts` runs `earnest verify --no-cache --json --jobs <n>` on each case below under
+callgrind (`valgrind --tool=callgrind`), counts the instructions executed inside the checker's own
+binary, and compares each count with its line in `instructions.txt`. It prints a table and fails,
+naming the case, when a count is more than its share above the record; a case above it is counted
+once more and judged by the smaller count. The `check` workflow runs it after `just benchmark`.
+
+| Case | Workers | Most above the record | Spread of ten runs when it was set |
+|---|---:|---:|---:|
+| `grid_1m` | 1 | 1% | 0.001% |
+| `ledger` | 1 | 1% | 0.02% |
+| `wide` | 1 | 1% | under 0.001% |
+| `narrow_levels` | 1 | 1% | 0.002% |
+| `mixed/shelf` | 1 | 2% | 0.42% |
+| `wide` | 4 | 1% | 0.013% |
+| `grid_1m` | 4 | 1% | 0.16% |
+
+The spreads were taken with the model's absolute path; `just counts` copies the model into an
+empty folder and names it by its file name, and with that every case with 1 worker repeats to the
+instruction. With 4 workers the count moves with the order in which the threads take parts.
+`mixed/shelf` is mostly the reading of a TypeScript file, a few million instructions, so it gets
+2%; `mixed/pairs` moved 3.9% between runs and is not a case. Only the checker's binary is counted
+because the C library picks its `memcpy` and kin by processor and differs between machines; it is
+8% of `grid_1m` with 4 workers. What a count depends on besides the code: the compiler and the
+lock file (both pinned) and the case itself. The number of processors the process may use and its
+environment change nothing. Whether the binary built on a runner executes exactly the instructions
+of one built elsewhere was not seen; the limits leave five times the spread or more for that.
+
+`just record-counts` writes the counts of the current build to `instructions.txt`. Run it only when
+the compiler changes or a change is meant to cost more or less, and say why in the commit: the new
+numbers show in the diff. A share above changes only with the owner's word.
 
 ## Results
 

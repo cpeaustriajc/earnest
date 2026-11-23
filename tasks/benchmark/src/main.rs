@@ -2,6 +2,7 @@
 //! result as Markdown. It stands in for the speed targets of the spec until the first app's
 //! models are available.
 
+mod counts;
 mod models;
 mod report;
 mod run;
@@ -20,12 +21,20 @@ use run::{Job, processor_name, run_once};
 type Run = (PathBuf, Option<usize>);
 
 const DEFAULT_RUNS: usize = 5;
-const USAGE: &str = "usage: benchmark [--runs <n>] [--binary <path>]";
+const USAGE: &str = "usage: benchmark [--runs <n>] [--binary <path>] [--counts [--record]]";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+    Time,
+    Counts,
+    Record,
+}
 
 #[derive(Debug)]
 struct Options {
     runs: usize,
     binary: PathBuf,
+    mode: Mode,
 }
 
 #[derive(Clone, Debug)]
@@ -43,8 +52,20 @@ fn repository() -> PathBuf {
 fn parse_options(arguments: &[String]) -> Result<Options, String> {
     let mut runs = DEFAULT_RUNS;
     let mut binary = repository().join("target/release/earnest");
+    let mut mode = Mode::Time;
     let mut remaining = arguments.iter();
     while let Some(flag) = remaining.next() {
+        match (flag.as_str(), mode) {
+            ("--counts", Mode::Time) => {
+                mode = Mode::Counts;
+                continue;
+            }
+            ("--record", Mode::Counts) => {
+                mode = Mode::Record;
+                continue;
+            }
+            _ => {}
+        }
         let value = remaining.next();
         match (flag.as_str(), value) {
             ("--runs", Some(count)) => {
@@ -58,7 +79,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
             _ => return Err(format!("{flag} is not understood. {USAGE}")),
         }
     }
-    Ok(Options { runs, binary })
+    Ok(Options { runs, binary, mode })
 }
 
 struct Bench<'a> {
@@ -397,11 +418,45 @@ fn printed(benchmarked: &Benchmarked) -> Result<(), String> {
     }
 }
 
+fn counted(options: &Options) -> Result<(), String> {
+    let counted = counts::compare(&options.binary, &repository())?;
+    io::stdout()
+        .lock()
+        .write_all(counts::table(&counted).as_bytes())
+        .map_err(|error| error.to_string())?;
+    let missed: Vec<&counts::Tally> = counted.iter().filter(|each| each.missed()).collect();
+    if missed.is_empty() {
+        return Ok(());
+    }
+    let names: Vec<String> = missed
+        .iter()
+        .map(|each| format!("{} with {} worker(s)", each.case.model, each.case.workers))
+        .collect();
+    Err(format!(
+        "{} of {} counts of instructions above their limit: {}. Make the change cheaper or take \
+         it back; re-record (`just record-counts`) only when the compiler changes or a change is \
+         meant to cost more",
+        missed.len(),
+        counted.len(),
+        names.join(", ")
+    ))
+}
+
+fn recorded(options: &Options) -> Result<(), String> {
+    let text = counts::record(&options.binary, &repository())?;
+    io::stdout()
+        .lock()
+        .write_all(text.as_bytes())
+        .map_err(|error| error.to_string())
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
-    let outcome = parse_options(&arguments)
-        .and_then(|options| benchmark(&options))
-        .and_then(|benchmarked| printed(&benchmarked));
+    let outcome = parse_options(&arguments).and_then(|options| match options.mode {
+        Mode::Time => benchmark(&options).and_then(|benchmarked| printed(&benchmarked)),
+        Mode::Counts => counted(&options),
+        Mode::Record => recorded(&options),
+    });
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -437,6 +492,18 @@ mod tests {
             (3, PathBuf::from("x")),
             "both flags are read"
         );
+        assert_eq!(defaults.mode, Mode::Time, "timing by default");
+        let modes = |words: &[&str]| {
+            let arguments: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
+            parse_options(&arguments).map(|options| options.mode)
+        };
+        assert_eq!(modes(&["--counts"]), Ok(Mode::Counts), "counting");
+        assert_eq!(
+            modes(&["--counts", "--record"]),
+            Ok(Mode::Record),
+            "recording"
+        );
+        assert!(modes(&["--record"]).is_err(), "recording needs --counts");
     }
 
     #[test]

@@ -49,6 +49,14 @@ benchmark:
     cargo build --release --locked -p earnest-cli
     cargo run --release --locked -p earnest_benchmark -- --runs 5
 
+counts:
+    cargo build --release --locked -p earnest-cli
+    cargo run --release --locked -p earnest_benchmark -- --counts
+
+record-counts:
+    cargo build --release --locked -p earnest-cli
+    cargo run --release --locked -p earnest_benchmark -- --counts --record
+
 verify:
     cargo verus focus
 
