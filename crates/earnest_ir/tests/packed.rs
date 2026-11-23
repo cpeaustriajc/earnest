@@ -255,7 +255,7 @@ fn check_tests(fields: &[Field], exprs: &[Expr], tally: &mut Tally) {
     for slots in layouts(fields) {
         for expr in exprs {
             let test = Code::new(expr.clone())
-                .packed_test(&slots)
+                .packed_test(&slots, &[])
                 .unwrap_or_else(|| panic!("a packed test for {expr:?}"));
             for state in &all {
                 let row = packed(&slots, state, seed.next());
@@ -285,7 +285,7 @@ fn check_updates(fields: &[Field], updates: &[(usize, Expr)], tally: &mut Tally)
     for slots in layouts(fields) {
         for (into, expr) in updates {
             let slot = slots[*into].as_ref().expect("a slot");
-            let Some(update) = Code::new(expr.clone()).packed_update(&slots, *into) else {
+            let Some(update) = Code::new(expr.clone()).packed_update(&slots, *into, &[]) else {
                 let Expr::Const(constant) = expr else {
                     panic!("a packed update of field {into} for {expr:?}");
                 };
@@ -649,7 +649,7 @@ fn a_test_the_row_cannot_judge_is_not_prepared() {
     ];
     for expr in not_packed {
         assert!(
-            Code::new(expr.clone()).packed_test(&slots).is_none(),
+            Code::new(expr.clone()).packed_test(&slots, &[]).is_none(),
             "no packed test for {expr:?}"
         );
     }
@@ -728,10 +728,10 @@ fn an_update_that_reads_the_field_it_writes_and_another_writes_what_the_walk_giv
     let slots = laid_out(&fields, 60);
     let swap = [
         Code::new(Expr::Field(1))
-            .packed_update(&slots, 0)
+            .packed_update(&slots, 0, &[])
             .expect("a copy"),
         Code::new(Expr::Field(0))
-            .packed_update(&slots, 1)
+            .packed_update(&slots, 1, &[])
             .expect("a copy"),
     ];
     for state in states(&fields, &mut Seed(7)) {
@@ -814,7 +814,7 @@ fn an_update_of_a_field_of_true_or_false_or_of_listed_values_writes_what_the_wal
     ] {
         assert!(
             Code::new(expr.clone())
-                .packed_update(&slots, into)
+                .packed_update(&slots, into, &[])
                 .is_none(),
             "no packed update of field {into} for {expr:?}"
         );
@@ -1209,7 +1209,7 @@ fn an_expression_of_no_field_of_two_fields_or_of_a_constant_sweep_is_not_tabled(
     ];
     for expr in not_tabled {
         assert!(
-            Code::new(expr.clone()).packed_test(&slots).is_none(),
+            Code::new(expr.clone()).packed_test(&slots, &[]).is_none(),
             "no packed test for {expr:?}"
         );
     }
