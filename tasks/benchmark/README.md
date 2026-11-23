@@ -120,26 +120,27 @@ binary, and compares each count with its line in `instructions.txt`. It prints a
 naming the case, when a count is more than its share above the record; a case above it is counted
 once more and judged by the smaller count. The `check` workflow runs it after `just benchmark`.
 
-| Case | Workers | Most above the record | Spread of ten runs when it was set |
+| Case | Workers | Most above the record | Spread of ten runs of `just counts` |
 |---|---:|---:|---:|
-| `grid_1m` | 1 | 1% | 0.001% |
-| `ledger` | 1 | 1% | 0.02% |
-| `wide` | 1 | 1% | under 0.001% |
-| `narrow_levels` | 1 | 1% | 0.002% |
-| `mixed/shelf` | 1 | 2% | 0.42% |
-| `wide` | 4 | 1% | 0.013% |
-| `grid_1m` | 4 | 1% | 0.16% |
+| `grid_1m` | 1 | 1% | 96 instructions |
+| `ledger` | 1 | 1% | 96 instructions |
+| `wide` | 1 | 1% | 96 instructions |
+| `narrow_levels` | 1 | 1% | 96 instructions |
+| `mixed/shelf` | 1 | 2% | 126 instructions, 0.003% |
+| `wide` | 4 | 1% | 0.008% |
+| `grid_1m` | 4 | 1% | 0.12% |
 
-The spreads were taken with the model's absolute path; `just counts` copies the model into an
-empty folder and names it by its file name, and with that every case with 1 worker repeats to the
-instruction. With 4 workers the count moves with the order in which the threads take parts.
-`mixed/shelf` is mostly the reading of a TypeScript file, a few million instructions, so it gets
-2%; `mixed/pairs` moved 3.9% between runs and is not a case. Only the checker's binary is counted
-because the C library picks its `memcpy` and kin by processor and differs between machines; it is
-8% of `grid_1m` with 4 workers. What a count depends on besides the code: the compiler and the
-lock file (both pinned) and the case itself. The number of processors the process may use and its
-environment change nothing. Whether the binary built on a runner executes exactly the instructions
-of one built elsewhere was not seen; the limits leave five times the spread or more for that.
+`just counts` copies the model into an empty folder and names it by its file name, so that its path
+is the same on every machine; with the model's full path the cases with 1 worker moved by up to
+0.02%. With 4 workers the count moves with the order in which the threads take parts; `ledger` with
+4 workers moved 1.3% and is not a case. `mixed/shelf` is mostly the reading of a TypeScript file, a
+few million instructions, so it gets 2%; `mixed/pairs` moved 3.9% with its full path and is not a
+case. Only the checker's binary is counted because the C library picks its `memcpy` and kin by
+processor and differs between machines; it is 8% of `grid_1m` with 4 workers. What a count depends
+on besides the code: the compiler and the lock file (both pinned) and the case itself. The number of
+processors the process may use (`taskset -c 0`) and its environment (`env -i`) change nothing beyond
+the spread above. Whether the binary built on a runner executes exactly the instructions of one
+built elsewhere was not seen; the limits leave five times the spread or more for that.
 
 `just record-counts` writes the counts of the current build to `instructions.txt`. Run it only when
 the compiler changes or a change is meant to cost more or less, and say why in the commit: the new
