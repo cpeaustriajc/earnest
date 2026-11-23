@@ -10,7 +10,7 @@ use std::ops::Range;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
-use std::thread::Scope;
+use std::thread::{Scope, ScopedJoinHandle};
 use std::time::{Duration, Instant};
 
 const LEAST_TIME_OF_A_STATE: Duration = Duration::from_nanos(500);
@@ -115,6 +115,17 @@ impl Shared {
             && self.kept_rows.load(Ordering::SeqCst) > level.kept_rows_that_fit
     }
 
+    fn wait_for(&self, workers: Vec<ScopedJoinHandle<'_, ()>>) {
+        for worker in workers {
+            if let Err(panic) = worker.join() {
+                self.panic
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get_or_insert(panic);
+            }
+        }
+    }
+
     fn take_part(&self, level: &Level) -> Option<usize> {
         self.next
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |part| {
@@ -171,8 +182,9 @@ impl Search<'_> {
         let round = level.parts_of_this_round();
         let shared = Shared::default();
         std::thread::scope(|scope| {
+            let mut started = Vec::new();
             for _ in 1..own.min(round) {
-                self.start_worker(scope, &level, &shared, None);
+                started.push(self.start_worker(scope, &level, &shared, None));
             }
             for _ in 0..round.saturating_sub(own) {
                 let Some(loan) = helpers
@@ -181,9 +193,10 @@ impl Search<'_> {
                 else {
                     break;
                 };
-                self.start_worker(scope, &level, &shared, Some(loan));
+                started.push(self.start_worker(scope, &level, &shared, Some(loan)));
             }
             self.work(scope, &level, &shared, None);
+            shared.wait_for(started);
         });
         if let Some(panic) = shared
             .panic
@@ -246,11 +259,11 @@ impl Search<'_> {
         level: &'env Level,
         shared: &'env Shared,
         loan: Option<Loan<'env>>,
-    ) {
+    ) -> ScopedJoinHandle<'scope, ()> {
         std::thread::Builder::new()
             .stack_size(WORKER_STACK)
             .spawn_scoped(scope, move || self.work(scope, level, shared, loan))
-            .expect("a worker thread starts");
+            .expect("a worker thread starts")
     }
 
     fn work<'scope, 'env>(
@@ -261,8 +274,9 @@ impl Search<'_> {
         loan: Option<Loan<'env>>,
     ) {
         shared.running.fetch_add(1, Ordering::SeqCst);
+        let mut started = Vec::new();
         let outcome = catch_unwind(AssertUnwindSafe(|| {
-            self.take_parts(scope, level, shared);
+            self.take_parts(scope, level, shared, &mut started);
         }));
         drop(loan);
         shared.running.fetch_sub(1, Ordering::SeqCst);
@@ -274,6 +288,7 @@ impl Search<'_> {
                 .unwrap_or_else(PoisonError::into_inner)
                 .get_or_insert(panic);
         }
+        shared.wait_for(started);
     }
 
     fn take_parts<'scope, 'env>(
@@ -281,10 +296,11 @@ impl Search<'_> {
         scope: &'scope Scope<'scope, 'env>,
         level: &'env Level,
         shared: &'env Shared,
+        started: &mut Vec<ScopedJoinHandle<'scope, ()>>,
     ) {
         let mut kit = self.spares.kit();
         loop {
-            self.take_up_idle_threads(scope, level, shared);
+            self.take_up_idle_threads(scope, level, shared, started);
             let Some(part) = shared.take_part(level) else {
                 break;
             };
@@ -330,6 +346,7 @@ impl Search<'_> {
         scope: &'scope Scope<'scope, 'env>,
         level: &'env Level,
         shared: &'env Shared,
+        started: &mut Vec<ScopedJoinHandle<'scope, ()>>,
     ) {
         let Some(helpers) = self.limits.helpers.as_ref() else {
             return;
@@ -346,7 +363,7 @@ impl Search<'_> {
                 return;
             }
             shared.helpers_taken_up.fetch_add(1, Ordering::SeqCst);
-            self.start_worker(scope, level, shared, Some(loan));
+            started.push(self.start_worker(scope, level, shared, Some(loan)));
         }
     }
 }
@@ -376,10 +393,15 @@ impl Spread for Crew<'_> {
             .map(|helpers| helpers.borrow(tasks.saturating_sub(own).min(self.most_borrowed)));
         let borrowed = loan.as_ref().map_or(0, Loan::threads);
         std::thread::scope(|scope| {
-            for _ in 1..own.saturating_add(borrowed) {
-                scope.spawn(work);
-            }
+            let started: Vec<_> = (1..own.saturating_add(borrowed))
+                .map(|_| scope.spawn(work))
+                .collect();
             work();
+            for worker in started {
+                if let Err(panic) = worker.join() {
+                    std::panic::resume_unwind(panic);
+                }
+            }
         });
     }
 }
