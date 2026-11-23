@@ -1,5 +1,6 @@
 use crate::expand::{Whence, chosen};
 use crate::explore::Search;
+use crate::graph::Graph;
 use crate::outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
 };
@@ -134,6 +135,16 @@ impl Search<'_> {
         findings
     }
 
+    fn graph_or_outline(&self) -> Option<Graph> {
+        if let Some(slot) = &self.limits.outline
+            && let Some(outline) = self.outline()
+        {
+            slot.fill(outline);
+            return None;
+        }
+        Some(self.graph())
+    }
+
     pub(crate) fn outcome(&self) -> Outcome {
         let only_rule = self.limits.only_rule.as_deref();
         let judged_everywhere =
@@ -170,7 +181,11 @@ impl Search<'_> {
             findings,
             reason: self.reason.clone(),
             computes_beyond_32_bits: self.computed_beyond_32_bits,
-            graph: self.limits.keep_graph.then(|| self.graph()),
+            graph: self
+                .limits
+                .keep_graph
+                .then(|| self.graph_or_outline())
+                .flatten(),
         }
     }
 }
