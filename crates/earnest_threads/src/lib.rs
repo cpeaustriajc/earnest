@@ -164,9 +164,16 @@ mod tests {
         let read = |file: &str| {
             fs::read_to_string(root.join(file)).unwrap_or_else(|_| panic!("{file} exists"))
         };
+        let workspace = read("clippy.toml");
+        let threads = read("lints/threads/clippy.toml");
+        let search = read("lints/search/clippy.toml");
         assert!(
-            read("lints/threads/clippy.toml").starts_with(&read("clippy.toml")),
+            threads.starts_with(&workspace),
             "lints/threads/clippy.toml starts with every line of clippy.toml"
+        );
+        assert!(
+            search.starts_with(&threads),
+            "lints/search/clippy.toml starts with every line of lints/threads/clippy.toml"
         );
     }
 }

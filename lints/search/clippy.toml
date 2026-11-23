@@ -1,0 +1,15 @@
+max-fn-params-bools = 0
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-print-in-tests = true
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "start threads with `earnest_threads::start`, which joins them" },
+    { path = "std::thread::Builder::spawn", reason = "start threads with `earnest_threads::start`, which joins them" },
+    { path = "std::thread::Builder::spawn_scoped", reason = "start threads with `earnest_threads::start`, which joins them" },
+    { path = "std::thread::Scope::spawn", reason = "start threads with `earnest_threads::start`, which joins them" },
+    { path = "std::thread::Builder::spawn_unchecked", reason = "start threads with `earnest_threads::start`, which joins them" },
+]
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "the search hashes with `rustc_hash::FxHashMap`; its tests keep the standard one as a reference" },
+    { path = "std::collections::HashSet", reason = "the search hashes with `rustc_hash::FxHashSet`; its tests keep the standard one as a reference" },
+]
