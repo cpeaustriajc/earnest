@@ -1,0 +1,452 @@
+## machine before 2026-11-23T00:37:28Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087         668       11613          12        4121       15418
+loadavg: 1.29 1.91 1.86 2/116 10432
+# sha256
+# 2140743073966726ba7de1b1dc72f476d8eff894c30badcdb36e74c9c56ed802  /SCRATCH/bin/floor_i
+# eca5aa1dbf313e6c5434ce11ef9a366a05620fc43f0782b6a4da4723d0fc5fdf  /SCRATCH/bin/floor_ii
+# d04fc066590f0bf672ee99ac01cf8eeea49e699bd1bfa9a29a091ad6662fcc77  /SCRATCH/bin/floor_iii
+# loadavg_before=1.29 1.91 1.86 2/116 10438 utc=2026-11-23T00:37:28Z
+### run binary=floor_i args='7 serial' repeat=0
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.5837
+gnutime wall=2.63 user=2.37 sys=0.23 maxrss_kb=283872
+### end exit=0
+### run binary=floor_i args='7 serial' repeat=1
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.5285
+gnutime wall=2.56 user=2.32 sys=0.23 maxrss_kb=283860
+### end exit=0
+### run binary=floor_ii args='7 serial' repeat=1
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.3591
+gnutime wall=1.39 user=1.21 sys=0.18 maxrss_kb=283880
+### end exit=0
+### run binary=floor_iii args='7 serial' repeat=1
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.1746
+gnutime wall=2.22 user=2.01 sys=0.19 maxrss_kb=283876
+### end exit=0
+### run binary=floor_i args='7 serial' repeat=2
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.6205
+gnutime wall=2.66 user=2.45 sys=0.19 maxrss_kb=283876
+### end exit=0
+### run binary=floor_ii args='7 serial' repeat=2
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.4812
+gnutime wall=1.52 user=1.29 sys=0.21 maxrss_kb=283880
+### end exit=0
+### run binary=floor_iii args='7 serial' repeat=2
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.1438
+gnutime wall=2.19 user=1.95 sys=0.20 maxrss_kb=283868
+### end exit=0
+### run binary=floor_i args='7 serial' repeat=3
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.3289
+gnutime wall=2.37 user=2.15 sys=0.21 maxrss_kb=283804
+### end exit=0
+### run binary=floor_ii args='7 serial' repeat=3
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.4561
+gnutime wall=1.49 user=1.33 sys=0.15 maxrss_kb=283820
+### end exit=0
+### run binary=floor_iii args='7 serial' repeat=3
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.8204
+gnutime wall=2.86 user=2.60 sys=0.24 maxrss_kb=283820
+### end exit=0
+### run binary=floor_i args='7 serial' repeat=4
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.7668
+gnutime wall=2.81 user=2.57 sys=0.21 maxrss_kb=283880
+### end exit=0
+### run binary=floor_ii args='7 serial' repeat=4
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.5617
+gnutime wall=1.60 user=1.40 sys=0.18 maxrss_kb=283812
+### end exit=0
+### run binary=floor_iii args='7 serial' repeat=4
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.8329
+gnutime wall=1.87 user=1.67 sys=0.17 maxrss_kb=283848
+### end exit=0
+### run binary=floor_i args='7 serial' repeat=5
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=2.3221
+gnutime wall=2.36 user=2.17 sys=0.17 maxrss_kb=283876
+### end exit=0
+### run binary=floor_ii args='7 serial' repeat=5
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.5501
+gnutime wall=1.59 user=1.37 sys=0.18 maxrss_kb=283880
+### end exit=0
+### run binary=floor_iii args='7 serial' repeat=5
+variant=serial
+wheels=7
+states=10000000
+levels=64
+checksum=4c9670a40c764e17
+parent_checksum=6ff96c9c5e19c80e
+rule_violations=0
+table_len=10000000
+table_slots=16777216
+table_bytes=134217728
+time_s=1.9058
+gnutime wall=1.94 user=1.76 sys=0.17 maxrss_kb=283864
+### end exit=0
+### run binary=floor_i args='8 serial' repeat=1
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=44.8128
+gnutime wall=45.27 user=41.72 sys=3.21 maxrss_kb=4265140
+### end exit=0
+### run binary=floor_ii args='8 serial' repeat=1
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=29.5028
+gnutime wall=29.90 user=26.27 sys=3.54 maxrss_kb=4265084
+### end exit=0
+### run binary=floor_iii args='8 serial' repeat=1
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=35.2216
+gnutime wall=35.59 user=32.20 sys=3.24 maxrss_kb=4265184
+### end exit=0
+### run binary=floor_i args='8 serial' repeat=2
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=51.4301
+gnutime wall=51.90 user=47.96 sys=3.70 maxrss_kb=4265152
+### end exit=0
+### run binary=floor_ii args='8 serial' repeat=2
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.8781
+gnutime wall=28.37 user=24.43 sys=3.74 maxrss_kb=4265060
+### end exit=0
+### run binary=floor_iii args='8 serial' repeat=2
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=37.2950
+gnutime wall=37.67 user=33.85 sys=3.74 maxrss_kb=4265164
+### end exit=0
+### run binary=floor_i args='8 serial' repeat=3
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=44.4229
+gnutime wall=44.89 user=41.26 sys=3.41 maxrss_kb=4265132
+### end exit=0
+### run binary=floor_ii args='8 serial' repeat=3
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.7549
+gnutime wall=28.20 user=24.48 sys=3.62 maxrss_kb=4265128
+### end exit=0
+### run binary=floor_iii args='8 serial' repeat=3
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=34.3466
+gnutime wall=34.81 user=31.03 sys=3.59 maxrss_kb=4265188
+### end exit=0
+### run binary=floor_i args='8 serial' repeat=4
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=49.2068
+gnutime wall=49.67 user=45.86 sys=3.65 maxrss_kb=4265040
+### end exit=0
+### run binary=floor_ii args='8 serial' repeat=4
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=25.1425
+gnutime wall=25.55 user=21.87 sys=3.51 maxrss_kb=4265176
+### end exit=0
+### run binary=floor_iii args='8 serial' repeat=4
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=35.9710
+gnutime wall=36.38 user=32.76 sys=3.47 maxrss_kb=4265184
+### end exit=0
+### run binary=floor_i args='8 serial' repeat=5
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=49.4131
+gnutime wall=49.90 user=46.01 sys=3.51 maxrss_kb=4265176
+### end exit=0
+### run binary=floor_ii args='8 serial' repeat=5
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=27.9731
+gnutime wall=28.42 user=25.10 sys=3.12 maxrss_kb=4265188
+### end exit=0
+### run binary=floor_iii args='8 serial' repeat=5
+variant=serial
+wheels=8
+states=100000000
+levels=73
+checksum=5a65a7777f25b9c1
+parent_checksum=b9bf724eeb0b4976
+rule_violations=0
+table_len=100000000
+table_slots=268435456
+table_bytes=2147483648
+time_s=31.2746
+gnutime wall=31.65 user=28.59 sys=2.82 maxrss_kb=4265124
+### end exit=0
+# loadavg_after=1.00 1.11 1.44 2/115 10755 utc=2026-11-23T00:47:20Z
+## machine after 2026-11-23T00:47:20Z
+nproc: 4
+model name	: Intel(R) Xeon(R) Processor @ 2.30GHz
+               total        used        free      shared  buff/cache   available
+Mem:           16087        1010       11270          12        4122       15076
+loadavg: 1.00 1.11 1.44 1/115 10763

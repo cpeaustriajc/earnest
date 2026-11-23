@@ -1,0 +1,8 @@
+{
+ "grid_10m:1": {"env": {"HUGE": "1"}, "argv": ["/SCRATCH/bin/floor_par", "7", "serial"]},
+ "grid_10m:2": {"env": {"HUGE": "1", "CHUNK": "256", "DIST": "32"}, "argv": ["/SCRATCH/bin/floor_par", "7", "shared", "2"]},
+ "grid_10m:4": {"env": {"HUGE": "1", "CHUNK": "4096", "DIST": "16"}, "argv": ["/SCRATCH/bin/floor_par", "7", "shared", "4"]},
+ "grid_100m:1": {"env": {"HUGE": "1"}, "argv": ["/SCRATCH/bin/floor_par", "8", "serial"]},
+ "grid_100m:2": {"env": {"HUGE": "1", "CHUNK": "1024", "DIST": "16"}, "argv": ["/SCRATCH/bin/floor_par", "8", "shared", "2"]},
+ "grid_100m:4": {"env": {"HUGE": "1", "CHUNK": "256", "DIST": "16"}, "argv": ["/SCRATCH/bin/floor_par", "8", "shared", "4"]}
+}
