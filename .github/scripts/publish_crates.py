@@ -30,7 +30,7 @@ def publishable_crates():
             return
         placed.add(name)
         for dependency in crates[name]["dependencies"]:
-            if dependency["kind"] != "dev" and dependency["name"] in crates:
+            if dependency["name"] in crates:
                 place(dependency["name"])
         order.append(crates[name])
 
