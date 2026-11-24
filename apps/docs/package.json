@@ -1,5 +1,5 @@
 {
-  "name": "@earnest/docs",
+  "name": "@earnestjs/docs",
   "private": true,
   "type": "module",
   "scripts": {

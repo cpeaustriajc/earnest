@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Pairs = m.model("Pairs", {
 	a: m.int(0, 14).initial(0),

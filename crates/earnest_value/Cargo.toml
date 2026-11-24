@@ -2,7 +2,10 @@
 name = "earnest_value"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: values, interned names and finite domains"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 rustc-hash.workspace = true

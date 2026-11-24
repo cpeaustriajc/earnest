@@ -122,7 +122,7 @@ end, and the rule `low` (`s.n <= 1`) breaks at `n = 2` after two steps (`inc`, `
 in Node reports exactly that. One byte in the sentence of `inc` is the Latin-1 `é` (0xE9), which
 is not UTF-8. Today `earnest verify stray.model.ts` prints `0 models: 0 pass, 0 fail, 0
 unfinished` and exits 0, also when the file is found in a folder; a `.rs` model file with such
-a byte is left out the same way. The file imports `@earnest/model`, so it is a model file: the
+a byte is left out the same way. The file imports `@earnestjs/model`, so it is a model file: the
 right result is `unreadable` (exit 1), or the model checked with `low` broken after 2 steps.
 
 Test: `a_model_file_that_is_not_utf8_is_not_skipped`. The test names the file in place, because
@@ -229,7 +229,7 @@ start state, the action's `when` too, and the search stops at 1 state with every
 
 | File | What is wrong | Right result | Today | Test |
 |---|---|---|---|---|
-| `third_b/escaped.model.ts` | `from "@earnest\x2fmodel"`. The specifier is `@earnest/model` in JavaScript (Node runs the file and `explore` reports `low` broken after 2 steps). A Unicode escape for the `@` or for the `o`, and a line continuation inside the text, do the same | `low` broken after 2 steps, or unreadable | `0 models`, exit 0, also named explicitly | `a_typescript_model_imported_through_an_escaped_specifier_is_not_left_out` |
+| `third_b/escaped.model.ts` | `from "@earnestjs\x2fmodel"`. The specifier is `@earnestjs/model` in JavaScript (Node runs the file and `explore` reports `low` broken after 2 steps). A Unicode escape for the `@` or for the `o`, and a line continuation inside the text, do the same | `low` broken after 2 steps, or unreadable | `0 models`, exit 0, also named explicitly | `a_typescript_model_imported_through_an_escaped_specifier_is_not_left_out` |
 | `third_b/comment_path.rs` | `use earnest::/* the model module */model::{..}` compiles; so does a `//` comment on the line between the two segments. The file holds `earnest::` and `model::` but not `earnest::model` | the same | `0 models`, exit 0 | `a_rust_model_with_a_comment_inside_its_use_path_is_not_left_out` |
 | `third_b/utf16_mark.model.ts` | The first two bytes are FF FE and the rest is ASCII text that imports the library. The file is not UTF-8, and the reader decodes it as UTF-16, finds no import in the nonsense and drops it. The same holds for a file that starts FE FF | unreadable (the contract says a model file that is not UTF-8 is `unreadable`) | `0 models`, exit 0 | `a_file_that_starts_with_a_utf16_mark_and_holds_ascii_text_is_not_left_out` |
 
@@ -270,7 +270,7 @@ does not. Test: `explore_in_node_gives_unknown_for_a_remainder_of_a_negative_num
   refused for a wrong id when the label is right. The interface comment says so; the contract
   does not.
 - A model file saved as UTF-16 without a byte order mark is not found: it holds no
-  `@earnest/model` in UTF-8, and it is valid UTF-8 (NUL bytes between letters).
+  `@earnestjs/model` in UTF-8, and it is valid UTF-8 (NUL bytes between letters).
 - A TLA+ module has no bound check in an action's guard for a field of `i32`, `u32` above 2^31 - 1
   or `i64` (`inside` leaves out any bound that TLC's 32-bit integers can't hold), where the
   checker faults at the type's bound. `earnest confirm` would show a difference in a model whose
@@ -367,7 +367,7 @@ that for both. Right result: `low` broken after two steps, or the file `unreadab
 | File | How it reaches the library | Today | Test |
 |---|---|---|---|
 | `fourth_a/joined.model.ts` | `const { m } = await import("@ear" + "nest/model");`. The contract says a file is judged by what its imports mean and names a dynamic `import()`. The text never says `earnest` and holds no backslash, so discovery never parses it | `0 models`, exit 0, also when named explicitly | `a_model_that_imports_the_library_through_a_joined_specifier_is_not_left_out` |
-| `fourth_a/through_kit.model.ts` with `fourth_a/kit.ts` | `import { m } from "./kit.ts";`, where `kit.ts` is `export { m } from "@earnest/model";`. Run on the folder, `kit.ts` is listed as unreadable ("a model file can't pass on another module") and the model beside it is not mentioned | named explicitly: `0 models`, exit 0 | `a_model_that_takes_the_library_from_a_module_that_passes_it_on_is_not_left_out` |
+| `fourth_a/through_kit.model.ts` with `fourth_a/kit.ts` | `import { m } from "./kit.ts";`, where `kit.ts` is `export { m } from "@earnestjs/model";`. Run on the folder, `kit.ts` is listed as unreadable ("a model file can't pass on another module") and the model beside it is not mentioned | named explicitly: `0 models`, exit 0 | `a_model_that_takes_the_library_from_a_module_that_passes_it_on_is_not_left_out` |
 
 The Rust form of the second case, a model file that writes `use crate::kit::{Model, model,
 require};` where `kit.rs` holds `pub use earnest::model::*;`, compiles and is left out too
@@ -659,7 +659,7 @@ Each test fails today.
 `passes_on.model.ts` holds the model `Lamp` (off, then on and a marked end: 2 states, passes)
 and the line `export { m };`, which passes the library on to any file that imports it.
 `takes_from_model.ts` is `Climb` written with `import { m } from "./passes_on.model.ts";`; in
-Node `explore` reports `low` broken after two steps. `export { m } from "@earnest/model"` is
+Node `explore` reports `low` broken after two steps. `export { m } from "@earnestjs/model"` is
 refused ("a model file can't pass on another module"), and the Rust forms (`pub use`,
 `pub(crate) use`, `pub(super) use`, `pub use ::earnest`, `pub extern crate`) are all refused,
 but `export { m }` of the imported name is read. `earnest verify` on the folder prints `pass
@@ -756,7 +756,7 @@ are tested in `crates/earnest/tests/model/replays.rs`.
 ### Not covered
 
 `--time-limit` across `--jobs` (its cut is timed, so it is not expected to repeat). tla-rs. The
-`@earnest/cli` launcher run from an installed package. Models run on Windows, where the test
+`@earnestjs/cli` launcher run from an installed package. Models run on Windows, where the test
 folder rule meets `\` separators.
 
 ## Sixth pass

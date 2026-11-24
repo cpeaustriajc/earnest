@@ -96,11 +96,11 @@ pub fn read(file: &str, source: &str) -> Reading {
     Reading { drafts, problems }
 }
 
-/// Whether the TypeScript file `source` imports or may import `@earnest/model`, so it is a
+/// Whether the TypeScript file `source` imports or may import `@earnestjs/model`, so it is a
 /// model file and must be read, or refused as unreadable, and never left out.
 ///
-/// It is true when a static `import` or an `export ... from` names `@earnest/model` once the
-/// escapes of the specifier are resolved, as JavaScript does (`"@earnest\x2fmodel"` is the
+/// It is true when a static `import` or an `export ... from` names `@earnestjs/model` once the
+/// escapes of the specifier are resolved, as JavaScript does (`"@earnestjs\x2fmodel"` is the
 /// library), and when the file holds the specifier written plainly in either kind of quote.
 /// It is also true when the file can't be parsed, makes a dynamic `import()` or calls
 /// `require`, and mentions `earnest` anywhere: the file can't be shown to leave the library

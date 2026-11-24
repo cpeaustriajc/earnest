@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Meter = m.model("Meter", {
 	level: m.int(-1, 1).initial(1),

@@ -2,7 +2,10 @@
 name = "earnest_chart"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the Mermaid chart and Markdown report writer"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 earnest_check.workspace = true

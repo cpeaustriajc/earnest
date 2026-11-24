@@ -1,14 +1,26 @@
 {
-  "name": "@earnest/cli-darwin-x64",
+  "name": "@earnestjs/cli-darwin-x64",
   "version": "0.1.0",
-  "description": "The earnest binary for darwin-x64, installed by @earnest/cli",
+  "description": "The earnest binary for darwin-x64, installed by @earnestjs/cli",
+  "homepage": "https://earnest.cpeaustriajc.dev",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cpeaustriajc/earnest.git",
+    "directory": "packages/cli/platforms/darwin-x64"
+  },
   "files": [
-    "bin"
+    "bin",
+    "LICENSE"
   ],
   "os": [
     "darwin"
   ],
   "cpu": [
     "x64"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

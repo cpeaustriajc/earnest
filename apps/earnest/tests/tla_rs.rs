@@ -11,7 +11,7 @@ use std::path::Path;
 use std::time::Duration;
 
 const COUNTER: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Counter = m.model(\"Counter\", {
 \tcount: m.int(0, 3).initial(0),

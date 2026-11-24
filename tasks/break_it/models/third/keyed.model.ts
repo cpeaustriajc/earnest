@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Who = m.enum(["ann", "bob"]);
 const Line = m.record({ qty: m.int(1, 2), tag: m.record({ size: m.int(0, 1) }).optional() });

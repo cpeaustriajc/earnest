@@ -7,20 +7,23 @@ exclude = ["apps/docs"]
 version = "0.1.0"
 edition = "2024"
 publish = false
+license = "GPL-3.0-or-later"
+repository = "https://github.com/cpeaustriajc/earnest"
+homepage = "https://earnest.cpeaustriajc.dev"
 
 [workspace.dependencies]
-earnest_ast = { path = "crates/earnest_ast", version = "0.1.0" }
-earnest_chart = { path = "crates/earnest_chart", version = "0.1.0" }
-earnest_check = { path = "crates/earnest_check", version = "0.1.0" }
-earnest_diagnostics = { path = "crates/earnest_diagnostics", version = "0.1.0" }
-earnest_ir = { path = "crates/earnest_ir", version = "0.1.0" }
-earnest_macros = { path = "crates/earnest_macros", version = "0.1.0" }
-earnest_rs = { path = "crates/earnest_rs", version = "0.1.0" }
-earnest_semantic = { path = "crates/earnest_semantic", version = "0.1.0" }
-earnest_tla = { path = "crates/earnest_tla", version = "0.1.0" }
-earnest_threads = { path = "crates/earnest_threads", version = "0.1.0" }
-earnest_ts = { path = "crates/earnest_ts", version = "0.1.0" }
-earnest_value = { path = "crates/earnest_value", version = "0.1.0" }
+earnest_ast = { path = "crates/earnest_ast", version = "=0.1.0" }
+earnest_chart = { path = "crates/earnest_chart", version = "=0.1.0" }
+earnest_check = { path = "crates/earnest_check", version = "=0.1.0" }
+earnest_diagnostics = { path = "crates/earnest_diagnostics", version = "=0.1.0" }
+earnest_ir = { path = "crates/earnest_ir", version = "=0.1.0" }
+earnest_macros = { path = "crates/earnest_macros", version = "=0.1.0" }
+earnest_rs = { path = "crates/earnest_rs", version = "=0.1.0" }
+earnest_semantic = { path = "crates/earnest_semantic", version = "=0.1.0" }
+earnest_tla = { path = "crates/earnest_tla", version = "=0.1.0" }
+earnest_threads = { path = "crates/earnest_threads", version = "=0.1.0" }
+earnest_ts = { path = "crates/earnest_ts", version = "=0.1.0" }
+earnest_value = { path = "crates/earnest_value", version = "=0.1.0" }
 
 clap = { version = "4.6.7", features = ["derive"] }
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }

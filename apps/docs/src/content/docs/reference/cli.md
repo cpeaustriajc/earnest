@@ -74,13 +74,13 @@ Results, model order, and the shortest path to each broken rule are identical fo
 
 ## Which files are models
 
-The short rule: a TypeScript file named `*.model.ts` (or `.model.mts`, `.model.tsx`), any `.ts`/`.mts`/`.tsx` file that imports `@earnest/model`, or a Rust file that uses the `earnest` crate and declares a model is a model file.
+The short rule: a TypeScript file named `*.model.ts` (or `.model.mts`, `.model.tsx`), any `.ts`/`.mts`/`.tsx` file that imports `@earnestjs/model`, or a Rust file that uses the `earnest` crate and declares a model is a model file.
 
 More precisely, a file is treated as a model file (and is either read or reported as `unreadable`, never silently dropped) when any of these holds:
 
 1. It is named directly on the command line, whatever its name or imports.
 2. Its name ends in `.model.ts`, `.model.mts`, or `.model.tsx`, whatever it imports.
-3. It is a `.ts`, `.mts`, or `.tsx` file that imports `@earnest/model` by the plain specifier, or a `.rs` file that names the `earnest` crate and declares a model, and it is not a test file.
+3. It is a `.ts`, `.mts`, or `.tsx` file that imports `@earnestjs/model` by the plain specifier, or a `.rs` file that names the `earnest` crate and declares a model, and it is not a test file.
 
 Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting with `.` are skipped when walking directories. Models are checked and printed in file-path order, then declaration order within each file.
 
@@ -88,7 +88,7 @@ Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting
 
 The plain specifier is judged by meaning, not raw spelling:
 
-- **TypeScript:** JavaScript string escapes count, so `"@earnest\x2fmodel"`, Unicode escapes, or line continuations match `@earnest/model`. `export ... from`, dynamic `import()`, and `require` also count in any file that spells `earnest`.
+- **TypeScript:** JavaScript string escapes count, so `"@earnestjs\x2fmodel"`, Unicode escapes, or line continuations match `@earnestjs/model`. `export ... from`, dynamic `import()`, and `require` also count in any file that spells `earnest`.
 - **Rust:** files are scanned as tokens. Any path starting with `earnest` counts regardless of whitespace, grouping, comments, or raw identifiers (`use earnest::model::Model`, `use earnest::/* c */model::Model`, `use earnest as kit`, `extern crate earnest`, `use r#earnest::model::Model`). Words inside comments or string literals do not count.
 
 ### Rust files that declare no model
@@ -108,7 +108,7 @@ A Rust file is skipped as declaring no model only when every library reference u
 
 A file named directly on the command line is always read or refused regardless of whether it declares a model.
 
-TypeScript has no "declares no model" skip rule: any non-test `.ts`/`.mts`/`.tsx` file that imports `@earnest/model` is treated as a model file even if it only calls `explore`. Put such scripts in a `tests` folder or name them `*.test.ts` so they are skipped as test files.
+TypeScript has no "declares no model" skip rule: any non-test `.ts`/`.mts`/`.tsx` file that imports `@earnestjs/model` is treated as a model file even if it only calls `explore`. Put such scripts in a `tests` folder or name them `*.test.ts` so they are skipped as test files.
 
 ### Test files
 
@@ -134,7 +134,7 @@ Rules for test files:
 
 - A file passed directly on the command line is always read or refused. A file whose name is only an extension (`.ts`, `.mts`, `.tsx`, `.rs`) is read as that language; any other extension is reported as `unreadable`.
 - Duplicate paths to the same file (via relative spellings like `a.model.ts` and `./a.model.ts`, `..`, overlapping roots like `earnest verify . ./src`, symlinks, or passing both a directory and a file inside it) are deduplicated by real path and keep the spelling from the first root that reached the file. A file read via one root is never also listed as skipped via another.
-- A TypeScript file may reach the library only through `import { m } from "@earnest/model"`. Dynamic imports (`await import("@ear" + "nest/model")`), `require`, local re-exports (`import { m } from "./kit.ts"`), and any file that re-exports `m` or a part of it (`export { m }`, `export default m`, `export const kit = m`, `export * as lib from "@earnest/model"`, destructured `const { model } = m`) are reported as `unreadable`. Because JavaScript hoists imports, re-exporting is refused regardless of declaration order.
+- A TypeScript file may reach the library only through `import { m } from "@earnestjs/model"`. Dynamic imports (`await import("@ear" + "nest/model")`), `require`, local re-exports (`import { m } from "./kit.ts"`), and any file that re-exports `m` or a part of it (`export { m }`, `export default m`, `export const kit = m`, `export * as lib from "@earnestjs/model"`, destructured `const { model } = m`) are reported as `unreadable`. Because JavaScript hoists imports, re-exporting is refused regardless of declaration order.
 - A non-`.model.ts` file not named on the command line that hides its import behind a computed specifier is not discovered; name it explicitly or use `.model.ts`.
 - Any file with a TypeScript or Rust extension that reaches the library and is not valid UTF-8 (including UTF-16 text or NUL bytes), any non-test file that cannot be opened (missing permissions or broken symlink), and any directory that cannot be listed is reported as `unreadable` rather than silently skipped. A directory whose name ends like a model file is walked as a directory; symlinks to directories are not followed.
 - A file nested too deeply to parse counts as a model file by its import only when it mentions `earnest`, in which case it is reported as `unreadable`.

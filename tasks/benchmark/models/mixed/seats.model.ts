@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Buyer = m.oneOf(["Kim", "Lee"]);
 const Seat = m.record({ row: m.int(1, 3), aisle: m.boolean() });

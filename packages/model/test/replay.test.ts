@@ -1,5 +1,5 @@
 import { assert, expect, test } from "vitest";
-import { type Named, explore, m, replay } from "@earnest/model";
+import { type Named, explore, m, replay } from "@earnestjs/model";
 import * as cart from "./models/cart.model.ts";
 import * as turnstile from "./models/turnstile.model.ts";
 

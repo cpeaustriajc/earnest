@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Tone = m.enum(["Low", "Bright", "Mid"]);
 const Spot = m.record({ zebra: m.int(0, 2), apple: m.int(0, 2), tone: Tone });

@@ -48,7 +48,7 @@ Both install `earnest` in `~/.cargo/bin`.
 
 ## The model libraries
 
-- **TypeScript:** A model imports `m` from `@earnest/model`, which is not on npm yet. The checker reads the file's text and never resolves the import on disk, so `earnest verify` works with no `node_modules`. The import matters only to your editor, TypeScript type checker, and Node.
+- **TypeScript:** A model imports `m` from `@earnestjs/model`, which is not on npm yet. The checker reads the file's text and never resolves the import on disk, so `earnest verify` works with no `node_modules`. The import matters only to your editor, TypeScript type checker, and Node.
 - **Rust:** A model uses the `earnest` crate. Add it from git:
 
   ```toml
@@ -56,4 +56,4 @@ Both install `earnest` in `~/.cargo/bin`.
   earnest = { git = "https://github.com/cpeaustriajc/earnest" }
   ```
 
-When early access ends, the checker and TypeScript library will also ship on npm (`npm install --save-dev @earnest/cli @earnest/model`, then `npx earnest verify`). `@earnest/cli` is a small Node launcher with per-platform optional binary packages, no install script, and no runtime download. See [`packages/cli/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/packages/cli/README.md) and [`packages/model/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/packages/model/README.md).
+When early access ends, the checker and TypeScript library will also ship on npm (`npm install --save-dev @earnestjs/cli @earnestjs/model`, then `npx earnest verify`). `@earnestjs/cli` is a small Node launcher with per-platform optional binary packages, no install script, and no runtime download. See [`packages/cli/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/packages/cli/README.md) and [`packages/model/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/packages/model/README.md).

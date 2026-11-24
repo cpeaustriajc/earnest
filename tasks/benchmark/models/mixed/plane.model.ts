@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Plane = m.model("Plane", {
 	x: m.int(0, 19).initial(0),

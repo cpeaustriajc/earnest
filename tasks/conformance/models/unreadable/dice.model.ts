@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Dice = m.model("Dice", {
 	rolls: m.int(0, 2).initial(0),

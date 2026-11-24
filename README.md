@@ -39,7 +39,7 @@ Or build from source with Cargo:
 cargo install --git https://github.com/cpeaustriajc/earnest earnest-cli
 ```
 
-See the [Install guide](https://earnest.cpeaustriajc.dev/start/install/) for supported platforms, manual SHA-256 verification, and setting up `@earnest/model` or the `earnest` Rust crate.
+See the [Install guide](https://earnest.cpeaustriajc.dev/start/install/) for supported platforms, manual SHA-256 verification, and setting up `@earnestjs/model` or the `earnest` Rust crate.
 
 ## Use with a coding agent
 
@@ -52,7 +52,7 @@ For agents reading the docs directly, [`/llms.txt`](https://earnest.cpeaustriajc
 Write a model in TypeScript (`src/turnstile.model.ts`) where `push` forgets to check `paid`:
 
 ```ts
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Turnstile = m.model("Turnstile", {
 	gate: m.enum(["locked", "open"]).initial("locked"),

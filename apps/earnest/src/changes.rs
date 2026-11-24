@@ -537,7 +537,7 @@ mod tests {
 
     fn tank_with(constants_and_helpers: &str, rules: &[(&str, &str, &str)]) -> Draft {
         let mut source = format!(
-            "import {{ m }} from \"@earnest/model\";\n{constants_and_helpers}{REST_OF_THE_TANK}"
+            "import {{ m }} from \"@earnestjs/model\";\n{constants_and_helpers}{REST_OF_THE_TANK}"
         );
         for (id, says, holds) in rules {
             writeln!(
@@ -896,7 +896,7 @@ mod tests {
     }
 
     fn model_file(models: &[(&str, &str)]) -> String {
-        let mut source = String::from("import { m } from \"@earnest/model\";\n");
+        let mut source = String::from("import { m } from \"@earnestjs/model\";\n");
         for (name, rule) in models {
             source.push_str(&one_rule_model(name, rule));
         }
@@ -1083,7 +1083,7 @@ mod tests {
         put(
             root,
             "kept.model.ts",
-            "import { m } from \"@earnest/model\";\nexport const now = Date.now();\n",
+            "import { m } from \"@earnestjs/model\";\nexport const now = Date.now();\n",
         );
         assert_eq!(
             changes_since_the_base(root, None),
@@ -1117,7 +1117,7 @@ mod tests {
     fn a_file_unreadable_at_the_base_and_now_is_warned_of() {
         let folder = tempfile::tempdir().expect("a temporary folder can be made");
         let root = folder.path();
-        let broken = "import { m } from \"@earnest/model\";\nexport const now = Date.now();\n";
+        let broken = "import { m } from \"@earnestjs/model\";\nexport const now = Date.now();\n";
         put(root, "a.model.ts", broken);
         run_git(root, &["init", "--quiet", "."]);
         run_git(root, &["add", "--all"]);

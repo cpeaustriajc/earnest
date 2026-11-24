@@ -10,7 +10,7 @@ A model is a small TypeScript or Rust file, in this project's language, with fie
 2. Add `.earnest/` to `.gitignore`.
 3. Pick one stateful piece with rules that matter, such as a checkout, a queue, a retry loop or a permission flow. Prefer the code that the current task changes. If nothing stands out, ask me, with two or three candidates.
 4. Write the model next to that code, with the code's names. Export every action, rule and end: its id is the constant's name. Give each one a sentence a reviewer can check. Give every number a small range (`m.int(0, 3)`, `#[range(0, 3)]`).
-   - TypeScript: `<name>.model.ts`, `import { m } from "@earnest/model"`. Do not install the package. The checker never resolves it, and `tsc` reports the import as missing until it ships.
+   - TypeScript: `<name>.model.ts`, `import { m } from "@earnestjs/model"`. Do not install the package. The checker never resolves it, and `tsc` reports the import as missing until it ships.
    - Rust: add `earnest = { git = "https://github.com/cpeaustriajc/earnest" }` to `[dependencies]` and put the model in a module.
 5. Run `earnest verify <file>`. Fix each `unreadable` line in the model. For each `broken`, `stuck` or `fault`, walk the printed path through the code and decide whether the model or the app is wrong.
 6. Change one action so a rule breaks, check that `verify` prints `fail` with a path, and undo it.

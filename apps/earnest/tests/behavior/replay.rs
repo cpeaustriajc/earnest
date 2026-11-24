@@ -11,14 +11,14 @@ const library = pathToFileURL(process.env.EARNEST_MODEL_LIBRARY).href;
 
 registerHooks({
 	resolve(specifier, context, nextResolve) {
-		if (specifier === "@earnest/model") return { url: library, shortCircuit: true };
+		if (specifier === "@earnestjs/model") return { url: library, shortCircuit: true };
 		return nextResolve(specifier, context);
 	},
 });
 "#;
 
 const SCRIPT: &str = r#"import { readFileSync } from "node:fs";
-import { replay } from "@earnest/model";
+import { replay } from "@earnestjs/model";
 
 const [modelFile, modelName, pathFile] = process.argv.slice(2);
 const models = await import(modelFile);

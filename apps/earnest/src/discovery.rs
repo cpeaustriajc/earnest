@@ -440,7 +440,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const TYPESCRIPT: &str = "import { m } from \"@earnest/model\";\n";
+    const TYPESCRIPT: &str = "import { m } from \"@earnestjs/model\";\n";
     const RUST: &str = "use earnest::model::Model;\n#[derive(Model)]\nstruct A;\n";
 
     fn folder_with(files: &[(&str, &str)]) -> tempfile::TempDir {
@@ -492,9 +492,9 @@ mod tests {
     fn only_files_that_use_the_library_are_models() {
         let folder = folder_with(&[
             ("a.model.ts", TYPESCRIPT),
-            ("single.mts", "import { m } from '@earnest/model';\n"),
+            ("single.mts", "import { m } from '@earnestjs/model';\n"),
             ("plain.ts", "export const one = 1;\n"),
-            ("other.ts", "import { m } from \"@earnest/models\";\n"),
+            ("other.ts", "import { m } from \"@earnestjs/models\";\n"),
             ("gate.rs", RUST),
             ("plain.rs", "pub fn one() -> u8 { 1 }\n"),
             ("notes.md", TYPESCRIPT),
@@ -727,18 +727,18 @@ mod tests {
         let folder = folder_with(&[
             (
                 "hex.model.ts",
-                "import { m } from \"@earnest\\x2fmodel\";\n",
+                "import { m } from \"@earnestjs\\x2fmodel\";\n",
             ),
             (
                 "unicode.model.ts",
-                "import { m } from \"\\u0040earnest/model\";\n",
+                "import { m } from \"\\u0040earnestjs/model\";\n",
             ),
             (
                 "continued.model.ts",
-                "import { m } from \"@earnest/mo\\\ndel\";\n",
+                "import { m } from \"@earnestjs/mo\\\ndel\";\n",
             ),
-            ("require.ts", "const m = require(\"@earnest/model\");\n"),
-            ("other.ts", "import { m } from \"@earnest\\x2fmodels\";\n"),
+            ("require.ts", "const m = require(\"@earnestjs/model\");\n"),
+            ("other.ts", "import { m } from \"@earnestjs\\x2fmodels\";\n"),
         ]);
         assert_eq!(
             names_under(folder.path(), &[folder.path().to_path_buf()]),

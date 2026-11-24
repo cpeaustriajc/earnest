@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Wide = m.model("Wide", {
 	n: m.int(9007199254740990, 9007199254740996),

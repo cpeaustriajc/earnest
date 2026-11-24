@@ -387,7 +387,7 @@ mod tests {
     use earnest_ast::{ActionDraft, Draft};
     use earnest_diagnostics::Place;
 
-    const HEAD: &str = "import { m } from \"@earnest/model\";\n\
+    const HEAD: &str = "import { m } from \"@earnestjs/model\";\n\
         const Press = m.enum([\"key\", \"mouse\"]);\n\
         export const M = m.model(\"M\", { n: m.int(0, 3), last: Press.optional() });\n";
 

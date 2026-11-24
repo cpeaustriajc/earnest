@@ -211,7 +211,7 @@ impl Reader<'_> {
             self.refuse(
                 import.span.start,
                 &format!("import \"{module}\""),
-                "a model file imports only `@earnest/model`, and types with `import type`",
+                "a model file imports only `@earnestjs/model`, and types with `import type`",
             );
             return;
         }
@@ -225,7 +225,7 @@ impl Reader<'_> {
                 other => self.refuse(
                     other.span().start,
                     &self.quoted(other.span()),
-                    "import the library by name: `import { m } from \"@earnest/model\"`",
+                    "import the library by name: `import { m } from \"@earnestjs/model\"`",
                 ),
             }
         }
@@ -601,7 +601,7 @@ mod tests {
     use crate::show::show;
     use earnest_diagnostics::Place;
 
-    const HEAD: &str = "import { m } from \"@earnest/model\";\n";
+    const HEAD: &str = "import { m } from \"@earnestjs/model\";\n";
 
     fn features(rest: &str) -> Vec<(u32, String)> {
         read("m.model.ts", &format!("{HEAD}{rest}"))
@@ -619,7 +619,7 @@ mod tests {
     fn models_keep_file_order_and_their_own_members() {
         let reading = read(
             "two.model.ts",
-            "import { m } from \"@earnest/model\";\n\
+            "import { m } from \"@earnestjs/model\";\n\
              export const Porch = m.model(\"Porch\", { lit: m.boolean() });\n\
              export const Hall = m.model(\"Hall\", { level: m.int(0, 2) });\n\
              export const turn = m.action(Hall, \"turn\", { changes: (s) => ({ level: s.level }) });\n\
@@ -664,7 +664,7 @@ mod tests {
     fn the_model_is_named_by_its_text_and_owned_by_its_constant() {
         let reading = read(
             "m.model.ts",
-            "import { m as lib } from \"@earnest/model\";\n\
+            "import { m as lib } from \"@earnestjs/model\";\n\
              const Inner = lib.model(\"Shown\", { on: lib.boolean() });\n\
              const stay = lib.end(Inner, \"stay\", (s) => s.on);\n\
              export { Inner, stay };\n",
@@ -683,7 +683,7 @@ mod tests {
     fn constants_and_helpers_reach_every_draft() {
         let reading = read(
             "m.model.ts",
-            "import { m } from \"@earnest/model\";\n\
+            "import { m } from \"@earnestjs/model\";\n\
              import type { Other } from \"./other\";\n\
              const MAX = 3;\n\
              const NAME = \"n\", ON = true;\n\
@@ -721,7 +721,7 @@ mod tests {
     fn a_helper_may_use_a_declaration_written_after_it() {
         let reading = read(
             "m.model.ts",
-            "import { m } from \"@earnest/model\";\n\
+            "import { m } from \"@earnestjs/model\";\n\
              const any = (n: number) => m.exists(Small, (x) => x === n);\n\
              const Small = m.int(0, 1);\n",
         );
@@ -740,7 +740,7 @@ mod tests {
             "another module"
         );
         assert_eq!(
-            features("import * as lib from \"@earnest/model\";\n"),
+            features("import * as lib from \"@earnestjs/model\";\n"),
             [feature(2, "`* as lib`")],
             "the whole library under one name"
         );
@@ -885,7 +885,7 @@ mod tests {
     fn a_constant_is_a_plain_value_written_out_or_computed_from_earlier_constants() {
         let reading = read(
             "m.model.ts",
-            "import { m } from \"@earnest/model\";\n\
+            "import { m } from \"@earnestjs/model\";\n\
              const MAX = 3;\n\
              const LOW = -MAX + 1;\n\
              const NAME = `n`;\n\

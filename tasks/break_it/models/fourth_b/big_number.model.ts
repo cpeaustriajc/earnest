@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Big = m.model("Big", { n: m.int(2147483645, 2147483650).initial(2147483645) });
 

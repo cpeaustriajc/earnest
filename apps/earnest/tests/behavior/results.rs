@@ -302,7 +302,7 @@ fn r17_a_path_among_many_of_the_same_length_is_the_same_on_every_run() {
     assert_eq!(path_of("4"), first, "the same path with four workers");
 }
 
-const WIDE_WHEELS: &str = r#"import { m } from "@earnest/model";
+const WIDE_WHEELS: &str = r#"import { m } from "@earnestjs/model";
 
 export const Wheels = m.model("Wheels", {
 	a: m.int(0, 9).initial(0),

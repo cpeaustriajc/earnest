@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Light = m.enum(["Red", "Green", "Amber"]);
 

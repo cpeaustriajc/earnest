@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Split = m.model("First line\nSecond line", { n: m.int(0, 2).initial(0) });
 

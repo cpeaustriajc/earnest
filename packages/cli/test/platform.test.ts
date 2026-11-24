@@ -70,7 +70,7 @@ test("a platform with no package gets one sentence that names the platform", () 
 
 test("a supported platform whose package is not installed gets one sentence that names it", () => {
   expect(() => locate({ platform: "darwin", arch: "arm64", libc: null }, {}, absent)).toThrow(
-    /darwin-arm64 because @earnest\/cli-darwin-arm64 is not installed/,
+    /darwin-arm64 because @earnestjs\/cli-darwin-arm64 is not installed/,
   );
 });
 
@@ -80,7 +80,7 @@ test("the binary is found next to the package.json of the platform package", () 
     mkdirSync(join(root, "bin"));
     writeFileSync(join(root, "bin", "earnest"), "");
     const resolve = (id: string): string => {
-      expect(id).toBe("@earnest/cli-linux-x64-gnu/package.json");
+      expect(id).toBe("@earnestjs/cli-linux-x64-gnu/package.json");
       return join(root, "package.json");
     };
     expect(locate({ platform: "linux", arch: "x64", libc: "gnu" }, {}, resolve)).toBe(

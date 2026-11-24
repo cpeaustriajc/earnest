@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Grid1m = m.model("Grid1m", {
 	a: m.int(0, 9).initial(0),

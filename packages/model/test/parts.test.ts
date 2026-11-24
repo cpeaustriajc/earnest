@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import * as library from "@earnest/model";
-import { explore, m, replay } from "@earnest/model";
+import * as library from "@earnestjs/model";
+import { explore, m, replay } from "@earnestjs/model";
 import * as cart from "./models/cart.model.ts";
 import * as turnstile from "./models/turnstile.model.ts";
 

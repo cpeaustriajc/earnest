@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const G = m.model("G", {
 	d: m.int(0, 10).initial(0),

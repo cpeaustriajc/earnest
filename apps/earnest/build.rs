@@ -11,7 +11,13 @@ use std::path::Path;
 fn main() -> io::Result<()> {
     let manifest = env::var("CARGO_MANIFEST_DIR").map_err(io::Error::other)?;
     let version = env::var("CARGO_PKG_VERSION").map_err(io::Error::other)?;
-    let repository = Path::new(&manifest).join("../..").canonicalize()?;
+    let package = Path::new(&manifest);
+    let workspace = package.join("../..");
+    let repository = if workspace.join("apps/earnest/Cargo.toml").is_file() {
+        workspace.canonicalize()?
+    } else {
+        package.to_path_buf()
+    };
     let engine = sources::engine(&version, &repository)?;
     let mut cargo = io::stdout().lock();
     for root in sources::roots(&repository)? {

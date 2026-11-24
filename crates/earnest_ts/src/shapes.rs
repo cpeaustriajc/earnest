@@ -412,7 +412,7 @@ mod tests {
     use earnest_ast::Shape;
     use earnest_diagnostics::Place;
 
-    const HEAD: &str = "import { m } from \"@earnest/model\";\n\
+    const HEAD: &str = "import { m } from \"@earnestjs/model\";\n\
         const MAX = 3;\n\
         const LOW = -MAX + 1;\n\
         const Kind = m.enum([\"a\", \"b\"]);\n\

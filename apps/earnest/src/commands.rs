@@ -470,7 +470,7 @@ mod tests {
     use super::refusing;
     use std::fs;
 
-    const CLIMB: &str = "import { m } from \"@earnest/model\";\n\
+    const CLIMB: &str = "import { m } from \"@earnestjs/model\";\n\
         export const Climb = m.model(\"Climb\", { n: m.int(0, 3).initial(0) });\n\
         export const low = m.rule(Climb, \"low\", (s) => s.n <= 1);\n";
     const NO_MODEL: &str = "no model is named `Climb`";

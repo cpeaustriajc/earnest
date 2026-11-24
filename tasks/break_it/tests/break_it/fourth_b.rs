@@ -61,7 +61,7 @@ fn run_for(files: &[(&str, &str)], arguments: &[&str], deadline: Duration) -> Op
 
 fn typescript_with_rule(condition: &str) -> String {
     format!(
-        r#"import {{ m }} from "@earnest/model";
+        r#"import {{ m }} from "@earnestjs/model";
 
 export const Bad = m.model("Bad", {{ n: m.int(0, 1).initial(0) }});
 

@@ -2,7 +2,10 @@
 name = "earnest_diagnostics"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: a place in a model file and a problem at that place"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 serde.workspace = true

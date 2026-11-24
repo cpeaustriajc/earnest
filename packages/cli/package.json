@@ -1,15 +1,27 @@
 {
-  "name": "@earnest/cli",
+  "name": "@earnestjs/cli",
   "version": "0.1.0",
   "description": "The earnest model checker: a launcher that runs the binary from this machine's platform package",
+  "homepage": "https://earnest.cpeaustriajc.dev",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cpeaustriajc/earnest.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "earnest": "dist/earnest.js"
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsrs -p tsconfig.build.json",
     "prepack": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\" && bun run build",
@@ -26,11 +38,11 @@
     "vitest": "5.1.1"
   },
   "optionalDependencies": {
-    "@earnest/cli-darwin-arm64": "workspace:0.1.0",
-    "@earnest/cli-darwin-x64": "workspace:0.1.0",
-    "@earnest/cli-linux-arm64-gnu": "workspace:0.1.0",
-    "@earnest/cli-linux-x64-gnu": "workspace:0.1.0",
-    "@earnest/cli-win32-x64-msvc": "workspace:0.1.0"
+    "@earnestjs/cli-darwin-arm64": "workspace:0.1.0",
+    "@earnestjs/cli-darwin-x64": "workspace:0.1.0",
+    "@earnestjs/cli-linux-arm64-gnu": "workspace:0.1.0",
+    "@earnestjs/cli-linux-x64-gnu": "workspace:0.1.0",
+    "@earnestjs/cli-win32-x64-msvc": "workspace:0.1.0"
   },
   "engines": {
     "node": ">=22.18"

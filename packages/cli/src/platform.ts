@@ -1,4 +1,4 @@
-export const SCOPE = "@earnest";
+export const SCOPE = "@earnestjs";
 
 export const SUPPORTED = [
   "linux-x64-gnu",

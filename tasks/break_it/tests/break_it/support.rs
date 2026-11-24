@@ -15,13 +15,13 @@ const library = pathToFileURL(process.env.EARNEST_MODEL_LIBRARY).href;
 
 registerHooks({
 	resolve(specifier, context, nextResolve) {
-		if (specifier === "@earnest/model") return { url: library, shortCircuit: true };
+		if (specifier === "@earnestjs/model") return { url: library, shortCircuit: true };
 		return nextResolve(specifier, context);
 	},
 });
 "#;
 
-const EXPLORE: &str = r#"import { explore } from "@earnest/model";
+const EXPLORE: &str = r#"import { explore } from "@earnestjs/model";
 
 const [modelFile, modelName] = process.argv.slice(2);
 const models = await import(modelFile);

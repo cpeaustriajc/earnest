@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const NarrowLevels = m.model("NarrowLevels", {
 	t: m.int(0, 1999).initial(0),

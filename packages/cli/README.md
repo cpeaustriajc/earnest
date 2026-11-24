@@ -1,9 +1,9 @@
-# @earnest/cli
+# @earnestjs/cli
 
 The `earnest` model checker, installed from npm. The [Earnest CLI documentation](https://earnest.cpeaustriajc.dev/reference/cli/) (`apps/docs/src/content/docs/reference/`) is the contract for what `earnest` does; this package only gets the binary onto your machine.
 
 ```sh
-npm install --save-dev @earnest/cli @earnest/model
+npm install --save-dev @earnestjs/cli @earnestjs/model
 npx earnest verify
 ```
 
@@ -14,18 +14,18 @@ your scripts and of `npx`.
 
 The way oxlint and Biome ship a Rust binary through npm:
 
-- `@earnest/cli` is a small Node program. Its `bin` entry `earnest` is a launcher that finds the
+- `@earnestjs/cli` is a small Node program. Its `bin` entry `earnest` is a launcher that finds the
   binary and runs it, passing the arguments, the standard streams, the signals and the exit code
   through unchanged.
 - The binary itself is in one package for each platform, listed in `optionalDependencies`:
-  `@earnest/cli-linux-x64-gnu`, `@earnest/cli-linux-arm64-gnu`, `@earnest/cli-darwin-arm64`,
-  `@earnest/cli-darwin-x64` and `@earnest/cli-win32-x64-msvc`. Each says which `os`, `cpu` and
+  `@earnestjs/cli-linux-x64-gnu`, `@earnestjs/cli-linux-arm64-gnu`, `@earnestjs/cli-darwin-arm64`,
+  `@earnestjs/cli-darwin-x64` and `@earnestjs/cli-win32-x64-msvc`. Each says which `os`, `cpu` and
   `libc` it is for, so a package manager installs only the one that fits the machine.
 - There is no `postinstall` script and nothing is downloaded when the package is installed or when
   `earnest` first runs. After `npm install`, `earnest` needs no network, no Java and no setup step.
 
 If no package fits the machine, the launcher prints one sentence naming the platform, such as
-`earnest has no binary for linux-x64-musl, and @earnest/cli ships one only for ...`, and exits
+`earnest has no binary for linux-x64-musl, and @earnestjs/cli ships one only for ...`, and exits
 with 127. It is also what you see when optional dependencies were left out of the install.
 `EARNEST_BINARY` set to the path of a binary makes the launcher run that file instead; it is how
 the launcher's own tests use a stand-in.
@@ -50,5 +50,5 @@ first. `bun run test` does all of this in a temporary folder, installs the two t
 project without network access and runs `earnest verify` there.
 
 Each platform package is assembled on a machine of that platform, from a release build made
-there. The versions of `@earnest/cli` and of every `platforms/*/package.json` are the same, and
+there. The versions of `@earnestjs/cli` and of every `platforms/*/package.json` are the same, and
 a test fails when they differ.

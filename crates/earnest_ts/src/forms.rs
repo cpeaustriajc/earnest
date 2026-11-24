@@ -3,7 +3,7 @@ use crate::show::show;
 use earnest_ast::{Draft, ViewDraft};
 use earnest_diagnostics::Problem;
 
-const HEAD: &str = "import { m } from \"@earnest/model\";\n\
+const HEAD: &str = "import { m } from \"@earnestjs/model\";\n\
     const Press = m.enum([\"key\", \"mouse\"]);\n\
     export const M = m.model(\"M\", { n: m.int(0, 3), last: Press.optional() });\n";
 
@@ -118,7 +118,7 @@ fn a_rule_keeps_its_text_as_written() {
 fn a_part_goes_to_the_model_named_by_its_first_argument() {
     let reading = read(
         "two.model.ts",
-        "import { m } from \"@earnest/model\";\n\
+        "import { m } from \"@earnestjs/model\";\n\
          export const Porch = m.model(\"Porch\", { lit: m.boolean() });\n\
          export const Hall = m.model(\"Hall\", { level: m.int(0, 2) });\n\
          export const turn = m.action(Hall, \"turn\", { changes: (s) => ({ level: s.level }) });\n\
@@ -151,7 +151,7 @@ fn a_part_goes_to_the_model_named_by_its_first_argument() {
 fn a_renamed_library_and_a_parenthesised_model_are_read() {
     let reading = read(
         "m.model.ts",
-        "import { m as lib } from \"@earnest/model\";\n\
+        "import { m as lib } from \"@earnestjs/model\";\n\
          const Inner = lib.model(\"Shown\", { on: lib.boolean() });\n\
          const stay = lib.end((Inner), \"stay\", (s) => s.on);\n\
          export { Inner, stay };\n",
@@ -428,7 +428,7 @@ fn a_first_argument_that_is_not_a_model_of_the_file_is_refused() {
 fn a_model_declared_after_the_part_is_not_yet_a_model_of_the_file() {
     let found = read(
         "m.model.ts",
-        "import { m } from \"@earnest/model\";\n\
+        "import { m } from \"@earnestjs/model\";\n\
          export const r = m.rule(Later, \"r\", (s) => s.n < 1);\n\
          export const Later = m.model(\"Later\", { n: m.int(0, 1) });\n",
     )
@@ -523,7 +523,7 @@ fn a_call_on_the_model_that_is_not_exported_is_refused_once() {
 fn a_file_with_a_call_on_a_model_still_reads_the_other_models_and_parts() {
     let reading = read(
         "two.model.ts",
-        "import { m } from \"@earnest/model\";\n\
+        "import { m } from \"@earnestjs/model\";\n\
          export const Porch = m.model(\"Porch\", { lit: m.boolean() });\n\
          export const Hall = m.model(\"Hall\", { level: m.int(0, 2) });\n\
          export const flip = Porch.check({});\n\

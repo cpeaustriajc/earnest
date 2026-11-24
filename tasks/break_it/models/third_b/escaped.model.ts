@@ -1,4 +1,4 @@
-import { m } from "@earnest\x2fmodel";
+import { m } from "@earnestjs\x2fmodel";
 
 export const Climb = m.model("Climb", { n: m.int(0, 3).initial(0) });
 

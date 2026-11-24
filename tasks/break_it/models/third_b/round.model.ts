@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Round = m.model("Round", { n: m.int(0, 3).initial(0) });
 

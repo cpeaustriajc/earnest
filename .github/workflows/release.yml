@@ -1,0 +1,236 @@
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to crates.io and npm (off builds and packs only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: 1.100.0
+  NODE_VERSION: 22.23.5
+  BUN_VERSION: 1.4.4
+  NPM_VERSION: 11.20.0
+  SMOKE_MODEL: tasks/benchmark/models/mixed/basket.model.ts
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: version
+        name: Check that the tag, the crates and the npm packages name one version
+        env:
+          EVENT: ${{ github.event_name }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          [ -n "$version" ] || { echo "no workspace version in Cargo.toml"; exit 1; }
+          if [ "$EVENT" = push ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the workspace version $version"; exit 1
+          fi
+          for manifest in packages/cli/package.json packages/model/package.json packages/cli/platforms/*/package.json; do
+            found=$(jq -r .version "$manifest")
+            [ "$found" = "$version" ] || { echo "$manifest has version $found, not $version"; exit 1; }
+          done
+          stale=$(jq -r --arg want "workspace:$version" \
+            '.optionalDependencies | to_entries[] | select(.value != $want) | "\(.key) \(.value)"' \
+            packages/cli/package.json)
+          [ -z "$stale" ] || { echo "packages/cli/package.json optionalDependencies not at workspace:$version:"; echo "$stale"; exit 1; }
+          publish=false
+          if [ "$EVENT" = push ] || [ "$PUBLISH_INPUT" = true ]; then publish=true; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: versions
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux-x64-gnu
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            binary: earnest
+            arch: x64
+            runs_here: true
+          - platform: linux-arm64-gnu
+            target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            binary: earnest
+            arch: arm64
+            runs_here: true
+          - platform: darwin-arm64
+            target: aarch64-apple-darwin
+            runner: macos-latest
+            binary: earnest
+            arch: arm64
+            runs_here: true
+          - platform: darwin-x64
+            target: x86_64-apple-darwin
+            runner: macos-latest
+            binary: earnest
+            arch: x64
+            runs_here: false
+          - platform: win32-x64-msvc
+            target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            binary: earnest.exe
+            arch: x64
+            runs_here: true
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      TARGET: ${{ matrix.target }}
+      BINARY: ${{ matrix.binary }}
+      ARCH: ${{ matrix.arch }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET" --no-self-update
+      - run: rustup default "$RUST_VERSION"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install --global "bun@$BUN_VERSION"
+      - run: cargo build --release --locked -p earnest-cli --target "$TARGET"
+      - name: Smoke test
+        if: matrix.runs_here
+        run: |
+          "target/$TARGET/release/$BINARY" --version
+          "target/$TARGET/release/$BINARY" verify --no-cache "$SMOKE_MODEL"
+      - name: Check the architecture of a binary this runner cannot run
+        if: ${{ !matrix.runs_here }}
+        run: lipo "target/$TARGET/release/$BINARY" -verify_arch x86_64
+      - name: Pack the platform package
+        run: |
+          node packages/cli/scripts/assemble.ts --binary "target/$TARGET/release/$BINARY" --arch "$ARCH" --out "$RUNNER_TEMP/platform"
+          mkdir -p npm
+          (cd "$RUNNER_TEMP/platform" && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
+          ls npm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platform }}
+          path: npm/
+          if-no-files-found: error
+          retention-days: 7
+
+  pack:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install --global "bun@$BUN_VERSION"
+      - run: bun install --frozen-lockfile
+      - name: Pack the launcher and the model library
+        run: |
+          mkdir -p npm
+          (cd packages/model && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
+          (cd packages/cli && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
+      - name: Check that no packed manifest still names a workspace version
+        run: |
+          for tarball in npm/*.tgz; do
+            if tar --extract --to-stdout --file "$tarball" package/package.json | grep -q '"workspace:'; then
+              echo "$tarball still holds a workspace: version"; exit 1
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-launcher
+          path: npm/
+          if-no-files-found: error
+          retention-days: 7
+      - run: rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+      - run: rustup default "$RUST_VERSION"
+      - name: Package every crate as crates.io would
+        run: cargo publish --workspace --locked --dry-run
+
+  crates:
+    needs: [versions, build, pack]
+    if: needs.versions.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install "$RUST_VERSION" --profile minimal --no-self-update
+      - run: rustup default "$RUST_VERSION"
+      - name: Publish every crate, each after the crates it needs
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: python3 -I .github/scripts/publish_crates.py
+
+  npm:
+    needs: [versions, build, pack]
+    if: needs.versions.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.versions.outputs.version }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install --global "npm@$NPM_VERSION"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: npm
+          merge-multiple: true
+      - name: Publish the platform packages, then the model library, then the launcher
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+            echo "Publishing with the NPM_TOKEN secret"
+          else
+            echo "No NPM_TOKEN secret: publishing through trusted publishing"
+          fi
+          ls npm
+          publish() {
+            name=$(tar --extract --to-stdout --file "$1" package/package.json | jq -r .name)
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is on npm already"
+            else
+              npm publish "$1" --access public --provenance
+            fi
+          }
+          for tarball in npm/earnestjs-cli-*-"$VERSION".tgz; do publish "$tarball"; done
+          publish "npm/earnestjs-model-$VERSION.tgz"
+          publish "npm/earnestjs-cli-$VERSION.tgz"
