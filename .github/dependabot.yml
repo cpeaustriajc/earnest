@@ -1,7 +1,6 @@
 version: 2
 
-# One pull request a week per ecosystem, with every update in it.
-# vstd moves here too: CI installs the newest Verus, which needs the vstd of the same date.
+# CI installs the newest Verus, so vstd must match its date or the build breaks.
 
 updates:
   - package-ecosystem: cargo
