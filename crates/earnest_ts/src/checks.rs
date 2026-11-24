@@ -1,7 +1,7 @@
 use crate::{reaches_library, read};
 use earnest_diagnostics::Problem;
 
-const HEAD: &str = "import { m } from \"@earnest/model\";\nconst LIMIT = 5;\n";
+const HEAD: &str = "import { m } from \"@earnestjs/model\";\nconst LIMIT = 5;\n";
 
 fn with_room<T: Send>(work: impl FnOnce() -> T + Send) -> T {
     std::thread::scope(|scope| {
@@ -241,17 +241,17 @@ fn an_expression_nested_as_deep_as_the_limit_allows_is_read() {
 #[test]
 fn the_specifier_of_an_import_is_what_javascript_makes_of_it() {
     for specifier in [
-        "@earnest\\x2fmodel",
-        "@earnest\\u002fmodel",
-        "@earnest\\u{2f}model",
-        "\\u0040earnest/model",
-        "@earnest/mo\\\ndel",
-        "@earnest\\/model",
+        "@earnestjs\\x2fmodel",
+        "@earnestjs\\u002fmodel",
+        "@earnestjs\\u{2f}model",
+        "\\u0040earnestjs/model",
+        "@earnestjs/mo\\\ndel",
+        "@earnestjs\\/model",
     ] {
         let source = format!("import {{ m }} from \"{specifier}\";\nexport const a = 1;\n");
         assert!(
             reaches_library("a.model.ts", &source),
-            "`{}` is `@earnest/model`",
+            "`{}` is `@earnestjs/model`",
             specifier.replace('\n', "\\n")
         );
     }
@@ -259,7 +259,7 @@ fn the_specifier_of_an_import_is_what_javascript_makes_of_it() {
 
 #[test]
 fn an_escaped_import_is_read_like_a_plain_one() {
-    let source = "import { m } from \"@earnest\\x2fmodel\";\nexport const M = m.model(\"M\", { n: m.int(0, 3).initial(0) });\n";
+    let source = "import { m } from \"@earnestjs\\x2fmodel\";\nexport const M = m.model(\"M\", { n: m.int(0, 3).initial(0) });\n";
     let reading = read("m.model.ts", source);
     assert_eq!(reading.problems, [], "no problem");
     assert_eq!(reading.drafts.len(), 1, "the model is found");
@@ -268,14 +268,14 @@ fn an_escaped_import_is_read_like_a_plain_one() {
 #[test]
 fn a_file_that_cannot_be_shown_to_leave_the_library_alone_reaches_it() {
     for source in [
-        "import { m } from \"@earnest/model\";\n",
-        "import { m } from '@earnest/model';\n",
-        "import type { T } from \"@earnest/model\";\n",
-        "export { m } from \"@earnest/model\";\n",
-        "const m = require(\"@earnest/model\");\n",
-        "const later = import(\"@earnest/model\");\n",
+        "import { m } from \"@earnestjs/model\";\n",
+        "import { m } from '@earnestjs/model';\n",
+        "import type { T } from \"@earnestjs/model\";\n",
+        "export { m } from \"@earnestjs/model\";\n",
+        "const m = require(\"@earnestjs/model\");\n",
+        "const later = import(\"@earnestjs/model\");\n",
         "const broken = ( @earnest ;\n",
-        "import { m } from \"@earnest/mo\" + \"del\";\n",
+        "import { m } from \"@earnestjs/mo\" + \"del\";\n",
     ] {
         assert!(
             reaches_library("a.ts", source),
@@ -288,7 +288,7 @@ fn a_file_that_cannot_be_shown_to_leave_the_library_alone_reaches_it() {
 fn a_file_that_leaves_the_library_alone_does_not_reach_it() {
     for source in [
         "export const one = 1;\n",
-        "import { m } from \"@earnest/models\";\n",
+        "import { m } from \"@earnestjs/models\";\n",
         "import { x } from \"earnest\";\n",
         "// earnest and its model\nexport const one = 1;\n",
         "const text = \"a\\nb\";\n",
@@ -353,7 +353,7 @@ fn a_top_level_constant_named_like_the_library_is_refused() {
         ["`m`"],
         "`m` is already the library, and JavaScript throws on the second declaration"
     );
-    let renamed = "import { m as kit } from \"@earnest/model\";\nconst kit = 3;\nconst m = 4;\n";
+    let renamed = "import { m as kit } from \"@earnestjs/model\";\nconst kit = 3;\nconst m = 4;\n";
     assert_eq!(
         features(renamed),
         ["`kit`"],
@@ -515,7 +515,7 @@ fn a_postfix_bang_is_refused_with_the_function_to_write_instead() {
 
 #[test]
 fn m_some_is_read_as_the_value_inside_an_optional() {
-    let source = "import { m } from \"@earnest/model\";\n\
+    let source = "import { m } from \"@earnestjs/model\";\n\
         export const M = m.model(\"M\", { o: m.int(0, 2).optional() });\n\
         export const r = m.rule(M, \"r\", (s) => m.some(s.o) <= 1);\n";
     let reading = read("m.model.ts", source);
@@ -678,17 +678,20 @@ fn an_export_of_the_library_is_refused_in_every_spelling() {
     }
     for (import, exports) in [
         (
-            "import { m as lib } from \"@earnest/model\";",
+            "import { m as lib } from \"@earnestjs/model\";",
             "export { lib };",
         ),
-        ("import { rem } from \"@earnest/model\";", "export { rem };"),
         (
-            "import * as all from \"@earnest/model\";",
+            "import { rem } from \"@earnestjs/model\";",
+            "export { rem };",
+        ),
+        (
+            "import * as all from \"@earnestjs/model\";",
             "export { all };",
         ),
-        ("import lib from \"@earnest/model\";", "export { lib };"),
+        ("import lib from \"@earnestjs/model\";", "export { lib };"),
     ] {
-        let source = format!("{import}\nimport {{ m }} from \"@earnest/model\";\n{exports}\n");
+        let source = format!("{import}\nimport {{ m }} from \"@earnestjs/model\";\n{exports}\n");
         let found = problems(&source);
         assert!(
             found
@@ -706,7 +709,7 @@ fn an_export_of_the_library_is_refused_in_every_spelling() {
         "export const [first] = [m];",
         "export const kit = (m);",
         "export const kit = m.model;",
-        "export * as lib from \"@earnest/model\";",
+        "export * as lib from \"@earnestjs/model\";",
     ] {
         assert!(
             !problems(&model_with(source)).is_empty(),
@@ -717,7 +720,7 @@ fn an_export_of_the_library_is_refused_in_every_spelling() {
 
 #[test]
 fn an_import_after_its_export_is_still_the_library() {
-    let source = "export { m };\nimport { m } from \"@earnest/model\";\n";
+    let source = "export { m };\nimport { m } from \"@earnestjs/model\";\n";
     assert!(
         !problems(source).is_empty(),
         "imports are hoisted, so the export passes the library on"

@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Counter = m.model("Counter", {
 	n: m.int(0, 99).initial(0),

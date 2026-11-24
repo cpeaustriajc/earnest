@@ -1,4 +1,4 @@
-ÿþimport { m } from "@earnest/model";
+ÿþimport { m } from "@earnestjs/model";
 
 export const Climb = m.model("Climb", { n: m.int(0, 3).initial(0) });
 

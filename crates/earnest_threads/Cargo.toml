@@ -2,7 +2,10 @@
 name = "earnest_threads"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the one place that starts threads, so every thread is joined"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 

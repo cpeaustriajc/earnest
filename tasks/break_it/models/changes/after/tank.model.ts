@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const MAX = 3;
 const allowed = (level: number) => level <= 3;

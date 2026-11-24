@@ -4,7 +4,7 @@ const TYPESCRIPT_FILE: &str = "case.model.ts";
 const RUST_FILE: &str = "case.rs";
 const PAST_THE_LIMIT: usize = 1_001;
 
-const GOOD_MODEL: &str = r#"import { m } from "@earnest/model";
+const GOOD_MODEL: &str = r#"import { m } from "@earnestjs/model";
 
 export const Good = m.model("Good", { n: m.int(0, 2).initial(0) });
 
@@ -20,7 +20,7 @@ export const low = m.rule(Good, "The count is at most two", (s) => s.n <= 2);
 
 fn climb_with_sentence(sentence: &str) -> String {
     format!(
-        r#"import {{ m }} from "@earnest/model";
+        r#"import {{ m }} from "@earnestjs/model";
 
 export const Climb = m.model("Climb", {{ n: m.int(0, 3).initial(0) }});
 
@@ -51,7 +51,7 @@ fn a_model_that_imports_the_library_through_a_joined_specifier_is_not_left_out()
     let report = Sandbox::with(&[(TYPESCRIPT_FILE, source)]).verify(&[TYPESCRIPT_FILE]);
     assert_low_is_checked_or_the_file_refused(
         &report,
-        "`await import(\"@ear\" + \"nest/model\")` imports `@earnest/model` in JavaScript, and \
+        "`await import(\"@ear\" + \"nest/model\")` imports `@earnestjs/model` in JavaScript, and \
          Node runs the file with `low` broken after two steps",
     );
 }
@@ -69,7 +69,7 @@ fn a_model_that_takes_the_library_from_a_module_that_passes_it_on_is_not_left_ou
     assert_low_is_checked_or_the_file_refused(
         &report,
         "`import { m } from \"./kit.ts\"` takes the library's `m`, which `kit.ts` passes on \
-         from `@earnest/model`, and Node runs the file with `low` broken after two steps",
+         from `@earnestjs/model`, and Node runs the file with `low` broken after two steps",
     );
 }
 

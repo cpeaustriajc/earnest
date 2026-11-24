@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Opt = m.model("Opt", { o: m.int(0, 2).optional().initial(null) });
 

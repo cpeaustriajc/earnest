@@ -7,6 +7,9 @@ exclude = ["apps/docs"]
 version = "0.1.0"
 edition = "2024"
 publish = false
+license = "GPL-3.0-or-later"
+repository = "https://github.com/cpeaustriajc/earnest"
+homepage = "https://earnest.cpeaustriajc.dev"
 
 [workspace.dependencies]
 earnest_ast = { path = "crates/earnest_ast", version = "0.1.0" }

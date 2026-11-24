@@ -155,7 +155,7 @@ mod tests {
     use std::fmt::Write;
 
     fn file(path: &str, models: &[(&str, &[&str])]) -> ModelFile {
-        let mut source = String::from("import { m } from \"@earnest/model\";\n");
+        let mut source = String::from("import { m } from \"@earnestjs/model\";\n");
         for (name, rules) in models {
             writeln!(
                 source,
@@ -272,7 +272,7 @@ mod tests {
 
     fn unreadable(path: &str, declares: &str) -> ModelFile {
         let source = format!(
-            "import {{ m }} from \"@earnest/model\";\n\
+            "import {{ m }} from \"@earnestjs/model\";\n\
              export const {declares} = m.model(\"{declares}\", {{ on: m.boolean().initial(false) }});\n\
              export const lit = m.rule({declares}, \"lit\", (s) => s.on === Date.now());\n"
         );

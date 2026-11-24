@@ -9,7 +9,7 @@ use std::time::Duration;
 const HANG_GUARD: Duration = Duration::from_mins(5);
 
 const TWO: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Oven = m.model(\"Oven\", {
 \theat: m.int(0, 5).initial(0),
@@ -62,7 +62,7 @@ impl Lamp {
 ";
 
 const CLOCK: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Clock = m.model(\"Clock\", { time: m.int(0, 3).initial(0) });
 
@@ -70,7 +70,7 @@ export const early = m.rule(Clock, \"The time is early\", (s) => s.time <= Date.
 ";
 
 const PANEL: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Panel = m.model(\"Panel\", {
 \tlit: m.boolean().initial(false),
@@ -89,7 +89,7 @@ export const done = m.end(Panel, \"The button was pressed three times\", (s) => 
 ";
 
 const CLIMB: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Climb = m.model(\"Climb\", { n: m.int(0, 30).initial(0) });
 

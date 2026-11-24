@@ -31,7 +31,7 @@ fn r01_every_typescript_model_passes_the_strict_type_checker() {
             "types": [],
             "allowImportingTsExtensions": true,
             "forceConsistentCasingInFileNames": true,
-            "paths": { "@earnest/model": [library] },
+            "paths": { "@earnestjs/model": [library] },
         },
         "files": files,
     });

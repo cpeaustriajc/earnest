@@ -22,8 +22,8 @@ The repository follows the workspace layout used by oxc: one crate per concern, 
 | `crates/earnest_tla` | TLA+ module and TLC config writer |
 | `crates/earnest_chart` | Mermaid statechart and Markdown report writer |
 | `crates/earnest`, `crates/earnest_macros` | Rust model library and proc macros |
-| `packages/model` | TypeScript model library (`@earnest/model`) |
-| `packages/cli` | npm CLI launcher (`@earnest/cli`) and per-platform binary packages |
+| `packages/model` | TypeScript model library (`@earnestjs/model`) |
+| `packages/cli` | npm CLI launcher (`@earnestjs/cli`) and per-platform binary packages |
 | `tasks/conformance` | Conformance models with hand-derived state counts, verdicts, and paths |
 | `tasks/benchmark` | Speed and instruction-count benchmarks with hand-derived state counts |
 | `tasks/break_it` | Adversarial regression suite and optional TLC / `tla-rs` tests |
@@ -75,6 +75,23 @@ just docs                                # builds apps/docs and llms.txt sets
 ```
 
 `packages/cli` includes `node scripts/assemble.ts` to package the release binary for the current machine; `bun run --cwd packages/cli test` builds the release binary, packs both npm packages, installs them into a fresh project without network access, and runs `earnest verify`. `just typescript` runs the full JavaScript and TypeScript check suite.
+
+## Releasing to crates.io and npm
+
+`.github/workflows/release.yml` publishes all 14 crates and the seven `@earnestjs` npm packages. A tag `v<version>` that matches the workspace version starts it. The checker is under the GPL (`LICENSE`); the `earnest` and `earnest_macros` crates and `@earnestjs/model` are under the LGPL (`LICENSE.LESSER`).
+
+1. Set one version in `Cargo.toml` (`[workspace.package]` and `[workspace.dependencies]`), in `packages/cli/package.json` with its `optionalDependencies`, in `packages/model/package.json` and in each `packages/cli/platforms/*/package.json`. Update the nightly tag in `install.sh` and `install.ps1` too.
+2. Run the workflow by hand with **publish** off. It builds the five binaries, packs every npm tarball and runs `cargo publish --workspace --dry-run`.
+3. Push the tag: `git tag v<version> && git push origin v<version>`.
+
+The publish jobs run in the `release` environment and read two secrets:
+
+| Secret | Used for |
+|---|---|
+| `CARGO_REGISTRY_TOKEN` | `cargo publish`. crates.io limits how fast new crate names appear, so the first release waits between crates and can take over an hour |
+| `NPM_TOKEN` | `npm publish` of the first release only. After it, set up trusted publishing for each package on npmjs.com (repository `cpeaustriajc/earnest`, workflow `release.yml`, environment `release`) and delete the secret |
+
+A rerun skips each crate and package that already has this version, so a release that stopped halfway can finish.
 
 ## Benchmarks and speed changes
 

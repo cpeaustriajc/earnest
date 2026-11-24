@@ -10,7 +10,7 @@ import {
   TimerValue,
   compareText,
   m,
-} from "@earnest/model";
+} from "@earnestjs/model";
 
 const json = (value: ModelValue): Json => value.toJSON();
 

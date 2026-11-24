@@ -654,7 +654,7 @@ mod tests {
     use earnest_ast::Draft;
     use earnest_diagnostics::Place;
 
-    const HEAD: &str = "import { m } from \"@earnest/model\";\n\
+    const HEAD: &str = "import { m } from \"@earnestjs/model\";\n\
         const Kind = m.enum([\"a\", \"b\"]);\n\
         const twice = (n: number) => n * 2;\n\
         export const M = m.model(\"M\", { n: m.int(0, 3), box: m.record({ isFull: m.boolean() }), \

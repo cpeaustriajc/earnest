@@ -61,7 +61,8 @@ const WORDS_OF_THE_LANGUAGE: [&str; 57] = [
     "WITNESS",
 ];
 
-const WORDS_THE_EXPORT_WRITES: [&str; 11] = [
+const WORDS_THE_EXPORT_WRITES: [&str; 12] = [
+    "CHOOSE",
     "IF",
     "THEN",
     "ELSE",
@@ -340,9 +341,10 @@ pub(crate) fn assert_names_are_in_scope(names: &Names<'_>, parameters: &[String]
             Token::Name(_) if bound_early.contains(&at) => {}
             Token::Name(found) => {
                 let chosen = after == Some(&sign("\\in"))
-                    && ["\\E", "\\A", "{", "[", ","]
-                        .iter()
-                        .any(|opener| before == Some(&sign(opener)));
+                    && (before == Some(&name("CHOOSE"))
+                        || ["\\E", "\\A", "{", "[", ","]
+                            .iter()
+                            .any(|opener| before == Some(&sign(opener))));
                 if before == Some(&name("LET")) {
                     in_a_let_heading = true;
                 }

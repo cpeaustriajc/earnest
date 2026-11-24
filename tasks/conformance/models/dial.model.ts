@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Dial = m.model("Dial", {
 	x: m.int(0, 5).initial(0),

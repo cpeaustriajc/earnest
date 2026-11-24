@@ -2,7 +2,10 @@
 name = "earnest_check"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the search over every reachable state of a checked model"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [package.metadata.verus]
 verify = true

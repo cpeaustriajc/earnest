@@ -22,11 +22,14 @@ allow = [
     # icu_*, yoke, zerovec, litemap, ... (Unicode-3.0 only);
     # unicode-ident and unicode-id-start ("(MIT OR Apache-2.0) AND Unicode-3.0").
     "Unicode-3.0",
+    # The licenses of the earnest crates themselves: the libraries are LGPL, the rest GPL.
+    "GPL-3.0-or-later",
+    "LGPL-3.0-or-later",
 ]
 confidence-threshold = 0.93
 
 [licenses.private]
-# This crate declares no license yet and is never published to a registry.
+# The crates under tasks/ set publish = false, declare no license and never reach a registry.
 ignore = true
 
 [bans]

@@ -19,7 +19,7 @@ const REPOSITORY = resolve(PACKAGE, "../..");
 const SLOW = 900_000;
 const NOWHERE = "http://127.0.0.1:9";
 
-const PASSING = `import { m } from "@earnest/model";
+const PASSING = `import { m } from "@earnestjs/model";
 
 export const Counter = m.model("Counter", { count: m.int(0, 2).initial(0) });
 
@@ -33,7 +33,7 @@ export const bounded = m.rule(Counter, "The count stays small", (s) => s.count <
 export const full = m.end(Counter, "The count is full", (s) => s.count === 2);
 `;
 
-const FAILING = `import { m } from "@earnest/model";
+const FAILING = `import { m } from "@earnestjs/model";
 
 export const Turnstile = m.model("Turnstile", {
   gate: m.enum(["Locked", "Open"]).initial("Locked"),
@@ -147,9 +147,9 @@ afterAll(() => {
 test("the two tarballs hold the launcher, the binary and no install script", () => {
   const key = platformKey(currentMachine());
   const tarballs = readdirSync(packed).sort();
-  expect(tarballs).toEqual([`earnest-cli-${key}-0.1.0.tgz`, "earnest-cli-0.1.0.tgz"].sort());
-  const launcher = manifestInside(join(packed, "earnest-cli-0.1.0.tgz"));
-  const platform = manifestInside(join(packed, `earnest-cli-${key}-0.1.0.tgz`));
+  expect(tarballs).toEqual([`earnestjs-cli-${key}-0.1.0.tgz`, "earnestjs-cli-0.1.0.tgz"].sort());
+  const launcher = manifestInside(join(packed, "earnestjs-cli-0.1.0.tgz"));
+  const platform = manifestInside(join(packed, `earnestjs-cli-${key}-0.1.0.tgz`));
   expect(platform.name).toBe(packageName(key));
   const dependencies = launcher.optionalDependencies as Record<string, string>;
   expect(Object.values(dependencies).every((range) => range === launcher.version)).toBe(true);
@@ -161,10 +161,10 @@ test("the two tarballs hold the launcher, the binary and no install script", () 
     execFileSync("tar", ["--list", "--file", join(packed, tarball)], { encoding: "utf8" })
       .split("\n")
       .filter((line) => line !== "");
-  expect(files(`earnest-cli-${key}-0.1.0.tgz`)).toContain(
+  expect(files(`earnestjs-cli-${key}-0.1.0.tgz`)).toContain(
     `package/bin/${binaryFile(currentMachine().platform)}`,
   );
-  expect(files("earnest-cli-0.1.0.tgz")).toContain("package/dist/earnest.js");
+  expect(files("earnestjs-cli-0.1.0.tgz")).toContain("package/dist/earnest.js");
 });
 
 test("verify passes a passing model and exits 0", () => {
@@ -197,7 +197,7 @@ test("a project that holds only the launcher gets one sentence naming the platfo
   const bare = join(scratch, "bare");
   mkdirSync(bare);
   writeFileSync(join(bare, "package.json"), JSON.stringify({ name: "bare", private: true }));
-  const launcher = join(packed, "earnest-cli-0.1.0.tgz");
+  const launcher = join(packed, "earnestjs-cli-0.1.0.tgz");
   bunAdd(bare, [launcher]);
   const result = spawnSync(join(bare, "node_modules", ".bin", "earnest"), ["verify"], {
     cwd: bare,
@@ -221,7 +221,7 @@ test("json output passes through unchanged", () => {
 
 test("the installed launcher is the package's bin", () => {
   const launcher = readFileSync(
-    join(project, "node_modules", "@earnest", "cli", "dist", "earnest.js"),
+    join(project, "node_modules", "@earnestjs", "cli", "dist", "earnest.js"),
     "utf8",
   );
   expect(launcher.startsWith("#!/usr/bin/env node")).toBe(true);

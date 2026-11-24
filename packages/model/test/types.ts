@@ -14,7 +14,7 @@ import {
   type TimerValue,
   type View,
   m,
-} from "@earnest/model";
+} from "@earnestjs/model";
 import type { AddToCartFocus, State, press } from "./models/cart.model.ts";
 
 type Same<Left, Right> =

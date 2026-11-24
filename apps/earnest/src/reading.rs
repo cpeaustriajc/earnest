@@ -192,7 +192,7 @@ mod tests {
     use earnest_diagnostics::{Place, Problem};
 
     const COUNTER: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Counter = m.model(\"Counter\", {
 \tcount: m.int(0, 3).initial(0),
@@ -360,7 +360,7 @@ impl Lamp {
     }
 
     const ITEMS: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 const Guest = m.enum([\"ann\", \"bob\"]);
 const Item = m.record({ qty: m.int(0, 2), who: Guest.optional() });

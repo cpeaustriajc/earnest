@@ -2,7 +2,10 @@
 name = "earnest_semantic"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the lowering from tree to checked model"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 earnest_ast.workspace = true

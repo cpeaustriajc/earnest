@@ -248,7 +248,7 @@ mod tests {
         load(Found::model(
             path,
             Language::TypeScript,
-            &format!("import {{ m }} from \"@earnest/model\";\n{body}"),
+            &format!("import {{ m }} from \"@earnestjs/model\";\n{body}"),
         ))
     }
 

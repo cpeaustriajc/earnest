@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Turnstile = m.model("Turnstile", {
   gate: m.enum(["locked", "open"]).initial("locked"),

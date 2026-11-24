@@ -2,7 +2,10 @@
 name = "earnest_ts"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the TypeScript model reader"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 earnest_ast.workspace = true

@@ -7,7 +7,7 @@ import {
   RetryValue,
   TimerValue,
   m,
-} from "@earnest/model";
+} from "@earnestjs/model";
 
 const Letter = m.enum(["a", "b"]);
 

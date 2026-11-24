@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Letter = m.enum(["Bill", "Card", "Note"]);
 const Tally = m.record({ a: m.int(0, 9), b: m.int(0, 9) });

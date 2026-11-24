@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Unsafe = m.model("Unsafe", {
 	n: m.int(9007199254740991, 9007199254740992),

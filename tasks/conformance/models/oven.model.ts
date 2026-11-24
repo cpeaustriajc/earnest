@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Oven = m.model("Oven", {
 	door: m.enum(["Closed", "Open"]).initial("Closed"),

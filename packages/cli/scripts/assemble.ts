@@ -15,9 +15,9 @@ const CLI_PACKAGE = resolve(import.meta.dirname, "..");
 const REPOSITORY = resolve(CLI_PACKAGE, "../..");
 const EXECUTABLE = 0o755;
 
-const USAGE = `usage: node scripts/assemble.ts --out <folder> [--binary <path>]
+const USAGE = `usage: node scripts/assemble.ts --out <folder> [--binary <path>] [--arch <arch>]
 
-Writes the package for this machine's platform into <folder>: the built earnest binary
+Writes the package for this machine's platform, or for <arch> on this operating system, into <folder>: the built earnest binary
 (default: target/release/earnest) under bin/, and the package.json kept in platforms/ with its bin entry added.
 Pack it with \`bun pm pack\` in that folder.`;
 
@@ -30,7 +30,7 @@ export const assemble = (machine: Machine, binary: string, out: string): Assembl
   const key = platformKey(machine);
   if (!isSupported(key)) {
     throw new Error(
-      `no platform package is listed for ${key}; @earnest/cli ships ${SUPPORTED.join(", ")}`,
+      `no platform package is listed for ${key}; @earnestjs/cli ships ${SUPPORTED.join(", ")}`,
     );
   }
   const name = packageName(key);
@@ -40,6 +40,7 @@ export const assemble = (machine: Machine, binary: string, out: string): Assembl
   const target = join(folder, "bin", binaryFile(machine.platform));
   copyFileSync(binary, target);
   chmodSync(target, EXECUTABLE);
+  copyFileSync(join(CLI_PACKAGE, "LICENSE"), join(folder, "LICENSE"));
   const stub = JSON.parse(
     readFileSync(join(CLI_PACKAGE, "platforms", key, "package.json"), "utf8"),
   );
@@ -53,6 +54,7 @@ const main = (): void => {
     options: {
       out: { type: "string" },
       binary: { type: "string" },
+      arch: { type: "string" },
       help: { type: "boolean" },
     },
   });
@@ -63,7 +65,12 @@ const main = (): void => {
   const binary = resolve(
     values.binary ?? join(REPOSITORY, "target", "release", binaryFile(process.platform)),
   );
-  const { name, folder } = assemble(currentMachine(), binary, values.out);
+  const machine = currentMachine();
+  const { name, folder } = assemble(
+    { ...machine, arch: values.arch ?? machine.arch },
+    binary,
+    values.out,
+  );
   process.stdout.write(`${name} assembled in ${folder}\n`);
 };
 

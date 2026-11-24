@@ -19,7 +19,7 @@ file writes: whether `value.isFull` is a record's field or a queue's property de
 `value` is, which `earnest_semantic` knows and a reader does not.
 
 `reaches_library(file, source)` says whether a file is a model file: it resolves the specifier of
-each import as JavaScript does, so an escape or a line continuation in `"@earnest/model"` is the
+each import as JavaScript does, so an escape or a line continuation in `"@earnestjs/model"` is the
 library, and a file that can't be shown to leave the library alone counts as reaching it. A
 number a model writes or bounds a declaration with is refused past 2^53 - 1, the last whole number
 a JavaScript number holds, and a `const` of a block that is read before its declaration is refused,

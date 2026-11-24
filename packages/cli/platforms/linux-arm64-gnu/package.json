@@ -1,9 +1,17 @@
 {
-  "name": "@earnest/cli-linux-arm64-gnu",
+  "name": "@earnestjs/cli-linux-arm64-gnu",
   "version": "0.1.0",
-  "description": "The earnest binary for linux-arm64-gnu, installed by @earnest/cli",
+  "description": "The earnest binary for linux-arm64-gnu, installed by @earnestjs/cli",
+  "homepage": "https://earnest.cpeaustriajc.dev",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cpeaustriajc/earnest.git",
+    "directory": "packages/cli/platforms/linux-arm64-gnu"
+  },
   "files": [
-    "bin"
+    "bin",
+    "LICENSE"
   ],
   "os": [
     "linux"
@@ -13,5 +21,9 @@
   ],
   "libc": [
     "glibc"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

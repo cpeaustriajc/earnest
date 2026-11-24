@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { type Exploration, explore, m, replay } from "@earnest/model";
+import { type Exploration, explore, m, replay } from "@earnestjs/model";
 
 const FAULT = "takes a division with a negative number or a divisor below 1 in this state";
 

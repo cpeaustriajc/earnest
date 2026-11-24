@@ -12,7 +12,7 @@ You need the checker installed. See [Install](/start/install/).
 Make a folder, and in it a file `src/turnstile.model.ts`:
 
 ```ts title="src/turnstile.model.ts"
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Turnstile = m.model("Turnstile", {
 	gate: m.enum(["locked", "open"]).initial("locked"),

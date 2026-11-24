@@ -15,7 +15,7 @@ const offline: NodeJS.ProcessEnv = {
   npm_config_registry: NOWHERE,
 };
 
-const MODEL = `import { m } from "@earnest/model";
+const MODEL = `import { m } from "@earnestjs/model";
 
 export const Counter = m.model("Counter", { count: m.int(0, 2).initial(0) });
 
@@ -29,7 +29,7 @@ export const full = m.end(Counter, "The count is full", (s) => s.count === 2);
 export type State = m.Infer<typeof Counter>;
 `;
 
-const RUN = `import { explore, m, replay } from "@earnest/model";
+const RUN = `import { explore, m, replay } from "@earnestjs/model";
 import * as model from "./counter.model.ts";
 
 const found = explore(model.Counter, { exports: model });
@@ -110,7 +110,7 @@ test("the installed package type-checks a model file under strict settings", () 
 test("the installed package still rejects a wrong model at type-check time", () => {
   writeFileSync(
     join(project, "wrong.model.ts"),
-    `import { m } from "@earnest/model";\nconst Wrong = m.model("Wrong", { n: m.int(0, 1).initial(0) });\nexport const bad = m.action(Wrong, "bad", { changes: () => ({ n: "x" }) });\n`,
+    `import { m } from "@earnestjs/model";\nconst Wrong = m.model("Wrong", { n: m.int(0, 1).initial(0) });\nexport const bad = m.action(Wrong, "bad", { changes: () => ({ n: "x" }) });\n`,
   );
   const result = typeCheck();
   rmSync(join(project, "wrong.model.ts"));

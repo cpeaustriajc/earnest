@@ -1,14 +1,26 @@
 {
-  "name": "@earnest/cli-win32-x64-msvc",
+  "name": "@earnestjs/cli-win32-x64-msvc",
   "version": "0.1.0",
-  "description": "The earnest binary for win32-x64-msvc, installed by @earnest/cli",
+  "description": "The earnest binary for win32-x64-msvc, installed by @earnestjs/cli",
+  "homepage": "https://earnest.cpeaustriajc.dev",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cpeaustriajc/earnest.git",
+    "directory": "packages/cli/platforms/win32-x64-msvc"
+  },
   "files": [
-    "bin"
+    "bin",
+    "LICENSE"
   ],
   "os": [
     "win32"
   ],
   "cpu": [
     "x64"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
 }

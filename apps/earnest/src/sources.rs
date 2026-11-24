@@ -7,6 +7,8 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 const CRATES: &str = "crates";
 const SOURCES: &str = "src";
 const MANIFEST: &str = "Cargo.toml";
+const PACKAGE_READ: [&str; 3] = ["Cargo.lock", "Cargo.toml", "src"];
+const WORKSPACE_APP: &str = "apps/earnest/Cargo.toml";
 const ALWAYS_READ: [&str; 4] = [
     "Cargo.lock",
     "Cargo.toml",
@@ -36,6 +38,13 @@ pub(crate) fn fingerprint(files: &[SourceFile]) -> u64 {
 }
 
 pub(crate) fn roots(repository: &Path) -> io::Result<Vec<PathBuf>> {
+    if !repository.join(WORKSPACE_APP).is_file() {
+        return Ok(PACKAGE_READ
+            .iter()
+            .map(|path| repository.join(path))
+            .filter(|path| path.exists())
+            .collect());
+    }
     let mut roots: Vec<PathBuf> = ALWAYS_READ
         .iter()
         .map(|path| repository.join(path))
@@ -164,6 +173,35 @@ mod tests {
             engine("1.2.3", root).unwrap(),
             after,
             "a dependency changed"
+        );
+    }
+
+    #[test]
+    fn a_published_package_outside_the_workspace_reads_its_own_sources() {
+        let folder = tempfile::tempdir().unwrap();
+        let root = folder.path();
+        let written = [
+            ("Cargo.lock", "lock"),
+            ("Cargo.toml", "package"),
+            ("src/main.rs", "fn main() {}"),
+            ("tests/one.rs", "#[test] fn one() {}"),
+        ];
+        for (path, text) in written {
+            fs::create_dir_all(root.join(path).parent().unwrap()).unwrap();
+            fs::write(root.join(path), text).unwrap();
+        }
+        let before = engine("1.2.3", root).unwrap();
+        fs::write(root.join("tests/one.rs"), "#[test] fn two() {}").unwrap();
+        assert_eq!(
+            engine("1.2.3", root).unwrap(),
+            before,
+            "a test is not part of the checker"
+        );
+        fs::write(root.join("src/main.rs"), "fn main() { () }").unwrap();
+        assert_ne!(
+            engine("1.2.3", root).unwrap(),
+            before,
+            "the code of the package changed"
         );
     }
 }

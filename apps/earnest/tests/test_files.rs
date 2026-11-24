@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 const COUNTER: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 
 export const Counter = m.model(\"Counter\", {
 \tcount: m.int(0, 3).initial(0),
@@ -23,7 +23,7 @@ export const bounded = m.rule(Counter, \"The count is never above three\", (s) =
 export const full = m.end(Counter, \"The counter is full\", (s) => s.count === 3);
 ";
 const VITEST: &str = "\
-import { m } from \"@earnest/model\";
+import { m } from \"@earnestjs/model\";
 import { expect, test } from \"vitest\";
 
 test(\"replays a path\", () => {

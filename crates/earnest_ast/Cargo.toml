@@ -2,7 +2,10 @@
 name = "earnest_ast"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "Internal part of earnest: the language-neutral tree both model readers produce"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 earnest_diagnostics.workspace = true

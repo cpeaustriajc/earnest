@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Stamp = m.model("Stamp", {
 	parity: m.int(0, 1).initial(0),

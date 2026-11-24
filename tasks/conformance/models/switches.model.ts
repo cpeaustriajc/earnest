@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Porch = m.model("Porch", {
 	lit: m.boolean().initial(false),

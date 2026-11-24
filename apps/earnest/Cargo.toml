@@ -2,7 +2,13 @@
 name = "earnest-cli"
 version.workspace = true
 edition.workspace = true
-publish.workspace = true
+description = "The earnest model checker: checks every reachable state of a model written in TypeScript or Rust"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["model-checking", "verification", "tla", "typescript", "cli"]
+categories = ["command-line-utilities", "development-tools::testing"]
 
 [[bin]]
 name = "earnest"

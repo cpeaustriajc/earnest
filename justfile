@@ -21,6 +21,9 @@ unused-dependencies:
 
 typescript:
     bun install --frozen-lockfile
+    cmp LICENSE packages/cli/LICENSE
+    cmp LICENSE packages/model/LICENSE
+    cmp LICENSE.LESSER packages/model/LICENSE.LESSER
     bunx oxlint packages tasks/conformance tasks/benchmark tasks/models
     bun run --cwd packages/model typecheck
     bun run --cwd packages/model format

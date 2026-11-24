@@ -1,1 +1,1 @@
-export { m } from "@earnest/model";
+export { m } from "@earnestjs/model";

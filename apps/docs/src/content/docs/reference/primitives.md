@@ -28,13 +28,13 @@ Every primitive has the same semantics in TypeScript, in Rust, and in the TLA+ e
 
 - **Literals:** Write collection values with `m.setOf(a, b)`, `m.seqOf(a, b)`, and `m.mapOf([k, v])` in TypeScript, or `Set::of([a, b])`, `Seq::of([a, b])`, and `Map::of([(k, v)])` in Rust.
 - **Out-of-range transitions:** Sending to a full queue, pushing past a sequence's `max`, or stepping a number outside its declared range is not a panic or syntax error. The checker reports the resulting state as `out of range` with the shortest path to it.
-- **Owned locks in collections:** A lock with an owner (`m.lock(Owner)` / `Lock<Owner>`) cannot be a map value or a sequence/queue item in either language, because a free owned lock is `null` and could not be distinguished from a missing entry. Both the checker and `@earnest/model` refuse it. An unowned lock can be stored in collections, and an owned lock can be a state field, a record field, or a set item.
+- **Owned locks in collections:** A lock with an owner (`m.lock(Owner)` / `Lock<Owner>`) cannot be a map value or a sequence/queue item in either language, because a free owned lock is `null` and could not be distinguished from a missing entry. Both the checker and `@earnestjs/model` refuse it. An unowned lock can be stored in collections, and an owned lock can be a state field, a record field, or a set item.
 - **Ordering on optionals:** Optional values have no order. Comparing two optional values with `<`, `<=`, `>`, or `>=` makes the file `unreadable` (including in Rust, where `None < Some(5)` compiles; write `value.is_some_and(|n| n < 5)`). In TypeScript, comparing or adding an optional number or spreading an optional record requires `m.some(...)` (`{ ...m.some(s.chosen), qty: 1 }`), which faults if the value is `null`.
 - **Field names vs primitive properties:** A record field may share a name with a primitive property (such as `isFull`). Earnest resolves `value.isFull` from the static type of `value`.
 
 ## Order of sets, maps, and records
 
-The checker, Node (`@earnest/model`), Rust (`earnest`), and the TLA+ export all walk set items and map keys in one deterministic order, independent of insertion order, hash seeds, first-seen text order, or `--jobs`. Quantifiers (`m.exists`, `Set::some`), `filter`, printed paths, JSON output, statecharts, reports, and TLA+ export all follow this order:
+The checker, Node (`@earnestjs/model`), Rust (`earnest`), and the TLA+ export all walk set items and map keys in one deterministic order, independent of insertion order, hash seeds, first-seen text order, or `--jobs`. Quantifiers (`m.exists`, `Set::some`), `filter`, printed paths, JSON output, statecharts, reports, and TLA+ export all follow this order:
 
 | Kind | Order |
 |---|---|

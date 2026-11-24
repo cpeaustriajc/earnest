@@ -1,4 +1,4 @@
-# @earnest/model
+# @earnestjs/model
 
 The TypeScript library that models for the `earnest` model checker are written with. A model file
 imports `m` from it and declares fields, actions, rules and ends. `earnest verify` reads the file
@@ -10,7 +10,7 @@ The [Earnest documentation](https://earnest.cpeaustriajc.dev/reference/typescrip
 ## Installing
 
 ```sh
-npm install --save-dev @earnest/model
+npm install --save-dev @earnestjs/model
 ```
 
 The published package holds compiled JavaScript and declarations in `dist/`, so it runs in Node
@@ -24,7 +24,7 @@ and runs `explore`, `replay` and a strict type check there.
 ## Writing a model
 
 ```ts
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Turnstile = m.model("Turnstile", {
   gate: m.enum(["locked", "open"]).initial("locked"),
@@ -108,7 +108,7 @@ checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`.
 ## Running a model in Node
 
 ```ts
-import { explore, replay } from "@earnest/model";
+import { explore, replay } from "@earnestjs/model";
 import * as turnstile from "./turnstile.model.ts";
 
 const found = explore(turnstile.Turnstile, { exports: turnstile });

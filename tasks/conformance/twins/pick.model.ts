@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Size = m.oneOf([1, 5, 9]);
 const Buyer = m.oneOf(["Kim", "Lee"]);

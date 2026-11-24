@@ -94,7 +94,7 @@ fn a_map_literal_takes_a_record_whose_optional_field_has_a_value() {
 #[test]
 fn a_deeply_nested_condition_does_not_abort_the_run() {
     let deep = format!(
-        "import {{ m }} from \"@earnest/model\";\n\n\
+        "import {{ m }} from \"@earnestjs/model\";\n\n\
          export const Deep = m.model(\"Deep\", {{ n: m.int(0, 1).initial(0) }});\n\n\
          export const low = m.rule(Deep, \"low\", (s) => {}s.n <= 1{});\n",
         "(".repeat(NESTING),

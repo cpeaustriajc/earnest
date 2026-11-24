@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 export const Download = m.model("Download", {
 	phase: m.enum(["Idle", "Loading", "Done", "Failed"]).initial("Idle"),

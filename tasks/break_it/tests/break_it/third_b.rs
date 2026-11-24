@@ -9,7 +9,7 @@ const UTF16_MARK_FILE: &str = concat!(
 const DEPTH_OF_TYPESCRIPT: usize = 20_000;
 const DEPTH_OF_RUST: usize = 3_000;
 
-const GOOD_MODEL: &str = r#"import { m } from "@earnest/model";
+const GOOD_MODEL: &str = r#"import { m } from "@earnestjs/model";
 
 export const Good = m.model("Good", { n: m.int(0, 2).initial(0) });
 
@@ -33,7 +33,7 @@ fn checked_rust(source: &str) -> Report {
 
 fn typescript_with_rule(condition: &str) -> String {
     format!(
-        r#"import {{ m }} from "@earnest/model";
+        r#"import {{ m }} from "@earnestjs/model";
 
 export const Deep = m.model("Deep", {{ n: m.int(0, 3).initial(0) }});
 
@@ -156,7 +156,7 @@ fn a_typescript_model_imported_through_an_escaped_specifier_is_not_left_out() {
     let low = rule(report.model("Climb"), "low");
     assert!(
         report.is_unreadable() || is_broken_after(low, 2),
-        "`\"@earnest\\x2fmodel\"` is the specifier `@earnest/model` in JavaScript, so the file \
+        "`\"@earnestjs\\x2fmodel\"` is the specifier `@earnestjs/model` in JavaScript, so the file \
          imports the library and Node reports `low` broken after two steps; it is checked or \
          unreadable, never left out\n{report}"
     );

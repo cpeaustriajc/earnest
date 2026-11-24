@@ -1,4 +1,4 @@
-import { m } from "@earnest/model";
+import { m } from "@earnestjs/model";
 
 const Fruit = m.enum(["Pear", "Apple", "Fig"]);
 const Name = m.oneOf(["b", "a", "B"]);

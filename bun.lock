@@ -9,7 +9,7 @@
       },
     },
     "apps/docs": {
-      "name": "@earnest/docs",
+      "name": "@earnestjs/docs",
       "dependencies": {
         "@astrojs/starlight": "0.43.1",
         "astro": "7.4.13",
@@ -20,7 +20,7 @@
       },
     },
     "packages/cli": {
-      "name": "@earnest/cli",
+      "name": "@earnestjs/cli",
       "version": "0.1.0",
       "bin": {
         "earnest": "dist/earnest.js",
@@ -32,35 +32,35 @@
         "vitest": "5.1.1",
       },
       "optionalDependencies": {
-        "@earnest/cli-darwin-arm64": "workspace:0.1.0",
-        "@earnest/cli-darwin-x64": "workspace:0.1.0",
-        "@earnest/cli-linux-arm64-gnu": "workspace:0.1.0",
-        "@earnest/cli-linux-x64-gnu": "workspace:0.1.0",
-        "@earnest/cli-win32-x64-msvc": "workspace:0.1.0",
+        "@earnestjs/cli-darwin-arm64": "workspace:0.1.0",
+        "@earnestjs/cli-darwin-x64": "workspace:0.1.0",
+        "@earnestjs/cli-linux-arm64-gnu": "workspace:0.1.0",
+        "@earnestjs/cli-linux-x64-gnu": "workspace:0.1.0",
+        "@earnestjs/cli-win32-x64-msvc": "workspace:0.1.0",
       },
     },
     "packages/cli/platforms/darwin-arm64": {
-      "name": "@earnest/cli-darwin-arm64",
+      "name": "@earnestjs/cli-darwin-arm64",
       "version": "0.1.0",
     },
     "packages/cli/platforms/darwin-x64": {
-      "name": "@earnest/cli-darwin-x64",
+      "name": "@earnestjs/cli-darwin-x64",
       "version": "0.1.0",
     },
     "packages/cli/platforms/linux-arm64-gnu": {
-      "name": "@earnest/cli-linux-arm64-gnu",
+      "name": "@earnestjs/cli-linux-arm64-gnu",
       "version": "0.1.0",
     },
     "packages/cli/platforms/linux-x64-gnu": {
-      "name": "@earnest/cli-linux-x64-gnu",
+      "name": "@earnestjs/cli-linux-x64-gnu",
       "version": "0.1.0",
     },
     "packages/cli/platforms/win32-x64-msvc": {
-      "name": "@earnest/cli-win32-x64-msvc",
+      "name": "@earnestjs/cli-win32-x64-msvc",
       "version": "0.1.0",
     },
     "packages/model": {
-      "name": "@earnest/model",
+      "name": "@earnestjs/model",
       "version": "0.1.0",
       "devDependencies": {
         "@types/node": "22.20.5",
@@ -169,21 +169,21 @@
 
     "@ctrl/tinycolor": ["@ctrl/tinycolor@4.3.2", "", {}, "sha512-2UDbkHfMvSXVPLkj7VEwS9NMtu/miOOwkHGn7loA8zxUROlwpJF1UYqXfaIHIaHD4o5a80ouir6QyXbimLk9fg=="],
 
-    "@earnest/cli": ["@earnest/cli@workspace:packages/cli"],
+    "@earnestjs/cli": ["@earnestjs/cli@workspace:packages/cli"],
 
-    "@earnest/cli-darwin-arm64": ["@earnest/cli-darwin-arm64@workspace:packages/cli/platforms/darwin-arm64"],
+    "@earnestjs/cli-darwin-arm64": ["@earnestjs/cli-darwin-arm64@workspace:packages/cli/platforms/darwin-arm64"],
 
-    "@earnest/cli-darwin-x64": ["@earnest/cli-darwin-x64@workspace:packages/cli/platforms/darwin-x64"],
+    "@earnestjs/cli-darwin-x64": ["@earnestjs/cli-darwin-x64@workspace:packages/cli/platforms/darwin-x64"],
 
-    "@earnest/cli-linux-arm64-gnu": ["@earnest/cli-linux-arm64-gnu@workspace:packages/cli/platforms/linux-arm64-gnu"],
+    "@earnestjs/cli-linux-arm64-gnu": ["@earnestjs/cli-linux-arm64-gnu@workspace:packages/cli/platforms/linux-arm64-gnu"],
 
-    "@earnest/cli-linux-x64-gnu": ["@earnest/cli-linux-x64-gnu@workspace:packages/cli/platforms/linux-x64-gnu"],
+    "@earnestjs/cli-linux-x64-gnu": ["@earnestjs/cli-linux-x64-gnu@workspace:packages/cli/platforms/linux-x64-gnu"],
 
-    "@earnest/cli-win32-x64-msvc": ["@earnest/cli-win32-x64-msvc@workspace:packages/cli/platforms/win32-x64-msvc"],
+    "@earnestjs/cli-win32-x64-msvc": ["@earnestjs/cli-win32-x64-msvc@workspace:packages/cli/platforms/win32-x64-msvc"],
 
-    "@earnest/docs": ["@earnest/docs@workspace:apps/docs"],
+    "@earnestjs/docs": ["@earnestjs/docs@workspace:apps/docs"],
 
-    "@earnest/model": ["@earnest/model@workspace:packages/model"],
+    "@earnestjs/model": ["@earnestjs/model@workspace:packages/model"],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 
