@@ -1,0 +1,143 @@
+<svg width="880" height="396" viewBox="0 0 880 396" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Earnest checks a TypeScript or Rust model file by visiting every reachable state, catching broken rules with their shortest path, and exporting PR statecharts and TLA+.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #0a0a0a;
+      --muted: #737373;
+      --line: rgba(115, 115, 115, 0.35);
+      --line-strong: rgba(10, 10, 10, 0.38);
+      --hairline: rgba(115, 115, 115, 0.22);
+      --card: rgba(255, 255, 255, 0.85);
+      --soft: rgba(115, 115, 115, 0.08);
+      --red: #dc2626;
+      --red-bg: rgba(220, 38, 38, 0.07);
+      --red-border: #ef4444;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f0f6fc;
+        --muted: #8b949e;
+        --line: rgba(240, 246, 252, 0.22);
+        --line-strong: rgba(240, 246, 252, 0.38);
+        --hairline: rgba(240, 246, 252, 0.14);
+        --card: rgba(240, 246, 252, 0.03);
+        --soft: rgba(240, 246, 252, 0.07);
+        --red: #f87171;
+        --red-bg: rgba(248, 113, 113, 0.12);
+        --red-border: #f87171;
+      }
+    }
+    .sans { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; }
+    .ink { fill: var(--ink); }
+    .muted { fill: var(--muted); }
+    .red { fill: var(--red); }
+    .card { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+    .card-focus { fill: var(--card); stroke: var(--line-strong); stroke-width: 1.1; }
+    .pill { fill: var(--soft); stroke: var(--hairline); stroke-width: 0.85; }
+    .node { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+    .node-start { fill: var(--soft); stroke: var(--ink); stroke-width: 1.1; }
+    .node-broken { fill: var(--red-bg); stroke: var(--red-border); stroke-width: 1.3; }
+    .rail { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+    .leader { stroke: var(--muted); stroke-width: 0.85; }
+    .badge { stroke: var(--line); stroke-width: 0.85; }
+    .edge { stroke: var(--muted); stroke-width: 1.1; }
+    .edge-broken { stroke: var(--red); stroke-width: 1.6; }
+    .arrow { fill: var(--muted); }
+    .arrow-red { fill: var(--red); }
+  </style>
+
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" class="arrow"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" class="arrow-red"/>
+    </marker>
+  </defs>
+
+  <line x1="60" y1="100" x2="60" y2="128" class="rail"/>
+  <line x1="60" y1="266" x2="60" y2="294" class="rail"/>
+  <line x1="428" y1="100" x2="428" y2="128" class="rail"/>
+  <line x1="428" y1="266" x2="428" y2="294" class="rail"/>
+
+  <g>
+    <rect x="24" y="20" width="444" height="80" rx="8" class="card"/>
+    <rect x="34" y="29" width="134" height="19" rx="4" class="pill"/>
+    <text x="101" y="42" text-anchor="middle" font-size="10.5" class="mono muted">turnstile.model.ts</text>
+    <text x="454" y="42" text-anchor="end" font-size="10.5" class="mono muted">TS / Rust</text>
+    <text x="38" y="67" font-size="12" class="mono ink"><tspan class="muted">push</tspan><tspan dx="8">changes: () =&gt; ({ gate: "open" })</tspan></text>
+    <text x="38" y="86" font-size="12" class="mono ink"><tspan class="muted">rule</tspan><tspan dx="8">s.gate === "locked" || s.paid</tspan></text>
+  </g>
+
+  <g>
+    <rect x="24" y="128" width="444" height="138" rx="8" class="card-focus"/>
+
+    <rect x="40" y="176" width="96" height="42" rx="6" class="node-start"/>
+    <text x="88" y="194" text-anchor="middle" font-size="11.5" font-weight="600" class="mono ink">locked</text>
+    <text x="88" y="209" text-anchor="middle" font-size="10.5" class="mono muted">unpaid</text>
+
+    <rect x="186" y="146" width="96" height="40" rx="6" class="node"/>
+    <text x="234" y="164" text-anchor="middle" font-size="11.5" class="mono ink">locked</text>
+    <text x="234" y="178" text-anchor="middle" font-size="10.5" class="mono muted">paid</text>
+
+    <rect x="342" y="146" width="108" height="40" rx="6" class="node"/>
+    <text x="396" y="164" text-anchor="middle" font-size="11.5" class="mono ink">open</text>
+    <text x="396" y="178" text-anchor="middle" font-size="10.5" class="mono muted">paid  ✓</text>
+
+    <rect x="186" y="208" width="166" height="42" rx="6" class="node-broken"/>
+    <text x="269" y="226" text-anchor="middle" font-size="11.5" font-weight="600" class="mono red">open, unpaid  ✗</text>
+    <text x="269" y="241" text-anchor="middle" font-size="10" class="mono red">broken: staysLocked</text>
+
+    <path d="M 136 187 L 180 169" class="edge" marker-end="url(#arr)"/>
+    <text x="155" y="169" text-anchor="middle" font-size="10.5" class="mono muted">pay</text>
+
+    <path d="M 282 166 L 336 166" class="edge" marker-end="url(#arr)"/>
+    <text x="309" y="159" text-anchor="middle" font-size="10.5" class="mono muted">push</text>
+
+    <path d="M 136 207 L 180 226" class="edge-broken" marker-end="url(#arr-red)"/>
+    <text x="152" y="231" text-anchor="middle" font-size="10.5" font-weight="600" class="mono red">push</text>
+  </g>
+
+  <g>
+    <rect x="24" y="294" width="444" height="78" rx="8" class="card"/>
+    <text x="38" y="320" font-size="12" class="mono ink"><tspan font-weight="600" class="red">fail</tspan><tspan dx="12">Turnstile</tspan><tspan dx="12" class="muted">4 states  0 ms</tspan></text>
+    <text x="38" y="340" font-size="11.5" class="mono ink"><tspan class="muted">1.</tspan><tspan dx="5">push</tspan><tspan dx="8" class="muted">gate: "locked" -&gt; "open"</tspan></text>
+    <text x="38" y="358" font-size="10.5" class="mono muted">PR statechart · Turnstile.tla</text>
+
+    <rect x="364" y="308" width="90" height="22" rx="4" class="pill"/>
+    <text x="409" y="322.5" text-anchor="middle" font-size="10.5" class="mono muted">TLC confirm</text>
+  </g>
+
+  <g class="leader">
+    <path d="M 468 60 H 526"/>
+    <path d="M 468 197 H 526"/>
+    <path d="M 468 333 H 526"/>
+  </g>
+  <g class="ink">
+    <circle cx="468" cy="60" r="2.5"/>
+    <circle cx="468" cy="197" r="2.5"/>
+    <circle cx="468" cy="333" r="2.5"/>
+  </g>
+
+  <g transform="translate(540, 60)">
+    <rect x="0" y="-32" width="26" height="19" rx="3" class="badge"/>
+    <text x="13" y="-19" text-anchor="middle" font-size="10.5" letter-spacing="0.5" class="mono muted">01</text>
+    <text x="0" y="5" font-size="16" font-weight="500" class="mono ink">model.ts / model.rs</text>
+    <text x="0" y="26" font-size="13" class="sans muted">In your app's own language. No Java.</text>
+  </g>
+
+  <g transform="translate(540, 197)">
+    <rect x="0" y="-32" width="26" height="19" rx="3" class="badge"/>
+    <text x="13" y="-19" text-anchor="middle" font-size="10.5" letter-spacing="0.5" class="mono muted">02</text>
+    <text x="0" y="5" font-size="16" font-weight="500" class="mono ink">earnest verify</text>
+    <text x="0" y="26" font-size="13" class="sans muted">Visits every reachable state in milliseconds.</text>
+  </g>
+
+  <g transform="translate(540, 333)">
+    <rect x="0" y="-32" width="26" height="19" rx="3" class="badge"/>
+    <text x="13" y="-19" text-anchor="middle" font-size="10.5" letter-spacing="0.5" class="mono muted">03</text>
+    <text x="0" y="5" font-size="16" font-weight="500" class="mono ink">earnest report · tla</text>
+    <text x="0" y="26" font-size="13" class="sans muted">Shortest path, PR chart, confirmed by TLC.</text>
+  </g>
+</svg>
