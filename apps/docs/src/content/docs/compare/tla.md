@@ -163,6 +163,17 @@ LandsWhereAsked == loading \/ wanted = None \/ wanted = active
 
 The Quint and TLA+ versions must say what every other variable does in each step. The earnest version names only the fields that change, and the app's own type checker reads it.
 
+## Where earnest fits
+
+Earnest is an explicit-state model checker, like TLC and Quint. Other methods check other things, and they work well together:
+
+| Method | Examples | Checks | Coverage | Trade-off |
+|---|---|---|---|---|
+| Example-based tests | Vitest, `cargo test`, Playwright | Running code | The paths you script | High fidelity, misses orders you didn't script |
+| Property-based tests and UI fuzzing | Bombadil, `fast-check`, `proptest` | Running code or a live UI | Random paths and inputs | Tests real code, can't show that no other path fails |
+| Explicit-state model checking | earnest, TLC, Quint | A finite model | Every reachable state of the model | Covers every order, but the model can drift from the code |
+| Deductive proofs of code | Verus, Kani, Dafny | The code itself | All inputs, unbounded too | Strongest guarantee, most proof effort |
+
 ## What differs
 
 | | earnest | TLA+ with TLC | Quint |
