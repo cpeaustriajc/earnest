@@ -5,8 +5,7 @@ imports `m` from it and declares fields, actions, rules and ends. `earnest verif
 without running it; this library makes the same file type-check under strict `tsc`, with every
 type inferred from the declarations, and run as ordinary code in Node.
 
-The repository's `README.md` is the contract: what a model file may contain, every primitive and
-its operations, and the JSON shapes used below.
+The [Earnest documentation](https://earnest.cpeaustriajc.dev/reference/typescript/) (`apps/docs/src/content/docs/reference/`) is the contract: what a model file may contain, every primitive and its operations, and the JSON shapes used below.
 
 ## Installing
 
@@ -164,8 +163,8 @@ by its `label`, the action's sentence.
   library's: `null`, booleans, numbers, text by code point (`compareText`, which puts a character
   past U+FFFF after one from U+E000 to U+FFFF, where `<` does not), records field by field in the
   order of the field names, collections item by item. A quantifier over a set stops at the first
-  item in that order. `replay` still accepts the members of a set in any order. The README of the
-  repository has the rule for each kind.
+  item in that order. `replay` still accepts the members of a set in any order. See the
+  [primitives reference](https://earnest.cpeaustriajc.dev/reference/primitives/#order-of-sets-maps-and-records) for the rule for each kind.
 - A fault is a `TypeError` thrown by the model, `m.rem` of a negative number, or `m.some(null)`:
   reading a field of `null` or `m.some(null)` reports "reads a value that is null", any other
   `TypeError` reports "uses a value of the wrong kind". Where a model file reads a number from

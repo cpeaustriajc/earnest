@@ -10,4 +10,5 @@
   it: make the change faster or take it back.
 - `just counts` is a budget of instructions: re-record it only on purpose and say why in the commit.
 - Read `tasks/benchmark/TRIED.md` before speed changes; keep one only if `just same-answers` agrees.
+- Follow `contributing/docs-writing.md` and `.claude/skills/write-docs/SKILL.md` when editing documentation.
 - Run `just check` before you finish.

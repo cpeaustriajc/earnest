@@ -109,9 +109,10 @@ The checker reads a model file without running it, so a model file holds less th
 
 It may not hold loops, `let`, assignment, classes, `await`, `Date`, `Math.random` or other imports. Write `m.rem(a, b)` in place of `%`, and `m.div(a, b)` in place of `/`.
 
-If the file uses something else, `earnest verify` prints it as `unreadable`, with the line, the column and a sentence for each problem. The full list is in the [README](https://github.com/cpeaustriajc/earnest#what-a-model-file-may-contain).
+If the file uses something else, `earnest verify` prints it as `unreadable`, with the line, the column and a sentence for each problem. The full list is in [TypeScript models](/reference/typescript/#what-a-model-file-may-contain).
 
 ## Next
 
 - [Write a model in Rust](/tutorials/rust-model/)
 - [Put the result in a pull request](/tutorials/pull-request/)
+- [TypeScript models reference](/reference/typescript/)

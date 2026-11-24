@@ -38,7 +38,7 @@ TypeScript. A model needs no `pub` and no documentation: `#[derive(Model)]` uses
 | `Start` | Where a field of a type starts. The derive uses it; a model file does not |
 
 Every operation is a method that gives back a new value and leaves the one it was called on
-unchanged. The operations are the ones in the primitives table of the repository's `README.md`,
+unchanged. The operations are the ones in the [primitives reference](https://earnest.cpeaustriajc.dev/reference/primitives/) (`apps/docs/src/content/docs/reference/primitives.md`),
 with `snake_case` names. Sizes and counts are `usize`. An operation that only looks at an argument
 takes it by value or by reference. Going past a `MAX` or a `CAPACITY` is not an error here: the
 checker reports the state as out of range.

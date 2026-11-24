@@ -1,6 +1,10 @@
 Check one part of this project with Earnest, a model checker.
 
-A model is a small TypeScript or Rust file, in this project's language, with fields, actions and rules. `earnest verify` visits every reachable state and prints the shortest path to each broken rule. Earnest is in early access: nightly builds only, nothing on npm. The contract is https://raw.githubusercontent.com/cpeaustriajc/earnest/main/README.md. Fetch it whole, and read "Writing a model in TypeScript" or "Writing a model in Rust", "What a model file may contain" and "Text output".
+A model is a small TypeScript or Rust file, in this project's language, with fields, actions and rules. `earnest verify` visits every reachable state and prints the shortest path to each broken rule. Earnest is in early access: nightly builds only, nothing on npm. Fetch the language reference for this project before writing the model:
+
+- TypeScript: https://earnest.cpeaustriajc.dev/_llms-txt/typescript-models.txt
+- Rust: https://earnest.cpeaustriajc.dev/_llms-txt/rust-models.txt
+- Full index: https://earnest.cpeaustriajc.dev/llms.txt
 
 1. Install: `curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | sh` (Windows: `irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex`). It installs to `~/.local/bin`.
 2. Add `.earnest/` to `.gitignore`.

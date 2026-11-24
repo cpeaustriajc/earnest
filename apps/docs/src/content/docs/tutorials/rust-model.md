@@ -88,4 +88,4 @@ fail        Turnstile  8 states  0 ms
 
 Change the condition of `push` to `require!(self.paid && self.visitors < 3);`, and the model passes in 5 states.
 
-The README lists every [field type and rule of a Rust model](https://github.com/cpeaustriajc/earnest#writing-a-model-in-rust).
+See [Rust models](/reference/rust/) for every field type, attribute, helper rule, and clippy convention.

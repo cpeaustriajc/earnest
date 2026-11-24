@@ -1,7 +1,6 @@
 # @earnest/cli
 
-The `earnest` model checker, installed from npm. The repository's `README.md` is the contract for
-what `earnest` does; this package only gets the binary onto your machine.
+The `earnest` model checker, installed from npm. The [Earnest CLI documentation](https://earnest.cpeaustriajc.dev/reference/cli/) (`apps/docs/src/content/docs/reference/`) is the contract for what `earnest` does; this package only gets the binary onto your machine.
 
 ```sh
 npm install --save-dev @earnest/cli @earnest/model
