@@ -59,6 +59,59 @@ The Quint size leaves out Node. `quint verify` downloads Apalache on its first r
 
 Method: hyperfine 2.0.0, with 2 warm-up runs and 10 measured runs. The three-tool chart used 1 warm-up run. Every run was on a 10-core Apple silicon Mac. TLC ran on one worker, on earnest's TLA+ export of each model, and its time includes Java starting up.
 
+## Scaling from 1,000 to 10,000,000 states
+
+The app models above are small, so Java's start dominates TLC's time. This section checks larger state spaces. Both tools check the same four benchmark models: `grid_1k`, `grid_100k`, `grid_1m` and `grid_10m` from `tasks/benchmark/models/`. Each model turns 3 to 7 wheels of 10 notches, so it has 10^3 to 10^7 states.
+
+TLC checks earnest's TLA+ export of each model. Both tools found the same number of distinct states in every run.
+
+![Wall time and peak memory against the number of states, earnest 0.1.0 and TLC 1.8.0, 4 workers each. Lower is better. Median wall time at 1,000, 100,000, 1,000,000 and 10,000,000 states: earnest 7 ms, 36 ms, 122 ms, 943 ms; TLC 910 ms, 2.03 s, 13.5 s, 132.5 s. Peak memory: earnest 6 MiB, 8 MiB, 28 MiB, 192 MiB; TLC 118 MiB, 309 MiB, 724 MiB, 1.22 GiB.](../../../assets/compare/scaling-trajectory.svg)
+
+Median wall time:
+
+| States | earnest, 4 workers | TLC, 4 workers | earnest, 1 worker | TLC, 1 worker |
+|---:|---:|---:|---:|---:|
+| 1,000 | 7 ms | 910 ms | 6 ms | 805 ms |
+| 100,000 | 36 ms | 2.03 s | 26 ms | 1.49 s |
+| 1,000,000 | 122 ms | 13.5 s | 215 ms | 7.22 s |
+| 10,000,000 | 943 ms | 132.5 s | 2.58 s | 85.6 s |
+
+Peak memory:
+
+| States | earnest, 4 workers | TLC, 4 workers | earnest, 1 worker | TLC, 1 worker |
+|---:|---:|---:|---:|---:|
+| 1,000 | 6 MiB | 118 MiB | 6 MiB | 118 MiB |
+| 100,000 | 8 MiB | 309 MiB | 7 MiB | 269 MiB |
+| 1,000,000 | 28 MiB | 724 MiB | 27 MiB | 946 MiB |
+| 10,000,000 | 192 MiB | 1.22 GiB | 188 MiB | 1.28 GiB |
+
+At 10,000,000 states with 4 workers, earnest took 943 ms and 192 MiB. TLC took 132.5 s and 1.22 GiB: 140 times the time and 6.5 times the memory. On this machine TLC was faster with 1 worker than with 4 at every size, and took 85.6 s at 10,000,000 states. Earnest with 4 workers was 91 times faster than that run. TLC finished every run, so no run hit the 900 s limit.
+
+Method:
+
+- Machine: a cloud Linux VM with 4 vCPUs (Intel Xeon @ 2.10GHz), 15.7 GiB of memory, Ubuntu 24.04, Linux 6.18.
+- Tools: earnest 0.1.0 built with `cargo build --release --locked -p earnest-cli`. TLC 1.8.0 (`tla2tools.jar` from the `v1.8.0` release, SHA-256 `fdffef24...353fa6713`) on OpenJDK 21.0.13 with the JVM's default heap.
+- Runs: 1 unmeasured run, then 5 measured runs with 4 workers and 3 with 1 worker. The tables give the median wall time and the largest peak resident set of any measured run.
+- Wall time runs from starting the process to its exit, so TLC's time includes Java starting up and earnest's includes reading the TypeScript file.
+- earnest ran `earnest verify --no-cache --json --jobs <n> --max-states 20000000`. TLC ran `java -cp tla2tools.jar tlc2.TLC -workers <n>` on the exported module and its `.cfg`.
+
+Rerun the whole measurement and redraw the chart with these commands:
+
+```sh
+cargo build --release --locked -p earnest-cli
+python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 5 4 tasks/benchmark/scaling.json
+python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 3 1 tasks/benchmark/scaling.json
+python3 -I tasks/benchmark/scaling.py chart tasks/benchmark/scaling.json apps/docs/src/assets/compare/scaling-trajectory.svg
+```
+
+The script needs Linux, Java and GNU time (`/usr/bin/time`). It fails if the two tools count different states. The raw numbers of every run are in `tasks/benchmark/scaling.json`.
+
+Limits:
+
+- The grid models are simple on purpose: every action changes one number. A model with sets, maps or many inputs per action costs more per state in both tools.
+- TLC ran with its defaults. Its memory follows the JVM heap, which by default may grow to a quarter of the machine's memory. A larger or smaller `-Xmx` changes its peak memory and can change its time.
+- This is one machine on one day. A shared cloud VM adds noise, and the [benchmark notes](https://github.com/cpeaustriajc/earnest/blob/main/tasks/benchmark/README.md) show the same earnest build running up to 1.9 times slower on another machine of the same size.
+
 ## The same machine in three tools
 
 This is the zellij tab switch. The rule says that once no tab is loading, the active tab is the one you asked for. All three tools report the same four steps to the bug: a new tab starts, you press `GoToTab 1`, the tab is applied, and the active tab is 1, not 0.

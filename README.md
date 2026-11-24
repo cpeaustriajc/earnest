@@ -119,6 +119,8 @@ Four coding agents modelled 18 implicit state machines across zellij, helix, exc
 
 ![Time to check every model of each app. Lower is better. earnest 0.1.0: 5.9 to 11 ms. TLC 1.8.0: 778 to 2,698 ms.](apps/docs/src/assets/compare/time-per-app.png)
 
+On larger state spaces the gap grows. On the same 10,000,000-state model with 4 workers, earnest took 0.94 s and 192 MiB, and TLC took 132.5 s and 1.22 GiB. See [Scaling from 1,000 to 10,000,000 states](https://earnest.cpeaustriajc.dev/compare/tla/#scaling-from-1000-to-10000000-states).
+
 Read the [full comparison](https://earnest.cpeaustriajc.dev/compare/tla/), or inspect the reproducible [benchmarks](tasks/benchmark/README.md) (10 million states in under 5 s and 256 MiB), [conformance suite](tasks/conformance/README.md), and [adversarial tests](tasks/break_it/README.md).
 
 ## Requirements and security

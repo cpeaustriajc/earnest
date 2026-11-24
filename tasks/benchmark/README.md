@@ -54,6 +54,12 @@ not part of `just check`; that runs only its unit tests, which also check that e
 count below is in this file. The `check` workflow runs it after `just check`, on a runner with
 4 vCPUs and 16 GB, so a change that misses the target or the budget fails there.
 
+`scaling.py` beside this file measures `earnest verify` and TLC on `grid_1k` to `grid_10m`, on
+earnest's TLA+ export of each, and draws the chart of the comparison page
+(`apps/docs/src/assets/compare/scaling-trajectory.svg`). Its usage is at the top of the file, and
+its last numbers are in `scaling.json`. It is not part of `just benchmark`, because TLC takes
+minutes on `grid_10m`.
+
 ## Models and their state counts
 
 The files are in `models/`. Each scaled model is also in Rust (`.rs` beside the `.model.ts`),

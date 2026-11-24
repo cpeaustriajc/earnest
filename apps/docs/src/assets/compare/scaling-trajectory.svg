@@ -1,0 +1,120 @@
+<svg width="800" height="384" viewBox="0 0 800 384" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Wall time and peak memory of earnest 0.1.0 and TLC 1.8.0 on the same grid models, 4 workers each. Lower is better. Median wall time, earnest: 7 ms at 1k, 36 ms at 100k, 122 ms at 1M, 943 ms at 10M; TLC: 910 ms at 1k, 2.03 s at 100k, 13.5 s at 1M, 132.5 s at 10M. Peak memory, earnest: 6 MiB at 1k, 8 MiB at 100k, 28 MiB at 1M, 192 MiB at 10M; TLC: 118 MiB at 1k, 309 MiB at 100k, 724 MiB at 1M, 1.22 GiB at 10M.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #0a0a0a;
+      --muted: #737373;
+      --hairline: rgba(115, 115, 115, 0.22);
+      --axis: rgba(115, 115, 115, 0.45);
+      --earnest: #0a0a0a;
+      --tlc: #dc2626;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f0f6fc;
+        --muted: #8b949e;
+        --hairline: rgba(240, 246, 252, 0.14);
+        --axis: rgba(240, 246, 252, 0.38);
+        --earnest: #f0f6fc;
+        --tlc: #f87171;
+      }
+    }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { fill: var(--ink); font-size: 14px; font-weight: 600; }
+    .note { fill: var(--muted); font-size: 11px; }
+    .tick { fill: var(--muted); font-size: 11px; }
+    .grid { stroke: var(--hairline); stroke-width: 1; }
+    .axis { stroke: var(--axis); stroke-width: 1; }
+    .line-earnest { stroke: var(--earnest); stroke-width: 2; fill: none; }
+    .line-tlc { stroke: var(--tlc); stroke-width: 2; fill: none; }
+    .dot-earnest { fill: var(--earnest); }
+    .dot-tlc { fill: var(--tlc); }
+    .label-earnest { fill: var(--earnest); font-size: 11px; font-weight: 600; }
+    .label-tlc { fill: var(--tlc); font-size: 11px; font-weight: 600; }
+  </style>
+  <text x="24" y="32" class="title">Wall time</text>
+  <text x="24" y="50" class="note">median of 5 runs, 4 workers, log scale</text>
+  <line x1="80" y1="300.0" x2="368" y2="300.0" class="grid"/>
+  <text x="70" y="304.0" class="tick" text-anchor="end">1 ms</text>
+  <line x1="80" y1="262.7" x2="368" y2="262.7" class="grid"/>
+  <text x="70" y="266.7" class="tick" text-anchor="end">10 ms</text>
+  <line x1="80" y1="225.3" x2="368" y2="225.3" class="grid"/>
+  <text x="70" y="229.3" class="tick" text-anchor="end">100 ms</text>
+  <line x1="80" y1="188.0" x2="368" y2="188.0" class="grid"/>
+  <text x="70" y="192.0" class="tick" text-anchor="end">1 s</text>
+  <line x1="80" y1="150.7" x2="368" y2="150.7" class="grid"/>
+  <text x="70" y="154.7" class="tick" text-anchor="end">10 s</text>
+  <line x1="80" y1="113.3" x2="368" y2="113.3" class="grid"/>
+  <text x="70" y="117.3" class="tick" text-anchor="end">100 s</text>
+  <line x1="80" y1="76.0" x2="368" y2="76.0" class="grid"/>
+  <text x="70" y="80.0" class="tick" text-anchor="end">1,000 s</text>
+  <line x1="80" y1="300" x2="368" y2="300" class="axis"/>
+  <text x="80.0" y="318" class="tick" text-anchor="middle">1k</text>
+  <text x="224.0" y="318" class="tick" text-anchor="middle">100k</text>
+  <text x="296.0" y="318" class="tick" text-anchor="middle">1M</text>
+  <text x="368.0" y="318" class="tick" text-anchor="middle">10M</text>
+  <text x="224.0" y="336" class="note" text-anchor="middle">distinct states, log scale</text>
+  <path d="M 80.0 189.5 L 224.0 176.5 L 296.0 145.8 L 368.0 108.8" class="line-tlc"/>
+  <circle cx="80.0" cy="189.5" r="3.5" class="dot-tlc"/>
+  <text x="76.0" y="178.5" class="label-tlc" text-anchor="start">910 ms</text>
+  <circle cx="224.0" cy="176.5" r="3.5" class="dot-tlc"/>
+  <text x="224.0" y="165.5" class="label-tlc" text-anchor="middle">2.03 s</text>
+  <circle cx="296.0" cy="145.8" r="3.5" class="dot-tlc"/>
+  <text x="296.0" y="134.8" class="label-tlc" text-anchor="middle">13.5 s</text>
+  <circle cx="368.0" cy="108.8" r="3.5" class="dot-tlc"/>
+  <text x="368.0" y="97.8" class="label-tlc" text-anchor="middle">132.5 s</text>
+  <path d="M 80.0 268.0 L 224.0 241.9 L 296.0 222.0 L 368.0 188.9" class="line-earnest"/>
+  <circle cx="80.0" cy="268.0" r="3.5" class="dot-earnest"/>
+  <text x="87.0" y="285.0" class="label-earnest" text-anchor="start">7 ms</text>
+  <circle cx="224.0" cy="241.9" r="3.5" class="dot-earnest"/>
+  <text x="231.0" y="258.9" class="label-earnest" text-anchor="start">36 ms</text>
+  <circle cx="296.0" cy="222.0" r="3.5" class="dot-earnest"/>
+  <text x="303.0" y="239.0" class="label-earnest" text-anchor="start">122 ms</text>
+  <circle cx="368.0" cy="188.9" r="3.5" class="dot-earnest"/>
+  <text x="360.0" y="180.9" class="label-earnest" text-anchor="end">943 ms</text>
+  <text x="424" y="32" class="title">Peak memory</text>
+  <text x="424" y="50" class="note">largest resident set of any run, log scale</text>
+  <line x1="480" y1="300.0" x2="768" y2="300.0" class="grid"/>
+  <text x="470" y="304.0" class="tick" text-anchor="end">1 MiB</text>
+  <line x1="480" y1="262.7" x2="768" y2="262.7" class="grid"/>
+  <text x="470" y="266.7" class="tick" text-anchor="end">4 MiB</text>
+  <line x1="480" y1="225.3" x2="768" y2="225.3" class="grid"/>
+  <text x="470" y="229.3" class="tick" text-anchor="end">16 MiB</text>
+  <line x1="480" y1="188.0" x2="768" y2="188.0" class="grid"/>
+  <text x="470" y="192.0" class="tick" text-anchor="end">64 MiB</text>
+  <line x1="480" y1="150.7" x2="768" y2="150.7" class="grid"/>
+  <text x="470" y="154.7" class="tick" text-anchor="end">256 MiB</text>
+  <line x1="480" y1="113.3" x2="768" y2="113.3" class="grid"/>
+  <text x="470" y="117.3" class="tick" text-anchor="end">1 GiB</text>
+  <line x1="480" y1="76.0" x2="768" y2="76.0" class="grid"/>
+  <text x="470" y="80.0" class="tick" text-anchor="end">4 GiB</text>
+  <line x1="480" y1="300" x2="768" y2="300" class="axis"/>
+  <text x="480.0" y="318" class="tick" text-anchor="middle">1k</text>
+  <text x="624.0" y="318" class="tick" text-anchor="middle">100k</text>
+  <text x="696.0" y="318" class="tick" text-anchor="middle">1M</text>
+  <text x="768.0" y="318" class="tick" text-anchor="middle">10M</text>
+  <text x="624.0" y="336" class="note" text-anchor="middle">distinct states, log scale</text>
+  <path d="M 480.0 171.6 L 624.0 145.6 L 696.0 122.7 L 768.0 108.0" class="line-tlc"/>
+  <circle cx="480.0" cy="171.6" r="3.5" class="dot-tlc"/>
+  <text x="476.0" y="160.6" class="label-tlc" text-anchor="start">118 MiB</text>
+  <circle cx="624.0" cy="145.6" r="3.5" class="dot-tlc"/>
+  <text x="624.0" y="134.6" class="label-tlc" text-anchor="middle">309 MiB</text>
+  <circle cx="696.0" cy="122.7" r="3.5" class="dot-tlc"/>
+  <text x="696.0" y="111.7" class="label-tlc" text-anchor="middle">724 MiB</text>
+  <circle cx="768.0" cy="108.0" r="3.5" class="dot-tlc"/>
+  <text x="768.0" y="97.0" class="label-tlc" text-anchor="middle">1.22 GiB</text>
+  <path d="M 480.0 251.3 L 624.0 243.0 L 696.0 210.2 L 768.0 158.4" class="line-earnest"/>
+  <circle cx="480.0" cy="251.3" r="3.5" class="dot-earnest"/>
+  <text x="487.0" y="268.3" class="label-earnest" text-anchor="start">6 MiB</text>
+  <circle cx="624.0" cy="243.0" r="3.5" class="dot-earnest"/>
+  <text x="631.0" y="260.0" class="label-earnest" text-anchor="start">8 MiB</text>
+  <circle cx="696.0" cy="210.2" r="3.5" class="dot-earnest"/>
+  <text x="703.0" y="227.2" class="label-earnest" text-anchor="start">28 MiB</text>
+  <circle cx="768.0" cy="158.4" r="3.5" class="dot-earnest"/>
+  <text x="760.0" y="150.4" class="label-earnest" text-anchor="end">192 MiB</text>
+  <line x1="24" y1="364" x2="42" y2="364" class="line-earnest"/>
+  <text x="50" y="368" class="label-earnest">earnest 0.1.0</text>
+  <line x1="164" y1="364" x2="182" y2="364" class="line-tlc"/>
+  <text x="190" y="368" class="label-tlc">TLC 1.8.0</text>
+  <text x="768" y="368" class="note" text-anchor="end">Same TLA+ export, same distinct states. Lower is better.</text>
+</svg>
