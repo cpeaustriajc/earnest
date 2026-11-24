@@ -41,7 +41,7 @@ just check
 
 The [`justfile`](justfile) lists each step: `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings`, library-specific clippy passes, `cargo deny check`, `cargo machete`, TypeScript linting/typechecking/tests, docs build (`just docs`), `cargo test --locked`, Verus proofs (`cargo verus focus`), and internal model verification (`just models`).
 
-Required tools on `PATH`: `just`, `cargo-deny`, `cargo-machete`, Verus, Node 22.18 or newer, and `bun`. Exact pinned versions are in [`.github/workflows/check.yml`](.github/workflows/check.yml), except Verus: use the newest release, and keep `vstd` in `Cargo.toml` on the matching date.
+Required tools on `PATH`: `just`, `cargo-deny`, `cargo-machete`, Verus, Node 22.18 or newer, and `bun`. Exact pinned versions are in [`.github/workflows/check.yml`](.github/workflows/check.yml), except Verus: use the newest release. `vstd` in `Cargo.toml` must carry the same date; Dependabot moves it each week with the other dependencies.
 
 Format and apply clippy fixes:
 

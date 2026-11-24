@@ -1,0 +1,32 @@
+version: 2
+
+# One pull request a week per ecosystem, with every update in it.
+# vstd moves here too: CI installs the newest Verus, which needs the vstd of the same date.
+
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    groups:
+      cargo:
+        patterns: ["*"]
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    groups:
+      bun:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    groups:
+      github-actions:
+        patterns: ["*"]
