@@ -19,7 +19,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_VERSION: 1.100.0
+  RUST_VERSION: stable
   SMOKE_MODEL: tasks/benchmark/models/mixed/basket.model.ts
 
 jobs:
