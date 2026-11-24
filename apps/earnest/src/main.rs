@@ -23,15 +23,14 @@ use std::process::ExitCode;
 const MAIN_STACK: usize = 512 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    let started = std::thread::Builder::new()
-        .stack_size(MAIN_STACK)
-        .spawn(run);
-    match started {
-        Ok(running) => running
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
-        Err(_) => run(),
-    }
+    std::thread::scope(
+        |scope| match earnest_threads::start(scope, Some(MAIN_STACK), run) {
+            Ok(running) => running
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            Err(_) => run(),
+        },
+    )
 }
 
 fn run() -> ExitCode {

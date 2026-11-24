@@ -1,5 +1,5 @@
 use crate::workers::run_each;
-use earnest_chart::detail_lines;
+use earnest_chart::{chart_outline, chart_with_limit, detail_lines};
 use earnest_check::{Limits, Outcome, explore};
 use earnest_ir::Model;
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ impl Bounds {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Graphs {
-    Kept,
+    Charted { max_arrows: usize },
     Dropped,
 }
 
@@ -47,6 +47,7 @@ pub(crate) struct Search<'a> {
 pub(crate) struct Ran {
     pub(crate) outcome: Outcome,
     pub(crate) elapsed: Duration,
+    pub(crate) chart: Option<String>,
 }
 
 pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Graphs) -> Vec<Ran> {
@@ -56,14 +57,30 @@ pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Grap
             time_limit: bounds.time_limit,
             jobs: 1,
             helpers: Some(helpers.clone()),
-            keep_graph: graphs == Graphs::Kept,
+            keep_graph: graphs != Graphs::Dropped,
+            outline: graphs != Graphs::Dropped,
             only_rule: search.only_rule.map(str::to_owned),
         };
         let began = Instant::now();
-        let outcome = explore(search.model, &limits);
+        let mut outcome = explore(search.model, &limits);
+        let elapsed = began.elapsed();
+        let chart = match graphs {
+            Graphs::Charted { max_arrows } => outcome
+                .outline
+                .take()
+                .map(|outline| chart_outline(&outline, max_arrows))
+                .or_else(|| {
+                    outcome
+                        .graph
+                        .take()
+                        .map(|graph| chart_with_limit(&graph, max_arrows))
+                }),
+            Graphs::Dropped => None,
+        };
         Ran {
             outcome,
-            elapsed: began.elapsed(),
+            elapsed,
+            chart,
         }
     })
 }

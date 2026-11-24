@@ -301,3 +301,55 @@ fn r17_a_path_among_many_of_the_same_length_is_the_same_on_every_run() {
     assert_eq!(path_of("1"), first, "the same path on a second run");
     assert_eq!(path_of("4"), first, "the same path with four workers");
 }
+
+const WIDE_WHEELS: &str = r#"import { m } from "@earnest/model";
+
+export const Wheels = m.model("Wheels", {
+	a: m.int(0, 9).initial(0),
+	b: m.int(0, 9).initial(0),
+	c: m.int(0, 9).initial(0),
+	d: m.int(0, 9).initial(0),
+	e: m.int(0, 9).initial(0),
+});
+
+export const turn_a = m.action(Wheels, "wheel a turns", { when: (s) => s.a < 9, changes: (s) => ({ a: s.a + 1 }) });
+export const turn_b = m.action(Wheels, "wheel b turns", { when: (s) => s.b < 9, changes: (s) => ({ b: s.b + 1 }) });
+export const turn_c = m.action(Wheels, "wheel c turns", { when: (s) => s.c < 9, changes: (s) => ({ c: s.c + 1 }) });
+export const turn_d = m.action(Wheels, "wheel d turns", { when: (s) => s.d < 9, changes: (s) => ({ d: s.d + 1 }) });
+export const turn_e = m.action(Wheels, "wheel e turns", { when: (s) => s.e < 9, changes: (s) => ({ e: s.e + 1 }) });
+
+export const apart = m.rule(Wheels, "The wheels never read 5 5 4 4 4", (s) => !(s.a === 5 && s.b === 5 && s.c === 4 && s.d === 4 && s.e === 4));
+
+export const stopped = m.end(Wheels, "Every wheel is at its last notch", (s) => s.a === 9 && s.b === 9 && s.c === 9 && s.d === 9 && s.e === 9);
+"#;
+
+#[test]
+fn r12_a_model_of_levels_of_thousands_of_states_gives_the_same_results_on_every_number_of_workers()
+{
+    let sandbox = Sandbox::empty();
+    sandbox.write("models/wheels.model.ts", WIDE_WHEELS);
+    for limit in ["47000", "100000"] {
+        let report = |jobs: &str| {
+            let run = sandbox.earnest(&[
+                "verify",
+                "--json",
+                "--no-cache",
+                "--max-states",
+                limit,
+                "--jobs",
+                jobs,
+            ]);
+            run.exits(1);
+            without_timings(&run.json())
+        };
+        let one = report("1");
+        assert_eq!(
+            model(&one, "Wheels")["states"],
+            limit.parse::<u64>().unwrap_or(0),
+            "every state up to the limit {limit}"
+        );
+        for jobs in ["2", "4", "8"] {
+            assert_eq!(report(jobs), one, "{jobs} workers, state limit {limit}");
+        }
+    }
+}

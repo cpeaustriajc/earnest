@@ -1,13 +1,17 @@
 default: check
 
 # One recipe per check. To add a check, write its recipe and name it here.
-check: format unused-dependencies dependencies lint typescript docs test verify models
+check: format unused-dependencies dependencies lint lint-library typescript docs test verify models
 
 format:
     cargo fmt --check
 
 lint:
     cargo clippy --all-targets --locked -- -D warnings
+
+lint-library:
+    CLIPPY_CONF_DIR=lints/threads cargo clippy --workspace --exclude earnest_threads --exclude earnest_check --exclude earnest_ir --lib --bins --no-deps --locked -- -D warnings
+    CLIPPY_CONF_DIR=lints/search cargo clippy -p earnest_check -p earnest_ir --lib --no-deps --locked -- -D warnings
 
 dependencies:
     cargo deny check
@@ -48,6 +52,17 @@ tla-rs:
 benchmark:
     cargo build --release --locked -p earnest-cli
     cargo run --release --locked -p earnest_benchmark -- --runs 5
+
+counts:
+    cargo build --release --locked -p earnest-cli
+    cargo run --release --locked -p earnest_benchmark -- --counts
+
+record-counts:
+    cargo build --release --locked -p earnest-cli
+    cargo run --release --locked -p earnest_benchmark -- --counts --record
+
+same-answers commit:
+    python3 -I tasks/answers/same.py {{ commit }}
 
 verify:
     cargo verus focus

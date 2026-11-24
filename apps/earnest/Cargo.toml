@@ -25,6 +25,7 @@ clap.workspace = true
 earnest_ast.workspace = true
 earnest_chart.workspace = true
 earnest_check.workspace = true
+earnest_threads.workspace = true
 earnest_diagnostics.workspace = true
 earnest_ir.workspace = true
 earnest_rs.workspace = true

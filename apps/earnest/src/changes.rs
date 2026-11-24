@@ -7,7 +7,7 @@ use crate::select::Target;
 use earnest_ast::{Draft, RuleDraft};
 use earnest_chart::{ChangeKind, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
-use earnest_ir::{Expr, Model, Op, Rule};
+use earnest_ir::{Code, Expr, Model, Op, Rule};
 use earnest_semantic::lower_with_earlier;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -229,10 +229,10 @@ fn implies(first: &Rule, second: &Rule, id: String) -> Rule {
         says: String::new(),
         line: second.line,
         text: String::new(),
-        holds: Expr::Or(
-            Box::new(Expr::Apply(Op::Not, vec![first.holds.clone()])),
-            Box::new(second.holds.clone()),
-        ),
+        holds: Code::new(Expr::Or(
+            Box::new(Expr::Apply(Op::Not, vec![first.holds.expr().clone()])),
+            Box::new(second.holds.expr().clone()),
+        )),
         slots: first.slots.max(second.slots),
     }
 }
@@ -255,6 +255,7 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         jobs: bounds.jobs,
         helpers: None,
         keep_graph: false,
+        outline: false,
         only_rule: None,
     };
     explore(&Model { rules, ..model }, &limits)

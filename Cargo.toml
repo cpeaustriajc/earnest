@@ -18,10 +18,12 @@ earnest_macros = { path = "crates/earnest_macros", version = "0.1.0" }
 earnest_rs = { path = "crates/earnest_rs", version = "0.1.0" }
 earnest_semantic = { path = "crates/earnest_semantic", version = "0.1.0" }
 earnest_tla = { path = "crates/earnest_tla", version = "0.1.0" }
+earnest_threads = { path = "crates/earnest_threads", version = "0.1.0" }
 earnest_ts = { path = "crates/earnest_ts", version = "0.1.0" }
 earnest_value = { path = "crates/earnest_value", version = "0.1.0" }
 
 clap = { version = "4.6.7", features = ["derive"] }
+hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
 oxc_allocator = "0.152.0"
 oxc_ast = "0.152.0"
 oxc_parser = "0.152.0"
@@ -68,6 +70,8 @@ fn_params_excessive_bools = "warn"
 struct_excessive_bools = "warn"
 clone_on_ref_ptr = "warn"
 redundant_clone = "warn"
+or_fun_call = "warn"
+set_contains_or_insert = "warn"
 rc_buffer = "warn"
 
 exhaustive_enums = "warn"

@@ -53,3 +53,39 @@ fn threads_that_become_idle_while_a_level_runs_change_nothing_and_come_back() {
         );
     }
 }
+
+#[test]
+fn threads_that_become_idle_while_a_wide_level_runs_change_nothing_and_come_back() {
+    let (mut sketch, axes) =
+        crate::build::hypercube_sketch(crate::build::HYPERCUBE_TOP, crate::build::Moves::Up);
+    sketch.rule(
+        "notThere",
+        not(&crate::build::at_point(&axes, [9, 9, 9, 0, 0])),
+    );
+    let model = sketch.model();
+    let expected = explore(&model, &single_thread());
+    for idle_at_the_start in [0, 2] {
+        let helpers = Helpers::new(idle_at_the_start);
+        let outcome = thread::scope(|scope| {
+            scope.spawn(|| {
+                for _ in 0..3 {
+                    thread::sleep(Duration::from_millis(3));
+                    helpers.add(1);
+                }
+            });
+            explore(
+                &model,
+                &Limits {
+                    helpers: Some(helpers.clone()),
+                    ..single_thread()
+                },
+            )
+        });
+        assert_eq!(outcome, expected, "{idle_at_the_start} idle at the start");
+        assert_eq!(
+            helpers.idle(),
+            idle_at_the_start + 3,
+            "every thread is back when the search is done"
+        );
+    }
+}

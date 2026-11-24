@@ -36,6 +36,7 @@ export default defineConfig({
 					items: ["tutorials/first-model", "tutorials/rust-model", "tutorials/pull-request"],
 				},
 				{ label: "Compare", items: ["compare/tla"] },
+				{ label: "Project", items: ["changelog"] },
 			],
 		}),
 	],

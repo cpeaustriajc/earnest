@@ -70,3 +70,6 @@ jobs:
             "https://github.com/tlaplus/tlaplus/releases/download/v$TLC_VERSION/tla2tools.jar"
           echo "$TLC_SHA256  target/tools/tla2tools.jar" | sha256sum --check --quiet
       - run: just tlc
+      - run: just benchmark
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends valgrind
+      - run: just counts

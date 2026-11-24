@@ -5,7 +5,11 @@ use std::path::{Path, PathBuf};
 
 pub(crate) const FOLDER: &str = "tasks/benchmark/models";
 
-pub(crate) const LARGEST: &str = "grid_1m";
+pub(crate) const LARGEST: &str = "grid_10m";
+pub(crate) const R12_LARGE: &str = "grid_1m";
+pub(crate) const NARROW_LEVELS: &str = "narrow_levels";
+pub(crate) const WIDE: &str = "wide";
+pub(crate) const LARGEST_STATE_LIMIT: u64 = 20_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Language {
@@ -35,7 +39,7 @@ pub(crate) struct Scaled {
     pub(crate) model: &'static str,
 }
 
-pub(crate) const SCALED: [Scaled; 5] = [
+pub(crate) const SCALED: [Scaled; 7] = [
     Scaled {
         file: "grid_1k",
         model: "Grid1k",
@@ -49,12 +53,20 @@ pub(crate) const SCALED: [Scaled; 5] = [
         model: "Wide",
     },
     Scaled {
+        file: "narrow_levels",
+        model: "NarrowLevels",
+    },
+    Scaled {
         file: "grid_100k",
         model: "Grid100k",
     },
     Scaled {
         file: "grid_1m",
         model: "Grid1m",
+    },
+    Scaled {
+        file: "grid_10m",
+        model: "Grid10m",
     },
 ];
 
@@ -73,12 +85,14 @@ pub(crate) const MIXED_SMALL: [&str; 10] = [
 
 pub(crate) const MIXED_LARGE: [&str; 2] = ["ledger", "wide"];
 
-pub(crate) const EXPECTED_STATES: [(&str, u64); 15] = [
+pub(crate) const EXPECTED_STATES: [(&str, u64); 17] = [
     ("Grid1k", 1_000),
     ("Grid100k", 100_000),
     ("Grid1m", 1_000_000),
+    ("Grid10m", 10_000_000),
     ("Ledger", 36_400),
     ("Wide", 10_000),
+    ("NarrowLevels", 1_020_300),
     ("Counter", 100),
     ("Traffic", 30),
     ("Plane", 400),
@@ -96,6 +110,14 @@ pub(crate) fn expected_states(model: &str) -> Option<u64> {
         .iter()
         .find(|(name, _)| *name == model)
         .map(|(_, states)| *states)
+}
+
+pub(crate) fn state_limit(files: &[PathBuf]) -> Option<u64> {
+    files
+        .iter()
+        .filter_map(|file| file.file_stem()?.to_str())
+        .any(|stem| stem.trim_end_matches(".model") == LARGEST)
+        .then_some(LARGEST_STATE_LIMIT)
 }
 
 pub(crate) fn scaled_path(repository: &Path, file: &str, language: Language) -> PathBuf {
@@ -120,4 +142,34 @@ pub(crate) fn mixed_files(repository: &Path) -> Vec<PathBuf> {
         .chain(MIXED_LARGE.iter())
         .map(|file| mixed_path(repository, file))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_largest_model_gets_a_higher_state_limit() {
+        let repository = Path::new(".");
+        for language in [Language::TypeScript, Language::Rust] {
+            let largest = scaled_path(repository, LARGEST, language);
+            let smaller = scaled_path(repository, R12_LARGE, language);
+            assert_eq!(
+                state_limit(std::slice::from_ref(&largest)),
+                Some(LARGEST_STATE_LIMIT),
+                "{} is raised",
+                largest.display()
+            );
+            assert_eq!(
+                state_limit(&[smaller.clone(), largest]),
+                Some(LARGEST_STATE_LIMIT),
+                "a set with the largest is raised"
+            );
+            assert_eq!(state_limit(&[smaller]), None, "grid_1m keeps the default");
+        }
+        assert!(
+            expected_states("Grid10m").is_some_and(|states| states < LARGEST_STATE_LIMIT),
+            "the limit is above the largest count"
+        );
+    }
 }

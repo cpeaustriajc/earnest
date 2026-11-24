@@ -1,5 +1,6 @@
-use earnest_check::{Edge, Graph, Node};
-use std::collections::VecDeque;
+use crate::plot::Plot;
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, VecDeque};
 
 /// The most arrows a chart draws, not counting the arrows from and to `[*]`.
 pub const ARROW_LIMIT: usize = 20;
@@ -11,29 +12,53 @@ pub(crate) struct Selection {
     pub(crate) shown: usize,
 }
 
-pub(crate) fn marked(node: &Node) -> bool {
-    !node.broken.is_empty() || !node.outside.is_empty()
+struct Leaving {
+    first: Vec<usize>,
+    arrows: Vec<usize>,
 }
 
-fn sound(graph: &Graph) -> impl Iterator<Item = (usize, &Edge)> {
-    let count = graph.nodes.len();
-    graph
-        .edges
-        .iter()
-        .enumerate()
-        .filter(move |(_, edge)| edge.from < count && edge.to < count)
+impl Leaving {
+    fn new(plot: &impl Plot) -> Self {
+        let boxes = plot.boxes();
+        let sound = |at: usize| {
+            let (from, to) = plot.ends(at);
+            (from < boxes && to < boxes).then_some(from)
+        };
+        let mut first = vec![0_usize; boxes.saturating_add(1)];
+        for from in (0..plot.arrows()).filter_map(sound) {
+            first[from] = first[from].saturating_add(1);
+        }
+        let mut total = 0_usize;
+        for end in &mut first {
+            total = total.saturating_add(*end);
+            *end = total;
+        }
+        let mut arrows = vec![0_usize; total];
+        for at in (0..plot.arrows()).rev() {
+            if let Some(from) = sound(at) {
+                first[from] = first[from].saturating_sub(1);
+                arrows[first[from]] = at;
+            }
+        }
+        Self { first, arrows }
+    }
+
+    fn of(&self, from: usize) -> &[usize] {
+        &self.arrows[self.first[from]..self.first[from.saturating_add(1)]]
+    }
 }
 
-fn arrows_into(graph: &Graph, leaving: &[Vec<usize>]) -> Vec<Option<usize>> {
-    let mut seen: Vec<bool> = graph.nodes.iter().map(|node| node.start).collect();
-    let mut into = vec![None; graph.nodes.len()];
-    let mut queue: VecDeque<usize> = (0..graph.nodes.len()).filter(|node| seen[*node]).collect();
-    while let Some(node) = queue.pop_front() {
-        for position in &leaving[node] {
-            let target = graph.edges[*position].to;
+fn arrows_into(plot: &impl Plot, leaving: &Leaving) -> Vec<Option<usize>> {
+    let boxes = plot.boxes();
+    let mut seen: Vec<bool> = (0..boxes).map(|at| plot.look(at).start).collect();
+    let mut into = vec![None; boxes];
+    let mut queue: VecDeque<usize> = (0..boxes).filter(|at| seen[*at]).collect();
+    while let Some(at) = queue.pop_front() {
+        for arrow in leaving.of(at) {
+            let (_, target) = plot.ends(*arrow);
             if !seen[target] {
                 seen[target] = true;
-                into[target] = Some(*position);
+                into[target] = Some(*arrow);
                 queue.push_back(target);
             }
         }
@@ -41,86 +66,75 @@ fn arrows_into(graph: &Graph, leaving: &[Vec<usize>]) -> Vec<Option<usize>> {
     into
 }
 
-fn route(graph: &Graph, into: &[Option<usize>], kept: &[bool], target: usize) -> Vec<usize> {
-    let mut arrows = Vec::new();
-    let mut node = target;
-    while let Some(position) = into[node] {
-        if kept[position] {
-            break;
-        }
-        arrows.push(position);
-        node = graph.edges[position].from;
-    }
-    arrows
-}
-
-pub(crate) fn select(graph: &Graph, limit: usize) -> Selection {
-    let mut leaving = vec![Vec::new(); graph.nodes.len()];
-    for (position, edge) in sound(graph) {
-        leaving[edge.from].push(position);
-    }
-    let into = arrows_into(graph, &leaving);
-    let mut reached: Vec<bool> = graph.nodes.iter().map(|node| node.start).collect();
-    let mut drawn: Vec<bool> = graph
-        .nodes
-        .iter()
-        .zip(&leaving)
-        .map(|(node, arrows)| node.start && arrows.is_empty())
+pub(crate) fn select(plot: &impl Plot, limit: usize) -> Selection {
+    let boxes = plot.boxes();
+    let leaving = Leaving::new(plot);
+    let into = arrows_into(plot, &leaving);
+    let start = |at: usize| plot.look(at).start;
+    let marked = |at: usize| plot.look(at).marked;
+    let mut reached: Vec<bool> = (0..boxes).map(start).collect();
+    let mut drawn: Vec<bool> = (0..boxes)
+        .map(|at| start(at) && leaving.of(at).is_empty())
         .collect();
-    let mut kept = vec![false; graph.edges.len()];
+    let mut kept = vec![false; plot.arrows()];
     let mut count = 0_usize;
-    for (target, node) in graph.nodes.iter().enumerate() {
-        if !marked(node) || (!node.start && into[target].is_none()) {
+    let mut route = Vec::new();
+    for target in 0..boxes {
+        if !marked(target) || (!start(target) && into[target].is_none()) {
             continue;
         }
-        let whole = route(graph, &into, &kept, target);
         let room = limit.saturating_sub(count);
-        let left_out = whole.len().saturating_sub(room);
-        let arrows = whole.get(left_out..).unwrap_or_default();
-        count = count.saturating_add(arrows.len());
+        if room == 0 {
+            drawn[target] |= into[target].is_none_or(|arrow| kept[arrow]);
+            continue;
+        }
+        route.clear();
+        let mut at = target;
+        while let Some(arrow) = into[at].filter(|arrow| !kept[*arrow]) {
+            route.push(arrow);
+            at = plot.ends(arrow).0;
+        }
+        let left_out = route.len().saturating_sub(room);
+        let taken = route.get(left_out..).unwrap_or_default();
+        count = count.saturating_add(taken.len());
         if left_out == 0 {
             drawn[target] = true;
         }
-        for position in arrows.iter().copied() {
-            let edge = &graph.edges[position];
-            kept[position] = true;
-            drawn[edge.from] = true;
-            drawn[edge.to] = true;
-            reached[edge.to] = true;
+        for arrow in taken {
+            let (from, to) = plot.ends(*arrow);
+            kept[*arrow] = true;
+            drawn[from] = true;
+            drawn[to] = true;
+            reached[to] = true;
         }
     }
+    let mut next: BinaryHeap<Reverse<usize>> = (0..boxes)
+        .filter(|at| reached[*at])
+        .flat_map(|at| leaving.of(at).iter().copied().map(Reverse))
+        .collect();
     while count < limit {
-        let Some((position, edge)) =
-            sound(graph).find(|(position, edge)| !kept[*position] && reached[edge.from])
-        else {
+        let Some(Reverse(arrow)) = next.pop() else {
             break;
         };
-        kept[position] = true;
-        drawn[edge.from] = true;
-        drawn[edge.to] = true;
-        reached[edge.to] = true;
+        if kept[arrow] {
+            continue;
+        }
+        let (from, to) = plot.ends(arrow);
+        kept[arrow] = true;
+        drawn[from] = true;
+        drawn[to] = true;
+        if !reached[to] {
+            reached[to] = true;
+            next.extend(leaving.of(to).iter().copied().map(Reverse));
+        }
         count = count.saturating_add(1);
     }
-    let beyond = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .filter(|(target, node)| {
-            marked(node) && !drawn[*target] && (node.start || into[*target].is_some())
-        })
-        .count();
-    let shown = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .filter(|(target, node)| marked(node) && drawn[*target])
-        .count();
     Selection {
-        states: (0..graph.nodes.len()).filter(|node| drawn[*node]).collect(),
-        arrows: (0..graph.edges.len())
-            .filter(|position| kept[*position])
-            .collect(),
-        beyond,
-        shown,
+        states: (0..boxes).filter(|at| drawn[*at]).collect(),
+        arrows: (0..plot.arrows()).filter(|arrow| kept[*arrow]).collect(),
+        beyond: (0..boxes)
+            .filter(|at| marked(*at) && !drawn[*at] && (start(*at) || into[*at].is_some()))
+            .count(),
+        shown: (0..boxes).filter(|at| marked(*at) && drawn[*at]).count(),
     }
 }

@@ -1,5 +1,7 @@
-use crate::select::{ARROW_LIMIT, Selection, marked, select};
-use earnest_check::{Graph, Node};
+use crate::plot::{Look, Plot};
+use crate::select::{ARROW_LIMIT, Selection, select};
+use earnest_check::{Graph, Outline};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 const INDENT: &str = "    ";
@@ -14,7 +16,7 @@ struct Class {
     name: &'static str,
     color: &'static str,
     fallback: Option<&'static str>,
-    applies: fn(&Node) -> bool,
+    applies: fn(Look) -> bool,
 }
 
 const CLASSES: [Class; 3] = [
@@ -22,19 +24,19 @@ const CLASSES: [Class; 3] = [
         name: "broken",
         color: "broken",
         fallback: Some(DEFAULT_BROKEN),
-        applies: marked,
+        applies: |look| look.marked,
     },
     Class {
         name: "ending",
         color: "end",
         fallback: None,
-        applies: |node| node.end,
+        applies: |look| look.end,
     },
     Class {
         name: "starting",
         color: "start",
         fallback: None,
-        applies: |node| node.start,
+        applies: |look| look.start,
     },
 ];
 
@@ -119,77 +121,92 @@ fn style(color: &str) -> Option<String> {
     named.then(|| format!("fill:{color}"))
 }
 
-fn style_of(graph: &Graph, class: &Class) -> Option<String> {
-    graph
-        .colors
+fn style_of(colors: &[(String, String)], class: &Class) -> Option<String> {
+    colors
         .iter()
         .filter(|(name, _)| name == class.color)
         .find_map(|(_, color)| style(color))
         .or_else(|| class.fallback.map(str::to_owned))
 }
 
-struct Drawing<'a> {
-    graph: &'a Graph,
+struct Drawing<'a, P> {
+    plot: &'a P,
     selection: Selection,
     groups: Vec<&'a str>,
     group_of: Vec<Option<usize>>,
+    members: Vec<Vec<usize>>,
+    homes: Vec<Vec<usize>>,
 }
 
-impl<'a> Drawing<'a> {
-    fn new(graph: &'a Graph, limit: usize) -> Self {
-        let selection = select(graph, limit);
+impl<'a, P: Plot> Drawing<'a, P> {
+    fn new(plot: &'a P, selection: Selection) -> Self {
         let mut groups: Vec<&'a str> = Vec::new();
-        let mut group_of = vec![None; graph.nodes.len()];
+        let mut known: HashMap<&'a str, usize> = HashMap::new();
+        let mut group_of = Vec::with_capacity(selection.states.len());
         for state in &selection.states {
-            let Some(group) = graph.nodes[*state].group.as_deref() else {
-                continue;
-            };
-            let known = groups.iter().position(|known| *known == group);
-            group_of[*state] = Some(known.unwrap_or(groups.len()));
-            if known.is_none() {
-                groups.push(group);
-            }
+            let place = plot.group(*state).map(|group| {
+                let next = groups.len();
+                let place = *known.entry(group).or_insert(next);
+                if place == next {
+                    groups.push(group);
+                }
+                place
+            });
+            group_of.push(place);
         }
-        Self {
-            graph,
+        let mut drawing = Self {
+            plot,
             selection,
             groups,
             group_of,
+            members: Vec::new(),
+            homes: Vec::new(),
+        };
+        let slots = drawing.groups.len().saturating_add(1);
+        let mut members = vec![Vec::new(); slots];
+        for (state, group) in drawing.selection.states.iter().zip(&drawing.group_of) {
+            members[drawing.slot(*group)].push(*state);
         }
+        let mut homes = vec![Vec::new(); slots];
+        for position in &drawing.selection.arrows {
+            let (from, to) = plot.ends(*position);
+            let from_group = drawing.group_at(from);
+            let home = from_group.filter(|_| from_group == drawing.group_at(to));
+            homes[drawing.slot(home)].push(*position);
+        }
+        drawing.members = members;
+        drawing.homes = homes;
+        drawing
     }
 
-    fn states(&self) -> impl Iterator<Item = (usize, &'a Node)> {
-        self.selection
-            .states
-            .iter()
-            .map(|state| (*state, &self.graph.nodes[*state]))
+    fn slot(&self, group: Option<usize>) -> usize {
+        group.unwrap_or(self.groups.len())
     }
 
-    fn within(&self, group: Option<usize>) -> impl Iterator<Item = (usize, &'a Node)> {
-        self.states()
-            .filter(move |(state, _)| self.group_of[*state] == group)
+    fn group_at(&self, state: usize) -> Option<usize> {
+        let at = self.selection.states.binary_search(&state).ok()?;
+        self.group_of[at]
+    }
+
+    fn within(&self, group: Option<usize>) -> impl Iterator<Item = usize> {
+        self.members[self.slot(group)].iter().copied()
     }
 
     fn arrows(&self, group: Option<usize>, indent: &str) -> Vec<String> {
         let mut lines: Vec<String> = self
             .within(group)
-            .filter(|(_, node)| node.start)
-            .map(|(state, _)| format!("{indent}[*] --> s{state}"))
+            .filter(|state| self.plot.look(*state).start)
+            .map(|state| format!("{indent}[*] --> s{state}"))
             .collect();
-        for position in &self.selection.arrows {
-            let edge = &self.graph.edges[*position];
-            let home = self.group_of[edge.from]
-                .filter(|_| self.group_of[edge.from] == self.group_of[edge.to]);
-            if home != group {
-                continue;
-            }
-            let labels: Vec<String> = edge
-                .labels
-                .iter()
+        for position in &self.homes[self.slot(group)] {
+            let (from, to) = self.plot.ends(*position);
+            let labels: Vec<String> = self
+                .plot
+                .arrow_labels(*position)
                 .filter(|text| !text.trim().is_empty())
-                .map(|text| label(text))
+                .map(label)
                 .collect();
-            let mut line = format!("{indent}s{} --> s{}", edge.from, edge.to);
+            let mut line = format!("{indent}s{from} --> s{to}");
             if !labels.is_empty() {
                 let _ = write!(line, " : {}", labels.join(" / "));
             }
@@ -197,8 +214,8 @@ impl<'a> Drawing<'a> {
         }
         lines.extend(
             self.within(group)
-                .filter(|(_, node)| node.end)
-                .map(|(state, _)| format!("{indent}s{state} --> [*]")),
+                .filter(|state| self.plot.look(*state).end)
+                .map(|state| format!("{indent}s{state} --> [*]")),
         );
         lines
     }
@@ -207,11 +224,11 @@ impl<'a> Drawing<'a> {
         let inner = INDENT.repeat(2);
         let mut opened = vec![false; self.groups.len()];
         let mut lines = Vec::new();
-        for (state, node) in self.states() {
-            let Some(group) = self.group_of[state] else {
+        for (state, group) in self.selection.states.iter().zip(&self.group_of) {
+            let Some(group) = *group else {
                 lines.push(format!(
                     "{INDENT}state \"{}\" as s{state}",
-                    label(&node.label)
+                    label(self.plot.label(*state))
                 ));
                 continue;
             };
@@ -223,8 +240,11 @@ impl<'a> Drawing<'a> {
                 "{INDENT}state \"{}\" as g{group} {{",
                 label(self.groups[group])
             ));
-            lines.extend(self.within(Some(group)).map(|(member, node)| {
-                format!("{inner}state \"{}\" as s{member}", label(&node.label))
+            lines.extend(self.within(Some(group)).map(|member| {
+                format!(
+                    "{inner}state \"{}\" as s{member}",
+                    label(self.plot.label(member))
+                )
             }));
             lines.extend(self.arrows(Some(group), &inner));
             lines.push(format!("{INDENT}}}"));
@@ -235,14 +255,15 @@ impl<'a> Drawing<'a> {
     fn classes(&self) -> Vec<String> {
         let styles: Vec<Option<String>> = CLASSES
             .iter()
-            .map(|class| style_of(self.graph, class))
+            .map(|class| style_of(self.plot.colors(), class))
             .collect();
         let mut members = vec![Vec::new(); CLASSES.len()];
-        for (state, node) in self.states() {
+        for state in &self.selection.states {
+            let look = self.plot.look(*state);
             let class = CLASSES
                 .iter()
                 .zip(&styles)
-                .position(|(class, style)| style.is_some() && (class.applies)(node));
+                .position(|(class, style)| style.is_some() && (class.applies)(look));
             if let Some(class) = class {
                 members[class].push(format!("s{state}"));
             }
@@ -263,16 +284,16 @@ impl<'a> Drawing<'a> {
     }
 
     fn left_out(&self) -> Option<String> {
-        let boxes = self.graph.nodes.len();
-        let arrows = self.graph.edges.len();
+        let boxes = self.plot.boxes();
+        let arrows = self.plot.arrows();
         let hidden_boxes = boxes.saturating_sub(self.selection.states.len());
         let hidden_arrows = arrows.saturating_sub(self.selection.arrows.len());
-        let states: usize = self.graph.nodes.iter().map(|node| node.states).sum();
+        let states: usize = (0..boxes).map(|at| self.plot.states(at)).sum();
         let shown: usize = self
             .selection
             .states
             .iter()
-            .map(|position| self.graph.nodes[*position].states)
+            .map(|position| self.plot.states(*position))
             .sum();
         let hidden_states = states.saturating_sub(shown);
         let beyond = match (self.selection.beyond, self.selection.shown) {
@@ -287,6 +308,25 @@ impl<'a> Drawing<'a> {
                 "Not shown: {hidden_states} of {states} states and {hidden_arrows} of {arrows} arrows.{beyond}"
             )
         })
+    }
+
+    fn write(&self) -> String {
+        let mut lines = vec!["```mermaid".to_owned()];
+        if let Some(text) = self.plot.title() {
+            lines.push("---".to_owned());
+            lines.push(format!("title: \"{}\"", title(text)));
+            lines.push("---".to_owned());
+        }
+        lines.push("stateDiagram-v2".to_owned());
+        lines.extend(self.declarations());
+        lines.extend(self.arrows(None, INDENT));
+        lines.extend(self.classes());
+        lines.push("```".to_owned());
+        if let Some(note) = self.left_out() {
+            lines.push(String::new());
+            lines.push(note);
+        }
+        lines.join("\n")
     }
 }
 
@@ -320,21 +360,13 @@ pub fn chart(graph: &Graph) -> String {
 /// A `limit` of 0 draws no arrow.
 #[must_use]
 pub fn chart_with_limit(graph: &Graph, limit: usize) -> String {
-    let drawing = Drawing::new(graph, limit);
-    let mut lines = vec!["```mermaid".to_owned()];
-    if let Some(text) = &graph.title {
-        lines.push("---".to_owned());
-        lines.push(format!("title: \"{}\"", title(text)));
-        lines.push("---".to_owned());
-    }
-    lines.push("stateDiagram-v2".to_owned());
-    lines.extend(drawing.declarations());
-    lines.extend(drawing.arrows(None, INDENT));
-    lines.extend(drawing.classes());
-    lines.push("```".to_owned());
-    if let Some(note) = drawing.left_out() {
-        lines.push(String::new());
-        lines.push(note);
-    }
-    lines.join("\n")
+    Drawing::new(graph, select(graph, limit)).write()
+}
+
+/// The same chart as [`chart_with_limit`] of the graph `outline` was made from, to the byte,
+/// with room for `limit` arrows, drawn from the outline a search left in
+/// [`Limits::outline`](earnest_check::Limits::outline) in place of its graph.
+#[must_use]
+pub fn chart_outline(outline: &Outline, limit: usize) -> String {
+    Drawing::new(outline, select(outline, limit)).write()
 }

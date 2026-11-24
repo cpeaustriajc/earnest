@@ -1,7 +1,10 @@
 use crate::explore::{Note, Search};
-use earnest_ir::{Frame, Label, Piece, eval};
+use earnest_ir::{Frame, Label, Piece};
 use earnest_value::Value;
-use rustc_hash::FxHashMap;
+use hashbrown::hash_table::{Entry, HashTable};
+use rustc_hash::FxBuildHasher;
+use std::fmt::Write as _;
+use std::hash::BuildHasher;
 
 /// One box of a chart: every visited state with the same label and group.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -59,48 +62,72 @@ fn add_once(names: &mut Vec<String>, name: &str) {
     }
 }
 
+fn box_hash(group: Option<&str>, label: &str) -> u64 {
+    FxBuildHasher.hash_one((group, label))
+}
+
+fn arrow_hash(from: usize, to: usize) -> u64 {
+    FxBuildHasher.hash_one((from, to))
+}
+
 impl Search<'_> {
-    fn label(&self, label: &Label, state: &[Value]) -> String {
+    pub(crate) fn write_value(&self, value: &Value, text: &mut String) {
+        match value {
+            Value::Int(number) => {
+                let _ = write!(text, "{number}");
+            }
+            Value::Str(sym) => text.push_str(self.model.symbols.name(*sym)),
+            _ => text.push_str(&self.model.symbols.plain(value)),
+        }
+    }
+
+    pub(crate) fn write_label(&self, label: &Label, state: &[Value], text: &mut String) {
         let mut frame = Frame::new(state, label.slots);
-        let mut text = String::new();
         for piece in &label.pieces {
             match piece {
                 Piece::Text(plain) => text.push_str(plain),
-                Piece::Shown(expr) => match eval(expr, &mut frame) {
-                    Ok(value) => text.push_str(&self.model.symbols.plain(&value)),
+                Piece::Shown(expr) => match expr.eval(&mut frame) {
+                    Ok(value) => self.write_value(&value, text),
                     Err(_) => text.push('?'),
                 },
                 _ => text.push('?'),
             }
         }
-        text
     }
 
-    fn default_label(&self, state: &[Value]) -> String {
-        self.model
-            .fields
-            .iter()
-            .zip(state)
-            .map(|(field, value)| format!("{} = {}", field.name, self.model.symbols.plain(value)))
-            .collect::<Vec<_>>()
-            .join(", ")
+    pub(crate) fn write_default_label(&self, state: &[Value], text: &mut String) {
+        for (position, (field, value)) in self.model.fields.iter().zip(state).enumerate() {
+            if position > 0 {
+                text.push_str(", ");
+            }
+            text.push_str(&field.name);
+            text.push_str(" = ");
+            self.write_value(value, text);
+        }
     }
 
-    fn step_label(&self, action: usize) -> String {
+    pub(crate) fn write_state_label(&self, state: &[Value], text: &mut String) {
+        match &self.model.view.state {
+            Some(label) => self.write_label(label, state, text),
+            None => self.write_default_label(state, text),
+        }
+    }
+
+    pub(crate) fn step_label(&self, action: usize) -> &str {
         let Some(found) = self.model.actions.get(action) else {
-            return String::new();
+            return "";
         };
         self.model
             .view
             .steps
             .iter()
             .find(|(id, _)| *id == found.id)
-            .map_or_else(|| found.label.clone(), |(_, label)| label.clone())
+            .map_or(found.label.as_str(), |(_, label)| label.as_str())
     }
 
     fn mark_node(&self, node: &mut Node, id: usize) {
         node.states = node.states.saturating_add(1);
-        node.start |= matches!(self.parents.get(id), Some(None));
+        node.start |= id < self.store.len() && self.store.parent(id).is_none();
         let Some(Note {
             end,
             stuck,
@@ -127,45 +154,82 @@ impl Search<'_> {
             colors: view.colors.clone(),
             ..Graph::default()
         };
-        let mut places: FxHashMap<(Option<String>, String), usize> = FxHashMap::default();
-        let mut node_of = Vec::with_capacity(self.states.len());
-        for (id, state) in self.states.iter().enumerate() {
-            let label = view.state.as_ref().map_or_else(
-                || self.default_label(state),
-                |found| self.label(found, state),
-            );
-            let group = view.group.as_ref().map(|found| self.label(found, state));
-            let position = *places
-                .entry((group.clone(), label.clone()))
-                .or_insert_with(|| {
-                    graph.nodes.push(Node {
-                        label,
-                        group,
+        let mut places: HashTable<usize> = HashTable::new();
+        let mut node_of = Vec::with_capacity(self.store.len());
+        let (mut row, mut values) = (Vec::new(), Vec::new());
+        let (mut label, mut group) = (String::new(), String::new());
+        for id in 0..self.store.len() {
+            self.store.read_values(id, &mut row, &mut values);
+            let state = values.as_slice();
+            label.clear();
+            self.write_state_label(state, &mut label);
+            let grouped = view.group.as_ref().map(|found| {
+                group.clear();
+                self.write_label(found, state, &mut group);
+                group.as_str()
+            });
+            let hash = box_hash(grouped, &label);
+            let nodes = &mut graph.nodes;
+            let position = match places.entry(
+                hash,
+                |at| {
+                    nodes
+                        .get(*at)
+                        .is_some_and(|node| node.label == label && node.group.as_deref() == grouped)
+                },
+                |at| {
+                    nodes
+                        .get(*at)
+                        .map_or(0, |node| box_hash(node.group.as_deref(), &node.label))
+                },
+            ) {
+                Entry::Occupied(found) => *found.get(),
+                Entry::Vacant(free) => {
+                    nodes.push(Node {
+                        label: label.clone(),
+                        group: grouped.map(str::to_owned),
                         ..Node::default()
                     });
-                    graph.nodes.len().saturating_sub(1)
-                });
+                    *free.insert(nodes.len().saturating_sub(1)).get()
+                }
+            };
             node_of.push(position);
             if let Some(node) = graph.nodes.get_mut(position) {
                 self.mark_node(node, id);
             }
         }
-        let mut edge_at: FxHashMap<(usize, usize), usize> = FxHashMap::default();
+        let mut edge_at: HashTable<usize> = HashTable::new();
         for arrow in &self.arrows {
-            let (Some(source), Some(target)) = (node_of.get(arrow.from), node_of.get(arrow.to))
+            let (Some(&source), Some(&target)) = (node_of.get(arrow.from), node_of.get(arrow.to))
             else {
                 continue;
             };
-            let position = *edge_at.entry((*source, *target)).or_insert_with(|| {
-                graph.edges.push(Edge {
-                    from: *source,
-                    to: *target,
-                    labels: Vec::new(),
-                });
-                graph.edges.len().saturating_sub(1)
-            });
+            let edges = &mut graph.edges;
+            let position = match edge_at.entry(
+                arrow_hash(source, target),
+                |at| {
+                    edges
+                        .get(*at)
+                        .is_some_and(|edge| edge.from == source && edge.to == target)
+                },
+                |at| {
+                    edges
+                        .get(*at)
+                        .map_or(0, |edge| arrow_hash(edge.from, edge.to))
+                },
+            ) {
+                Entry::Occupied(found) => *found.get(),
+                Entry::Vacant(free) => {
+                    edges.push(Edge {
+                        from: source,
+                        to: target,
+                        labels: Vec::with_capacity(1),
+                    });
+                    *free.insert(edges.len().saturating_sub(1)).get()
+                }
+            };
             if let Some(edge) = graph.edges.get_mut(position) {
-                add_once(&mut edge.labels, &self.step_label(arrow.action));
+                add_once(&mut edge.labels, self.step_label(arrow.action));
             }
         }
         graph

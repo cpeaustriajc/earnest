@@ -10,6 +10,8 @@ serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+earnest_ir.workspace = true
+earnest_value.workspace = true
 proptest.workspace = true
 
 [lints]

@@ -1,8 +1,10 @@
 use crate::expand::{Whence, chosen};
-use crate::explore::{Parent, Search};
+use crate::explore::Search;
+use crate::graph::Graph;
 use crate::outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
 };
+use crate::outline::Outline;
 use earnest_value::Value;
 
 const STUCK: &str = "no action can happen here, and the model does not mark it as an end";
@@ -27,12 +29,15 @@ impl Search<'_> {
             .collect()
     }
 
-    fn step(&self, parent: Parent, before: &[Value], after: &[Value]) -> Option<Step> {
-        let action = self.model.actions.get(parent.action)?;
+    fn step(&self, from: usize, to: usize) -> Option<Step> {
+        let (position, input) = self.choice(from, to)?;
+        let before = self.store.state(from);
+        let after = self.store.state(to);
+        let action = self.model.actions.get(position)?;
         let input = action
             .inputs
             .iter()
-            .zip(chosen(action, parent.input))
+            .zip(chosen(action, input))
             .map(|(each, value)| {
                 Some(Named {
                     name: each.name.clone(),
@@ -44,7 +49,7 @@ impl Search<'_> {
             .model
             .fields
             .iter()
-            .zip(before.iter().zip(after))
+            .zip(before.iter().zip(&after))
             .filter(|(_, (old, new))| old != new)
             .map(|(field, (old, new))| Change {
                 field: field.name.clone(),
@@ -57,28 +62,26 @@ impl Search<'_> {
             label: action.label.clone(),
             input,
             changes,
-            state: self.named(after),
+            state: self.named(&after),
         })
     }
 
     fn path_to(&self, target: usize) -> Path {
         let mut chain = vec![target];
         let mut at = target;
-        while let Some(Some(parent)) = self.parents.get(at) {
-            chain.push(parent.state);
-            at = parent.state;
+        while let Some(parent) = self.store.parent(at) {
+            chain.push(parent);
+            at = parent;
         }
         chain.reverse();
         let start = chain
             .first()
-            .and_then(|id| self.states.get(*id))
-            .map_or_default(|state| self.named(state));
+            .map_or_default(|id| self.named(&self.store.state(*id)));
         let steps = chain
             .windows(2)
             .filter_map(|pair| {
                 let [from, to] = pair else { return None };
-                let parent = (*self.parents.get(*to)?)?;
-                self.step(parent, self.states.get(*from)?, self.states.get(*to)?)
+                self.step(*from, *to)
             })
             .collect();
         Path { start, steps }
@@ -133,6 +136,18 @@ impl Search<'_> {
         findings
     }
 
+    fn graph_or_outline(&self) -> (Option<Graph>, Option<Outline>) {
+        if !self.limits.keep_graph {
+            return (None, None);
+        }
+        if self.limits.outline
+            && let Some(outline) = self.outline()
+        {
+            return (None, Some(outline));
+        }
+        (Some(self.graph()), None)
+    }
+
     pub(crate) fn outcome(&self) -> Outcome {
         let only_rule = self.limits.only_rule.as_deref();
         let judged_everywhere =
@@ -155,6 +170,7 @@ impl Search<'_> {
             })
             .collect();
         let findings = self.findings();
+        let (graph, outline) = self.graph_or_outline();
         let failed =
             !findings.is_empty() || rules.iter().any(|rule| rule.verdict == Verdict::Broken);
         let status = match (failed, &self.reason) {
@@ -164,12 +180,13 @@ impl Search<'_> {
         };
         Outcome {
             status,
-            states: self.states.len(),
+            states: self.store.len(),
             rules,
             findings,
             reason: self.reason.clone(),
-            computes_beyond_32_bits: self.wide,
-            graph: self.limits.keep_graph.then(|| self.graph()),
+            computes_beyond_32_bits: self.computed_beyond_32_bits,
+            graph,
+            outline,
         }
     }
 }
