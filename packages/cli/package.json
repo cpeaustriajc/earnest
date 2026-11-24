@@ -32,10 +32,10 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@types/node": "22.20.5",
-    "oxfmt": "0.79.0",
-    "tsrs": "7.1.0-beta.tsrs3",
-    "vitest": "5.1.1"
+    "@types/node": "^22.20.5",
+    "oxfmt": "^0.79.0",
+    "tsrs": "^7.1.0-beta.tsrs3",
+    "vitest": "^5.1.1"
   },
   "optionalDependencies": {
     "@earnestjs/cli-darwin-arm64": "workspace:0.1.0",

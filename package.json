@@ -7,6 +7,6 @@
     "packages/cli/platforms/*"
   ],
   "devDependencies": {
-    "oxlint": "1.94.0"
+    "oxlint": "^1.94.0"
   }
 }
