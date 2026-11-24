@@ -5,6 +5,17 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: the TypeScript library is `@earnestjs/model`
+
+The library's npm name changed from `@earnest/model` to `@earnestjs/model`, because the `earnest` scope on npm belongs to someone else. Change the import in every model file:
+
+```ts
+import { m } from "@earnestjs/model";
+```
+
+- **A `*.model.ts` file** with the old import is `unreadable`, and the message names the new import.
+- **Any other `.ts` file** with the old import is no longer found as a model, so `earnest verify` skips it without a word. Search your project for `@earnest/model` to find these files.
+
 ## November 2026: a much faster search
 
 `earnest verify` and `earnest report` take far less time and memory. What they print is the same as before: status, state numbers, findings and paths, for every `--jobs`.

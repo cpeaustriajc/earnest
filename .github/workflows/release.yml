@@ -51,6 +51,10 @@ jobs:
             found=$(jq -r .version "$manifest")
             [ "$found" = "$version" ] || { echo "$manifest has version $found, not $version"; exit 1; }
           done
+          stale=$(jq -r --arg want "workspace:$version" \
+            '.optionalDependencies | to_entries[] | select(.value != $want) | "\(.key) \(.value)"' \
+            packages/cli/package.json)
+          [ -z "$stale" ] || { echo "packages/cli/package.json optionalDependencies not at workspace:$version:"; echo "$stale"; exit 1; }
           publish=false
           if [ "$EVENT" = push ] || [ "$PUBLISH_INPUT" = true ]; then publish=true; fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -202,7 +206,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
       - run: npm install --global "npm@$NPM_VERSION"
       - uses: actions/download-artifact@v4
         with:
@@ -211,8 +214,14 @@ jobs:
           merge-multiple: true
       - name: Publish the platform packages, then the model library, then the launcher
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+            echo "Publishing with the NPM_TOKEN secret"
+          else
+            echo "No NPM_TOKEN secret: publishing through trusted publishing"
+          fi
           ls npm
           publish() {
             name=$(tar --extract --to-stdout --file "$1" package/package.json | jq -r .name)
