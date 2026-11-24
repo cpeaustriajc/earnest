@@ -1,24 +1,8 @@
-"""Measures earnest and TLC on the grid models from 1,000 to 10,000,000 states, and draws the chart.
-
-Usage:
+"""Usage:
   python3 -I tasks/benchmark/scaling.py measure <earnest> <tla2tools.jar> <runs> <workers>[,...] <out.json> [<quint>]
   python3 -I tasks/benchmark/scaling.py chart <in.json> <out.svg>
 
-`measure` exports each grid model with `earnest tla` into a temporary folder, so TLC checks the
-same state space. For each model and number of workers it runs each tool once unmeasured, then
-`<runs>` times, and writes the median wall time and the largest peak resident set of any measured
-run to JSON. GNU time (`/usr/bin/time`, Linux) reads the peak resident set: it forks each run from
-its own small process, so the peak is the tool's, not this script's. It fails when the two tools
-count different distinct states. A run that takes longer than `TIMEOUT_SECONDS` is stopped and
-written down as a timeout. Java options set in the environment are dropped, so TLC runs with the
-JVM's defaults, as `earnest confirm --tlc` starts it. When `<out.json>` exists, its cases with
-other numbers of workers are kept. `chart` draws the cases with the most workers.
-
-With `<quint>`, it also runs `quint verify` on the same models written in Quint (`models/quint/`):
-with `--backend=tlc` and the same number of workers, which must count the same distinct states,
-and, in the cases with 1 worker, with Apalache and `--max-steps` set to the longest path of the
-model, so the bounded search covers every reachable state. Apalache counts no states. Once an
-Apalache run times out, the larger models are not run with Apalache.
+Java options set in the environment are dropped: they would change TLC's heap, and so its memory and time.
 """
 import hashlib
 import json
