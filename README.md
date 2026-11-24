@@ -1,25 +1,15 @@
 # earnest
 
-A model checker for models written in your app's own language. A developer or coding agent states the rules of a feature as a model in TypeScript or Rust, `earnest verify` visits every reachable state, and `earnest report` puts a Mermaid statechart and rule diff in the pull request.
+A model checker for models written in your app's own language.
 
-**[Documentation](https://earnest.cpeaustriajc.dev)** · **[Quickstart](https://earnest.cpeaustriajc.dev/start/quickstart/)** · **[Agent prompt](https://earnest.cpeaustriajc.dev/prompt.md)** · **[Changelog](https://earnest.cpeaustriajc.dev/changelog/)**
+Write the rules of a feature as an ordinary TypeScript or Rust file. `earnest verify` visits every reachable state in milliseconds, prints the shortest path to each broken rule or stuck state, and exports to TLA+ so TLC can confirm its verdicts.
 
-> **Early access.** There is no release yet and nothing is on npm. Only nightly builds of `main` ship today, and the model API and CLI can change between nights. Earnest 0.1.0 passes its own checks and TLC 1.8.0 confirms every conformance model in CI, but adversarial passes have still found missed bugs, so treat it as unproven.
+![Earnest checks a TypeScript or Rust model file by visiting every reachable state, catching broken rules with their shortest path, and exporting PR statecharts and TLA+.](apps/docs/src/assets/compare/overview.svg)
 
-## Why Earnest
+**[Read the docs](https://earnest.cpeaustriajc.dev)** · **[Quickstart](https://earnest.cpeaustriajc.dev/start/quickstart/)** · **[Agent prompt](https://earnest.cpeaustriajc.dev/prompt.md)** · **[`llms.txt`](https://earnest.cpeaustriajc.dev/llms.txt)** · **[Changelog](https://earnest.cpeaustriajc.dev/changelog/)**
 
-- **No second language.** A model is an ordinary TypeScript or Rust file sitting next to the code, using the same names, and changing in the same pull request. There is no TLA+ or Quint to learn or review.
-- **No second toolchain.** Your project's type checker, linter, and formatter already check the model file.
-- **Fast exhaustive search.** One ~5 MB binary with no Java and no network visits every reachable state and prints the shortest path to each broken rule, stuck state, or fault.
-- **Confirmed by TLC.** Every model exports to TLA+ (`earnest tla`), and `earnest confirm` verifies that TLC or `tla-rs` finds the same states and rule verdicts.
-
-## Compared with TLA+ and Quint
-
-Four agents modelled implicit state machines in zellij, helix, excalidraw, and t3code, writing 18 models in each app's own language. TLC 1.8.0 confirmed every verdict (18 of 18). Earnest checked all models of each app in **5.9 to 11 ms** (5.2 to 7.1 MB peak memory) compared with **778 to 2,698 ms** (137 to 162 MB) for TLC.
-
-![Time to check every model of each app. Lower is better. earnest 0.1.0: 5.9 to 11 ms. TLC 1.8.0: 778 to 2,698 ms.](apps/docs/src/assets/compare/time-per-app.png)
-
-Read the [full comparison](https://earnest.cpeaustriajc.dev/compare/tla/) for memory, install size, Quint timings, the bugs found (including a double-commit bug in Zed's Git panel), and methodology.
+> [!WARNING]
+> **Early access.** There is no release yet and nothing is on npm or crates.io. Only nightly builds of `main` ship today, and the model API and CLI can change between nights. Earnest 0.1.0 passes its own checks and TLC 1.8.0 confirms every conformance model in CI, but adversarial passes have still found missed bugs, so treat it as unproven.
 
 ## Install
 
@@ -39,13 +29,9 @@ Or build from source with Cargo:
 cargo install --git https://github.com/cpeaustriajc/earnest earnest-cli
 ```
 
-See the [Install guide](https://earnest.cpeaustriajc.dev/start/install/) for supported platforms, manual SHA-256 verification, and setting up `@earnestjs/model` or the `earnest` Rust crate.
+You don't need to write models by hand. Paste the prompt from [Quickstart](https://earnest.cpeaustriajc.dev/start/quickstart/) (or [`/prompt.md`](https://earnest.cpeaustriajc.dev/prompt.md)) into a coding agent and it installs `earnest`, models your code, and reports broken rules with their shortest path. Agents reading docs directly can load focused bundles from [`/llms.txt`](https://earnest.cpeaustriajc.dev/llms.txt) ([TypeScript](https://earnest.cpeaustriajc.dev/_llms-txt/typescript-models.txt), [Rust](https://earnest.cpeaustriajc.dev/_llms-txt/rust-models.txt)).
 
-## Use with a coding agent
-
-Open a coding agent in your project and paste the prompt from [Quickstart](https://earnest.cpeaustriajc.dev/start/quickstart/) (also served as plain text at [`/prompt.md`](https://earnest.cpeaustriajc.dev/prompt.md)). The agent installs `earnest`, writes a model next to your code, runs `earnest verify`, and reports any broken rule with its shortest path.
-
-For agents reading the docs directly, [`/llms.txt`](https://earnest.cpeaustriajc.dev/llms.txt) indexes focused Markdown bundles for [TypeScript models](https://earnest.cpeaustriajc.dev/_llms-txt/typescript-models.txt) and [Rust models](https://earnest.cpeaustriajc.dev/_llms-txt/rust-models.txt).
+See the [Install guide](https://earnest.cpeaustriajc.dev/start/install/) for manual SHA-256 verification and setting up `@earnestjs/model` or the `earnest` Rust crate.
 
 ## Example
 
@@ -102,6 +88,47 @@ earnest report --base origin/main    # Markdown PR report with rule diffs
 earnest tla src/turnstile.model.ts --out build/tla
 earnest confirm --tlc tla2tools.jar  # confirm verdicts with TLC or --tla-rs
 ```
+
+## Where Earnest fits
+
+Earnest is an **explicit-state model checker**, the same branch of formal verification as TLA+ (TLC) and Quint. Different verification methods check different things:
+
+| Method | Examples | Checks | Coverage | Trade-off |
+|---|---|---|---|---|
+| Example-based tests | Vitest, `cargo test`, Playwright | Running code | Scripted paths you write | High fidelity; misses unscripted event orderings |
+| Property-based / UI fuzzing | Bombadil, `fast-check`, `proptest` | Running code or live UI | Randomly sampled paths and inputs | Tests real code and UIs; cannot prove no other path fails |
+| **Explicit-state model checking** | **Earnest**, TLA+ (TLC), Quint | Finite state-machine model | **Every reachable state** in the model | Proves rules across all orderings; model can drift from code |
+| Deductive / SMT code proofs | Verus, Kani, Dafny | Implementation code | All inputs, including unbounded | Strongest guarantee on code; highest proof effort |
+
+These methods complement each other. Use Vitest or `cargo test` for concrete behavior, Bombadil or `proptest` to fuzz the running app or UI, and Earnest to check every state transition of a tricky design in milliseconds.
+
+## Compared with TLA+ and Quint
+
+Infrastructure teams (such as AWS) and protocol engineers use TLA+ (with TLC) and Quint to check every reachable state before shipping, but both require a separate specification language and a Java runtime. Earnest keeps models in ordinary TypeScript or Rust, runs as one ~5 MB binary with no Java, and exports to TLA+ so TLC can confirm its verdicts. Earnest checks state rules and stuck states, not "eventually" (temporal) rules, declared witness runs, or parameterized setups; export to TLC when you need temporal rules.
+
+| | earnest 0.1.0 | TLA+ (TLC 1.8.0) | Quint 0.33.1 |
+|---|---|---|---|
+| Model language | TypeScript or Rust | TLA+ | Quint |
+| Runtime and size | ~5 MB binary, no Java | Java + `tla2tools.jar` (~300 MB) | Node + Java + Apalache (~527 MB) |
+| Two zellij models | 4.2 ms | 696 ms | 878 ms (`run`) / 5,865 ms (`verify`) |
+| Exhaustive rules and stuck states | Yes | Yes | Yes (`verify`); `run` samples |
+| "Eventually" (temporal) rules | No (export to TLC; [#21](https://github.com/cpeaustriajc/earnest/issues/21)) | Yes | Yes |
+| Witness runs and model parameters | No ([#21](https://github.com/cpeaustriajc/earnest/issues/21)) | Config constants (`.cfg`) | Yes (`quint test`, module params) |
+
+Four coding agents modelled 18 implicit state machines across zellij, helix, excalidraw, and t3code. TLC 1.8.0 confirmed every verdict (18 of 18). Earnest checked all models of each app in **5.9 to 11 ms** (5.2 to 7.1 MB peak memory) compared with **778 to 2,698 ms** (137 to 162 MB) for TLC.
+
+![Time to check every model of each app. Lower is better. earnest 0.1.0: 5.9 to 11 ms. TLC 1.8.0: 778 to 2,698 ms.](apps/docs/src/assets/compare/time-per-app.png)
+
+Read the [full comparison](https://earnest.cpeaustriajc.dev/compare/tla/), or inspect the reproducible [benchmarks](tasks/benchmark/README.md) (10 million states in under 5 s and 256 MiB), [conformance suite](tasks/conformance/README.md), and [adversarial tests](tasks/break_it/README.md).
+
+## Requirements and security
+
+- **Platforms:** Prebuilt binaries ship for macOS (Apple silicon, Intel), Linux x64/ARM64 with glibc 2.39 or newer, and Windows x64. Linux with musl builds from source with Cargo.
+- **No extra runtime:** `earnest` needs no Java and no Node. Only `earnest confirm --tlc` requires Java and `tla2tools.jar` (`--tla-rs` needs no Java).
+- **Static parsing, no code execution:** `earnest` parses TypeScript and Rust files statically. It never executes JavaScript, resolves `node_modules`, or runs `cargo build`.
+- **Offline and bounded:** The binary makes no network calls and writes only to `.earnest/` (plus `--out` for `earnest tla`). `--max-states` (default `5000000`) and `--time-limit` cap state count and runtime.
+- **Verified downloads:** `install.sh` and `install.ps1` verify the archive's SHA-256 against its `.sha256` file before installing.
+- **Licenses:** The checker is `GPL-3.0-or-later` ([LICENSE](LICENSE)). The model libraries (`earnest`, `earnest_macros`, and `@earnestjs/model`) are `LGPL-3.0-or-later` ([LICENSE.LESSER](LICENSE.LESSER)), so app code that depends only on them does not fall under the GPL.
 
 ## Documentation
 
