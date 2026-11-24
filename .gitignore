@@ -11,3 +11,4 @@ node_modules
 !/apps/docs/src/content/docs/
 /apps/docs/.cloudflare
 __pycache__
+_apalache-out/

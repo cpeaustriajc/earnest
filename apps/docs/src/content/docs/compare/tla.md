@@ -61,55 +61,79 @@ Method: hyperfine 2.0.0, with 2 warm-up runs and 10 measured runs. The three-too
 
 ## Scaling from 1,000 to 10,000,000 states
 
-The app models above are small, so Java's start dominates TLC's time. This section checks larger state spaces. Both tools check the same four benchmark models: `grid_1k`, `grid_100k`, `grid_1m` and `grid_10m` from `tasks/benchmark/models/`. Each model turns 3 to 7 wheels of 10 notches, so it has 10^3 to 10^7 states.
+The app models above are small, so Java's start dominates TLC's time. This section checks larger state spaces. All three tools check the same four benchmark models: `grid_1k`, `grid_100k`, `grid_1m` and `grid_10m` from `tasks/benchmark/models/`. Each model turns 3 to 7 wheels of 10 notches, so it has 10^3 to 10^7 states.
 
-TLC checks earnest's TLA+ export of each model. Both tools found the same number of distinct states in every run.
+TLC checks earnest's TLA+ export of each model. Quint checks the same models written in Quint (`tasks/benchmark/models/quint/`). Earnest, TLC and Quint's TLC backend found the same number of distinct states in every run.
 
-![Wall time and peak memory against the number of states, earnest 0.1.0 and TLC 1.8.0, 4 workers each. Lower is better. Median wall time at 1,000, 100,000, 1,000,000 and 10,000,000 states: earnest 7 ms, 36 ms, 122 ms, 943 ms; TLC 910 ms, 2.03 s, 13.5 s, 132.5 s. Peak memory: earnest 6 MiB, 8 MiB, 28 MiB, 192 MiB; TLC 118 MiB, 309 MiB, 724 MiB, 1.22 GiB.](../../../assets/compare/scaling-trajectory.svg)
+![Wall time and peak memory against the number of states, 4 workers each, for earnest 0.1.0, TLC 1.8.0 and Quint 0.33.1 with its TLC backend. Lower is better. Median wall time at 1,000, 100,000, 1,000,000 and 10,000,000 states: earnest 5 ms, 24 ms, 142 ms, 837 ms; TLC 795 ms, 1.92 s, 12.0 s, 124.4 s; Quint with TLC 5.60 s, 6.47 s, 13.0 s, 88.6 s. Peak memory: earnest 6 MiB, 9 MiB, 28 MiB, 194 MiB; TLC 118 MiB, 270 MiB, 731 MiB, 1.49 GiB; Quint with TLC 141 MiB, 462 MiB, 2.33 GiB, 3.22 GiB.](../../../assets/compare/scaling-trajectory.svg)
 
-Median wall time:
+Median wall time with 4 workers:
 
-| States | earnest, 4 workers | TLC, 4 workers | earnest, 1 worker | TLC, 1 worker |
+| States | earnest | TLC | Quint with TLC |
+|---:|---:|---:|---:|
+| 1,000 | 5 ms | 795 ms | 5.60 s |
+| 100,000 | 24 ms | 1.92 s | 6.47 s |
+| 1,000,000 | 142 ms | 12.0 s | 13.0 s |
+| 10,000,000 | 837 ms | 124.4 s | 88.6 s |
+
+Median wall time with 1 worker:
+
+| States | earnest | TLC | Quint with TLC | Quint with Apalache |
 |---:|---:|---:|---:|---:|
-| 1,000 | 7 ms | 910 ms | 6 ms | 805 ms |
-| 100,000 | 36 ms | 2.03 s | 26 ms | 1.49 s |
-| 1,000,000 | 122 ms | 13.5 s | 215 ms | 7.22 s |
-| 10,000,000 | 943 ms | 132.5 s | 2.58 s | 85.6 s |
+| 1,000 | 6 ms | 766 ms | 5.58 s | stopped at 900 s |
+| 100,000 | 18 ms | 1.46 s | 6.46 s | not run |
+| 1,000,000 | 216 ms | 7.31 s | 14.8 s | not run |
+| 10,000,000 | 3.11 s | 89.3 s | 114.8 s | not run |
 
-Peak memory:
+Peak memory with 4 workers:
 
-| States | earnest, 4 workers | TLC, 4 workers | earnest, 1 worker | TLC, 1 worker |
+| States | earnest | TLC | Quint with TLC |
+|---:|---:|---:|---:|
+| 1,000 | 6 MiB | 118 MiB | 141 MiB |
+| 100,000 | 9 MiB | 270 MiB | 462 MiB |
+| 1,000,000 | 28 MiB | 731 MiB | 2.33 GiB |
+| 10,000,000 | 194 MiB | 1.49 GiB | 3.22 GiB |
+
+Peak memory with 1 worker:
+
+| States | earnest | TLC | Quint with TLC | Quint with Apalache |
 |---:|---:|---:|---:|---:|
-| 1,000 | 6 MiB | 118 MiB | 6 MiB | 118 MiB |
-| 100,000 | 8 MiB | 309 MiB | 7 MiB | 269 MiB |
-| 1,000,000 | 28 MiB | 724 MiB | 27 MiB | 946 MiB |
-| 10,000,000 | 192 MiB | 1.22 GiB | 188 MiB | 1.28 GiB |
+| 1,000 | 6 MiB | 117 MiB | 137 MiB | stopped at 900 s |
+| 100,000 | 7 MiB | 311 MiB | 493 MiB | not run |
+| 1,000,000 | 27 MiB | 1,018 MiB | 2.12 GiB | not run |
+| 10,000,000 | 188 MiB | 1.94 GiB | 2.77 GiB | not run |
 
-At 10,000,000 states with 4 workers, earnest took 943 ms and 192 MiB. TLC took 132.5 s and 1.22 GiB: 140 times the time and 6.5 times the memory. On this machine TLC was faster with 1 worker than with 4 at every size, and took 85.6 s at 10,000,000 states. Earnest with 4 workers was 91 times faster than that run. TLC finished every run, so no run hit the 900 s limit.
+At 10,000,000 states with 4 workers, earnest took 837 ms and 194 MiB. TLC took 124.4 s and 1.49 GiB, and Quint with TLC took 88.6 s and 3.22 GiB. The fastest run of either tool at that size, Quint with TLC and 4 workers, took 106 times as long as earnest.
+
+Quint has two ways to check every state. `quint verify --backend=tlc` translates the model to TLA+ and runs the TLC that ships inside Apalache. Its own start (Node, the translation, Java) adds about 5 s, which dominates up to 100,000 states. It starts Java with an 8 GiB heap, and at 10,000,000 states with 4 workers it was faster than plain TLC with Java's default heap. `quint verify` with Apalache, its default, is a bounded symbolic check. It reaches every state only when `--max-steps` is at least the longest path, which is 27 steps in `grid_1k`. With 27 steps it ran past the 900 s limit on `grid_1k` and gave no answer, so the larger models were not run with Apalache. `quint run` samples random paths and doesn't check every state, so it isn't measured here.
+
+TLC was faster with 1 worker than with 4 at every size. At 10,000,000 states it took 89.3 s with 1 worker.
 
 Method:
 
 - Machine: a cloud Linux VM with 4 vCPUs (Intel Xeon @ 2.10GHz), 15.7 GiB of memory, Ubuntu 24.04, Linux 6.18.
-- Tools: earnest 0.1.0 built with `cargo build --release --locked -p earnest-cli`. TLC 1.8.0 (`tla2tools.jar` from the `v1.8.0` release, SHA-256 `fdffef24...353fa6713`) on OpenJDK 21.0.13 with the JVM's default heap.
-- Runs: 1 unmeasured run, then 5 measured runs with 4 workers and 3 with 1 worker. The tables give the median wall time and the largest peak resident set of any measured run.
-- Wall time runs from starting the process to its exit, so TLC's time includes Java starting up and earnest's includes reading the TypeScript file.
-- earnest ran `earnest verify --no-cache --json --jobs <n> --max-states 20000000`. TLC ran `java -cp tla2tools.jar tlc2.TLC -workers <n>` on the exported module and its `.cfg`.
+- Tools: earnest 0.1.0 built with `cargo build --release --locked -p earnest-cli`. TLC 1.8.0 (`tla2tools.jar` from the `v1.8.0` release, SHA-256 `fdffef24...353fa6713`) on OpenJDK 21.0.13 with the JVM's default heap. Quint 0.33.1 from npm on Node 22, with Apalache 0.62.4, which `quint verify` downloads on its first run.
+- Runs: 1 unmeasured run, then 5 measured runs with 4 workers and 3 with 1 worker. The tables give the median wall time and the largest peak resident set of any measured run. For Quint that is the larger of the Node and Java processes, not their sum.
+- Wall time runs from starting the process to its exit, so it includes starting Java and Node and reading the model file.
+- earnest ran `earnest verify --no-cache --json --jobs <n> --max-states 20000000`. TLC ran `java -cp tla2tools.jar tlc2.TLC -workers <n>` on the exported module and its `.cfg`. Quint ran `quint verify --backend=tlc --tlc-config <file> --invariant inside`, with the file setting `workers` to `<n>`, and `quint verify --max-steps 27 --invariant inside` for Apalache.
 
 Rerun the whole measurement and redraw the chart with these commands:
 
 ```sh
 cargo build --release --locked -p earnest-cli
-python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 5 4 tasks/benchmark/scaling.json
-python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 3 1 tasks/benchmark/scaling.json
+npm install --prefix target/tools @informalsystems/quint@0.33.1
+python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 5 4 tasks/benchmark/scaling.json target/tools/node_modules/.bin/quint
+python3 -I tasks/benchmark/scaling.py measure target/release/earnest target/tools/tla2tools.jar 3 1 tasks/benchmark/scaling.json target/tools/node_modules/.bin/quint
 python3 -I tasks/benchmark/scaling.py chart tasks/benchmark/scaling.json apps/docs/src/assets/compare/scaling-trajectory.svg
 ```
 
-The script needs Linux, Java and GNU time (`/usr/bin/time`). It fails if the two tools count different states. The raw numbers of every run are in `tasks/benchmark/scaling.json`.
+The script needs Linux, Java, Node and GNU time (`/usr/bin/time`). It fails if two tools count different states. The raw numbers of every run are in `tasks/benchmark/scaling.json`.
 
 Limits:
 
-- The grid models are simple on purpose: every action changes one number. A model with sets, maps or many inputs per action costs more per state in both tools.
-- TLC ran with its defaults. Its memory follows the JVM heap, which by default may grow to a quarter of the machine's memory. A larger or smaller `-Xmx` changes its peak memory and can change its time.
+- The grid models are simple on purpose: every action changes one number. A model with sets, maps or many inputs per action costs more per state in every tool.
+- TLC and Quint ran with their own defaults. Their memory follows the JVM heap: a quarter of the machine's memory for plain TLC, 8 GiB under Quint. Another `-Xmx` changes their peak memory and can change their time.
+- Apalache answers a different question well: it checks bounded paths symbolically and can handle values too large to list. A wide grid of small numbers is a poor fit for it.
 - This is one machine on one day. A shared cloud VM adds noise, and the [benchmark notes](https://github.com/cpeaustriajc/earnest/blob/main/tasks/benchmark/README.md) show the same earnest build running up to 1.9 times slower on another machine of the same size.
 
 ## The same machine in three tools

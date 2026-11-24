@@ -1,7 +1,7 @@
 """Measures earnest and TLC on the grid models from 1,000 to 10,000,000 states, and draws the chart.
 
 Usage:
-  python3 -I tasks/benchmark/scaling.py measure <earnest> <tla2tools.jar> <runs> <workers>[,...] <out.json>
+  python3 -I tasks/benchmark/scaling.py measure <earnest> <tla2tools.jar> <runs> <workers>[,...] <out.json> [<quint>]
   python3 -I tasks/benchmark/scaling.py chart <in.json> <out.svg>
 
 `measure` exports each grid model with `earnest tla` into a temporary folder, so TLC checks the
@@ -9,10 +9,16 @@ same state space. For each model and number of workers it runs each tool once un
 `<runs>` times, and writes the median wall time and the largest peak resident set of any measured
 run to JSON. GNU time (`/usr/bin/time`, Linux) reads the peak resident set: it forks each run from
 its own small process, so the peak is the tool's, not this script's. It fails when the two tools
-count different distinct states. A TLC run that takes longer than `TLC_SECONDS` is stopped and
+count different distinct states. A run that takes longer than `TIMEOUT_SECONDS` is stopped and
 written down as a timeout. Java options set in the environment are dropped, so TLC runs with the
 JVM's defaults, as `earnest confirm --tlc` starts it. When `<out.json>` exists, its cases with
 other numbers of workers are kept. `chart` draws the cases with the most workers.
+
+With `<quint>`, it also runs `quint verify` on the same models written in Quint (`models/quint/`):
+with `--backend=tlc` and the same number of workers, which must count the same distinct states,
+and, in the cases with 1 worker, with Apalache and `--max-steps` set to the longest path of the
+model, so the bounded search covers every reachable state. Apalache counts no states. Once an
+Apalache run times out, the larger models are not run with Apalache.
 """
 import hashlib
 import json
@@ -30,7 +36,7 @@ import time
 MODELS = [("grid_1k", "Grid1k", 1_000), ("grid_100k", "Grid100k", 100_000),
           ("grid_1m", "Grid1m", 1_000_000), ("grid_10m", "Grid10m", 10_000_000)]
 STATE_LIMIT = "20000000"
-TLC_SECONDS = 900
+TIMEOUT_SECONDS = 900
 TLC_RELEASES = {"fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713": "1.8.0"}
 GNU_TIME = "/usr/bin/time"
 JAVA_ENVIRONMENT_DROPPED = ("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS")
@@ -76,7 +82,7 @@ def tlc_run(jar, folder, name, workers):
     with tempfile.TemporaryDirectory() as meta:
         argv = ["java", "-cp", jar, "tlc2.TLC", "-workers", str(workers), "-metadir", meta,
                 "-config", os.path.join(folder, f"{name}.cfg"), os.path.join(folder, f"{name}.tla")]
-        wall, memory, text = timed(argv, TLC_SECONDS)
+        wall, memory, text = timed(argv, TIMEOUT_SECONDS)
     if wall is None:
         return None, memory, None
     if "No error has been found" not in text:
@@ -84,20 +90,44 @@ def tlc_run(jar, folder, name, workers):
     return wall, memory, int(re.findall(r"([\d,]+) distinct states found", text)[-1].replace(",", ""))
 
 
+def quint_tlc_run(quint, model, workers):
+    with tempfile.NamedTemporaryFile("w", suffix=".json") as config:
+        json.dump({"workers": workers}, config)
+        config.flush()
+        argv = [quint, "verify", "--backend=tlc", "--tlc-config", config.name, "--invariant", "inside", model]
+        wall, memory, text = timed(argv, TIMEOUT_SECONDS)
+    if wall is None:
+        return None, memory, None
+    if "[ok]" not in text:
+        raise SystemExit(f"quint found an error in {model}:\n{text[-2000:]}")
+    return wall, memory, int(re.findall(r"([\d,]+) distinct states found", text)[-1].replace(",", ""))
+
+
+def apalache_run(quint, model, steps):
+    argv = [quint, "verify", "--max-steps", str(steps), "--invariant", "inside", model]
+    wall, memory, text = timed(argv, TIMEOUT_SECONDS)
+    if wall is not None and "[ok]" not in text:
+        raise SystemExit(f"quint found an error in {model}:\n{text[-2000:]}")
+    return wall, memory, None
+
+
 def measure_case(run, runs):
-    run()
+    if run()[0] is None:
+        return {"timeout_seconds": TIMEOUT_SECONDS}
     walls, memories, counts = [], [], set()
     for _ in range(runs):
         wall, memory, states = run()
         if wall is None:
-            return {"timeout_seconds": TLC_SECONDS}
+            return {"timeout_seconds": TIMEOUT_SECONDS}
         memories.append(memory)
         walls.append(wall)
         counts.add(states)
     if len(counts) != 1:
         raise SystemExit(f"state counts differ between runs: {counts}")
-    return {"median_seconds": round(statistics.median(walls), 4), "walls": [round(w, 4) for w in sorted(walls)],
-            "peak_mib": round(max(memories), 1), "states": counts.pop()}
+    case = {"median_seconds": round(statistics.median(walls), 4), "walls": [round(w, 4) for w in sorted(walls)],
+            "peak_mib": round(max(memories), 1)}
+    states = counts.pop()
+    return case if states is None else {**case, "states": states}
 
 
 def processor():
@@ -108,7 +138,7 @@ def processor():
     return platform.processor()
 
 
-def measure(binary, jar, runs, workers_list, out):
+def measure(binary, jar, runs, workers_list, out, quint=None):
     root = os.path.dirname(os.path.abspath(__file__))
     binary, jar = os.path.abspath(binary), os.path.abspath(jar)
     java = subprocess.run(["java", "-version"], capture_output=True, text=True,
@@ -126,8 +156,12 @@ def measure(binary, jar, runs, workers_list, out):
         "tlc": TLC_RELEASES.get(digest, "unknown release"), "tlc_sha256": digest,
         "tlc_build": next((line.split("Version")[1].strip() for line in tlc.stdout.splitlines() if "Version" in line),
                           ""),
-        "tlc_timeout_seconds": TLC_SECONDS, "cases": [],
+        "timeout_seconds": TIMEOUT_SECONDS, "cases": [],
     }
+    if quint:
+        quint = os.path.abspath(quint)
+        result["quint"] = subprocess.run([quint, "--version"], capture_output=True, text=True).stdout.strip()
+    apalache_timed_out = False
     with tempfile.TemporaryDirectory() as exports:
         for file, name, expected in MODELS:
             model_file = os.path.join(root, "models", f"{file}.model.ts")
@@ -136,11 +170,22 @@ def measure(binary, jar, runs, workers_list, out):
             for workers in workers_list:
                 earnest = measure_case(lambda: earnest_run(binary, model_file, workers), runs)
                 tlc = measure_case(lambda: tlc_run(jar, folder, name, workers), runs)
-                for tool, case in (("earnest", earnest), ("TLC", tlc)):
-                    if "states" in case and case["states"] != expected:
-                        raise SystemExit(f"{tool} counted {case['states']} states of {name}, not {expected}")
-                result["cases"].append({"model": file, "states": expected, "workers": workers, "runs": runs,
-                                        "earnest": earnest, "tlc": tlc})
+                case = {"model": file, "states": expected, "workers": workers, "runs": runs,
+                        "earnest": earnest, "tlc": tlc}
+                if quint:
+                    quint_model = os.path.join(root, "models", "quint", f"{file}.qnt")
+                    case["quint_tlc"] = measure_case(lambda: quint_tlc_run(quint, quint_model, workers), runs)
+                    if workers == 1 and apalache_timed_out:
+                        case["quint_apalache"] = {"skipped": "a smaller model timed out"}
+                    elif workers == 1:
+                        steps = 9 * round(math.log10(expected))
+                        case["quint_apalache"] = {"max_steps": steps, **measure_case(
+                            lambda: apalache_run(quint, quint_model, steps), runs)}
+                        apalache_timed_out = "timeout_seconds" in case["quint_apalache"]
+                for tool in ("earnest", "tlc", "quint_tlc"):
+                    if case.get(tool, {}).get("states", expected) != expected:
+                        raise SystemExit(f"{tool} counted {case[tool]['states']} states of {name}, not {expected}")
+                result["cases"].append(case)
                 print(json.dumps(result["cases"][-1]), file=sys.stderr)
     if os.path.exists(out):
         with open(out) as file:
@@ -160,6 +205,7 @@ STYLE = """
       --axis: rgba(115, 115, 115, 0.45);
       --earnest: #0a0a0a;
       --tlc: #dc2626;
+      --quint: #2563eb;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -169,6 +215,7 @@ STYLE = """
         --axis: rgba(240, 246, 252, 0.38);
         --earnest: #f0f6fc;
         --tlc: #f87171;
+        --quint: #60a5fa;
       }
     }
     text { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
@@ -183,6 +230,9 @@ STYLE = """
     .dot-tlc { fill: var(--tlc); }
     .label-earnest { fill: var(--earnest); font-size: 11px; font-weight: 600; }
     .label-tlc { fill: var(--tlc); font-size: 11px; font-weight: 600; }
+    .line-quint { stroke: var(--quint); stroke-width: 2; fill: none; stroke-dasharray: 5 3; }
+    .dot-quint { fill: var(--quint); }
+    .label-quint { fill: var(--quint); font-size: 11px; font-weight: 600; }
 """
 
 def states_label(states):
@@ -210,9 +260,13 @@ def axis_ticks(ticks, values):
     return [t for t in ticks if low <= t[0] <= high]
 
 
+TOOLS = (("earnest", "earnest"), ("tlc", "tlc"), ("quint_tlc", "quint"))
+END_LABEL_GAP = 13
+
+
 def panel(x0, title, note, states, values, ticks, label):
     top, height = 76, 224
-    left, right, bottom = x0 + 56, x0 + 344, top + height
+    left, right, bottom = x0 + 56, x0 + 326, top + height
     low, high = math.log10(ticks[0][0]), math.log10(ticks[-1][0])
     fewest, most = math.log10(states[0]), math.log10(states[-1])
 
@@ -234,24 +288,36 @@ def panel(x0, title, note, states, values, ticks, label):
                      f'{states_label(count)}</text>')
     parts.append(f'  <text x="{(left + right) / 2:.1f}" y="{bottom + 36}" class="note" text-anchor="middle">'
                  'distinct states, log scale</text>')
-    for tool in ("tlc", "earnest"):
+    ends = []
+    for tool, style in TOOLS:
+        if tool not in values:
+            continue
         points = [(px(c), py(v)) for c, v in zip(states, values[tool]) if v is not None]
         path = " ".join(f"{'M' if i == 0 else 'L'} {x:.1f} {y:.1f}" for i, (x, y) in enumerate(points))
-        parts.append(f'  <path d="{path}" class="line-{tool}"/>')
+        parts.append(f'  <path d="{path}" class="line-{style}"/>')
         for index, (count, value) in enumerate(zip(states, values[tool])):
             x = px(count)
             if value is None:
-                parts.append(f'  <text x="{x:.1f}" y="{top - 4}" class="label-{tool}" text-anchor="end">'
+                parts.append(f'  <text x="{x:.1f}" y="{top - 4}" class="label-{style}" text-anchor="end">'
                              'stopped: timeout</text>')
                 continue
             y = py(value)
-            if tool == "tlc":
-                anchor, dx, dy = ("start", -4, -11) if index == 0 else ("middle", 0, -11)
+            parts.append(f'  <circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" class="dot-{style}"/>')
+            if index == len(states) - 1:
+                ends.append([y + 4, x + 8, style, label(value)])
+                continue
+            highest = max(v[index] for v in values.values() if v[index] is not None)
+            if value == highest:
+                anchor, dx, dy = ("start", -4, -14) if index == 0 else ("end", -6, -9)
             else:
-                anchor, dx, dy = ("end", -8, -8) if index == len(states) - 1 else ("start", 7, 17)
-            parts.append(f'  <circle cx="{x:.1f}" cy="{y:.1f}" r="3.5" class="dot-{tool}"/>')
-            parts.append(f'  <text x="{x + dx:.1f}" y="{y + dy:.1f}" class="label-{tool}" '
+                anchor, dx, dy = "start", 7, 17
+            parts.append(f'  <text x="{x + dx:.1f}" y="{y + dy:.1f}" class="label-{style}" '
                          f'text-anchor="{anchor}">{label(value)}</text>')
+    ends.sort()
+    for index in range(1, len(ends)):
+        ends[index][0] = max(ends[index][0], ends[index - 1][0] + END_LABEL_GAP)
+    for y, x, style, text in ends:
+        parts.append(f'  <text x="{x:.1f}" y="{y:.1f}" class="label-{style}">{text}</text>')
     return parts
 
 
@@ -261,35 +327,36 @@ def chart(source, out):
     workers = max(case["workers"] for case in result["cases"])
     cases = sorted((c for c in result["cases"] if c["workers"] == workers), key=lambda c: c["states"])
     states = [c["states"] for c in cases]
-    times = {tool: [c[tool].get("median_seconds") for c in cases] for tool in ("earnest", "tlc")}
-    memory = {tool: [c[tool].get("peak_mib") for c in cases] for tool in ("earnest", "tlc")}
+    tools = [tool for tool, _ in TOOLS if all(tool in c for c in cases)]
+    times = {tool: [c[tool].get("median_seconds") for c in cases] for tool in tools}
+    memory = {tool: [c[tool].get("peak_mib") for c in cases] for tool in tools}
     time_ticks = axis_ticks([(0.001, "1 ms"), (0.01, "10 ms"), (0.1, "100 ms"), (1, "1 s"), (10, "10 s"),
-                             (100, "100 s"), (1000, "1,000 s")], times["earnest"] + times["tlc"])
-    memory_ticks = axis_ticks([(1, "1 MiB"), (4, "4 MiB"), (16, "16 MiB"), (64, "64 MiB"), (256, "256 MiB"), (1024, "1 GiB"),
-                               (4096, "4 GiB"), (16384, "16 GiB")], memory["earnest"] + memory["tlc"])
+                             (100, "100 s"), (1000, "1,000 s")], sum(times.values(), []))
+    memory_ticks = axis_ticks([(1, "1 MiB"), (4, "4 MiB"), (16, "16 MiB"), (64, "64 MiB"), (256, "256 MiB"),
+                               (1024, "1 GiB"), (4096, "4 GiB"), (16384, "16 GiB")], sum(memory.values(), []))
+    names = {"earnest": result["earnest"], "tlc": f"TLC {result['tlc']}",
+             "quint_tlc": f"Quint {result.get('quint', '')} with TLC"}
 
     def listed(values, label):
         return ", ".join(f"{label(v)} at {states_label(c)}" if v is not None else f"timeout at {states_label(c)}"
                          for c, v in zip(states, values))
 
-    tlc = f"TLC {result['tlc']}"
-    summary = (f"Wall time and peak memory of {result['earnest']} and {tlc} on the same grid models, "
-               f"{workers} workers each. Lower is better. Median wall time, earnest: "
-               f"{listed(times['earnest'], seconds_label)}; TLC: {listed(times['tlc'], seconds_label)}. "
-               f"Peak memory, earnest: {listed(memory['earnest'], mib_label)}; "
-               f"TLC: {listed(memory['tlc'], mib_label)}.")
-    parts = [f'<svg width="800" height="384" viewBox="0 0 800 384" fill="none" xmlns="http://www.w3.org/2000/svg" '
+    summary = (f"Wall time and peak memory on the same grid models, {workers} workers each. Lower is better. "
+               "Median wall time, " + "; ".join(f"{names[t]}: {listed(times[t], seconds_label)}" for t in tools)
+               + ". Peak memory, " + "; ".join(f"{names[t]}: {listed(memory[t], mib_label)}" for t in tools) + ".")
+    parts = [f'<svg width="860" height="384" viewBox="0 0 860 384" fill="none" xmlns="http://www.w3.org/2000/svg" '
              f'role="img" aria-label="{summary}">', f"  <style>{STYLE}  </style>"]
     parts += panel(24, "Wall time", f"median of {cases[0]['runs']} runs, {workers} workers, log scale", states,
                    times, time_ticks, seconds_label)
-    parts += panel(424, "Peak memory", "largest resident set of any run, log scale", states, memory,
+    parts += panel(444, "Peak memory", "largest resident set of any run, log scale", states, memory,
                    memory_ticks, mib_label)
-    parts += ['  <line x1="24" y1="364" x2="42" y2="364" class="line-earnest"/>',
-              f'  <text x="50" y="368" class="label-earnest">{result["earnest"]}</text>',
-              '  <line x1="164" y1="364" x2="182" y2="364" class="line-tlc"/>',
-              f'  <text x="190" y="368" class="label-tlc">{tlc}</text>',
-              '  <text x="768" y="368" class="note" text-anchor="end">'
-              'Same TLA+ export, same distinct states. Lower is better.</text>',
+    x = 24
+    for tool, style in TOOLS:
+        if tool in tools:
+            parts += [f'  <line x1="{x}" y1="364" x2="{x + 18}" y2="364" class="line-{style}"/>',
+                      f'  <text x="{x + 26}" y="368" class="label-{style}">{names[tool]}</text>']
+            x += 34 + 7 * len(names[tool])
+    parts += ['  <text x="836" y="368" class="note" text-anchor="end">Same distinct states. Lower is better.</text>',
               "</svg>"]
     with open(out, "w") as file:
         file.write("\n".join(parts) + "\n")
@@ -297,7 +364,8 @@ def chart(source, out):
 
 if __name__ == "__main__":
     if sys.argv[1] == "measure":
-        measure(sys.argv[2], sys.argv[3], int(sys.argv[4]), [int(w) for w in sys.argv[5].split(",")], sys.argv[6])
+        measure(sys.argv[2], sys.argv[3], int(sys.argv[4]), [int(w) for w in sys.argv[5].split(",")], sys.argv[6],
+                *sys.argv[7:8])
     elif sys.argv[1] == "chart":
         chart(sys.argv[2], sys.argv[3])
     else:

@@ -8,11 +8,11 @@ A model checker for models written in your app's own language.
 
 Many bugs live in the order of events, not in one function. A tab switch lands while a tab loads. A retry restarts a run that already failed. Tests cover the orders you think of. A model checker visits every reachable state of a model and finds the orders you didn't.
 
-Teams at AWS, Microsoft Azure and MongoDB check designs this way with TLA+ and its checker TLC. Informal Systems built Quint for the same job on blockchain protocols. Both need a separate specification language and Java. Earnest checks models written in TypeScript or Rust, so your app's type checker reads them. It runs as one ~5 MB binary. On the same 10,000,000 states it was 91 to 140 times faster than TLC. It exports TLA+ so TLC can confirm its verdicts. It can't check "eventually" properties. For those, export to TLC.
+Teams at AWS, Microsoft Azure and MongoDB check designs this way with TLA+ and its checker TLC. Informal Systems built Quint for the same job on blockchain protocols. Both need a separate specification language and Java. Earnest checks models written in TypeScript or Rust, so your app's type checker reads them. It runs as one ~5 MB binary. On the same 10,000,000 states it was 106 to 149 times faster than TLC and Quint. It exports TLA+ so TLC can confirm its verdicts. It can't check "eventually" properties. For those, export to TLC.
 
-![Wall time and peak memory against the number of states, earnest 0.1.0 and TLC 1.8.0, 4 workers each. Lower is better. Median wall time at 1,000, 100,000, 1,000,000 and 10,000,000 states: earnest 7 ms, 36 ms, 122 ms, 943 ms; TLC 910 ms, 2.03 s, 13.5 s, 132.5 s. Peak memory: earnest 6 MiB, 8 MiB, 28 MiB, 192 MiB; TLC 118 MiB, 309 MiB, 724 MiB, 1.22 GiB.](apps/docs/src/assets/compare/scaling-trajectory.svg)
+![Wall time and peak memory against the number of states, 4 workers each, for earnest 0.1.0, TLC 1.8.0 and Quint 0.33.1 with its TLC backend. Lower is better. Median wall time at 1,000, 100,000, 1,000,000 and 10,000,000 states: earnest 5 ms, 24 ms, 142 ms, 837 ms; TLC 795 ms, 1.92 s, 12.0 s, 124.4 s; Quint with TLC 5.60 s, 6.47 s, 13.0 s, 88.6 s. Peak memory: earnest 6 MiB, 9 MiB, 28 MiB, 194 MiB; TLC 118 MiB, 270 MiB, 731 MiB, 1.49 GiB; Quint with TLC 141 MiB, 462 MiB, 2.33 GiB, 3.22 GiB.](apps/docs/src/assets/compare/scaling-trajectory.svg)
 
-Both tools checked the same models with the same distinct states, on one 4-vCPU Linux VM ([method and commands](https://earnest.cpeaustriajc.dev/compare/tla/#scaling-from-1000-to-10000000-states)).
+All three checked the same models and found the same distinct states, on one 4-vCPU Linux VM ([method and commands](https://earnest.cpeaustriajc.dev/compare/tla/#scaling-from-1000-to-10000000-states)).
 
 > [!WARNING]
 > **Early access.** Only nightly builds of `main` ship today. Nothing is on npm or crates.io, and the model API and CLI can change between nights. TLC 1.8.0 confirms every conformance model in CI, but adversarial passes still find missed bugs, so treat earnest as unproven.
@@ -25,7 +25,7 @@ Speed and features trade off. Earnest checks fewer kinds of properties than TLC 
 |---|---|---|---|
 | Model language | TypeScript or Rust | TLA+ | Quint |
 | Install | ~5 MB binary | Java + `tla2tools.jar`, ~300 MB | Node + Java + Apalache, ~527 MB |
-| 10,000,000 states, 4 workers | 0.94 s, 192 MiB | 132.5 s, 1.22 GiB | not measured |
+| 10,000,000 states, 4 workers | 0.84 s, 194 MiB | 124.4 s, 1.49 GiB | 88.6 s, 3.22 GiB with its TLC backend. Apalache: over 900 s even at 1,000 states |
 | Two zellij models | 4.2 ms | 696 ms | 878 ms (`run`), 5,865 ms (`verify`) |
 | Rules in every state, stuck states | Yes | Yes | Yes (`verify`) |
 | "Eventually" properties | No ([#21](https://github.com/cpeaustriajc/earnest/issues/21)) | Yes | Yes |
