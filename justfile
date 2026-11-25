@@ -24,6 +24,8 @@ typescript:
     cmp LICENSE packages/cli/LICENSE
     cmp LICENSE packages/model/LICENSE
     cmp LICENSE.LESSER packages/model/LICENSE.LESSER
+    cmp LICENSE packages/xstate/LICENSE
+    cmp LICENSE.LESSER packages/xstate/LICENSE.LESSER
     bunx oxlint packages tasks/conformance tasks/benchmark tasks/models
     bun run --cwd packages/model typecheck
     bun run --cwd packages/model format
@@ -31,6 +33,9 @@ typescript:
     bun run --cwd packages/cli typecheck
     bun run --cwd packages/cli format
     bun run --cwd packages/cli test
+    bun run --cwd packages/xstate typecheck
+    bun run --cwd packages/xstate format
+    bun run --cwd packages/xstate test
 
 docs:
     bun install --frozen-lockfile
