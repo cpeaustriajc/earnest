@@ -22,6 +22,8 @@ const REJECTED_AT: Readonly<Record<string, string>> = {
   "unknown-input-in-when": `{ who }`,
   "unknown-state-field": `s.basket`,
   "unknown-view-key": `colours:`,
+  "witness-bare-action-with-inputs": `steps: [press]`,
+  "witness-step-unknown-input": `who: "mouse"`,
   "wrong-initial": `.initial("medium")`,
   "wrong-kind": `count: "one"`,
   "wrong-literal": `cta: "Nope"`,

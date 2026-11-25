@@ -50,6 +50,21 @@ for (const value of Object.values(exports)) {
 console.log(JSON.stringify(results));
 "#;
 
+const RULES_SCRIPT: &str = r#"import { pathToFileURL } from "node:url";
+import { Model, explore } from "@earnestjs/model";
+
+const [modelFile, maxStates] = process.argv.slice(2);
+const exports = await import(pathToFileURL(modelFile).href);
+const limit = maxStates === undefined ? {} : { maxStates: Number(maxStates) };
+const results = [];
+for (const value of Object.values(exports)) {
+	if (!(value instanceof Model)) continue;
+	const found = explore(value, { exports, ...limit });
+	results.push({ name: value.name, states: found.states, rules: found.rules });
+}
+console.log(JSON.stringify(results));
+"#;
+
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -259,4 +274,105 @@ fn no_finding_of_the_checker_is_left_out_of_the_comparison() {
         json!(["fault"]),
         "any other fault must be reported by both"
     );
+}
+
+fn node_rules(scratch: &Path, file: &Path, limit: Option<&str>) -> Vec<Value> {
+    let library = repository().join("packages/model/src/index.ts");
+    fs::write(scratch.join("rules.mjs"), RULES_SCRIPT).expect("the script can be written");
+    let output = Command::new("node")
+        .args(["--import", "./hooks.mjs", "rules.mjs"])
+        .arg(file)
+        .args(limit)
+        .env("EARNEST_MODEL_LIBRARY", &library)
+        .current_dir(scratch)
+        .output()
+        .expect("`node` is on the `PATH`");
+    assert!(
+        output.status.success(),
+        "node could not explore {}:\n{}{}",
+        file.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let printed: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+        panic!(
+            "node did not print JSON for {} ({error}): {}",
+            file.display(),
+            String::from_utf8_lossy(&output.stdout)
+        )
+    });
+    printed
+        .as_array()
+        .expect("the script prints a list of models")
+        .clone()
+}
+
+#[test]
+fn node_and_the_checker_give_the_same_rules_and_witnesses_with_their_paths_and_reasons() {
+    let scratch = scratch_folder();
+    let files = typescript_models(&repository().join("tasks/conformance/runs"));
+    assert!(
+        files.len() >= 2,
+        "the models with witnesses are found: {files:?}"
+    );
+    let mut witnesses = 0_usize;
+    for file in &files {
+        let ours = checker_results(scratch.path(), file);
+        let theirs = node_rules(scratch.path(), file, None);
+        assert_eq!(
+            ours.len(),
+            theirs.len(),
+            "both find the same number of models in {}",
+            file.display()
+        );
+        for checker in &ours {
+            let name = &checker["name"];
+            let node = theirs
+                .iter()
+                .find(|node| node["name"] == *name)
+                .unwrap_or_else(|| panic!("node found no model {name} in {}", file.display()));
+            assert_eq!(
+                node["states"], checker["states"],
+                "{name}: the same distinct states"
+            );
+            assert_eq!(
+                node["rules"], checker["rules"],
+                "{name}: the same ids, verdicts, kinds, reasons and paths"
+            );
+            witnesses += checker["rules"]
+                .as_array()
+                .expect("a model has a `rules` array")
+                .iter()
+                .filter(|rule| rule["kind"] == "witness")
+                .count();
+        }
+    }
+    assert!(witnesses >= 6, "every witness was compared: {witnesses}");
+}
+
+#[test]
+fn node_and_the_checker_play_a_witness_alike_when_there_are_more_start_states_than_the_limit() {
+    let scratch = scratch_folder();
+    let file = repository().join("tasks/conformance/runs/lift.model.ts");
+    for limit in ["0", "1", "2", "3"] {
+        let output = Earnest::new(env!("CARGO_BIN_EXE_earnest"))
+            .current_dir(scratch.path())
+            .timeout(HANG_GUARD)
+            .args(["verify", "--json", "--no-cache", "--max-states", limit])
+            .arg(&file)
+            .output()
+            .expect("the earnest binary starts");
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "earnest did not print JSON ({error}): {}",
+                String::from_utf8_lossy(&output.stdout)
+            )
+        });
+        let theirs = node_rules(scratch.path(), &file, Some(limit));
+        assert_eq!(
+            theirs.first().map(|node| &node["rules"]),
+            Some(&report["models"][0]["rules"]),
+            "the same witnesses with a limit of {limit} states"
+        );
+    }
 }

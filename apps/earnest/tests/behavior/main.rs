@@ -11,6 +11,7 @@ mod limits;
 mod offline;
 mod replay;
 mod results;
+mod runs;
 mod select;
 mod support;
 mod tla;

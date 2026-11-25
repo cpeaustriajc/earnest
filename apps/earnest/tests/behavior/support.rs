@@ -50,6 +50,18 @@ impl Sandbox {
         self.write(relative, &text);
     }
 
+    pub(crate) fn with_runs(fixtures: &[&str]) -> Self {
+        let sandbox = Self::empty();
+        for fixture in fixtures {
+            let source = repository().join("tasks/conformance/runs").join(fixture);
+            let text = fs::read_to_string(&source).unwrap_or_else(|error| {
+                panic!("fixture {} can't be read: {error}", source.display())
+            });
+            sandbox.write(&format!("runs/{fixture}"), &text);
+        }
+        sandbox
+    }
+
     pub(crate) fn write(&self, relative: &str, text: &str) {
         let target = self.path().join(relative);
         let parent = target.parent().expect("a file in the sandbox has a folder");
