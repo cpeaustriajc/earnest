@@ -88,7 +88,7 @@
           },
           {
             "type": "command",
-            "command": "command -v just >/dev/null || { echo \"Stop hook: just is not on PATH. Install it, then run just check.\" >&2; exit 2; }; cd \"$(jq -r '.cwd // empty')\" 2>/dev/null && just --summary >/dev/null 2>&1 || cd \"$CLAUDE_PROJECT_DIR\" || exit 2; out=$(just check 2>&1) || { printf '%s\\n' \"$out\" | tail -n 80 >&2; exit 2; }",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop_check.sh",
             "timeout": 900
           }
         ]
