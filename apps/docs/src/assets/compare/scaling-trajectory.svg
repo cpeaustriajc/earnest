@@ -1,0 +1,145 @@
+<svg width="860" height="384" viewBox="0 0 860 384" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Wall time and peak memory on the same grid models, 4 workers each. Lower is better. Median wall time, earnest 0.1.0: 5 ms at 1k, 24 ms at 100k, 142 ms at 1M, 837 ms at 10M; TLC 1.8.0: 795 ms at 1k, 1.92 s at 100k, 12.0 s at 1M, 124.4 s at 10M; Quint 0.33.1 with TLC: 5.60 s at 1k, 6.47 s at 100k, 13.0 s at 1M, 88.6 s at 10M. Peak memory, earnest 0.1.0: 6 MiB at 1k, 9 MiB at 100k, 28 MiB at 1M, 194 MiB at 10M; TLC 1.8.0: 118 MiB at 1k, 270 MiB at 100k, 731 MiB at 1M, 1.49 GiB at 10M; Quint 0.33.1 with TLC: 141 MiB at 1k, 462 MiB at 100k, 2.33 GiB at 1M, 3.22 GiB at 10M.">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #0a0a0a;
+      --muted: #737373;
+      --hairline: rgba(115, 115, 115, 0.22);
+      --axis: rgba(115, 115, 115, 0.45);
+      --earnest: #0a0a0a;
+      --tlc: #dc2626;
+      --quint: #2563eb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f0f6fc;
+        --muted: #8b949e;
+        --hairline: rgba(240, 246, 252, 0.14);
+        --axis: rgba(240, 246, 252, 0.38);
+        --earnest: #f0f6fc;
+        --tlc: #f87171;
+        --quint: #60a5fa;
+      }
+    }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { fill: var(--ink); font-size: 14px; font-weight: 600; }
+    .note { fill: var(--muted); font-size: 11px; }
+    .tick { fill: var(--muted); font-size: 11px; }
+    .grid { stroke: var(--hairline); stroke-width: 1; }
+    .axis { stroke: var(--axis); stroke-width: 1; }
+    .line-earnest { stroke: var(--earnest); stroke-width: 2; fill: none; }
+    .line-tlc { stroke: var(--tlc); stroke-width: 2; fill: none; }
+    .dot-earnest { fill: var(--earnest); }
+    .dot-tlc { fill: var(--tlc); }
+    .label-earnest { fill: var(--earnest); font-size: 11px; font-weight: 600; }
+    .label-tlc { fill: var(--tlc); font-size: 11px; font-weight: 600; }
+    .line-quint { stroke: var(--quint); stroke-width: 2; fill: none; stroke-dasharray: 5 3; }
+    .dot-quint { fill: var(--quint); }
+    .label-quint { fill: var(--quint); font-size: 11px; font-weight: 600; }
+  </style>
+  <text x="24" y="32" class="title">Wall time</text>
+  <text x="24" y="50" class="note">median of 5 runs, 4 workers, log scale</text>
+  <line x1="80" y1="300.0" x2="350" y2="300.0" class="grid"/>
+  <text x="70" y="304.0" class="tick" text-anchor="end">1 ms</text>
+  <line x1="80" y1="262.7" x2="350" y2="262.7" class="grid"/>
+  <text x="70" y="266.7" class="tick" text-anchor="end">10 ms</text>
+  <line x1="80" y1="225.3" x2="350" y2="225.3" class="grid"/>
+  <text x="70" y="229.3" class="tick" text-anchor="end">100 ms</text>
+  <line x1="80" y1="188.0" x2="350" y2="188.0" class="grid"/>
+  <text x="70" y="192.0" class="tick" text-anchor="end">1 s</text>
+  <line x1="80" y1="150.7" x2="350" y2="150.7" class="grid"/>
+  <text x="70" y="154.7" class="tick" text-anchor="end">10 s</text>
+  <line x1="80" y1="113.3" x2="350" y2="113.3" class="grid"/>
+  <text x="70" y="117.3" class="tick" text-anchor="end">100 s</text>
+  <line x1="80" y1="76.0" x2="350" y2="76.0" class="grid"/>
+  <text x="70" y="80.0" class="tick" text-anchor="end">1,000 s</text>
+  <line x1="80" y1="300" x2="350" y2="300" class="axis"/>
+  <text x="80.0" y="318" class="tick" text-anchor="middle">1k</text>
+  <text x="215.0" y="318" class="tick" text-anchor="middle">100k</text>
+  <text x="282.5" y="318" class="tick" text-anchor="middle">1M</text>
+  <text x="350.0" y="318" class="tick" text-anchor="middle">10M</text>
+  <text x="215.0" y="336" class="note" text-anchor="middle">distinct states, log scale</text>
+  <path d="M 80.0 274.2 L 215.0 248.6 L 282.5 219.6 L 350.0 190.9" class="line-earnest"/>
+  <circle cx="80.0" cy="274.2" r="3.5" class="dot-earnest"/>
+  <text x="87.0" y="291.2" class="label-earnest" text-anchor="start">5 ms</text>
+  <circle cx="215.0" cy="248.6" r="3.5" class="dot-earnest"/>
+  <text x="222.0" y="265.6" class="label-earnest" text-anchor="start">24 ms</text>
+  <circle cx="282.5" cy="219.6" r="3.5" class="dot-earnest"/>
+  <text x="289.5" y="236.6" class="label-earnest" text-anchor="start">142 ms</text>
+  <circle cx="350.0" cy="190.9" r="3.5" class="dot-earnest"/>
+  <path d="M 80.0 191.7 L 215.0 177.4 L 282.5 147.7 L 350.0 109.8" class="line-tlc"/>
+  <circle cx="80.0" cy="191.7" r="3.5" class="dot-tlc"/>
+  <text x="87.0" y="208.7" class="label-tlc" text-anchor="start">795 ms</text>
+  <circle cx="215.0" cy="177.4" r="3.5" class="dot-tlc"/>
+  <text x="222.0" y="194.4" class="label-tlc" text-anchor="start">1.92 s</text>
+  <circle cx="282.5" cy="147.7" r="3.5" class="dot-tlc"/>
+  <text x="289.5" y="164.7" class="label-tlc" text-anchor="start">12.0 s</text>
+  <circle cx="350.0" cy="109.8" r="3.5" class="dot-tlc"/>
+  <path d="M 80.0 160.1 L 215.0 157.7 L 282.5 146.4 L 350.0 115.3" class="line-quint"/>
+  <circle cx="80.0" cy="160.1" r="3.5" class="dot-quint"/>
+  <text x="76.0" y="146.1" class="label-quint" text-anchor="start">5.60 s</text>
+  <circle cx="215.0" cy="157.7" r="3.5" class="dot-quint"/>
+  <text x="209.0" y="148.7" class="label-quint" text-anchor="end">6.47 s</text>
+  <circle cx="282.5" cy="146.4" r="3.5" class="dot-quint"/>
+  <text x="276.5" y="137.4" class="label-quint" text-anchor="end">13.0 s</text>
+  <circle cx="350.0" cy="115.3" r="3.5" class="dot-quint"/>
+  <text x="358.0" y="113.8" class="label-tlc">124.4 s</text>
+  <text x="358.0" y="126.8" class="label-quint">88.6 s</text>
+  <text x="358.0" y="194.9" class="label-earnest">837 ms</text>
+  <text x="444" y="32" class="title">Peak memory</text>
+  <text x="444" y="50" class="note">largest resident set of any run, log scale</text>
+  <line x1="500" y1="300.0" x2="770" y2="300.0" class="grid"/>
+  <text x="490" y="304.0" class="tick" text-anchor="end">1 MiB</text>
+  <line x1="500" y1="262.7" x2="770" y2="262.7" class="grid"/>
+  <text x="490" y="266.7" class="tick" text-anchor="end">4 MiB</text>
+  <line x1="500" y1="225.3" x2="770" y2="225.3" class="grid"/>
+  <text x="490" y="229.3" class="tick" text-anchor="end">16 MiB</text>
+  <line x1="500" y1="188.0" x2="770" y2="188.0" class="grid"/>
+  <text x="490" y="192.0" class="tick" text-anchor="end">64 MiB</text>
+  <line x1="500" y1="150.7" x2="770" y2="150.7" class="grid"/>
+  <text x="490" y="154.7" class="tick" text-anchor="end">256 MiB</text>
+  <line x1="500" y1="113.3" x2="770" y2="113.3" class="grid"/>
+  <text x="490" y="117.3" class="tick" text-anchor="end">1 GiB</text>
+  <line x1="500" y1="76.0" x2="770" y2="76.0" class="grid"/>
+  <text x="490" y="80.0" class="tick" text-anchor="end">4 GiB</text>
+  <line x1="500" y1="300" x2="770" y2="300" class="axis"/>
+  <text x="500.0" y="318" class="tick" text-anchor="middle">1k</text>
+  <text x="635.0" y="318" class="tick" text-anchor="middle">100k</text>
+  <text x="702.5" y="318" class="tick" text-anchor="middle">1M</text>
+  <text x="770.0" y="318" class="tick" text-anchor="middle">10M</text>
+  <text x="635.0" y="336" class="note" text-anchor="middle">distinct states, log scale</text>
+  <path d="M 500.0 251.7 L 635.0 240.8 L 702.5 210.6 L 770.0 158.2" class="line-earnest"/>
+  <circle cx="500.0" cy="251.7" r="3.5" class="dot-earnest"/>
+  <text x="507.0" y="268.7" class="label-earnest" text-anchor="start">6 MiB</text>
+  <circle cx="635.0" cy="240.8" r="3.5" class="dot-earnest"/>
+  <text x="642.0" y="257.8" class="label-earnest" text-anchor="start">9 MiB</text>
+  <circle cx="702.5" cy="210.6" r="3.5" class="dot-earnest"/>
+  <text x="709.5" y="227.6" class="label-earnest" text-anchor="start">28 MiB</text>
+  <circle cx="770.0" cy="158.2" r="3.5" class="dot-earnest"/>
+  <path d="M 500.0 171.6 L 635.0 149.2 L 702.5 122.4 L 770.0 102.6" class="line-tlc"/>
+  <circle cx="500.0" cy="171.6" r="3.5" class="dot-tlc"/>
+  <text x="507.0" y="188.6" class="label-tlc" text-anchor="start">118 MiB</text>
+  <circle cx="635.0" cy="149.2" r="3.5" class="dot-tlc"/>
+  <text x="642.0" y="166.2" class="label-tlc" text-anchor="start">270 MiB</text>
+  <circle cx="702.5" cy="122.4" r="3.5" class="dot-tlc"/>
+  <text x="709.5" y="139.4" class="label-tlc" text-anchor="start">731 MiB</text>
+  <circle cx="770.0" cy="102.6" r="3.5" class="dot-tlc"/>
+  <path d="M 500.0 166.8 L 635.0 134.8 L 702.5 90.5 L 770.0 81.8" class="line-quint"/>
+  <circle cx="500.0" cy="166.8" r="3.5" class="dot-quint"/>
+  <text x="496.0" y="152.8" class="label-quint" text-anchor="start">141 MiB</text>
+  <circle cx="635.0" cy="134.8" r="3.5" class="dot-quint"/>
+  <text x="629.0" y="125.8" class="label-quint" text-anchor="end">462 MiB</text>
+  <circle cx="702.5" cy="90.5" r="3.5" class="dot-quint"/>
+  <text x="696.5" y="81.5" class="label-quint" text-anchor="end">2.33 GiB</text>
+  <circle cx="770.0" cy="81.8" r="3.5" class="dot-quint"/>
+  <text x="778.0" y="85.8" class="label-quint">3.22 GiB</text>
+  <text x="778.0" y="106.6" class="label-tlc">1.49 GiB</text>
+  <text x="778.0" y="162.2" class="label-earnest">194 MiB</text>
+  <line x1="24" y1="364" x2="42" y2="364" class="line-earnest"/>
+  <text x="50" y="368" class="label-earnest">earnest 0.1.0</text>
+  <line x1="149" y1="364" x2="167" y2="364" class="line-tlc"/>
+  <text x="175" y="368" class="label-tlc">TLC 1.8.0</text>
+  <line x1="246" y1="364" x2="264" y2="364" class="line-quint"/>
+  <text x="272" y="368" class="label-quint">Quint 0.33.1 with TLC</text>
+  <text x="836" y="368" class="note" text-anchor="end">Same distinct states. Lower is better.</text>
+</svg>

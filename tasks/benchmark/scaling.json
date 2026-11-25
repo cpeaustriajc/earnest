@@ -1,0 +1,342 @@
+{
+  "machine": {
+    "processor": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "memory_gib": 15.7,
+    "os": "Linux-6.18.44-fc-v819-x86_64-with-glibc2.39"
+  },
+  "earnest": "earnest 0.1.0",
+  "java": "openjdk version \"21.0.13.1\" 2026-11-17",
+  "tlc": "1.8.0",
+  "tlc_sha256": "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713",
+  "tlc_build": "2026.11.19.180144",
+  "timeout_seconds": 900,
+  "cases": [
+    {
+      "model": "grid_1k",
+      "states": 1000,
+      "workers": 4,
+      "runs": 5,
+      "earnest": {
+        "median_seconds": 0.0049,
+        "walls": [
+          0.0047,
+          0.0047,
+          0.0049,
+          0.0059,
+          0.006
+        ],
+        "peak_mib": 6.0,
+        "states": 1000
+      },
+      "tlc": {
+        "median_seconds": 0.7949,
+        "walls": [
+          0.7363,
+          0.7852,
+          0.7949,
+          0.8013,
+          0.8401
+        ],
+        "peak_mib": 117.8,
+        "states": 1000
+      },
+      "quint_tlc": {
+        "median_seconds": 5.5998,
+        "walls": [
+          5.4122,
+          5.5238,
+          5.5998,
+          5.6656,
+          5.7334
+        ],
+        "peak_mib": 140.6,
+        "states": 1000
+      }
+    },
+    {
+      "model": "grid_100k",
+      "states": 100000,
+      "workers": 4,
+      "runs": 5,
+      "earnest": {
+        "median_seconds": 0.0238,
+        "walls": [
+          0.0233,
+          0.0238,
+          0.0238,
+          0.0298,
+          0.0307
+        ],
+        "peak_mib": 9.0,
+        "states": 100000
+      },
+      "tlc": {
+        "median_seconds": 1.9235,
+        "walls": [
+          1.9118,
+          1.9139,
+          1.9235,
+          1.9925,
+          2.013
+        ],
+        "peak_mib": 270.5,
+        "states": 100000
+      },
+      "quint_tlc": {
+        "median_seconds": 6.4681,
+        "walls": [
+          6.3792,
+          6.3927,
+          6.4681,
+          6.75,
+          6.7588
+        ],
+        "peak_mib": 462.0,
+        "states": 100000
+      }
+    },
+    {
+      "model": "grid_1m",
+      "states": 1000000,
+      "workers": 4,
+      "runs": 5,
+      "earnest": {
+        "median_seconds": 0.142,
+        "walls": [
+          0.1206,
+          0.1385,
+          0.142,
+          0.145,
+          0.1474
+        ],
+        "peak_mib": 27.7,
+        "states": 1000000
+      },
+      "tlc": {
+        "median_seconds": 12.0251,
+        "walls": [
+          12.0036,
+          12.0217,
+          12.0251,
+          12.3735,
+          12.6759
+        ],
+        "peak_mib": 730.6,
+        "states": 1000000
+      },
+      "quint_tlc": {
+        "median_seconds": 13.0393,
+        "walls": [
+          12.6902,
+          12.8807,
+          13.0393,
+          13.1271,
+          13.8593
+        ],
+        "peak_mib": 2389.3,
+        "states": 1000000
+      }
+    },
+    {
+      "model": "grid_10m",
+      "states": 10000000,
+      "workers": 4,
+      "runs": 5,
+      "earnest": {
+        "median_seconds": 0.8368,
+        "walls": [
+          0.8182,
+          0.8286,
+          0.8368,
+          0.8555,
+          0.9609
+        ],
+        "peak_mib": 193.6,
+        "states": 10000000
+      },
+      "tlc": {
+        "median_seconds": 124.3968,
+        "walls": [
+          122.1668,
+          124.2718,
+          124.3968,
+          124.6541,
+          126.5608
+        ],
+        "peak_mib": 1524.9,
+        "states": 10000000
+      },
+      "quint_tlc": {
+        "median_seconds": 88.6256,
+        "walls": [
+          80.9388,
+          82.8965,
+          88.6256,
+          89.7529,
+          99.0122
+        ],
+        "peak_mib": 3297.3,
+        "states": 10000000
+      }
+    },
+    {
+      "model": "grid_1k",
+      "states": 1000,
+      "workers": 1,
+      "runs": 3,
+      "earnest": {
+        "median_seconds": 0.0063,
+        "walls": [
+          0.0062,
+          0.0063,
+          0.0072
+        ],
+        "peak_mib": 5.9,
+        "states": 1000
+      },
+      "tlc": {
+        "median_seconds": 0.7664,
+        "walls": [
+          0.7375,
+          0.7664,
+          0.8439
+        ],
+        "peak_mib": 116.6,
+        "states": 1000
+      },
+      "quint_tlc": {
+        "median_seconds": 5.5773,
+        "walls": [
+          5.5194,
+          5.5773,
+          5.7488
+        ],
+        "peak_mib": 137.1,
+        "states": 1000
+      },
+      "quint_apalache": {
+        "max_steps": 27,
+        "timeout_seconds": 900
+      }
+    },
+    {
+      "model": "grid_100k",
+      "states": 100000,
+      "workers": 1,
+      "runs": 3,
+      "earnest": {
+        "median_seconds": 0.0183,
+        "walls": [
+          0.0172,
+          0.0183,
+          0.0231
+        ],
+        "peak_mib": 7.0,
+        "states": 100000
+      },
+      "tlc": {
+        "median_seconds": 1.4637,
+        "walls": [
+          1.4527,
+          1.4637,
+          1.5106
+        ],
+        "peak_mib": 311.0,
+        "states": 100000
+      },
+      "quint_tlc": {
+        "median_seconds": 6.4645,
+        "walls": [
+          6.2291,
+          6.4645,
+          6.6452
+        ],
+        "peak_mib": 493.1,
+        "states": 100000
+      },
+      "quint_apalache": {
+        "skipped": "a smaller model timed out"
+      }
+    },
+    {
+      "model": "grid_1m",
+      "states": 1000000,
+      "workers": 1,
+      "runs": 3,
+      "earnest": {
+        "median_seconds": 0.216,
+        "walls": [
+          0.2016,
+          0.216,
+          0.2315
+        ],
+        "peak_mib": 27.1,
+        "states": 1000000
+      },
+      "tlc": {
+        "median_seconds": 7.3096,
+        "walls": [
+          6.8201,
+          7.3096,
+          7.4547
+        ],
+        "peak_mib": 1017.7,
+        "states": 1000000
+      },
+      "quint_tlc": {
+        "median_seconds": 14.7668,
+        "walls": [
+          14.677,
+          14.7668,
+          16.5909
+        ],
+        "peak_mib": 2168.9,
+        "states": 1000000
+      },
+      "quint_apalache": {
+        "skipped": "a smaller model timed out"
+      }
+    },
+    {
+      "model": "grid_10m",
+      "states": 10000000,
+      "workers": 1,
+      "runs": 3,
+      "earnest": {
+        "median_seconds": 3.113,
+        "walls": [
+          2.8025,
+          3.113,
+          3.2597
+        ],
+        "peak_mib": 187.8,
+        "states": 10000000
+      },
+      "tlc": {
+        "median_seconds": 89.3279,
+        "walls": [
+          86.1536,
+          89.3279,
+          92.5824
+        ],
+        "peak_mib": 1984.4,
+        "states": 10000000
+      },
+      "quint_tlc": {
+        "median_seconds": 114.8013,
+        "walls": [
+          113.8783,
+          114.8013,
+          116.4763
+        ],
+        "peak_mib": 2840.0,
+        "states": 10000000
+      },
+      "quint_apalache": {
+        "skipped": "a smaller model timed out"
+      }
+    }
+  ],
+  "quint": "0.33.1"
+}
