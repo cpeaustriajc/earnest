@@ -226,8 +226,90 @@ A context field that nothing bounds, such as a counter that only goes up, makes 
 
 ### Other options
 
-- `events` is a list or a function of the snapshot, as in `@xstate/graph`.
+- `events` is a list or a function of the snapshot, as in `@xstate/graph`, or a record that declares each event's payload, as in the next example.
 - `input` is the machine's input, used to make the initial snapshot.
+
+## Example: a count with no bound
+
+A context is ordinary JavaScript, so a count that grows forever gives a new state on every event, and only `maxStates` stops the search. `checkMachine` takes declarations written with `m` from `@earnestjs/model` that bound it. This machine counts visitors who enter in groups and never stops:
+
+```ts title="test/machines/visitor-count.ts"
+import { assign, setup } from "xstate";
+
+export const visitorCount = setup({
+  types: {
+    context: {} as { visitors: number },
+    events: {} as { type: "ENTER"; group: number },
+  },
+}).createMachine({
+  id: "visitorCount",
+  context: { visitors: 0 },
+  on: {
+    ENTER: {
+      actions: assign({ visitors: ({ context, event }) => context.visitors + event.group }),
+    },
+  },
+});
+```
+
+The test declares the group sizes `ENTER` is tried with and the range of `visitors`:
+
+```ts title="test/visitor-count.test.ts"
+import { m } from "@earnestjs/model";
+import { checkMachine } from "@earnestjs/xstate";
+import { expect, test } from "vitest";
+import { visitorCount } from "./machines/visitor-count.ts";
+
+test("the count leaves its range after two groups of two", () => {
+  const found = checkMachine(visitorCount, {
+    events: { ENTER: { group: m.int(1, 2) } },
+    context: { visitors: m.int(0, 3) },
+    rules: {
+      counted: {
+        says: "The count is never below zero",
+        holds: (snapshot) => snapshot.context.visitors >= 0,
+      },
+    },
+  });
+  expect(found.status).toBe("fail");
+  expect(found.states).toBe(6);
+  expect(found.rules[0]?.verdict).toBe("unknown");
+  expect(found.findings[0]?.message).toBe(
+    "the context field `visitors` leaves the values it declares",
+  );
+  expect(found.findings[0]?.path.events).toStrictEqual([
+    { type: "ENTER", group: 2 },
+    { type: "ENTER", group: 2 },
+  ]);
+});
+```
+
+The counts 0 to 3 are in range. Groups of 1 and 2 reach 4 and 5 from them, and those two states are out of range, so the search counts 6 states. The first state out of range is 4, after two groups of 2. Nothing is searched from 4 or 5.
+
+### Bound the context
+
+`context` declares some fields of the context. A snapshot where one of them holds a value its declaration does not have is out of range, as a model's state is for `earnest verify`:
+
+- The state is counted, no rule is judged in it, and nothing is searched from it.
+- `findings` gives the first one as `out-of-range`, with its shortest path and a message that names the field.
+- The check fails, and a rule not seen broken is `unknown`.
+- A field the schema names but the context lacks, or holds `undefined`, is out of range. Declare `.optional()` and set the field to `null` instead.
+- A field the schema does not name is not checked.
+
+### Declare event payloads
+
+`events` can be a record of event types, each with a declaration for each payload field, such as `{ PAY: { coins: m.int(1, 2) }, PUSH: {} }`:
+
+- Each type is tried with every combination of its fields' values, the first field varying fastest, as `earnest verify` tries an action's inputs.
+- The event sent, and shown in a path, is `{ type, ...payload }`.
+- A type with more than 1,000,000 payload combinations is a `RangeError`.
+- A record payload arrives frozen and is shared by every snapshot it is sent from, so copy it and never change it in place.
+
+### Which declarations a schema takes
+
+The declarations must hold plain JavaScript values: `m.boolean()`, `m.int`, `m.enum`, `m.oneOf`, `.optional()` of those, and `m.record` of all of these. A set, map, sequence, queue, lock, timer, request or retry holds objects of `@earnestjs/model` that a context or an event does not. `checkMachine` throws a `TypeError` that names the field before it searches.
+
+The keys of `context`, the event types and their payload fields are checked against the machine's types, so a misspelt one does not compile.
 
 ## What Earnest adds
 
@@ -237,6 +319,7 @@ A context field that nothing bounds, such as a counter that only goes up, makes 
 | State count, with finished or stopped at the limit | no | an error at the limit | `states`, `status` and `reason` |
 | Rules judged in every reachable state | no | no | yes, with the shortest path to each broken one |
 | Stuck states | no | no | yes, with their path |
+| States where the context leaves its declared range | no | no | yes, with a `context` schema |
 
 ## Limits
 
@@ -244,7 +327,7 @@ A context field that nothing bounds, such as a counter that only goes up, makes 
 - **`getSimplePaths` stays with XState.** `earnestPaths` replaces only the shortest paths.
 - **The search runs in the test's process, in JavaScript.** It steps the machine's `transition`, not the `earnest` binary, so the speed figures of `earnest verify` do not apply.
 - **No TLA+ export.** `earnest verify` and `earnest tla` read model files and never run JavaScript, so an XState machine has no TLA+ module. See [TLA+ export and confirmation](/reference/tla/).
-- **How states are counted.** `checkMachine` counts a state by its value, context and status, whatever event led there. `createTestModel` by default also keys a state by the event that led to it, so the same machine can have more distinct states for `getPaths(earnestPaths)` than `states` in `checkMachine`. To compare counts, pass `getPaths` a `serializeState` that keys a state by its value and context, such as `(snapshot) => JSON.stringify({ value: snapshot.value, context: snapshot.context })`. History, a final state's output and child actors are not part of the state. An actor spawned into the context without an `id` gets a new one on each event, so give it an `id`.
+- **How states are counted.** `checkMachine` counts a state by its value, its context, its status and the states its history states remember, whatever event led there. A machine with a history state counts a state again once a history state remembers something. `createTestModel` by default also keys a state by the event that led to it, so the same machine can have more distinct states for `getPaths(earnestPaths)` than `states` in `checkMachine`. To compare counts, pass `getPaths` a `serializeState` that keys a state by its value and context, such as `(snapshot) => JSON.stringify({ value: snapshot.value, context: snapshot.context })`. A final state's output and child actors are not part of the state. An actor spawned into the context without an `id` gets a new one on each event, so give it an `id`.
 - **The events are the ones you list.** `checkMachine` tries only the events `events` gives, with the payloads written there, because XState has no public way to list a machine's own events. List each payload to try.
 - **Timers and child actors are not followed.** No timer fires and no invoked actor finishes, so a state left only by `after` or by `onDone` is reported stuck. Child actors are made but never run, and the machine has no parent. An error in a child, its `onDone` and `onError`, and events sent with `sendTo` to `self` are not followed, and `sendParent` throws. List an event sent to `self` in `events` to have it tried.
 - **One actor system.** A child actor with a `systemId` that starts a second time, as when its state is entered again, makes `checkMachine` throw that the id already exists.

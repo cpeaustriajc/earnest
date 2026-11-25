@@ -9,6 +9,9 @@ Earnest's state search for XState v5 machines, in two parts, both built on `sear
 - `checkMachine`, which checks rules and stuck states on a machine, as `earnest verify` does on a
   model, and gives the shortest path of events to each problem.
 
+The [integration page](https://earnest.cpeaustriajc.dev/integrations/xstate/) on the docs site
+walks through both examples, the schema and the limits.
+
 ## Installing
 
 ```sh
@@ -251,8 +254,10 @@ nothing is searched from 4 or 5.
 - `checkMachine` tries only the events `events` gives, with the payloads written or declared
   there. No timer fires and no invoked actor finishes, so a state left only by `after` or by `onDone` is
   reported stuck.
-- A state is its value, context and status. History, a final state's output and the child
-  actors are not part of it, so two snapshots that differ only there count as one. An actor
+- A state is its value, its context, its status and the states its history states remember. A
+  machine with a history state counts a state again once a history state remembers something.
+  A final state's output and the child actors are not part of a state, so two snapshots that
+  differ only there count as one. An actor
   spawned into the context without an `id` gets a new one on each event, so give it an `id`.
 - Every state found is held in memory with its whole snapshot, a few hundred bytes for a small
   context. A machine with millions of states can run out of memory before the default
