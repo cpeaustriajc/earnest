@@ -1,6 +1,6 @@
 use crate::arguments::{self, Chart, Confirm, Models, Report, Tla};
 use crate::changes::{Compare, Difference, check_base, rule_changes};
-use crate::confirm::{Checker, Tool, confirm_lines, differences};
+use crate::confirm::{Checker, Tool, confirm_lines, differences, runs_differences};
 use crate::discovery::{discover, language_of};
 use crate::print::{
     no_model_line, problem_lines, skipped_line, to_stderr, to_stdout, unreadable_lines,
@@ -249,12 +249,17 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
             max_arrows: arguments.arrows.max_arrows.get(),
         },
     );
+    let names: Vec<String> = targets
+        .iter()
+        .map(|target| target.readable.model.run_name())
+        .collect();
     let sections: Vec<Charted<'_>> = targets
         .iter()
+        .zip(&names)
         .zip(&ran)
-        .map(|(target, ran)| Charted {
+        .map(|((target, name), ran)| Charted {
             section: Section {
-                name: &target.readable.model.name,
+                name,
                 file: &target.file.path,
                 outcome: &ran.outcome,
             },
@@ -441,10 +446,16 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
                 folder,
                 workers: bounds.jobs,
             };
-            let found = match checker.check(exported) {
+            let mut found = match checker.check(exported) {
                 Ok((counting, rules)) => differences(&ours, &counting, &rules, *tool),
                 Err(error) => vec![error],
             };
+            if *tool == Tool::Tlc {
+                match checker.check_runs(exported) {
+                    Ok(rules) => found.extend(runs_differences(&ours, &rules, *tool)),
+                    Err(error) => found.push(error),
+                }
+            }
             let mut beyond = Vec::new();
             if *tool == Tool::Tlc {
                 beyond = limits(model);

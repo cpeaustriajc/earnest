@@ -137,6 +137,7 @@ mod tests {
         Checked {
             result: ModelResult {
                 name: name.to_owned(),
+                setup: None,
                 file: FILE.to_owned(),
                 line: 3,
                 status: Status::Pass,

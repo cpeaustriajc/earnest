@@ -17,6 +17,8 @@ export type {
   Rule,
   RuleRunner,
   Runners,
+  Setup,
+  SetupRunner,
   Step as WitnessStep,
   View,
   ViewSpec,

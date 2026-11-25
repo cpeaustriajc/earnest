@@ -118,10 +118,15 @@ export type Exports = Readonly<Record<string, unknown>>;
  * `maxStates` stops the search before it holds more distinct states than this; the default is
  * 5,000,000. `exports` is the model file's exports, which give each action, rule and end its
  * id: the name it is exported under. One that is not among them has its sentence as its id.
+ * `setup` is a setup declared on the model with `m.setup`: the search then starts from the
+ * setup's start states and plays the witnesses that name it, as `earnest verify` does on the
+ * setup's own result line. Without it the search starts where the model declares and plays the
+ * witnesses that name no setup.
  */
 export interface ExploreOptions {
   readonly maxStates?: number;
   readonly exports?: Exports;
+  readonly setup?: object;
 }
 
 /** The state limit `explore` uses when it is given none, the same as `earnest verify`. */
@@ -281,7 +286,10 @@ class Search {
 
   constructor(fields: FieldList, parts: Runners, options: ExploreOptions) {
     this.#fields = fields;
-    this.#parts = parts;
+    this.#parts = {
+      ...parts,
+      witnesses: (parts.witnesses ?? []).filter((witness) => witness.setup === options.setup),
+    };
     this.#inputs = new Map(parts.actions.map((action) => [action, inputsOf(action)]));
     this.#name = namer(options.exports);
     this.#maxStates = stateLimit(options.maxStates ?? DEFAULT_MAX_STATES);
@@ -686,5 +694,26 @@ class Search {
  * `earnest verify`, so the two results can be compared. Pass the model file's exports as
  * `exports` to get the same ids.
  */
-export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration =>
-  new Search(Object.entries(model.fields), model.runners(), options).run(model.starts());
+export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration => {
+  const fields = Object.entries(model.fields);
+  const parts = model.runners();
+  const search = new Search(fields, parts, options);
+  if (options.setup === undefined) {
+    return search.run(model.starts());
+  }
+  const chosen = (parts.setups ?? []).find((setup) => setup.part === options.setup);
+  if (chosen === undefined) {
+    throw new Error(`${model.name}: the setup given to explore is not one declared on this model`);
+  }
+  const seen = new Set<string>();
+  const starts = model
+    .starts()
+    .map((start): Row => ({ ...start, ...chosen.starts }))
+    .filter((start) => {
+      const key = fields.map(([name]) => keyOf(start[name])).join(";");
+      const isNew = !seen.has(key);
+      seen.add(key);
+      return isNew;
+    });
+  return search.run(starts);
+};

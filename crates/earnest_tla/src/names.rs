@@ -96,6 +96,7 @@ pub(crate) const STEPS: &str = "Next";
 pub(crate) const EVERY_VARIABLE: &str = "vars";
 pub(crate) const IN_RANGE: &str = "InRange";
 pub(crate) const STOP: &str = "Stop";
+pub(crate) const SPEC: &str = "Spec";
 
 const NAMES_OF_THE_EXPORT: &[&str] = &[STARTS, STEPS, EVERY_VARIABLE, IN_RANGE, STOP];
 

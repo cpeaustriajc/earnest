@@ -3,8 +3,8 @@ use crate::bodies::body_span;
 use crate::terms::bare;
 use earnest_ast::{
     ActionBody, ActionDraft, COLORED_PARTS, ConditionDraft, Draft, EndDraft, EventuallyDraft,
-    LabelDraft, Quoting, RuleDraft, Shape, StepDraft, Term, TermKind, ViewDraft, WitnessDraft,
-    condition_text, is_color,
+    LabelDraft, Quoting, RuleDraft, SetupDraft, Shape, StepDraft, Term, TermKind, ViewDraft,
+    WitnessDraft, condition_text, is_color,
 };
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, ArrowFunctionExpression, BindingPattern, CallExpression,
@@ -20,6 +20,7 @@ pub(crate) enum MemberKind {
     View,
     Witness,
     Eventually,
+    Setup,
 }
 
 pub(crate) struct Member<'p, 'a> {
@@ -39,6 +40,7 @@ impl MemberKind {
             "view" => Some(Self::View),
             "witness" => Some(Self::Witness),
             "eventually" => Some(Self::Eventually),
+            "setup" => Some(Self::Setup),
             _ => None,
         }
     }
@@ -50,6 +52,9 @@ const ACTION_OBJECT: usize = 2;
 const VIEW_OBJECT: usize = 1;
 const WITNESS_OBJECT: usize = 2;
 const EVENTUALLY_OBJECT: usize = 2;
+const SETUP_OBJECT: usize = 2;
+const NOT_A_SETUP: &str = "a witness names its setup by the constant of a setup of this model \
+    declared above it, as in `setup: behind`";
 const FAIR_IS_WRITTEN_OUT: &str = "`fair` is written out as `true` or `false`: `true` says the \
     action is not put off forever while it stays possible";
 const STEP: &str = "step";
@@ -105,13 +110,18 @@ impl Reader<'_> {
             }
             MemberKind::View => draft.view = self.view(call),
             MemberKind::Witness => {
-                if let Some(witness) = self.witness(id, start, call, &draft.actions) {
+                if let Some(witness) = self.witness(id, start, call, draft) {
                     draft.runs.witnesses.push(witness);
                 }
             }
             MemberKind::Eventually => {
                 if let Some(rule) = self.eventually(id, start, call) {
                     draft.runs.eventually.push(rule);
+                }
+            }
+            MemberKind::Setup => {
+                if let Some(setup) = self.setup(id, start, call) {
+                    draft.runs.setups.push(setup);
                 }
             }
         }
@@ -402,14 +412,79 @@ impl Reader<'_> {
         })
     }
 
+    fn setup(&mut self, id: String, start: u32, call: &CallExpression<'_>) -> Option<SetupDraft> {
+        let callee = self.quoted(call.callee.span());
+        let (Some(sentence), Some(written), 3) = (
+            call.arguments
+                .get(SENTENCE)
+                .and_then(Argument::as_expression),
+            call.arguments
+                .get(SETUP_OBJECT)
+                .and_then(Argument::as_expression),
+            call.arguments.len(),
+        ) else {
+            self.refuse(
+                call.span.start,
+                &callee,
+                &format!(
+                    "its model, its sentence and the fields it starts elsewhere are needed \
+                     here, as in `{callee}(Model, \"sentence\", {{ field: value }})`"
+                ),
+            );
+            return None;
+        };
+        let says = self.sentence(sentence);
+        let starts: Vec<(String, earnest_diagnostics::Place, Term)> = self
+            .entries(written)
+            .into_iter()
+            .map(|(name, offset, value)| (name, self.place(offset), self.term(value)))
+            .collect();
+        if starts.is_empty() {
+            self.refuse(
+                written.span().start,
+                &self.quoted(written.span()),
+                "a setup starts at least one field at another value: without one it is the \
+                 model as declared, which is checked already",
+            );
+            return None;
+        }
+        Some(SetupDraft {
+            id,
+            says,
+            place: self.place(start),
+            starts,
+        })
+    }
+
+    fn setup_named(
+        &mut self,
+        wrapped: &Expression<'_>,
+        draft: &Draft,
+    ) -> Option<(String, earnest_diagnostics::Place)> {
+        let written = bare(wrapped);
+        if let Expression::Identifier(name) = written
+            && draft
+                .runs
+                .setups
+                .iter()
+                .any(|setup| setup.id == name.name.as_str())
+        {
+            return Some((name.name.to_string(), self.place(written.span().start)));
+        }
+        let feature = self.quoted(written.span());
+        self.refuse(written.span().start, &feature, NOT_A_SETUP);
+        None
+    }
+
     fn witness(
         &mut self,
         id: String,
         start: u32,
         call: &CallExpression<'_>,
-        actions: &[ActionDraft],
+        draft: &Draft,
     ) -> Option<WitnessDraft> {
-        let entries = self.parts(call, WITNESS_OBJECT, &["steps", "expect"])?;
+        let actions = draft.actions.as_slice();
+        let entries = self.parts(call, WITNESS_OBJECT, &["setup", "steps", "expect"])?;
         let sentence = self.argument(
             call,
             SENTENCE,
@@ -435,12 +510,13 @@ impl Reader<'_> {
             );
             return None;
         };
+        let setup = pick(&entries, "setup").and_then(|written| self.setup_named(written, draft));
         let condition = self.state_function(expected)?;
         Some(WitnessDraft {
             id,
             says,
             place: self.place(start),
-            setup: None,
+            setup,
             steps,
             state_name: condition.state_name,
             expect: condition.term,

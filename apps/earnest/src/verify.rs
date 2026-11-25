@@ -19,8 +19,7 @@ struct Entry<'a> {
 }
 
 fn is_result_of(stored: &Checked, target: &Target<'_>) -> bool {
-    let model = &target.readable.model;
-    stored.result.name == model.name && stored.result.line == model.line
+    stored.result.is_of(&target.readable.model)
 }
 
 fn served(stored: &Checked) -> Checked {
@@ -71,7 +70,7 @@ fn keep(entry: &Entry<'_>, cache: &Cache) {
         !entry
             .fresh
             .iter()
-            .any(|new| new.result.name == old.result.name && new.result.line == old.result.line)
+            .any(|new| new.result.is_the_run_of(&old.result))
     };
     let models: Vec<Checked> = entry
         .stored

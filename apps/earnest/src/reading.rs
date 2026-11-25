@@ -152,7 +152,19 @@ fn understand(reading: Reading) -> Content {
     let mut problems = Vec::new();
     for draft in reading.drafts {
         match lower(&draft) {
-            Ok(model) => models.push(Readable { draft, model }),
+            Ok(model) => {
+                let in_setups: Vec<Model> = (0..model.runs.setups.len())
+                    .filter_map(|position| model.in_setup(position))
+                    .collect();
+                models.push(Readable {
+                    draft: draft.clone(),
+                    model,
+                });
+                models.extend(in_setups.into_iter().map(|model| Readable {
+                    draft: draft.clone(),
+                    model,
+                }));
+            }
             Err(found) => problems.extend(found),
         }
     }

@@ -128,7 +128,7 @@ fn model_line(result: &ModelResult) -> String {
     };
     let mut fields = vec![
         format!("{:<STATUS_WIDTH$}", result.status.word()),
-        one_line(&result.name),
+        one_line(&result.run_name()),
         format!("{} states{so_far}", result.states),
         format!("{} ms", result.milliseconds),
     ];
@@ -269,6 +269,7 @@ mod tests {
     fn result(name: &str, file: &str, status: Status) -> ModelResult {
         ModelResult {
             name: name.to_owned(),
+            setup: None,
             file: file.to_owned(),
             line: 2,
             status,

@@ -465,10 +465,9 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             AtBase::Absent => Vec::new(),
             AtBase::Models(drafts) => drafts,
         };
-        for target in targets
-            .iter()
-            .filter(|target| target.file.path == file.path)
-        {
+        for target in targets.iter().filter(|target| {
+            target.file.path == file.path && target.readable.model.runs.chosen.is_none()
+        }) {
             let new = &target.readable.draft;
             let was = old.iter().find(|draft| draft.name == new.name);
             compared

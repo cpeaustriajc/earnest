@@ -16,13 +16,13 @@ mod types;
 
 use earnest_ast::{
     ActionBody, ActionDraft, ConditionDraft, Draft, EndDraft, EventuallyDraft, FieldDraft,
-    HelperKind, LabelDraft, MOST_NESTING, RuleDraft, Shape, ShapeKind, StepDraft, TOO_DEEP,
-    TemplatePiece, Term, TermKind, WitnessDraft,
+    HelperKind, LabelDraft, MOST_NESTING, RuleDraft, SetupDraft, Shape, ShapeKind, StepDraft,
+    TOO_DEEP, TemplatePiece, Term, TermKind, WitnessDraft,
 };
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{
     Action, Code, End, Eventually, Expr, Field, Frame, Input, Label, Model, Piece, Played, Rule,
-    Runs, View, Witness, eval,
+    Runs, Setup, View, Witness, eval,
 };
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -189,7 +189,14 @@ impl<'a> Lowerer<'a> {
             steps: draft.view.steps.clone(),
             colors: draft.view.colors.clone(),
         };
+        let setups: Vec<Setup> = draft
+            .runs
+            .setups
+            .iter()
+            .filter_map(|setup| self.setup(setup, &fields).ok())
+            .collect();
         let runs = Runs {
+            setups,
             fair: draft
                 .actions
                 .iter()
@@ -609,7 +616,61 @@ impl Lowerer<'_> {
         })
     }
 
+    fn setup(&mut self, draft: &SetupDraft, fields: &[Field]) -> Lowering<Setup> {
+        let mut starts: Vec<(usize, Value)> = Vec::with_capacity(draft.starts.len());
+        for (name, place, term) in &draft.starts {
+            let found = self
+                .fields
+                .iter()
+                .position(|(known, _)| known == name)
+                .and_then(|position| {
+                    let (_, ty) = self.fields.get(position)?;
+                    Some((position, ty.clone(), fields.get(position)?.domain.clone()))
+                });
+            let Some((position, ty, domain)) = found else {
+                return Err(self.stop(
+                    *place,
+                    &format!("the field `{name}`"),
+                    "the model has no field with this name",
+                ));
+            };
+            if starts.iter().any(|(earlier, _)| *earlier == position) {
+                return Err(self.stop(
+                    *place,
+                    &format!("the field `{name}`"),
+                    "the setup starts this field twice",
+                ));
+            }
+            starts.push((position, self.constant(term, &ty, &domain, Fixed::Start)?));
+        }
+        Ok(Setup {
+            id: draft.id.clone(),
+            says: draft.says.clone(),
+            line: draft.place.line,
+            starts,
+        })
+    }
+
     fn witness(&mut self, draft: &WitnessDraft) -> Lowering<Witness> {
+        let setup = match &draft.setup {
+            Some((id, place)) => {
+                let found = self
+                    .draft
+                    .runs
+                    .setups
+                    .iter()
+                    .position(|setup| setup.id == *id);
+                let Some(position) = found else {
+                    return Err(self.stop(
+                        *place,
+                        &format!("the setup `{id}`"),
+                        "the model has no setup with this id",
+                    ));
+                };
+                Some(position)
+            }
+            None => None,
+        };
         let mut steps = Vec::with_capacity(draft.steps.len());
         for step in &draft.steps {
             steps.push(self.played(step)?);
@@ -621,7 +682,7 @@ impl Lowerer<'_> {
             id: draft.id.clone(),
             says: draft.says.clone(),
             line: draft.place.line,
-            setup: None,
+            setup,
             steps,
             expect: Code::new(expect),
             slots: scope.slots,

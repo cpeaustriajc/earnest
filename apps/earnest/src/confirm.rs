@@ -17,7 +17,9 @@ const LEFT: &str = " states left on queue.";
 const BROKEN: &str = "broken";
 const HOLDS: &str = "holds";
 const UNKNOWN: &str = "unknown";
-const WITNESS: &str = "witness";
+const EVENTUALLY: &str = "eventually";
+const TLC_STATES: &str = "states";
+const PROPERTY_BROKEN: &str = "Temporal properties were violated.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
 
@@ -146,10 +148,7 @@ pub(crate) fn differences(
                 .map_or_default(|error| format!(" ({error})"))
         )),
     }
-    let exported = result
-        .rules
-        .iter()
-        .filter(|rule| rule.kind.as_deref() != Some(WITNESS));
+    let exported = result.rules.iter().filter(|rule| rule.kind.is_none());
     for ours in exported {
         let Some(theirs) = rules.iter().find(|rule| rule.id == ours.id) else {
             found.push(format!("rule {}: {name} was not run on it", ours.id));
@@ -168,6 +167,55 @@ pub(crate) fn differences(
                     .errors
                     .first()
                     .map_or_default(|error| format!(" ({error})"))
+            ));
+        }
+    }
+    found
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RunsRun {
+    pub(crate) id: String,
+    pub(crate) run: TlcRun,
+}
+
+fn runs_verdict(rule: &RunsRun) -> &'static str {
+    let broke = |error: &String| error == PROPERTY_BROKEN;
+    if rule.run.errors.iter().any(broke) {
+        BROKEN
+    } else if rule.run.errors.is_empty() && rule.run.distinct_states.is_some() {
+        HOLDS
+    } else {
+        UNKNOWN
+    }
+}
+
+pub(crate) fn runs_differences(checked: &Checked, rules: &[RunsRun], tool: Tool) -> Vec<String> {
+    let name = tool.name();
+    let unseen_by_tlc = cut_short(checked);
+    let about_runs = checked
+        .result
+        .rules
+        .iter()
+        .filter(|rule| rule.kind.as_deref() == Some(EVENTUALLY));
+    let mut found = Vec::new();
+    for ours in about_runs {
+        let Some(theirs) = rules.iter().find(|rule| rule.id == ours.id) else {
+            found.push(format!("rule {}: {name} was not run on it", ours.id));
+            continue;
+        };
+        let verdict = runs_verdict(theirs);
+        let cut_short_where_tlc_sees_nothing = unseen_by_tlc && ours.verdict == UNKNOWN;
+        if verdict != ours.verdict && !cut_short_where_tlc_sees_nothing {
+            let error = theirs
+                .run
+                .errors
+                .iter()
+                .find(|error| *error != PROPERTY_BROKEN)
+                .map_or_default(|error| format!(" ({error})"));
+            found.push(format!(
+                "rule {}: the checker says {}, {name} says {verdict}{error}",
+                ours.id, ours.verdict
             ));
         }
     }
@@ -194,7 +242,7 @@ pub(crate) fn confirm_lines(
     };
     let mut lines = vec![format!(
         "{word:<7}  {}  {} states  {}{by}",
-        result.name,
+        result.run_name(),
         result.states,
         result.status.word()
     )];
@@ -250,7 +298,9 @@ impl Checker<'_> {
                     .arg(self.program)
                     .args(["tlc2.TLC", "-continue", "-workers"])
                     .arg(workers)
-                    .args(["-metadir", "states", "-config", config_name])
+                    .arg("-metadir")
+                    .arg(Path::new(TLC_STATES).join(config_name))
+                    .args(["-config", config_name])
                     .arg(module);
                 command
             }
@@ -350,6 +400,20 @@ impl Checker<'_> {
             });
         }
         Ok((counting, rules))
+    }
+
+    pub(crate) fn check_runs(&self, files: &Files) -> Result<Vec<RunsRun>, String> {
+        let mut rules = Vec::new();
+        for (number, property) in files.eventually.iter().enumerate() {
+            let Some(config) = files.config_living(property) else {
+                continue;
+            };
+            rules.push(RunsRun {
+                id: property.rule.clone(),
+                run: self.run(files, &format!("eventually{number}.cfg"), &config)?,
+            });
+        }
+        Ok(rules)
     }
 }
 
@@ -498,6 +562,7 @@ State 1: <Initial predicate>
         Checked {
             result: ModelResult {
                 name: "Oven".to_owned(),
+                setup: None,
                 file: "oven.model.ts".to_owned(),
                 line: 3,
                 status: Status::Fail,

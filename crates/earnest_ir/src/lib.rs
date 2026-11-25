@@ -448,8 +448,8 @@ pub struct Model {
 }
 
 impl Model {
-    /// The id of everything the model asks to be checked and reported by its id: each rule,
-    /// then each rule about runs, then each witness.
+    /// The id of everything this model is checked for and reported by its id: each rule, then
+    /// each rule about runs, then each witness that is played from this model's start states.
     pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
         let always = self.rules.iter().map(|rule| rule.id.as_str());
         let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
@@ -457,8 +457,25 @@ impl Model {
             .runs
             .witnesses
             .iter()
+            .filter(|witness| witness.setup == self.runs.chosen)
             .map(|witness| witness.id.as_str());
         always.chain(eventually).chain(witnesses)
+    }
+
+    /// The setup this model starts in, when [`Self::in_setup`] gave it.
+    #[must_use]
+    pub fn setup(&self) -> Option<&Setup> {
+        self.runs.setups.get(self.runs.chosen?)
+    }
+
+    /// The model's name for a line of output: the name alone for the model as declared, and
+    /// the name with the setup's id in round brackets after it for a model in a setup.
+    #[must_use]
+    pub fn run_name(&self) -> String {
+        match self.setup() {
+            Some(setup) => format!("{} ({})", self.name, setup.id),
+            None => self.name.clone(),
+        }
     }
 
     /// The same model started in the setup at `position` of [`Runs::setups`]: each field the

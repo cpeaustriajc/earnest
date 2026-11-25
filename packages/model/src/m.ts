@@ -18,7 +18,7 @@ export {
   set,
   timer,
 } from "./declarations.ts";
-export { action, end, eventually, model, rule, step, view, witness } from "./model.ts";
+export { action, end, eventually, model, rule, setup, step, view, witness } from "./model.ts";
 export { div, mapOf, rem, seqOf, setOf, some } from "./values.ts";
 
 /**

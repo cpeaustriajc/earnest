@@ -423,8 +423,9 @@ impl Reader<'_> {
             self.refuse(
                 member.call.span.start,
                 &member.id,
-                "a rule, an action, an end or a witness is an exported constant, because its \
-                 id is the name it is exported under: write `export const name = ...`",
+                "a rule, an action, an end, a witness or a setup is an exported constant, \
+                 because its id is the name it is exported under: write `export const name = \
+                 ...`",
             );
             return;
         }

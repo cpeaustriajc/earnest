@@ -166,8 +166,16 @@ struct Searched {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SetupName {
+    pub(crate) id: String,
+    pub(crate) says: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ModelResult {
     pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) setup: Option<SetupName>,
     pub(crate) file: String,
     pub(crate) line: u32,
     pub(crate) status: Status,
@@ -183,6 +191,27 @@ pub(crate) struct ModelResult {
 pub(crate) struct Checked {
     pub(crate) result: ModelResult,
     pub(crate) detail: Vec<String>,
+}
+
+impl ModelResult {
+    pub(crate) fn run_name(&self) -> String {
+        match &self.setup {
+            Some(setup) => format!("{} ({})", self.name, setup.id),
+            None => self.name.clone(),
+        }
+    }
+
+    pub(crate) fn is_of(&self, model: &Model) -> bool {
+        let setup = self.setup.as_ref().map(|setup| setup.id.as_str());
+        self.name == model.name
+            && self.line == model.line
+            && setup == model.setup().map(|setup| setup.id.as_str())
+    }
+
+    pub(crate) fn is_the_run_of(&self, other: &Self) -> bool {
+        let id = |result: &Self| result.setup.as_ref().map(|setup| setup.id.clone());
+        self.name == other.name && self.line == other.line && id(self) == id(other)
+    }
 }
 
 pub(crate) fn milliseconds(elapsed: Duration) -> u64 {
@@ -201,6 +230,10 @@ pub(crate) fn checked(model: &Model, ran: &Ran) -> Result<Checked, String> {
     Ok(Checked {
         result: ModelResult {
             name: model.name.clone(),
+            setup: model.setup().map(|setup| SetupName {
+                id: setup.id.clone(),
+                says: setup.says.clone(),
+            }),
             file: model.file.clone(),
             line: model.line,
             status: searched.status,
