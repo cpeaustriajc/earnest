@@ -22,6 +22,7 @@ The repository follows the workspace layout used by oxc: one crate per concern, 
 | `crates/earnest_tla` | TLA+ module and TLC config writer |
 | `crates/earnest_chart` | Mermaid statechart and Markdown report writer |
 | `crates/earnest`, `crates/earnest_macros` | Rust model library and proc macros |
+| `crates/earnest_smlang` | Searches an smlang state machine from a Rust test |
 | `packages/model` | TypeScript model library (`@earnestjs/model`) |
 | `packages/cli` | npm CLI launcher (`@earnestjs/cli`) and per-platform binary packages |
 | `tasks/conformance` | Conformance models with hand-derived state counts, verdicts, and paths |
@@ -78,9 +79,9 @@ just docs                                # builds apps/docs and llms.txt sets
 
 ## Releasing to crates.io and npm
 
-`.github/workflows/release.yml` publishes all 14 crates and the seven `@earnestjs` npm packages. A tag `v<version>` that matches the workspace version starts it. The checker is under the GPL (`LICENSE`); the `earnest` and `earnest_macros` crates and `@earnestjs/model` are under the LGPL (`LICENSE.LESSER`).
+`.github/workflows/release.yml` publishes all 15 crates and the seven `@earnestjs` npm packages. A tag `v<version>` that matches the workspace version starts it. The checker is under the GPL (`LICENSE`); the `earnest`, `earnest_macros` and `earnest_smlang` crates and `@earnestjs/model` are under the LGPL (`LICENSE.LESSER`).
 
-1. Set one version in `Cargo.toml` (`[workspace.package]` and `[workspace.dependencies]`), in `packages/cli/package.json` with its `optionalDependencies`, in `packages/model/package.json` and in each `packages/cli/platforms/*/package.json`. Update the nightly tag in `install.sh` and `install.ps1` too.
+1. Set one version in `Cargo.toml` (`[workspace.package]` and `[workspace.dependencies]`), in each `earnest = { path = ... }` line of `crates/earnest_rs`, `crates/earnest_smlang`, `tasks/break_it` and `tasks/models`, in `packages/cli/package.json` with its `optionalDependencies`, in `packages/model/package.json` and in each `packages/cli/platforms/*/package.json`. Update the nightly tag in `install.sh` and `install.ps1` too.
 2. Run the workflow by hand with **publish** off. It builds the five binaries, packs every npm tarball and runs `cargo publish --workspace --dry-run`.
 3. Push the tag: `git tag v<version> && git push origin v<version>`.
 
