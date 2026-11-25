@@ -84,12 +84,22 @@ just docs                                # builds apps/docs and llms.txt sets
 2. Run the workflow by hand with **publish** off. It builds the five binaries, packs every npm tarball and runs `cargo publish --workspace --dry-run`.
 3. Push the tag: `git tag v<version> && git push origin v<version>`.
 
-The publish jobs run in the `release` environment and read two secrets:
+The publish jobs run in the `release` environment and hold no secret. They log in through trusted publishing: GitHub vouches for the workflow, and crates.io and npm give it a short-lived token.
 
-| Secret | Used for |
+| Registry | Trusted publisher settings, set on each crate or package |
 |---|---|
-| `CARGO_REGISTRY_TOKEN` | `cargo publish`. crates.io limits how fast new crate names appear, so the first release waits between crates and can take over an hour |
-| `NPM_TOKEN` | `npm publish` of the first release only. After it, set up trusted publishing for each package on npmjs.com (repository `cpeaustriajc/earnest`, workflow `release.yml`, environment `release`) and delete the secret |
+| crates.io | Owner `cpeaustriajc`, repository `earnest`, workflow `release.yml`, environment `release` |
+| npm | Repository `cpeaustriajc/earnest`, workflow `release.yml`, environment `release` |
+
+### The first release of a crate or package
+
+Both registries set up trusted publishing only on a crate or package that already exists, so its first version goes out by hand from a maintainer's machine:
+
+1. Run the workflow by hand with **publish** off, and download its npm tarballs: `gh run download <run id> --pattern 'npm-*' --dir <folder>`.
+2. Check out the commit that run built. Log in with `cargo login` and a crates.io token that may publish new crates, then run `python3 -I .github/scripts/publish_crates.py`. crates.io limits how fast new crate names appear, so the script waits between crates and can take over an hour. Revoke the token afterwards.
+3. Log in with `npm login`, and publish each tarball from step 1 with `npm publish <tarball> --access public --provenance=false`: the platform packages first, then `@earnestjs/model`, then `@earnestjs/cli`. Provenance needs CI, so only later releases carry it.
+4. Set up the trusted publisher on each new crate and package, with the settings above.
+5. Push the tag `v<version>` on that commit. The workflow finds every crate and package already published and skips them.
 
 A rerun skips each crate and package that already has this version, so a release that stopped halfway can finish.
 
