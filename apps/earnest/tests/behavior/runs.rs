@@ -97,7 +97,7 @@ fn a_model_whose_witnesses_hold_passes_and_one_with_a_broken_witness_fails() {
 }
 
 #[test]
-fn a_model_with_only_witnesses_that_hold_exits_zero() {
+fn a_model_whose_rule_and_witnesses_hold_exits_zero() {
     let sandbox = Sandbox::with_runs(&["panel.model.ts"]);
     let run = sandbox.earnest(&["verify"]);
     run.exits(0);
