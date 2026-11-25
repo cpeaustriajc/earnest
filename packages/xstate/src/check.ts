@@ -204,11 +204,20 @@ const keyOf = (value: unknown): string => {
   );
 };
 
-const stateKey = ({ value, context, status, error }: AnyMachineSnapshot): string => {
+const historyOf = ({ historyValue }: AnyMachineSnapshot): Readonly<Record<string, string[]>> =>
+  Object.fromEntries(
+    Object.entries(historyValue).map(([historyNode, remembered]) => [
+      historyNode,
+      remembered.map((node) => node.id).sort(compareText),
+    ]),
+  );
+
+const stateKey = (snapshot: AnyMachineSnapshot): string => {
+  const { value, context, status, error } = snapshot;
   if (status === "error") {
     throw error;
   }
-  return keyOf({ value, context, status });
+  return keyOf({ value, context, status, history: historyOf(snapshot) });
 };
 
 type Declared = Declaration<unknown, never>;
@@ -366,11 +375,12 @@ const check = (
  * the initial snapshot, breadth first, and gives what `explore` from `@earnestjs/model` gives.
  * That is pass, fail or unfinished, the count of distinct states, each rule's verdict with the
  * shortest path of events to a snapshot that breaks it, and the first stuck state. Two
- * snapshots are one state when their state value, context and status are equal, whatever
- * event led there. The context must be plain data: plain objects with string keys, arrays,
+ * snapshots are one state when their state value, context, status and the states their history
+ * states remember are equal, whatever event led there. A machine with a history state counts a
+ * state again once a history state remembers something. The context must be plain data: plain objects with string keys, arrays,
  * strings, numbers, booleans, `null`, `undefined`, and values with a `toJSON`, such as a `Date`
  * or an actor ref, read through it. Anything else in it, such as a `Map`, a class instance or a
- * function, is an error. A field set to `undefined` is the same as no field. History, a final
+ * function, is an error. A field set to `undefined` is the same as no field. A final
  * state's output and child actors are not part of the state. An event is tried in a snapshot only when `snapshot.can(event)` is true: a guard that fails, or a
  * transition with no target and no action, is no event at all. A snapshot whose status is
  * `done`, a top-level final state, is an end. Any other snapshot where none of the events can
