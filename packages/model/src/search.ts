@@ -1,4 +1,15 @@
-import type { Declaration } from "./declarations.ts";
+import {
+  type Reach,
+  type SearchMove,
+  type Status,
+  type Verdict,
+  type Visit,
+  type Visitor,
+  breadthFirst,
+  stateLimit,
+  trailTo,
+} from "./breadth.ts";
+import { type Declaration, rowsOf } from "./declarations.ts";
 import type {
   ActionRunner,
   AnyModel,
@@ -14,6 +25,7 @@ import {
   DivisionFault,
   RemainderFault,
   type Row,
+  frozen,
   isJsonList,
   keyOf,
   toJson,
@@ -51,13 +63,6 @@ export interface Path {
 }
 
 /**
- * `unknown` means the rule was not seen broken, but the search stopped early, the rule could
- * not be evaluated in a state it reached, or a state out of range or a fault in an action or an
- * end cut the search short, so some state was not judged or not reached.
- */
-export type Verdict = "holds" | "broken" | "unknown";
-
-/**
  * One rule's result. `path` is the shortest path to a state that breaks it, or `null`. A rule
  * has no `kind`, `reason` or `repeatsFrom`. A rule about runs is listed after the rules with the
  * `kind` `"eventually"`: its `path` leads into a run that never reaches the state it wants,
@@ -92,13 +97,6 @@ export interface Finding {
 }
 
 /**
- * `unfinished` means the state limit stopped the search before anything was found wrong. Every
- * state that is counted has its rules judged, also the ones the limit kept the search from
- * going on from.
- */
-export type Status = "pass" | "fail" | "unfinished";
-
-/**
  * What `explore` found. `states` counts distinct states, out-of-range ones included. `findings`
  * holds at most one of each kind, in the order stuck, out-of-range, fault. `reason` says why an
  * unfinished search stopped, and is `null` otherwise.
@@ -128,9 +126,6 @@ export interface ExploreOptions {
   readonly exports?: Exports;
   readonly setup?: object;
 }
-
-/** The state limit `explore` uses when it is given none, the same as `earnest verify`. */
-export const DEFAULT_MAX_STATES = 5_000_000;
 
 /**
  * Gives the function that names a part of a model: the name it is exported under in `exports`,
@@ -195,13 +190,6 @@ const numberFault = (json: Json): string | null => {
   return inside.map(numberFault).find((fault) => fault !== null) ?? null;
 };
 
-const stateLimit = (maxStates: number): number => {
-  if (!Number.isInteger(maxStates) || maxStates < 0) {
-    throw new Error(`maxStates must be a whole number that is not negative, not ${maxStates}`);
-  }
-  return maxStates;
-};
-
 /**
  * Applies an action and gives the next state, or the fault that stops it. Besides the faults of
  * `attempt`, a next state that holds `NaN`, which `%` by zero gives, or a number too large for
@@ -217,43 +205,20 @@ export const nextState = (action: ActionRunner, state: Row, input: Row): Attempt
 };
 
 /** Every input an action is tried with, in the checker's order: the first input varies fastest. */
-export const inputsOf = (action: ActionRunner): readonly Row[] =>
-  action.inputs.reduceRight<Row[]>(
-    (rest, [name, declared]) =>
-      rest.flatMap((later) => declared.values().map((value) => ({ [name]: value, ...later }))),
-    [{}],
-  );
+export const inputsOf = (action: ActionRunner): readonly Row[] => rowsOf(action.inputs);
 
-interface Parent {
-  readonly from: Visited;
+interface Taken {
   readonly action: ActionRunner;
   readonly input: Row;
 }
 
-interface Visited {
-  readonly row: Row;
-  readonly key: string;
-  readonly index: number;
-  readonly parent: Parent | null;
-}
-
-interface Taken extends Edge {
-  readonly input: Row;
-}
-
-const STAYS = "nothing changes the state from here, so the run can stay in it forever";
-
-interface Successor {
-  readonly action: ActionRunner;
-  readonly input: Row;
-  readonly next: Row;
-}
+type Visited = Visit<Row, Taken>;
 
 interface Expanded {
   readonly outside: string | null;
   readonly broken: RuleRunner[];
   readonly unjudged: RuleRunner[];
-  readonly successors: Successor[];
+  readonly successors: SearchMove<Row, Taken>[];
   trouble: string | null;
   isCutShort: boolean;
   isEnabled: boolean;
@@ -266,25 +231,35 @@ type Played =
   | { readonly broken: false }
   | { readonly broken: true; readonly path: Path; readonly reason: string };
 
-class Search {
+interface Seen {
+  readonly from: Visited;
+  readonly taken: Taken;
+  readonly next: string;
+}
+
+interface Kept extends Edge {
+  readonly taken: Taken;
+}
+
+const STAYS = "nothing changes the state from here, so the run can stay in it forever";
+
+class Search implements Visitor<Row, Taken> {
   readonly #fields: FieldList;
   readonly #parts: Runners;
   readonly #inputs: ReadonlyMap<ActionRunner, readonly Row[]>;
   readonly #name: (part: object, fallback: string) => string;
-  readonly #maxStates: number;
-  readonly #seen = new Map<string, number>();
-  readonly #positions: ReadonlyMap<ActionRunner, number>;
-  readonly #taken = new Map<string, Taken>();
-  readonly #keepsEdges: boolean;
   readonly #firstBroken = new Map<RuleRunner, Visited>();
   readonly #unjudged = new Set<RuleRunner>();
   #stuck: Visited | null = null;
   #outside: { readonly at: Visited; readonly field: string } | null = null;
   #trouble: { readonly at: Visited; readonly message: string } | null = null;
-  #reason: string | null = null;
   #isCutShort = false;
+  readonly #starts: readonly Row[];
+  readonly #maxStates: number;
+  readonly #seenMoves: Seen[] = [];
+  readonly #keepsMoves: boolean;
 
-  constructor(fields: FieldList, parts: Runners, options: ExploreOptions) {
+  constructor(fields: FieldList, parts: Runners, options: ExploreOptions, starts: readonly Row[]) {
     this.#fields = fields;
     this.#parts = {
       ...parts,
@@ -292,68 +267,28 @@ class Search {
     };
     this.#inputs = new Map(parts.actions.map((action) => [action, inputsOf(action)]));
     this.#name = namer(options.exports);
-    this.#maxStates = stateLimit(options.maxStates ?? DEFAULT_MAX_STATES);
-    this.#positions = new Map(parts.actions.map((action, position) => [action, position]));
-    this.#keepsEdges = (parts.eventually ?? []).length > 0;
+    this.#starts = starts;
+    this.#maxStates = stateLimit(options.maxStates);
+    this.#keepsMoves = (parts.eventually ?? []).length > 0;
   }
 
-  run(starts: readonly Row[]): Exploration {
-    const waiting: Visited[] = [];
-    for (const start of starts) {
-      this.#visit(start, null, waiting);
-    }
-    let searched = 0;
-    for (const visited of waiting) {
-      if (this.#reason !== null) {
-        break;
-      }
-      searched += 1;
-      const expanded = this.#expand(visited.row);
-      this.#record(visited, expanded);
-      for (const successor of expanded.successors) {
-        const parent = { from: visited, action: successor.action, input: successor.input };
-        const to = this.#visit(successor.next, parent, waiting);
-        if (to === null) {
-          break;
-        }
-        this.#keep(visited.index, to, successor);
-      }
-    }
-    for (const counted of waiting.slice(searched)) {
-      this.#record(counted, this.#judge(counted.row));
-    }
-    return this.#outcome(starts, waiting);
-  }
-
-  #keep(from: number, to: number, successor: Successor): void {
-    const action = this.#positions.get(successor.action);
-    if (!this.#keepsEdges || from === to || action === undefined) {
-      return;
-    }
-    const key = `${from},${to},${action}`;
-    if (!this.#taken.has(key)) {
-      this.#taken.set(key, { from, to, action, input: successor.input });
-    }
-  }
-
-  #keyOf(row: Row): string {
+  key(row: Row): string {
     return this.#fields.map(([name]) => keyOf(row[name])).join(";");
   }
 
-  #visit(row: Row, parent: Parent | null, waiting: Visited[]): number | null {
-    const key = this.#keyOf(row);
-    const known = this.#seen.get(key);
-    if (known !== undefined) {
-      return known;
+  expand(at: Visited): readonly SearchMove<Row, Taken>[] {
+    const expanded = this.#expand(at.state);
+    this.#record(at, expanded);
+    if (this.#keepsMoves) {
+      for (const { move, next } of expanded.successors) {
+        this.#seenMoves.push({ from: at, taken: move, next: this.key(next) });
+      }
     }
-    if (this.#seen.size >= this.#maxStates) {
-      this.#reason = `state limit of ${this.#maxStates}`;
-      return null;
-    }
-    const index = waiting.length;
-    this.#seen.set(key, index);
-    waiting.push({ row, key, index, parent });
-    return index;
+    return expanded.successors;
+  }
+
+  judge(at: Visited): void {
+    this.#record(at, this.#judge(at.state));
   }
 
   #judge(state: Row): Expanded {
@@ -427,7 +362,7 @@ class Search {
       found.isEnabled = true;
       const next = nextState(action, state, input);
       if (next.fault === null) {
-        found.successors.push({ action, input, next: next.value });
+        found.successors.push({ move: { action, input }, next: next.value });
       } else {
         found.trouble ??= `the change of the action \`${id}\` ${next.fault}`;
         found.isCutShort = true;
@@ -461,12 +396,11 @@ class Search {
     return this.#fields.map(([name]) => ({ name, value: toJson(row[name]) }));
   }
 
-  #step(parent: Pick<Parent, "action" | "input"> & { from: { row: Row } }, after: Row): Step {
-    const before = parent.from.row;
+  #step({ action, input }: Taken, before: Row, after: Row): Step {
     return {
-      action: this.#name(parent.action.part, parent.action.sentence),
-      label: parent.action.sentence,
-      input: parent.action.inputs.map(([name]) => ({ name, value: toJson(parent.input[name]) })),
+      action: this.#name(action.part, action.sentence),
+      label: action.sentence,
+      input: action.inputs.map(([name]) => ({ name, value: toJson(input[name]) })),
       changes: this.#fields
         .filter(([name]) => keyOf(before[name]) !== keyOf(after[name]))
         .map(([name]) => ({
@@ -479,36 +413,55 @@ class Search {
   }
 
   #pathTo(target: Visited): Path {
-    const steps: Step[] = [];
-    let at = target;
-    while (at.parent !== null) {
-      steps.push(this.#step(at.parent, at.row));
-      at = at.parent.from;
-    }
-    return { start: this.#named(at.row), steps: steps.reverse() };
+    const { start, steps } = trailTo(target);
+    return {
+      start: this.#named(start),
+      steps: steps.map(({ move, state }, index) =>
+        this.#step(move, steps[index - 1]?.state ?? start, state),
+      ),
+    };
   }
 
-  #lassoPath(lasso: Lasso, visited: readonly Visited[], edges: readonly Taken[]): Path {
+  #kept(visits: readonly Visited[]): Kept[] {
+    const byKey = new Map(visits.map((visit, index) => [this.key(visit.state), index]));
+    const byVisit = new Map(visits.map((visit, index) => [visit, index]));
+    const positions = new Map(this.#parts.actions.map((action, position) => [action, position]));
+    const kept = new Map<string, Kept>();
+    for (const { from: visit, taken, next } of this.#seenMoves) {
+      const from = byVisit.get(visit);
+      const to = byKey.get(next);
+      const action = positions.get(taken.action);
+      if (from === undefined || to === undefined || action === undefined || from === to) {
+        continue;
+      }
+      const edge = `${from},${to},${action}`;
+      if (!kept.has(edge)) {
+        kept.set(edge, { from, to, action, taken });
+      }
+    }
+    return [...kept.values()].sort(
+      (one, other) => one.from - other.from || one.to - other.to || one.action - other.action,
+    );
+  }
+
+  #lassoPath(lasso: Lasso, visits: readonly Visited[], edges: readonly Kept[]): Path {
     const rowOf = (state: number | undefined): Row =>
-      state === undefined ? {} : (visited[state]?.row ?? {});
+      state === undefined ? {} : (visits[state]?.state ?? {});
     const steps: Step[] = [];
     for (const [position, to] of lasso.states.entries()) {
       const from = lasso.states[position - 1];
       const only = lasso.actions[position] ?? null;
       const edge = edges.find(
-        (taken) =>
-          taken.from === from && taken.to === to && (only === null || taken.action === only),
+        (kept) => kept.from === from && kept.to === to && (only === null || kept.action === only),
       );
-      const action = edge === undefined ? undefined : this.#parts.actions[edge.action];
-      if (from === undefined || edge === undefined || action === undefined) {
-        continue;
+      if (from !== undefined && edge !== undefined) {
+        steps.push(this.#step(edge.taken, rowOf(from), rowOf(to)));
       }
-      steps.push(this.#step({ from: { row: rowOf(from) }, action, input: edge.input }, rowOf(to)));
     }
     return { start: this.#named(rowOf(lasso.states[0])), steps };
   }
 
-  #eventually(visited: readonly Visited[]): RuleResult[] {
+  #eventually({ visits, reason }: Reach<Row, Taken>): RuleResult[] {
     const rules = this.#parts.eventually ?? [];
     const unknown = (rule: EventuallyRunner): RuleResult => ({
       id: this.#name(rule.part, rule.says),
@@ -517,13 +470,14 @@ class Search {
       path: null,
       kind: "eventually",
     });
-    if (rules.length === 0 || this.#reason !== null || this.#isCutShort) {
+    if (rules.length === 0 || reason !== null || this.#isCutShort) {
       return rules.map(unknown);
     }
-    const edges = [...this.#taken.values()].sort(
-      (one, other) => one.from - other.from || one.to - other.to || one.action - other.action,
+    const edges = this.#kept(visits);
+    const byVisit = new Map(visits.map((visit, index) => [visit, index]));
+    const parents = visits.map((visit) =>
+      visit.parent === null ? null : (byVisit.get(visit.parent.from) ?? null),
     );
-    const parents = visited.map((state) => state.parent?.from.index ?? null);
     const depth: number[] = [];
     for (const parent of parents) {
       depth.push(parent === null ? 0 : (depth[parent] ?? 0) + 1);
@@ -531,21 +485,21 @@ class Search {
     const fair = this.#parts.actions.flatMap((action, position) =>
       action.fair === true ? [position] : [],
     );
-    const hunt = hunter({ states: visited.length, edges, fair, parents, depth });
+    const hunt = hunter({ states: visits.length, edges, fair, parents, depth });
     return rules.map((rule): RuleResult => {
       const startsHere: boolean[] = [];
       const reached: boolean[] = [];
-      for (const state of visited) {
+      for (const visit of visits) {
         const { after } = rule;
-        const starts = after === null ? null : attempt(() => after(state.row));
-        const reaches = attempt(() => rule.reaches(state.row));
+        const starts = after === null ? null : attempt(() => after(visit.state));
+        const reaches = attempt(() => rule.reaches(visit.state));
         const fault = starts?.fault ?? reaches.fault;
         if (fault !== null) {
           const id = this.#name(rule.part, rule.says);
-          this.#trouble ??= { at: state, message: `the rule \`${id}\` ${fault} in this state` };
+          this.#trouble ??= { at: visit, message: `the rule \`${id}\` ${fault} in this state` };
           return unknown(rule);
         }
-        startsHere.push(starts === null ? state.parent === null : starts.value === true);
+        startsHere.push(starts === null ? visit.parent === null : starts.value === true);
         reached.push(reaches.value === true);
       }
       const lasso = hunt(startsHere, reached);
@@ -558,7 +512,7 @@ class Search {
       const broken: RuleResult = {
         ...unknown(rule),
         verdict: "broken",
-        path: this.#lassoPath(lasso, visited, edges),
+        path: this.#lassoPath(lasso, visits, edges),
       };
       return lasso.repeatsFrom === null
         ? { ...broken, reason: STAYS }
@@ -581,20 +535,21 @@ class Search {
     for (const [position, { action, input }] of witness.steps.entries()) {
       const number = position + 1;
       const id = this.#name(action.part, action.sentence);
-      const can = attempt(() => action.when(state, input));
+      const before = state;
+      const can = attempt(() => action.when(before, input));
       if (can.fault !== null) {
         return broken(`step ${number}: the condition of the action \`${id}\` ${can.fault} here`);
       }
       if (!can.value) {
         return broken(`step ${number}, \`${id}\`, can't happen here`);
       }
-      const next = nextState(action, state, input);
+      const next = nextState(action, before, input);
       if (next.fault !== null) {
         return broken(`step ${number}: the change of the action \`${id}\` ${next.fault} here`);
       }
-      steps.push(this.#step({ from: { row: state }, action, input }, next.value));
-      state = next.value;
-      const after = state;
+      const after = next.value;
+      steps.push(this.#step({ action, input }, before, after));
+      state = after;
       const outside = this.#fields.find(([name, declared]) => !declared.has(after[name]));
       if (outside !== undefined) {
         return broken(
@@ -610,9 +565,9 @@ class Search {
     return expected.value ? { broken: false } : broken("what the witness expects is false here");
   }
 
-  #witness(witness: WitnessRunner, starts: readonly Row[]): RuleResult {
+  #witness(witness: WitnessRunner): RuleResult {
     const result = { id: this.#name(witness.part, witness.says), says: witness.says };
-    for (const [position, start] of starts.entries()) {
+    for (const [position, start] of this.#starts.entries()) {
       if (position >= this.#maxStates) {
         return { ...result, verdict: "unknown", path: null, kind: "witness" };
       }
@@ -656,10 +611,11 @@ class Search {
     return findings;
   }
 
-  #outcome(starts: readonly Row[], visited: readonly Visited[]): Exploration {
+  outcome(reach: Reach<Row, Taken>): Exploration {
+    const { visits, reason } = reach;
     const always = this.#parts.rules.map((rule): RuleResult => {
       const first = this.#firstBroken.get(rule);
-      const isJudged = this.#reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
+      const isJudged = reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
       const unbroken = isJudged ? "holds" : "unknown";
       return {
         id: this.#name(rule.part, rule.says),
@@ -668,20 +624,18 @@ class Search {
         path: first === undefined ? null : this.#pathTo(first),
       };
     });
-    const eventually = this.#eventually(visited);
-    const witnesses = (this.#parts.witnesses ?? []).map((witness) =>
-      this.#witness(witness, starts),
-    );
+    const eventually = this.#eventually(reach);
+    const witnesses = (this.#parts.witnesses ?? []).map((witness) => this.#witness(witness));
     const rules = [...always, ...eventually, ...witnesses];
     const findings = this.#findings();
     const hasFailed = findings.length > 0 || rules.some((rule) => rule.verdict === "broken");
-    const unfailed = this.#reason === null ? "pass" : "unfinished";
+    const unfailed = reason === null ? "pass" : "unfinished";
     return {
       status: hasFailed ? "fail" : unfailed,
-      states: this.#seen.size,
+      states: visits.length,
       rules,
       findings,
-      reason: this.#reason,
+      reason,
     };
   }
 }
@@ -695,25 +649,31 @@ class Search {
  * `exports` to get the same ids.
  */
 export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration => {
+  const maxStates = stateLimit(options.maxStates);
   const fields = Object.entries(model.fields);
   const parts = model.runners();
-  const search = new Search(fields, parts, options);
+  const key = (row: Row): string => fields.map(([name]) => keyOf(row[name])).join(";");
+  const search = (starts: readonly Row[]): Exploration => {
+    const found = new Search(fields, parts, options, starts);
+    return found.outcome(breadthFirst(starts, key, maxStates, found));
+  };
   if (options.setup === undefined) {
-    return search.run(model.starts());
+    return search(model.starts());
   }
   const chosen = (parts.setups ?? []).find((setup) => setup.part === options.setup);
   if (chosen === undefined) {
     throw new Error(`${model.name}: the setup given to explore is not one declared on this model`);
   }
   const seen = new Set<string>();
-  const starts = model
-    .starts()
-    .map((start): Row => ({ ...start, ...chosen.starts }))
-    .filter((start) => {
-      const key = fields.map(([name]) => keyOf(start[name])).join(";");
-      const isNew = !seen.has(key);
-      seen.add(key);
-      return isNew;
-    });
-  return search.run(starts);
+  return search(
+    model
+      .starts()
+      .map((start): Row => frozen({ ...start, ...chosen.starts }))
+      .filter((start) => {
+        const found = key(start);
+        const isNew = !seen.has(found);
+        seen.add(found);
+        return isNew;
+      }),
+  );
 };
