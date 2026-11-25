@@ -1,5 +1,5 @@
 export * as m from "./m.ts";
-export { Declaration, MOST_VALUES_LISTED } from "./declarations.ts";
+export { Declaration, MOST_VALUES_LISTED, combinationsOf } from "./declarations.ts";
 export type { Fields, StateOf, ValueOf } from "./declarations.ts";
 export { Model } from "./model.ts";
 export type {
@@ -18,7 +18,21 @@ export type {
 } from "./model.ts";
 export { replay } from "./replay.ts";
 export type { ReplayOptions, ReplayPath, ReplayStep, StateJson } from "./replay.ts";
-export { DEFAULT_MAX_STATES, explore } from "./search.ts";
+export { DEFAULT_MAX_STATES, search } from "./breadth.ts";
+export type {
+  SearchFinding,
+  SearchFindingKind,
+  SearchInput,
+  SearchMove,
+  SearchResult,
+  SearchRule,
+  SearchRuleResult,
+  Status,
+  Trail,
+  TrailStep,
+  Verdict,
+} from "./breadth.ts";
+export { explore } from "./search.ts";
 export type {
   Change,
   Exploration,
@@ -29,9 +43,7 @@ export type {
   Named,
   Path,
   RuleResult,
-  Status,
   Step,
-  Verdict,
 } from "./search.ts";
 export {
   LockValue,

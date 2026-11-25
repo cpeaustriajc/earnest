@@ -6,6 +6,7 @@
 //! called on as it was. An operation that only looks at an argument takes it by value or by
 //! reference, as you like; the checker reads `&x` and `x.clone()` as `x`.
 
+mod explore;
 mod lock;
 mod map;
 mod queue;
@@ -21,6 +22,9 @@ mod walk;
 
 pub use crate::require;
 pub use earnest_macros::{Domain, Model, model, view};
+pub use explore::{
+    DEFAULT_MAX_STATES, Exploration, Path, Rule, RuleResult, Status, Verdict, explore, search,
+};
 pub use lock::{Lock, Unowned};
 pub use map::Map;
 pub use queue::Queue;

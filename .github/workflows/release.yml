@@ -45,10 +45,12 @@ jobs:
           if [ "$EVENT" = push ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "tag $GITHUB_REF_NAME does not match the workspace version $version"; exit 1
           fi
-          for manifest in packages/cli/package.json packages/model/package.json packages/cli/platforms/*/package.json; do
+          for manifest in packages/cli/package.json packages/model/package.json packages/xstate/package.json packages/cli/platforms/*/package.json; do
             found=$(jq -r .version "$manifest")
             [ "$found" = "$version" ] || { echo "$manifest has version $found, not $version"; exit 1; }
           done
+          pinned=$(jq -r '.dependencies["@earnestjs/model"]' packages/xstate/package.json)
+          [ "$pinned" = "workspace:$version" ] || { echo "packages/xstate/package.json depends on @earnestjs/model at $pinned, not workspace:$version"; exit 1; }
           stale=$(jq -r --arg want "workspace:$version" \
             '.optionalDependencies | to_entries[] | select(.value != $want) | "\(.key) \(.value)"' \
             packages/cli/package.json)
@@ -149,10 +151,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - run: npm install --global bun@latest
       - run: bun install --frozen-lockfile
-      - name: Pack the launcher and the model library
+      - name: Pack the launcher, the model library and the XState adapter
         run: |
           mkdir -p npm
           (cd packages/model && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
+          (cd packages/xstate && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
           (cd packages/cli && bun pm pack --destination "$GITHUB_WORKSPACE/npm")
       - name: Check that no packed manifest still names a workspace version
         run: |
@@ -215,7 +218,7 @@ jobs:
           pattern: npm-*
           path: npm
           merge-multiple: true
-      - name: Publish the platform packages, then the model library, then the launcher
+      - name: Publish the platform packages, then the model library, the XState adapter and the launcher
         run: |
           ls npm
           publish() {
@@ -228,4 +231,5 @@ jobs:
           }
           for tarball in npm/earnestjs-cli-*-"$VERSION".tgz; do publish "$tarball"; done
           publish "npm/earnestjs-model-$VERSION.tgz"
+          publish "npm/earnestjs-xstate-$VERSION.tgz"
           publish "npm/earnestjs-cli-$VERSION.tgz"
