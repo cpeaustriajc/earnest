@@ -42,7 +42,6 @@ export interface Action<F extends Fields, I extends Fields = NoInput> {
   readonly input: I | undefined;
   readonly when: (state: StateOf<F>, input: StateOf<I>) => boolean;
   readonly changes: (state: StateOf<F>, input: StateOf<I>) => Partial<StateOf<F>>;
-  readonly fair: boolean;
 }
 
 /** A rule every reachable state must meet. The name of its export is its id. */
@@ -374,12 +373,11 @@ export const action = <
     input: spec.input,
     when: spec.when ?? (() => true),
     changes: spec.changes,
-    fair: spec.fair ?? false,
   });
   partsOf(model).actions.push({
     part: declaredAction,
     sentence,
-    fair: declaredAction.fair,
+    fair: spec.fair ?? false,
     inputs: spec.input === undefined ? [] : Object.entries(spec.input),
     when: (state, input) => declaredAction.when(known(model, state), knownInput(input)),
     changes: (state, input) =>
