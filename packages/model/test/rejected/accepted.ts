@@ -25,3 +25,13 @@ export const counted = m.rule(Cart, "The count is never negative", (s) => s.coun
 export const added = m.end(Cart, "The item is in the cart", (s) => s.cta === "InCart");
 
 export const view = m.view(Cart, { title: "Cart", step: { press: "press Add" } });
+
+export const land = m.action(Cart, "the item lands in the cart", {
+  when: (s) => s.cta === "Adding",
+  changes: () => ({ cta: "InCart" }),
+});
+
+export const addsByMouse = m.witness(Cart, "The buyer adds the item with the mouse", {
+  steps: [m.step(press, { by: "mouse" }), land],
+  expect: (s) => s.cta === "InCart" && s.pressBy === "mouse",
+});

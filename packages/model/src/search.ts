@@ -612,10 +612,10 @@ class Search {
 
   #witness(witness: WitnessRunner, starts: readonly Row[]): RuleResult {
     const result = { id: this.#name(witness.part, witness.says), says: witness.says };
-    if (starts.length > this.#maxStates) {
-      return { ...result, verdict: "unknown", path: null, kind: "witness" };
-    }
-    for (const start of starts) {
+    for (const [position, start] of starts.entries()) {
+      if (position >= this.#maxStates) {
+        return { ...result, verdict: "unknown", path: null, kind: "witness" };
+      }
       const played = this.#play(witness, start);
       if (played.broken) {
         return {
