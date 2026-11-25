@@ -50,6 +50,7 @@ pub(crate) struct Search<'a> {
     pub(crate) reason: Option<String>,
     pub(crate) computed_beyond_32_bits: bool,
     pub(crate) cut_short: bool,
+    pub(crate) gives_graph: bool,
     judged: usize,
     last_spread_merge: SpreadMerge,
     state_time: Duration,
@@ -105,6 +106,23 @@ struct SpreadMerge {
 /// and no action is tried from them.
 #[must_use]
 pub fn explore(model: &Model, limits: &Limits) -> Outcome {
+    let only_rule = limits.only_rule.as_deref();
+    let judges_runs = model
+        .runs
+        .eventually
+        .iter()
+        .any(|rule| only_rule.is_none_or(|wanted| wanted == rule.id));
+    if judges_runs && !limits.keep_graph {
+        let keeping = Limits {
+            keep_graph: true,
+            ..limits.clone()
+        };
+        return searched(model, &keeping, limits);
+    }
+    searched(model, limits, limits)
+}
+
+fn searched(model: &Model, limits: &Limits, asked: &Limits) -> Outcome {
     let slots = model
         .actions
         .iter()
@@ -142,6 +160,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         reason: None,
         computed_beyond_32_bits: false,
         cut_short: false,
+        gives_graph: asked.keep_graph,
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
         state_time: Duration::ZERO,

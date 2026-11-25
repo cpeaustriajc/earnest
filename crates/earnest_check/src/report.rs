@@ -31,7 +31,11 @@ impl Search<'_> {
     }
 
     fn step(&self, from: usize, to: usize) -> Option<Step> {
-        let (position, input) = self.choice(from, to)?;
+        self.step_by(from, to, None)
+    }
+
+    pub(crate) fn step_by(&self, from: usize, to: usize, only: Option<usize>) -> Option<Step> {
+        let (position, input) = self.choice_by(from, to, only)?;
         let before = self.store.state(from);
         let after = self.store.state(to);
         let action = self.model.actions.get(position)?;
@@ -105,7 +109,7 @@ impl Search<'_> {
         }
     }
 
-    fn findings(&self) -> Vec<Finding> {
+    fn findings(&self, later: Option<&(usize, String)>) -> Vec<Finding> {
         let mut findings = Vec::new();
         if let Some(id) = self.stuck {
             findings.push(Finding {
@@ -133,12 +137,18 @@ impl Search<'_> {
                 message: format!("{source} {} in this state", fault.describe()),
                 path: self.path_to(id),
             });
+        } else if let Some((id, message)) = later {
+            findings.push(Finding {
+                kind: FindingKind::Fault,
+                message: message.clone(),
+                path: self.path_to(*id),
+            });
         }
         findings
     }
 
     fn graph_or_outline(&self) -> (Option<Graph>, Option<Outline>) {
-        if !self.limits.keep_graph {
+        if !self.gives_graph {
             return (None, None);
         }
         if self.limits.outline
@@ -173,8 +183,10 @@ impl Search<'_> {
                 repeats_from: None,
             })
             .collect();
+        let eventual = self.eventually();
+        rules.extend(eventual.rules);
         rules.extend(self.witnesses());
-        let findings = self.findings();
+        let findings = self.findings(eventual.trouble.as_ref());
         let (graph, outline) = self.graph_or_outline();
         let failed =
             !findings.is_empty() || rules.iter().any(|rule| rule.verdict == Verdict::Broken);

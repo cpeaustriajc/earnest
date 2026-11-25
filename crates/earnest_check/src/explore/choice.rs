@@ -5,7 +5,14 @@ use earnest_value::Value;
 struct Choice<'a> {
     target: &'a [Value],
     target_row: Option<&'a [u64]>,
+    only: Option<usize>,
     found: Option<(usize, usize)>,
+}
+
+impl Choice<'_> {
+    fn wants(&self, action: usize) -> bool {
+        self.found.is_none() && self.only.is_none_or(|only| only == action)
+    }
 }
 
 impl Successors for Choice<'_> {
@@ -29,14 +36,14 @@ impl Successors for Choice<'_> {
                         .map_or(old, |(_, new)| new);
                     value == wanted
                 });
-        if same && self.found.is_none() {
+        if same && self.wants(action) {
             self.found = Some((action, input));
         }
         false
     }
 
     fn offer_row(&mut self, action: usize, input: usize, row: &[u64], _: u64) -> bool {
-        if self.target_row == Some(row) && self.found.is_none() {
+        if self.target_row == Some(row) && self.wants(action) {
             self.found = Some((action, input));
         }
         false
@@ -48,7 +55,12 @@ impl Successors for Choice<'_> {
 }
 
 impl Search<'_> {
-    pub(crate) fn choice(&self, from: usize, to: usize) -> Option<(usize, usize)> {
+    pub(crate) fn choice_by(
+        &self,
+        from: usize,
+        to: usize,
+        only: Option<usize>,
+    ) -> Option<(usize, usize)> {
         let state = self.store.state(from);
         let target = self.store.state(to);
         let mut target_row = Vec::new();
@@ -56,6 +68,7 @@ impl Search<'_> {
         let mut choice = Choice {
             target: &target,
             target_row: target_is_row.then_some(target_row.as_slice()),
+            only,
             found: None,
         };
         let mut row = Vec::new();

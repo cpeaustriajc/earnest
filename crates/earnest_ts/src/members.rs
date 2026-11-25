@@ -2,8 +2,9 @@ use crate::Reader;
 use crate::bodies::body_span;
 use crate::terms::bare;
 use earnest_ast::{
-    ActionBody, ActionDraft, COLORED_PARTS, Draft, EndDraft, LabelDraft, Quoting, RuleDraft, Shape,
-    StepDraft, Term, TermKind, ViewDraft, WitnessDraft, condition_text, is_color,
+    ActionBody, ActionDraft, COLORED_PARTS, ConditionDraft, Draft, EndDraft, EventuallyDraft,
+    LabelDraft, Quoting, RuleDraft, Shape, StepDraft, Term, TermKind, ViewDraft, WitnessDraft,
+    condition_text, is_color,
 };
 use oxc_ast::ast::{
     Argument, ArrayExpressionElement, ArrowFunctionExpression, BindingPattern, CallExpression,
@@ -18,6 +19,7 @@ pub(crate) enum MemberKind {
     End,
     View,
     Witness,
+    Eventually,
 }
 
 pub(crate) struct Member<'p, 'a> {
@@ -36,6 +38,7 @@ impl MemberKind {
             "end" => Some(Self::End),
             "view" => Some(Self::View),
             "witness" => Some(Self::Witness),
+            "eventually" => Some(Self::Eventually),
             _ => None,
         }
     }
@@ -46,6 +49,9 @@ const FUNCTION: usize = 2;
 const ACTION_OBJECT: usize = 2;
 const VIEW_OBJECT: usize = 1;
 const WITNESS_OBJECT: usize = 2;
+const EVENTUALLY_OBJECT: usize = 2;
+const FAIR_IS_WRITTEN_OUT: &str = "`fair` is written out as `true` or `false`: `true` says the \
+    action is not put off forever while it stays possible";
 const STEP: &str = "step";
 const NOT_A_STEP: &str = "a step is an action of this model declared above the witness, written \
     as its constant's name, or as `m.step(action, { input: value })` for an action with inputs";
@@ -103,6 +109,11 @@ impl Reader<'_> {
                     draft.runs.witnesses.push(witness);
                 }
             }
+            MemberKind::Eventually => {
+                if let Some(rule) = self.eventually(id, start, call) {
+                    draft.runs.eventually.push(rule);
+                }
+            }
         }
     }
 
@@ -153,7 +164,7 @@ impl Reader<'_> {
     }
 
     fn action(&mut self, id: String, start: u32, call: &CallExpression<'_>) -> Option<ActionDraft> {
-        let entries = self.parts(call, ACTION_OBJECT, &["input", "when", "changes"])?;
+        let entries = self.parts(call, ACTION_OBJECT, &["input", "when", "changes", "fair"])?;
         let sentence = self.argument(
             call,
             SENTENCE,
@@ -175,6 +186,7 @@ impl Reader<'_> {
         }
         let changing = changes.and_then(|written| self.arrow(written));
         let guard = when.map(|arrow| self.action_body(arrow));
+        let fair = pick(&entries, "fair").is_some_and(|written| self.written_out(written));
         let change = changing.map(|arrow| self.action_body(arrow))?;
         Some(ActionDraft {
             id,
@@ -183,8 +195,18 @@ impl Reader<'_> {
             inputs,
             guard,
             change,
-            fair: false,
+            fair,
         })
+    }
+
+    fn written_out(&mut self, wrapped: &Expression<'_>) -> bool {
+        let written = bare(wrapped);
+        if let Expression::BooleanLiteral(flag) = written {
+            return flag.value;
+        }
+        let feature = self.quoted(written.span());
+        self.refuse(written.span().start, &feature, FAIR_IS_WRITTEN_OUT);
+        false
     }
 
     fn action_parameters(&mut self, arrow: &ArrowFunctionExpression<'_>) -> ActionParameters {
@@ -334,6 +356,49 @@ impl Reader<'_> {
             place: self.place(start),
             state_name: condition.state_name,
             when: condition.term,
+        })
+    }
+
+    fn condition(&mut self, wrapped: &Expression<'_>) -> Option<ConditionDraft> {
+        let function = self.state_function(wrapped)?;
+        Some(ConditionDraft {
+            state_name: function.state_name,
+            term: function.term,
+            text: function.text,
+        })
+    }
+
+    fn eventually(
+        &mut self,
+        id: String,
+        start: u32,
+        call: &CallExpression<'_>,
+    ) -> Option<EventuallyDraft> {
+        let entries = self.parts(call, EVENTUALLY_OBJECT, &["after", "reaches"])?;
+        let sentence = self.argument(
+            call,
+            SENTENCE,
+            "its sentence is needed here, as text in quotes and an argument of its own",
+        )?;
+        let says = self.sentence(sentence);
+        let after = match pick(&entries, "after") {
+            Some(written) => Some(self.condition(written)?),
+            None => None,
+        };
+        let Some(reached) = pick(&entries, "reaches") else {
+            self.refuse(
+                call.span.start,
+                &self.quoted(call.callee.span()),
+                "it needs a `reaches`, the condition every run comes to",
+            );
+            return None;
+        };
+        Some(EventuallyDraft {
+            id,
+            says,
+            place: self.place(start),
+            after,
+            reaches: self.condition(reached)?,
         })
     }
 

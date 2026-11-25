@@ -6,6 +6,7 @@
 //! when asked.
 
 mod cut;
+mod eventually;
 mod expand;
 mod explore;
 mod graph;

@@ -15,13 +15,14 @@ mod terms;
 mod types;
 
 use earnest_ast::{
-    ActionBody, ActionDraft, Draft, EndDraft, FieldDraft, HelperKind, LabelDraft, MOST_NESTING,
-    RuleDraft, Shape, ShapeKind, StepDraft, TOO_DEEP, TemplatePiece, Term, TermKind, WitnessDraft,
+    ActionBody, ActionDraft, ConditionDraft, Draft, EndDraft, EventuallyDraft, FieldDraft,
+    HelperKind, LabelDraft, MOST_NESTING, RuleDraft, Shape, ShapeKind, StepDraft, TOO_DEEP,
+    TemplatePiece, Term, TermKind, WitnessDraft,
 };
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{
-    Action, Code, End, Expr, Field, Frame, Input, Label, Model, Piece, Played, Rule, Runs, View,
-    Witness, eval,
+    Action, Code, End, Eventually, Expr, Field, Frame, Input, Label, Model, Piece, Played, Rule,
+    Runs, View, Witness, eval,
 };
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -189,6 +190,19 @@ impl<'a> Lowerer<'a> {
             colors: draft.view.colors.clone(),
         };
         let runs = Runs {
+            fair: draft
+                .actions
+                .iter()
+                .enumerate()
+                .filter(|(_, action)| action.fair)
+                .map(|(position, _)| position)
+                .collect(),
+            eventually: draft
+                .runs
+                .eventually
+                .iter()
+                .filter_map(|rule| self.eventually(rule).ok())
+                .collect(),
             witnesses: draft
                 .runs
                 .witnesses
@@ -568,6 +582,29 @@ impl Lowerer<'_> {
             id: draft.id.clone(),
             says: draft.says.clone(),
             when: Code::new(when),
+            slots: scope.slots,
+        })
+    }
+
+    fn condition(&mut self, draft: &ConditionDraft, scope: &mut Scope) -> Lowering<Expr> {
+        scope.names.clear();
+        bind_state(scope, draft.state_name.as_ref());
+        self.truth(&draft.term, scope)
+    }
+
+    fn eventually(&mut self, draft: &EventuallyDraft) -> Lowering<Eventually> {
+        let mut scope = Scope::default();
+        let after = match &draft.after {
+            Some(condition) => Some(Code::new(self.condition(condition, &mut scope)?)),
+            None => None,
+        };
+        let reaches = Code::new(self.condition(&draft.reaches, &mut scope)?);
+        Ok(Eventually {
+            id: draft.id.clone(),
+            says: draft.says.clone(),
+            line: draft.place.line,
+            after,
+            reaches,
             slots: scope.slots,
         })
     }

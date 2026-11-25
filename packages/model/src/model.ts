@@ -17,7 +17,9 @@ export type OnlyFields<F extends Fields, Changes> = Changes & {
  * given when it happens, and types the second parameter of `when` and `changes`; leave it out
  * for an action that takes none. `when` says in which states, and for which inputs, the action
  * can happen; leave it out for an action that always can. `changes` gives back only the fields
- * that change, and must not change the state it is given.
+ * that change, and must not change the state it is given. `fair: true` says the action is not
+ * put off forever: a run in which it stays possible and never changes the state breaks no
+ * `m.eventually` rule.
  */
 export interface ActionSpec<
   F extends Fields,
@@ -27,6 +29,7 @@ export interface ActionSpec<
   readonly input?: I;
   readonly when?: (state: StateOf<F>, input: StateOf<I>) => boolean;
   readonly changes: (state: StateOf<F>, input: StateOf<I>) => OnlyFields<F, Changes>;
+  readonly fair?: boolean;
 }
 
 /**
@@ -39,6 +42,7 @@ export interface Action<F extends Fields, I extends Fields = NoInput> {
   readonly input: I | undefined;
   readonly when: (state: StateOf<F>, input: StateOf<I>) => boolean;
   readonly changes: (state: StateOf<F>, input: StateOf<I>) => Partial<StateOf<F>>;
+  readonly fair: boolean;
 }
 
 /** A rule every reachable state must meet. The name of its export is its id. */
@@ -56,6 +60,24 @@ export interface End<F extends Fields> {
   readonly kind: "end";
   readonly says: string;
   readonly when: (state: StateOf<F>) => boolean;
+}
+
+/**
+ * What `m.eventually` is given. `reaches` is the condition every run must come to. `after` says
+ * where the rule starts: in every reachable state where it is true. Without `after` the rule
+ * starts in every start state.
+ */
+export interface EventuallySpec<F extends Fields> {
+  readonly after?: (state: StateOf<F>) => boolean;
+  readonly reaches: (state: StateOf<F>) => boolean;
+}
+
+/** A rule about whole runs: a state every run reaches. The name of its export is its id. */
+export interface Eventually<F extends Fields> {
+  readonly kind: "eventually";
+  readonly says: string;
+  readonly after: ((state: StateOf<F>) => boolean) | undefined;
+  readonly reaches: (state: StateOf<F>) => boolean;
 }
 
 /**
@@ -122,6 +144,7 @@ export interface View<F extends Fields> extends ViewSpec<F> {
 export interface ActionRunner {
   readonly part: object;
   readonly sentence: string;
+  readonly fair?: boolean;
   readonly inputs: readonly (readonly [string, Declaration<unknown, never>])[];
   when(state: Row, input: Row): boolean;
   changes(state: Row, input: Row): Row;
@@ -142,6 +165,17 @@ export interface EndRunner {
 }
 
 /**
+ * A rule about runs as a search judges it. `after` is `null` for a rule that starts in every
+ * start state. Both throw when the state is outside what was declared.
+ */
+export interface EventuallyRunner {
+  readonly part: object;
+  readonly says: string;
+  readonly after: ((state: Row) => boolean) | null;
+  reaches(state: Row): boolean;
+}
+
+/**
  * A witness as a search plays it: each step is an action of the same `Runners` with its input.
  * `expect` throws when the state is outside what was declared.
  */
@@ -157,6 +191,7 @@ export interface Runners {
   readonly actions: readonly ActionRunner[];
   readonly rules: readonly RuleRunner[];
   readonly ends: readonly EndRunner[];
+  readonly eventually?: readonly EventuallyRunner[];
   readonly witnesses?: readonly WitnessRunner[];
 }
 
@@ -174,6 +209,7 @@ interface Parts<F extends Fields> {
   readonly actions: ActionRunner[];
   readonly rules: RuleRunner[];
   readonly ends: EndRunner[];
+  readonly eventually: EventuallyRunner[];
   readonly witnesses: WitnessRunner[];
   readonly views: View<F>[];
 }
@@ -189,7 +225,14 @@ export class Model<F extends Fields> {
   readonly name: string;
   readonly fields: F;
   readonly #state: Declaration<StateOf<F>>;
-  readonly #parts: Parts<F> = { actions: [], rules: [], ends: [], witnesses: [], views: [] };
+  readonly #parts: Parts<F> = {
+    actions: [],
+    rules: [],
+    ends: [],
+    eventually: [],
+    witnesses: [],
+    views: [],
+  };
 
   static {
     partsOf = (model) => model.#parts;
@@ -231,15 +274,16 @@ export class Model<F extends Fields> {
   }
 
   /**
-   * The actions, rules, ends and witnesses declared so far, in a form a search can run without knowing
+   * The actions, rules, ends, rules about runs and witnesses declared so far, in a form a search can run without knowing
    * the model's types. `explore` and `replay` are built on this.
    */
   runners(): Runners {
-    const { actions, rules, ends, witnesses } = this.#parts;
+    const { actions, rules, ends, eventually, witnesses } = this.#parts;
     return {
       actions: [...actions],
       rules: [...rules],
       ends: [...ends],
+      eventually: [...eventually],
       witnesses: [...witnesses],
     };
   }
@@ -304,10 +348,12 @@ export const action = <
     input: spec.input,
     when: spec.when ?? (() => true),
     changes: spec.changes,
+    fair: spec.fair ?? false,
   });
   partsOf(model).actions.push({
     part: declaredAction,
     sentence,
+    fair: declaredAction.fair,
     inputs: spec.input === undefined ? [] : Object.entries(spec.input),
     when: (state, input) => declaredAction.when(known(model, state), knownInput(input)),
     changes: (state, input) =>
@@ -357,6 +403,36 @@ export const end = <F extends Fields>(
     when: (state) => declaredEnd.when(known(model, state)),
   });
   return declaredEnd;
+};
+
+/**
+ * Declares a rule about whole runs of `model`: every run comes to a state where `reaches` is
+ * true. With `after`, the rule starts in every reachable state where `after` is true, and the
+ * state `reaches` wants may be that state or any later one; without it, the rule starts in every
+ * start state. A run never stops while an action can still change the state, and never puts off
+ * forever an action declared with `fair: true` that stays possible. `sentence` says the rule in
+ * the reviewer's words. Export the result from the model file: the name of the export is the
+ * rule's id.
+ */
+export const eventually = <F extends Fields>(
+  model: Model<F>,
+  sentence: string,
+  spec: EventuallySpec<F>,
+): Eventually<F> => {
+  const declaredRule: Eventually<F> = Object.freeze({
+    kind: "eventually",
+    says: sentence,
+    after: spec.after,
+    reaches: spec.reaches,
+  });
+  const { after } = declaredRule;
+  partsOf(model).eventually.push({
+    part: declaredRule,
+    says: sentence,
+    after: after === undefined ? null : (state) => after(known(model, state)),
+    reaches: (state) => declaredRule.reaches(known(model, state)),
+  });
+  return declaredRule;
 };
 
 /**

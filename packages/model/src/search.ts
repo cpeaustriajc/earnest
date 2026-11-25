@@ -1,5 +1,13 @@
 import type { Declaration } from "./declarations.ts";
-import type { ActionRunner, AnyModel, RuleRunner, Runners, WitnessRunner } from "./model.ts";
+import type {
+  ActionRunner,
+  AnyModel,
+  EventuallyRunner,
+  RuleRunner,
+  Runners,
+  WitnessRunner,
+} from "./model.ts";
+import { type Edge, type Lasso, hunter } from "./runs.ts";
 import {
   type Json,
   NullFault,
@@ -50,17 +58,22 @@ export interface Path {
 export type Verdict = "holds" | "broken" | "unknown";
 
 /**
- * One rule's result. `path` is the shortest path to a state that breaks it, or `null`. A
- * witness is listed after the rules with the `kind` `"witness"`: its `path` is what was played
- * until it broke, and `reason` says why it broke. A rule has neither `kind` nor `reason`.
+ * One rule's result. `path` is the shortest path to a state that breaks it, or `null`. A rule
+ * has no `kind`, `reason` or `repeatsFrom`. A rule about runs is listed after the rules with the
+ * `kind` `"eventually"`: its `path` leads into a run that never reaches the state it wants,
+ * `reason` says how the run goes on, and `repeatsFrom` is the position in `path.steps` of the
+ * first step of the loop that can repeat forever, left out when the run stays in the last state.
+ * A witness is listed last with the `kind` `"witness"`: its `path` is what was played until it
+ * broke, and `reason` says why it broke.
  */
 export interface RuleResult {
   readonly id: string;
   readonly says: string;
   readonly verdict: Verdict;
   readonly path: Path | null;
-  readonly kind?: "witness";
+  readonly kind?: "eventually" | "witness";
   readonly reason?: string;
+  readonly repeatsFrom?: number;
 }
 
 /**
@@ -215,8 +228,15 @@ interface Parent {
 interface Visited {
   readonly row: Row;
   readonly key: string;
+  readonly index: number;
   readonly parent: Parent | null;
 }
+
+interface Taken extends Edge {
+  readonly input: Row;
+}
+
+const STAYS = "nothing changes the state from here, so the run can stay in it forever";
 
 interface Successor {
   readonly action: ActionRunner;
@@ -247,7 +267,10 @@ class Search {
   readonly #inputs: ReadonlyMap<ActionRunner, readonly Row[]>;
   readonly #name: (part: object, fallback: string) => string;
   readonly #maxStates: number;
-  readonly #seen = new Set<string>();
+  readonly #seen = new Map<string, number>();
+  readonly #positions: ReadonlyMap<ActionRunner, number>;
+  readonly #taken = new Map<string, Taken>();
+  readonly #keepsEdges: boolean;
   readonly #firstBroken = new Map<RuleRunner, Visited>();
   readonly #unjudged = new Set<RuleRunner>();
   #stuck: Visited | null = null;
@@ -262,6 +285,8 @@ class Search {
     this.#inputs = new Map(parts.actions.map((action) => [action, inputsOf(action)]));
     this.#name = namer(options.exports);
     this.#maxStates = stateLimit(options.maxStates ?? DEFAULT_MAX_STATES);
+    this.#positions = new Map(parts.actions.map((action, position) => [action, position]));
+    this.#keepsEdges = (parts.eventually ?? []).length > 0;
   }
 
   run(starts: readonly Row[]): Exploration {
@@ -279,33 +304,48 @@ class Search {
       this.#record(visited, expanded);
       for (const successor of expanded.successors) {
         const parent = { from: visited, action: successor.action, input: successor.input };
-        if (!this.#visit(successor.next, parent, waiting)) {
+        const to = this.#visit(successor.next, parent, waiting);
+        if (to === null) {
           break;
         }
+        this.#keep(visited.index, to, successor);
       }
     }
     for (const counted of waiting.slice(searched)) {
       this.#record(counted, this.#judge(counted.row));
     }
-    return this.#outcome(starts);
+    return this.#outcome(starts, waiting);
+  }
+
+  #keep(from: number, to: number, successor: Successor): void {
+    const action = this.#positions.get(successor.action);
+    if (!this.#keepsEdges || from === to || action === undefined) {
+      return;
+    }
+    const key = `${from},${to},${action}`;
+    if (!this.#taken.has(key)) {
+      this.#taken.set(key, { from, to, action, input: successor.input });
+    }
   }
 
   #keyOf(row: Row): string {
     return this.#fields.map(([name]) => keyOf(row[name])).join(";");
   }
 
-  #visit(row: Row, parent: Parent | null, waiting: Visited[]): boolean {
+  #visit(row: Row, parent: Parent | null, waiting: Visited[]): number | null {
     const key = this.#keyOf(row);
-    if (this.#seen.has(key)) {
-      return true;
+    const known = this.#seen.get(key);
+    if (known !== undefined) {
+      return known;
     }
     if (this.#seen.size >= this.#maxStates) {
       this.#reason = `state limit of ${this.#maxStates}`;
-      return false;
+      return null;
     }
-    this.#seen.add(key);
-    waiting.push({ row, key, parent });
-    return true;
+    const index = waiting.length;
+    this.#seen.set(key, index);
+    waiting.push({ row, key, index, parent });
+    return index;
   }
 
   #judge(state: Row): Expanded {
@@ -440,6 +480,88 @@ class Search {
     return { start: this.#named(at.row), steps: steps.reverse() };
   }
 
+  #lassoPath(lasso: Lasso, visited: readonly Visited[], edges: readonly Taken[]): Path {
+    const rowOf = (state: number | undefined): Row =>
+      state === undefined ? {} : (visited[state]?.row ?? {});
+    const steps: Step[] = [];
+    for (const [position, to] of lasso.states.entries()) {
+      const from = lasso.states[position - 1];
+      const only = lasso.actions[position] ?? null;
+      const edge = edges.find(
+        (taken) =>
+          taken.from === from && taken.to === to && (only === null || taken.action === only),
+      );
+      const action = edge === undefined ? undefined : this.#parts.actions[edge.action];
+      if (from === undefined || edge === undefined || action === undefined) {
+        continue;
+      }
+      steps.push(this.#step({ from: { row: rowOf(from) }, action, input: edge.input }, rowOf(to)));
+    }
+    return { start: this.#named(rowOf(lasso.states[0])), steps };
+  }
+
+  #eventually(visited: readonly Visited[]): RuleResult[] {
+    const rules = this.#parts.eventually ?? [];
+    const unknown = (rule: EventuallyRunner): RuleResult => ({
+      id: this.#name(rule.part, rule.says),
+      says: rule.says,
+      verdict: "unknown",
+      path: null,
+      kind: "eventually",
+    });
+    if (rules.length === 0 || this.#reason !== null || this.#isCutShort) {
+      return rules.map(unknown);
+    }
+    const edges = [...this.#taken.values()].sort(
+      (one, other) => one.from - other.from || one.to - other.to || one.action - other.action,
+    );
+    const parents = visited.map((state) => state.parent?.from.index ?? null);
+    const depth: number[] = [];
+    for (const parent of parents) {
+      depth.push(parent === null ? 0 : (depth[parent] ?? 0) + 1);
+    }
+    const fair = this.#parts.actions.flatMap((action, position) =>
+      action.fair === true ? [position] : [],
+    );
+    const hunt = hunter({ states: visited.length, edges, fair, parents, depth });
+    return rules.map((rule): RuleResult => {
+      const startsHere: boolean[] = [];
+      const reached: boolean[] = [];
+      for (const state of visited) {
+        const { after } = rule;
+        const starts = after === null ? null : attempt(() => after(state.row));
+        const reaches = attempt(() => rule.reaches(state.row));
+        const fault = starts?.fault ?? reaches.fault;
+        if (fault !== null) {
+          const id = this.#name(rule.part, rule.says);
+          this.#trouble ??= { at: state, message: `the rule \`${id}\` ${fault} in this state` };
+          return unknown(rule);
+        }
+        startsHere.push(starts === null ? state.parent === null : starts.value === true);
+        reached.push(reaches.value === true);
+      }
+      const lasso = hunt(startsHere, reached);
+      if (lasso === null) {
+        return { ...unknown(rule), verdict: "holds" };
+      }
+      if (lasso === "lost") {
+        return unknown(rule);
+      }
+      const broken: RuleResult = {
+        ...unknown(rule),
+        verdict: "broken",
+        path: this.#lassoPath(lasso, visited, edges),
+      };
+      return lasso.repeatsFrom === null
+        ? { ...broken, reason: STAYS }
+        : {
+            ...broken,
+            reason: `steps ${lasso.repeatsFrom + 1} to ${lasso.states.length - 1} can repeat forever`,
+            repeatsFrom: lasso.repeatsFrom,
+          };
+    });
+  }
+
   #play(witness: WitnessRunner, start: Row): Played {
     let state = start;
     const steps: Step[] = [];
@@ -526,7 +648,7 @@ class Search {
     return findings;
   }
 
-  #outcome(starts: readonly Row[]): Exploration {
+  #outcome(starts: readonly Row[], visited: readonly Visited[]): Exploration {
     const always = this.#parts.rules.map((rule): RuleResult => {
       const first = this.#firstBroken.get(rule);
       const isJudged = this.#reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
@@ -538,10 +660,11 @@ class Search {
         path: first === undefined ? null : this.#pathTo(first),
       };
     });
+    const eventually = this.#eventually(visited);
     const witnesses = (this.#parts.witnesses ?? []).map((witness) =>
       this.#witness(witness, starts),
     );
-    const rules = [...always, ...witnesses];
+    const rules = [...always, ...eventually, ...witnesses];
     const findings = this.#findings();
     const hasFailed = findings.length > 0 || rules.some((rule) => rule.verdict === "broken");
     const unfailed = this.#reason === null ? "pass" : "unfinished";
