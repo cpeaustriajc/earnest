@@ -1138,9 +1138,9 @@ mod tests {
             "`m.witness`",
         );
         one_refusal(
-            "export const w = m.witness(M, \"w\", { steps: [], expect: (s) => s.n === 0, setup: 1 });\n",
+            "export const w = m.witness(M, \"w\", { steps: [], expect: (s) => s.n === 0, until: 1 });\n",
             75,
-            "`setup`",
+            "`until`",
         );
         one_refusal("export const w = m.witness(M, \"w\");\n", 18, "`m.witness`");
         one_refusal(
