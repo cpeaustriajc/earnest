@@ -1,7 +1,7 @@
 {
   "name": "@earnestjs/xstate",
   "version": "0.1.0",
-  "description": "Earnest's breadth-first state search as a path generator for XState's model-based tests",
+  "description": "Earnest's breadth-first state search for XState: a path generator for model-based tests and a check of rules and stuck states",
   "homepage": "https://earnest.cpeaustriajc.dev",
   "license": "LGPL-3.0-or-later",
   "repository": {
