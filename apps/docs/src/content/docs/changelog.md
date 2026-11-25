@@ -5,6 +5,25 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: witnesses in TypeScript models
+
+A rule says what must be true in every state. A witness says that a path can be taken: these steps, from every start state, and then this is true. It catches a model that passes because an action can never happen.
+
+```ts
+export const reopens = m.witness(Panel, "Open, show more, close, open: the panel opens on the first page", {
+	steps: [open, m.step(more, { by: "mouse" }), close, open],
+	expect: (s) => s.open && s.page === 1,
+});
+```
+
+- **Steps** are actions of the same model declared above the witness. An action with inputs is written `m.step(action, { name: value })`.
+- **`earnest verify`** plays the steps from every start state and lists the witness after the model's rules. A broken witness makes the model `fail`, and prints the path played and a `why` line with the reason, such as ``step 2, `up`, can't happen here``.
+- **JSON** gives a witness `"kind": "witness"` and, when it is broken, a `reason`. A plain rule has neither key.
+- **`--rule <id>`** selects a witness by its id. `earnest tla` does not export witnesses, and `earnest confirm` leaves them out.
+- **`explore`** in `@earnestjs/model` plays witnesses the same way and gives the same results.
+
+Rust models have no witnesses yet. See [Witnesses](/reference/typescript/#witnesses).
+
 ## November 2026: the TypeScript library is `@earnestjs/model`
 
 The library's npm name changed from `@earnest/model` to `@earnestjs/model`, because the `earnest` scope on npm belongs to someone else. Change the import in every model file:

@@ -35,6 +35,7 @@ earnest confirm --tlc tla2tools.jar --tla-rs ~/.cargo/bin/tla-rs
 
 Each rule `id` is exported as an invariant `Rule_id` listed in `<Model>.cfg`:
 
+- A [witness](/reference/typescript/#witnesses) is not exported, and `earnest confirm` leaves it out of the comparison.
 - If a rule cannot be evaluated in a state (a fault), `Rule_id` evaluates to `TRUE` in that state, and actions that fault take no step, so TLC counts every reachable state without aborting.
 - For any rule that can fault, the module also defines `Judged_id`, which fails in states where the rule has no value.
 - `earnest confirm` checks both invariants to derive TLC's verdict: `broken` if `Rule_id` fails, else `unknown` if `Judged_id` fails, else `holds`.

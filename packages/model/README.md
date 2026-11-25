@@ -60,6 +60,13 @@ export type State = m.Infer<typeof Turnstile>;
 - `m.action`, `m.rule`, `m.end` and `m.view` take the model as their first argument. A rule or an
   end then has its sentence and a condition. An action has its sentence and an object with
   `input`, `when` and `changes`. A view has an object.
+- `m.witness(Model, sentence, { steps, expect })` declares a path the model must be able to take
+  from every start state, and a condition on the state it ends in. Each step is an action of the
+  model declared before the witness; an action with inputs is written
+  `m.step(action, { name: value })`. A bare action that takes inputs in `steps`, and `m.step` with
+  an input the action does not declare, are compile errors, and `m.witness` throws on a step that
+  is not an action declared on the model before it or on an input the action does not declare.
+  See [witnesses](https://earnest.cpeaustriajc.dev/reference/typescript/#witnesses).
 - Declarations are plain values. `.optional()` and `.initial(value)` give back a new declaration,
   so one `const Press = m.enum([...])` can be a field in two models and an input of an action.
 - State is read-only, and every operation on a set, map, sequence, queue, lock, timer, request or
@@ -122,7 +129,13 @@ shortest path to a state that breaks it. A rule is `unknown` when it was not see
 the search is unfinished or the rule could not be evaluated in a state. `findings` has at most
 one of each kind. `reason` is `null`, or why the search is unfinished.
 
-- The id of an action, a rule or an end is the name it is exported under, and a running program
+Witnesses come after the rules in `rules`, each with `kind: "witness"`, as `earnest verify --json`
+lists them. A witness is played from every start state in order; when one breaks it, its `path`
+is what was played until it broke, from that start, and its `reason` says why, in the words of
+the checker's `why` line. It is `unknown` only when there are more start states than
+`maxStates` and none of the ones played broke it. A rule has no `kind` and no `reason`.
+
+- The id of an action, a rule, an end or a witness is the name it is exported under, and a running program
   can't see that name, so pass the model file's exports as `exports`. A part that is not among
   them has its sentence as its id.
 - `maxStates` stops the search before it holds more distinct states than that; the default is
