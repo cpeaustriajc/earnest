@@ -1,14 +1,14 @@
 use earnest_ir::Field;
 use earnest_value::Value;
 
-pub(super) struct Starts<'a> {
+pub(crate) struct Starts<'a> {
     fields: &'a [Field],
     digits: Vec<usize>,
     done: bool,
 }
 
 impl<'a> Starts<'a> {
-    pub(super) fn new(fields: &'a [Field]) -> Self {
+    pub(crate) fn new(fields: &'a [Field]) -> Self {
         Self {
             fields,
             digits: vec![0; fields.len()],

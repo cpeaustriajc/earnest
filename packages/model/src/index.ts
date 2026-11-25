@@ -4,6 +4,7 @@ export type { Fields, StateOf, ValueOf } from "./declarations.ts";
 export { Model } from "./model.ts";
 export type {
   Action,
+  ActionOf,
   ActionRunner,
   ActionSpec,
   AnyModel,
@@ -13,8 +14,12 @@ export type {
   Rule,
   RuleRunner,
   Runners,
+  Step as WitnessStep,
   View,
   ViewSpec,
+  Witness,
+  WitnessRunner,
+  WitnessSpec,
 } from "./model.ts";
 export { replay } from "./replay.ts";
 export type { ReplayOptions, ReplayPath, ReplayStep, StateJson } from "./replay.ts";

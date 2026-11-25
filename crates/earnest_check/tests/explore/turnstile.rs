@@ -50,6 +50,7 @@ fn action(id: &str, label: &str, changed: &str, value: Term) -> ActionDraft {
             base: None,
             fields: vec![(changed.to_owned(), value)],
         })),
+        fair: false,
     }
 }
 
@@ -114,6 +115,7 @@ fn turnstile() -> Draft {
         view: ViewDraft::default(),
         constants: Vec::new(),
         helpers: Vec::new(),
+        runs: earnest_ast::RunsDraft::default(),
     }
 }
 

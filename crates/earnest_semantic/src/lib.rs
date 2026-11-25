@@ -16,11 +16,12 @@ mod types;
 
 use earnest_ast::{
     ActionBody, ActionDraft, Draft, EndDraft, FieldDraft, HelperKind, LabelDraft, MOST_NESTING,
-    RuleDraft, Shape, ShapeKind, TOO_DEEP, TemplatePiece, Term, TermKind,
+    RuleDraft, Shape, ShapeKind, StepDraft, TOO_DEEP, TemplatePiece, Term, TermKind, WitnessDraft,
 };
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{
-    Action, Code, End, Expr, Field, Frame, Input, Label, Model, Piece, Rule, View, eval,
+    Action, Code, End, Expr, Field, Frame, Input, Label, Model, Piece, Played, Rule, Runs, View,
+    Witness, eval,
 };
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -117,6 +118,29 @@ struct Parts {
     rules: Vec<Rule>,
     ends: Vec<End>,
     view: View,
+    runs: Runs,
+}
+
+#[derive(Clone, Copy)]
+enum Fixed {
+    Start,
+    Input,
+}
+
+impl Fixed {
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Start => "starting value",
+            Self::Input => "input value",
+        }
+    }
+
+    fn holder(self) -> &'static str {
+        match self {
+            Self::Start => "field",
+            Self::Input => "input",
+        }
+    }
 }
 
 impl<'a> Lowerer<'a> {
@@ -164,14 +188,24 @@ impl<'a> Lowerer<'a> {
             steps: draft.view.steps.clone(),
             colors: draft.view.colors.clone(),
         };
+        let runs = Runs {
+            witnesses: draft
+                .runs
+                .witnesses
+                .iter()
+                .filter_map(|witness| {
+                    let known = self.problems.len();
+                    let lowered = self.witness(witness).ok();
+                    self.keep_once(known);
+                    lowered
+                })
+                .collect(),
+            ..Runs::default()
+        };
         for (_, constant) in &draft.constants {
             let known = self.problems.len();
             self.term(constant, &mut Scope::default()).ok();
-            for problem in self.problems.split_off(known) {
-                if !self.problems.contains(&problem) {
-                    self.problems.push(problem);
-                }
-            }
+            self.keep_once(known);
         }
         Parts {
             fields,
@@ -179,6 +213,15 @@ impl<'a> Lowerer<'a> {
             rules,
             ends,
             view,
+            runs,
+        }
+    }
+
+    fn keep_once(&mut self, known: usize) {
+        for problem in self.problems.split_off(known) {
+            if !self.problems.contains(&problem) {
+                self.problems.push(problem);
+            }
         }
     }
 
@@ -196,6 +239,7 @@ impl<'a> Lowerer<'a> {
             rules: parts.rules,
             ends: parts.ends,
             view: parts.view,
+            runs: parts.runs,
         })
     }
 }
@@ -217,7 +261,9 @@ impl Lowerer<'_> {
                 }),
                 _,
             ) => self.listed_starts(listed, &shaped.ty, &shaped.domain)?,
-            (Some(term), _) => vec![self.constant(term, &shaped.ty, &shaped.domain)?],
+            (Some(term), _) => {
+                vec![self.constant(term, &shaped.ty, &shaped.domain, Fixed::Start)?]
+            }
             (None, Some(value)) => vec![value],
             (None, None) => self.all_values(&shaped.domain, draft.shape.place)?,
         };
@@ -238,7 +284,7 @@ impl Lowerer<'_> {
     ) -> Lowering<Vec<Value>> {
         let mut starts: Vec<Value> = Vec::with_capacity(listed.len());
         for term in listed {
-            let value = self.constant(term, ty, domain)?;
+            let value = self.constant(term, ty, domain, Fixed::Start)?;
             if starts.contains(&value) {
                 let shown = self.symbols.show(&value);
                 return Err(self.stop(
@@ -252,14 +298,26 @@ impl Lowerer<'_> {
         Ok(starts)
     }
 
-    fn constant(&mut self, term: &Term, ty: &Type, domain: &Domain) -> Lowering<Value> {
+    fn constant(
+        &mut self,
+        term: &Term,
+        ty: &Type,
+        domain: &Domain,
+        fixed: Fixed,
+    ) -> Lowering<Value> {
         let mut scope = Scope::default();
         let lowered = self.term(term, &mut scope)?;
         let expr = self.coerce(lowered, ty, term.place)?;
+        let noun = fixed.noun();
         let value = match eval(&expr, &mut Frame::new(&[], scope.slots)) {
             Ok(value) => value,
             Err(fault) => {
-                return Err(self.stop(term.place, "a starting value", &fault.describe()));
+                let article = if matches!(fixed, Fixed::Input) {
+                    "an"
+                } else {
+                    "a"
+                };
+                return Err(self.stop(term.place, &format!("{article} {noun}"), &fault.describe()));
             }
         };
         if domain.contains(&value) {
@@ -268,8 +326,8 @@ impl Lowerer<'_> {
         let shown = self.symbols.show(&value);
         Err(self.stop(
             term.place,
-            &format!("the starting value {shown}"),
-            "it is outside the values the field declares",
+            &format!("the {noun} {shown}"),
+            &format!("it is outside the values the {} declares", fixed.holder()),
         ))
     }
 
@@ -511,6 +569,79 @@ impl Lowerer<'_> {
             says: draft.says.clone(),
             when: Code::new(when),
             slots: scope.slots,
+        })
+    }
+
+    fn witness(&mut self, draft: &WitnessDraft) -> Lowering<Witness> {
+        let mut steps = Vec::with_capacity(draft.steps.len());
+        for step in &draft.steps {
+            steps.push(self.played(step)?);
+        }
+        let mut scope = Scope::default();
+        bind_state(&mut scope, draft.state_name.as_ref());
+        let expect = self.truth(&draft.expect, &mut scope)?;
+        Ok(Witness {
+            id: draft.id.clone(),
+            says: draft.says.clone(),
+            line: draft.place.line,
+            setup: None,
+            steps,
+            expect: Code::new(expect),
+            slots: scope.slots,
+        })
+    }
+
+    fn played(&mut self, step: &StepDraft) -> Lowering<Played> {
+        let draft = self.draft;
+        let id = &step.action;
+        let found = draft
+            .actions
+            .iter()
+            .enumerate()
+            .find(|(_, action)| action.id == *id);
+        let Some((position, action)) = found else {
+            return Err(self.stop(
+                step.place,
+                &format!("the step `{id}`"),
+                "the model has no action with this id",
+            ));
+        };
+        for (position, (name, value)) in step.inputs.iter().enumerate() {
+            if !action.inputs.iter().any(|(known, _)| known == name) {
+                return Err(self.stop(
+                    value.place,
+                    &format!("the input `{name}`"),
+                    &format!("the action `{id}` declares no input with this name"),
+                ));
+            }
+            if step
+                .inputs
+                .iter()
+                .take(position)
+                .any(|(earlier, _)| earlier == name)
+            {
+                return Err(self.stop(
+                    value.place,
+                    &format!("the input `{name}`"),
+                    "the step gives this input a value twice",
+                ));
+            }
+        }
+        let mut input = Vec::with_capacity(action.inputs.len());
+        for (name, shape) in &action.inputs {
+            let Some((_, term)) = step.inputs.iter().find(|(given, _)| given == name) else {
+                return Err(self.stop(
+                    step.place,
+                    &format!("the step `{id}`"),
+                    &format!("the action takes the input `{name}`, and the step gives it no value"),
+                ));
+            };
+            let shaped = self.shape(shape)?;
+            input.push(self.constant(term, &shaped.ty, &shaped.domain, Fixed::Input)?);
+        }
+        Ok(Played {
+            action: position,
+            input,
         })
     }
 

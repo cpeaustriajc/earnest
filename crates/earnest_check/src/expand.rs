@@ -1528,6 +1528,7 @@ mod tests {
             rules: Vec::new(),
             ends: Vec::new(),
             view: View::default(),
+            runs: earnest_ir::Runs::default(),
         }
     }
 

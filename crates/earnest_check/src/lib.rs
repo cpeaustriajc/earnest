@@ -15,12 +15,14 @@ mod outcome;
 mod outline;
 mod report;
 mod store;
+mod witness;
 
 pub use explore::explore;
 pub use graph::{Edge, Graph, Node};
 pub use helpers::{Helpers, Loan};
 pub use limits::{Limits, WORKER_STACK, stopped_by_time_limit};
 pub use outcome::{
-    Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
+    Change, Finding, FindingKind, Named, Outcome, Path, RuleKind, RuleOutcome, Shown, Status, Step,
+    Verdict,
 };
 pub use outline::Outline;

@@ -2,7 +2,8 @@ use crate::expand::{Whence, chosen};
 use crate::explore::Search;
 use crate::graph::Graph;
 use crate::outcome::{
-    Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
+    Change, Finding, FindingKind, Named, Outcome, Path, RuleKind, RuleOutcome, Shown, Status, Step,
+    Verdict,
 };
 use crate::outline::Outline;
 use earnest_value::Value;
@@ -10,14 +11,14 @@ use earnest_value::Value;
 const STUCK: &str = "no action can happen here, and the model does not mark it as an end";
 
 impl Search<'_> {
-    fn shown(&self, value: &Value) -> Shown {
+    pub(crate) fn shown(&self, value: &Value) -> Shown {
         Shown {
             text: self.model.symbols.show(value),
             json: self.model.symbols.json(value),
         }
     }
 
-    fn named(&self, state: &[Value]) -> Vec<Named> {
+    pub(crate) fn named(&self, state: &[Value]) -> Vec<Named> {
         self.model
             .fields
             .iter()
@@ -152,7 +153,7 @@ impl Search<'_> {
         let only_rule = self.limits.only_rule.as_deref();
         let judged_everywhere =
             |unjudged: bool| self.reason.is_none() && !self.cut_short && !unjudged;
-        let rules: Vec<RuleOutcome> = self
+        let mut rules: Vec<RuleOutcome> = self
             .model
             .rules
             .iter()
@@ -167,8 +168,12 @@ impl Search<'_> {
                     None => Verdict::Unknown,
                 },
                 path: first.map(|id| self.path_to(id)),
+                kind: RuleKind::Always,
+                reason: None,
+                repeats_from: None,
             })
             .collect();
+        rules.extend(self.witnesses());
         let findings = self.findings();
         let (graph, outline) = self.graph_or_outline();
         let failed =

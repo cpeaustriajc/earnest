@@ -306,6 +306,88 @@ pub struct End {
     pub slots: usize,
 }
 
+/// One rule about whole runs: a state every run reaches.
+///
+/// A run never stops while an action can still change the state, and it does not put off
+/// forever an action listed in [`Runs::fair`] that stays possible. Every such run from a state
+/// the rule starts from must come to a state where `reaches` is true, which may be that state.
+#[derive(Clone, Debug)]
+pub struct Eventually {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The rule's sentence.
+    pub says: String,
+    /// The line it is declared on, counted from 1.
+    pub line: u32,
+    /// The states the rule starts from: every reachable state where this is true. `None` is
+    /// every start state. It must give a boolean.
+    pub after: Option<Code>,
+    /// The condition a run must meet. It must give a boolean.
+    pub reaches: Code,
+    /// How many local slots `after` and `reaches` need.
+    pub slots: usize,
+}
+
+/// One step of a [`Witness`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Played {
+    /// The position of the action in [`Model::actions`].
+    pub action: usize,
+    /// The value of each input, in the order of [`Action::inputs`].
+    pub input: Vec<Value>,
+}
+
+/// One witness: a path the model must be able to take from every start state, and a condition
+/// that must be true at its end.
+#[derive(Clone, Debug)]
+pub struct Witness {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The witness's sentence.
+    pub says: String,
+    /// The line it is declared on, counted from 1.
+    pub line: u32,
+    /// The position in [`Runs::setups`] of the setup whose start states the path is played
+    /// from. `None` is the model's own start states.
+    pub setup: Option<usize>,
+    /// The actions taken, first to last.
+    pub steps: Vec<Played>,
+    /// The condition on the state after the last step. It must give a boolean.
+    pub expect: Code,
+    /// How many local slots `expect` needs.
+    pub slots: usize,
+}
+
+/// One setup: other values for some fields to start at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Setup {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The setup's sentence.
+    pub says: String,
+    /// The line it is declared on, counted from 1.
+    pub line: u32,
+    /// The one value a field starts at, by the field's position in [`Model::fields`]. A field
+    /// that is not listed starts where the model declares.
+    pub starts: Vec<(usize, Value)>,
+}
+
+/// What a model says about whole runs instead of single states.
+#[derive(Clone, Debug, Default)]
+pub struct Runs {
+    /// The positions in [`Model::actions`] of the actions that are not put off forever.
+    pub fair: Vec<usize>,
+    /// The rules about a state every run reaches.
+    pub eventually: Vec<Eventually>,
+    /// The witnesses.
+    pub witnesses: Vec<Witness>,
+    /// The setups the model is also checked in.
+    pub setups: Vec<Setup>,
+    /// The position in `setups` of the setup this model starts in: [`Model::in_setup`] gave
+    /// it. `None` for the model as its file declares it.
+    pub chosen: Option<usize>,
+}
+
 /// One part of a chart label.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
@@ -361,4 +443,37 @@ pub struct Model {
     pub ends: Vec<End>,
     /// The view, empty when the model declares none.
     pub view: View,
+    /// The eventually rules, witnesses and setups, empty when the model declares none.
+    pub runs: Runs,
+}
+
+impl Model {
+    /// The id of everything the model asks to be checked and reported by its id: each rule,
+    /// then each rule about runs, then each witness.
+    pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
+        let always = self.rules.iter().map(|rule| rule.id.as_str());
+        let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
+        let witnesses = self
+            .runs
+            .witnesses
+            .iter()
+            .map(|witness| witness.id.as_str());
+        always.chain(eventually).chain(witnesses)
+    }
+
+    /// The same model started in the setup at `position` of [`Runs::setups`]: each field the
+    /// setup lists starts at the setup's value, and [`Runs::chosen`] names the setup. `None`
+    /// for a position past the last setup.
+    #[must_use]
+    pub fn in_setup(&self, position: usize) -> Option<Self> {
+        let setup = self.runs.setups.get(position)?;
+        let mut started = self.clone();
+        for (field, value) in &setup.starts {
+            if let Some(found) = started.fields.get_mut(*field) {
+                found.starts = vec![value.clone()];
+            }
+        }
+        started.runs.chosen = Some(position);
+        Some(started)
+    }
 }

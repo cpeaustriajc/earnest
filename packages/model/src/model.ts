@@ -59,6 +59,44 @@ export interface End<F extends Fields> {
 }
 
 /**
+ * One step of a witness: an action with the value of each of its inputs. Make one with
+ * `m.step(action, { name: value })`; an action without inputs is a step as it is.
+ */
+export interface Step<F extends Fields> {
+  readonly kind: "step";
+  readonly action: ActionOf<F>;
+  readonly input: Row;
+}
+
+/** An action of a model with the fields `F`, whatever its inputs are. */
+export interface ActionOf<F extends Fields> {
+  readonly kind: "action";
+  readonly sentence: string;
+  readonly when: (state: StateOf<F>, input: never) => boolean;
+  readonly changes: (state: StateOf<F>, input: never) => Partial<StateOf<F>>;
+}
+
+/**
+ * What `m.witness` is given: the actions to take in order, and the condition that must be true
+ * after the last one.
+ */
+export interface WitnessSpec<F extends Fields> {
+  readonly steps: readonly (Action<F> | Step<F>)[];
+  readonly expect: (state: StateOf<F>) => boolean;
+}
+
+/**
+ * A path the model must be able to take from every start state, with a condition on the state
+ * it ends in. The name of its export is its id.
+ */
+export interface Witness<F extends Fields> {
+  readonly kind: "witness";
+  readonly says: string;
+  readonly steps: readonly Step<F>[];
+  readonly expect: (state: StateOf<F>) => boolean;
+}
+
+/**
  * What `m.view` is given, all of it optional: the chart's title, the label of a state, the
  * group a state is drawn in, arrow labels by action id (the default is the action's sentence)
  * and colors.
@@ -103,11 +141,23 @@ export interface EndRunner {
   when(state: Row): boolean;
 }
 
+/**
+ * A witness as a search plays it: each step is an action of the same `Runners` with its input.
+ * `expect` throws when the state is outside what was declared.
+ */
+export interface WitnessRunner {
+  readonly part: object;
+  readonly says: string;
+  readonly steps: readonly { readonly action: ActionRunner; readonly input: Row }[];
+  expect(state: Row): boolean;
+}
+
 /** Everything declared on a model so far, each list in declaration order. */
 export interface Runners {
   readonly actions: readonly ActionRunner[];
   readonly rules: readonly RuleRunner[];
   readonly ends: readonly EndRunner[];
+  readonly witnesses?: readonly WitnessRunner[];
 }
 
 /**
@@ -124,6 +174,7 @@ interface Parts<F extends Fields> {
   readonly actions: ActionRunner[];
   readonly rules: RuleRunner[];
   readonly ends: EndRunner[];
+  readonly witnesses: WitnessRunner[];
   readonly views: View<F>[];
 }
 
@@ -138,7 +189,7 @@ export class Model<F extends Fields> {
   readonly name: string;
   readonly fields: F;
   readonly #state: Declaration<StateOf<F>>;
-  readonly #parts: Parts<F> = { actions: [], rules: [], ends: [], views: [] };
+  readonly #parts: Parts<F> = { actions: [], rules: [], ends: [], witnesses: [], views: [] };
 
   static {
     partsOf = (model) => model.#parts;
@@ -180,12 +231,17 @@ export class Model<F extends Fields> {
   }
 
   /**
-   * The actions, rules and ends declared so far, in a form a search can run without knowing
+   * The actions, rules, ends and witnesses declared so far, in a form a search can run without knowing
    * the model's types. `explore` and `replay` are built on this.
    */
   runners(): Runners {
-    const { actions, rules, ends } = this.#parts;
-    return { actions: [...actions], rules: [...rules], ends: [...ends] };
+    const { actions, rules, ends, witnesses } = this.#parts;
+    return {
+      actions: [...actions],
+      rules: [...rules],
+      ends: [...ends],
+      witnesses: [...witnesses],
+    };
   }
 }
 
@@ -301,6 +357,63 @@ export const end = <F extends Fields>(
     when: (state) => declaredEnd.when(known(model, state)),
   });
   return declaredEnd;
+};
+
+/**
+ * Makes a step of a witness from an action that takes inputs: `m.step(press, { by: "mouse" })`.
+ * `input` gives every input of the action a value it declares.
+ */
+export const step = <F extends Fields, I extends Fields>(
+  taken: Action<F, I>,
+  input: StateOf<I>,
+): Step<F> => Object.freeze({ kind: "step", action: taken, input: frozen({ ...input }) });
+
+/**
+ * Declares a witness of `model`: a path it must be able to take. From every start state, each
+ * step in `steps` must be able to happen in turn, and `expect` must be true in the state after
+ * the last one. `sentence` says it in the reviewer's words. Export the result from the model
+ * file: the name of the export is the witness's id. `earnest verify` and `explore` play it and
+ * report it with the rules. Throws when a step is not an action declared on `model` before the
+ * witness, or gives an input the action does not declare.
+ */
+export const witness = <F extends Fields>(
+  model: Model<F>,
+  sentence: string,
+  spec: WitnessSpec<F>,
+): Witness<F> => {
+  const { actions, witnesses } = partsOf(model);
+  const played = spec.steps.map((written, position) => {
+    const taken: Step<F> =
+      written.kind === "step"
+        ? written
+        : Object.freeze({ kind: "step", action: written, input: frozen({}) });
+    const runner = actions.find((declared) => declared.part === taken.action);
+    const number = position + 1;
+    if (runner === undefined) {
+      throw new Error(
+        `${model.name}: step ${number} of "${sentence}" is not an action declared on this model before the witness`,
+      );
+    }
+    if (!record(Object.fromEntries(runner.inputs)).has(taken.input)) {
+      throw new Error(
+        `${model.name}: step ${number} of "${sentence}" gives "${runner.sentence}" an input it does not declare`,
+      );
+    }
+    return { taken, runner };
+  });
+  const declaredWitness: Witness<F> = Object.freeze({
+    kind: "witness",
+    says: sentence,
+    steps: Object.freeze(played.map(({ taken }) => taken)),
+    expect: spec.expect,
+  });
+  witnesses.push({
+    part: declaredWitness,
+    says: sentence,
+    steps: played.map(({ taken, runner }) => ({ action: runner, input: taken.input })),
+    expect: (state) => declaredWitness.expect(known(model, state)),
+  });
+  return declaredWitness;
 };
 
 /**

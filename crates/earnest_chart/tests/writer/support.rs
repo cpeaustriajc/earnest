@@ -99,6 +99,9 @@ pub(crate) fn rule(id: &str, says: &str, path: Option<Path>) -> RuleOutcome {
             Verdict::Holds
         },
         path,
+        kind: earnest_check::RuleKind::Always,
+        reason: None,
+        repeats_from: None,
     }
 }
 

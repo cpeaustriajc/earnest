@@ -508,6 +508,7 @@ impl Reader<'_> {
             rules: Vec::new(),
             ends: Vec::new(),
             view: ViewDraft::default(),
+            runs: earnest_ast::RunsDraft::default(),
             constants: constants.to_vec(),
             helpers: helpers.to_vec(),
         };
@@ -673,6 +674,7 @@ impl Reader<'_> {
                 inputs,
                 guard,
                 change,
+                fair: false,
             });
             return;
         }

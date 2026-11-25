@@ -14,7 +14,7 @@ use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
 use merge::{Full, Judged};
 use part::{Part, Spares};
-use starts::Starts;
+pub(crate) use starts::Starts;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 

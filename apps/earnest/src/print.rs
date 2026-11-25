@@ -281,6 +281,9 @@ mod tests {
                 says: "All is fine".to_owned(),
                 verdict: "holds".to_owned(),
                 path: None,
+                kind: None,
+                reason: None,
+                repeats_from: None,
             }],
             findings: Vec::new(),
         }

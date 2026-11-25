@@ -132,7 +132,7 @@ fn declared_by(language: Language, source: &str, reading: &Reading) -> Vec<Decla
         .iter()
         .map(|draft| Declared {
             name: draft.name.clone(),
-            rules: draft.rules.iter().map(|rule| rule.id.clone()).collect(),
+            rules: draft.rule_ids().map(str::to_owned).collect(),
         })
         .collect()
 }

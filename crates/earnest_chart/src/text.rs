@@ -92,7 +92,8 @@ pub fn path_lines(path: &Path) -> Vec<String> {
 
 /// The detail lines of a model that did not pass, as the text output documents them: for each
 /// broken rule `broken`, its id and its sentence in quotes, and for each finding its kind and
-/// its message, each followed by its path two spaces deeper.
+/// its message, each followed by its path two spaces deeper. A broken witness and a broken
+/// rule about runs end in a `why` line with the reason, as deep as the path.
 ///
 /// The first level is not indented; the text output indents every line once more. A kind this
 /// crate has not heard of prints under the name it serializes to, with spaces for hyphens. The
@@ -100,11 +101,12 @@ pub fn path_lines(path: &Path) -> Vec<String> {
 #[must_use]
 pub fn detail_lines(outcome: &Outcome) -> Vec<String> {
     let mut lines = Vec::new();
-    let mut add = |head: String, path: &Path| {
+    let mut add = |head: String, path: &Path, why: Option<&str>| {
         lines.push(head);
         lines.extend(
             path_lines(path)
                 .into_iter()
+                .chain(why.map(|reason| format!("why    {}", one_line(reason))))
                 .map(|line| format!("{NESTED}{line}")),
         );
     };
@@ -113,6 +115,7 @@ pub fn detail_lines(outcome: &Outcome) -> Vec<String> {
             add(
                 format!("broken  {}  {}", one_line(&rule.id), quoted(&rule.says)),
                 path,
+                rule.reason.as_deref(),
             );
         }
     }
@@ -120,6 +123,7 @@ pub fn detail_lines(outcome: &Outcome) -> Vec<String> {
         add(
             format!("{}  {}", word(&finding.kind), one_line(&finding.message)),
             &finding.path,
+            None,
         );
     }
     lines

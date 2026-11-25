@@ -3,10 +3,11 @@ use crate::bodies::body_span;
 use crate::terms::bare;
 use earnest_ast::{
     ActionBody, ActionDraft, COLORED_PARTS, Draft, EndDraft, LabelDraft, Quoting, RuleDraft, Shape,
-    Term, TermKind, ViewDraft, condition_text, is_color,
+    StepDraft, Term, TermKind, ViewDraft, WitnessDraft, condition_text, is_color,
 };
 use oxc_ast::ast::{
-    Argument, ArrowFunctionExpression, BindingPattern, CallExpression, Expression, ObjectPattern,
+    Argument, ArrayExpressionElement, ArrowFunctionExpression, BindingPattern, CallExpression,
+    Expression, ObjectPattern,
 };
 use oxc_span::GetSpan;
 
@@ -16,6 +17,7 @@ pub(crate) enum MemberKind {
     Rule,
     End,
     View,
+    Witness,
 }
 
 pub(crate) struct Member<'p, 'a> {
@@ -33,6 +35,7 @@ impl MemberKind {
             "rule" => Some(Self::Rule),
             "end" => Some(Self::End),
             "view" => Some(Self::View),
+            "witness" => Some(Self::Witness),
             _ => None,
         }
     }
@@ -42,6 +45,10 @@ const SENTENCE: usize = 1;
 const FUNCTION: usize = 2;
 const ACTION_OBJECT: usize = 2;
 const VIEW_OBJECT: usize = 1;
+const WITNESS_OBJECT: usize = 2;
+const STEP: &str = "step";
+const NOT_A_STEP: &str = "a step is an action of this model declared above the witness, written \
+    as its constant's name, or as `m.step(action, { input: value })` for an action with inputs";
 
 type Entries<'p, 'a> = Vec<(String, u32, &'p Expression<'a>)>;
 
@@ -91,6 +98,11 @@ impl Reader<'_> {
                 }
             }
             MemberKind::View => draft.view = self.view(call),
+            MemberKind::Witness => {
+                if let Some(witness) = self.witness(id, start, call, &draft.actions) {
+                    draft.runs.witnesses.push(witness);
+                }
+            }
         }
     }
 
@@ -171,6 +183,7 @@ impl Reader<'_> {
             inputs,
             guard,
             change,
+            fair: false,
         })
     }
 
@@ -322,6 +335,122 @@ impl Reader<'_> {
             state_name: condition.state_name,
             when: condition.term,
         })
+    }
+
+    fn witness(
+        &mut self,
+        id: String,
+        start: u32,
+        call: &CallExpression<'_>,
+        actions: &[ActionDraft],
+    ) -> Option<WitnessDraft> {
+        let entries = self.parts(call, WITNESS_OBJECT, &["steps", "expect"])?;
+        let sentence = self.argument(
+            call,
+            SENTENCE,
+            "its sentence is needed here, as text in quotes and an argument of its own",
+        )?;
+        let says = self.sentence(sentence);
+        let callee = self.quoted(call.callee.span());
+        let steps = if let Some(written) = pick(&entries, "steps") {
+            self.steps(written, actions)
+        } else {
+            self.refuse(
+                call.span.start,
+                &callee,
+                "it needs its `steps`, as a list of actions",
+            );
+            Vec::new()
+        };
+        let Some(expected) = pick(&entries, "expect") else {
+            self.refuse(
+                call.span.start,
+                &callee,
+                "it needs an `expect`, the condition that is true after the last step",
+            );
+            return None;
+        };
+        let condition = self.state_function(expected)?;
+        Some(WitnessDraft {
+            id,
+            says,
+            place: self.place(start),
+            setup: None,
+            steps,
+            state_name: condition.state_name,
+            expect: condition.term,
+        })
+    }
+
+    fn steps(&mut self, wrapped: &Expression<'_>, actions: &[ActionDraft]) -> Vec<StepDraft> {
+        let Expression::ArrayExpression(list) = bare(wrapped) else {
+            let written = self.quoted(wrapped.span());
+            self.refuse(
+                wrapped.span().start,
+                &written,
+                "the steps are a list written out: `[first, second]`",
+            );
+            return Vec::new();
+        };
+        let mut steps = Vec::with_capacity(list.elements.len());
+        for element in &list.elements {
+            let step = match element {
+                ArrayExpressionElement::SpreadElement(_) | ArrayExpressionElement::Elision(_) => {
+                    None
+                }
+                other => other
+                    .as_expression()
+                    .and_then(|written| self.step(written, actions)),
+            };
+            if let Some(step) = step {
+                steps.push(step);
+            } else {
+                let written = self.quoted(element.span());
+                self.refuse(element.span().start, &written, NOT_A_STEP);
+            }
+        }
+        steps
+    }
+
+    fn step(&mut self, wrapped: &Expression<'_>, actions: &[ActionDraft]) -> Option<StepDraft> {
+        let written = bare(wrapped);
+        let place = self.place(written.span().start);
+        let is_action = |name: &str| actions.iter().any(|action| action.id == name);
+        match written {
+            Expression::Identifier(name) if is_action(name.name.as_str()) => Some(StepDraft {
+                action: name.name.to_string(),
+                place,
+                inputs: Vec::new(),
+            }),
+            Expression::CallExpression(call) => {
+                let Expression::StaticMemberExpression(callee) = bare(&call.callee) else {
+                    return None;
+                };
+                let Expression::Identifier(root) = bare(&callee.object) else {
+                    return None;
+                };
+                if !self.is_library(root.name.as_str()) || callee.property.name != STEP {
+                    return None;
+                }
+                let [Argument::Identifier(action), given] = call.arguments.as_slice() else {
+                    return None;
+                };
+                if !is_action(action.name.as_str()) {
+                    return None;
+                }
+                let inputs = self
+                    .entries(given.as_expression()?)
+                    .into_iter()
+                    .map(|(name, _, value)| (name, self.term(value)))
+                    .collect();
+                Some(StepDraft {
+                    action: action.name.to_string(),
+                    place,
+                    inputs,
+                })
+            }
+            _ => None,
+        }
     }
 
     fn view(&mut self, call: &CallExpression<'_>) -> ViewDraft {

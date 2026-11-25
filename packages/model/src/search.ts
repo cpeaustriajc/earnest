@@ -1,5 +1,5 @@
 import type { Declaration } from "./declarations.ts";
-import type { ActionRunner, AnyModel, RuleRunner, Runners } from "./model.ts";
+import type { ActionRunner, AnyModel, RuleRunner, Runners, WitnessRunner } from "./model.ts";
 import {
   type Json,
   NullFault,
@@ -49,12 +49,18 @@ export interface Path {
  */
 export type Verdict = "holds" | "broken" | "unknown";
 
-/** One rule's result. `path` is the shortest path to a state that breaks it, or `null`. */
+/**
+ * One rule's result. `path` is the shortest path to a state that breaks it, or `null`. A
+ * witness is listed after the rules with the `kind` `"witness"`: its `path` is what was played
+ * until it broke, and `reason` says why it broke. A rule has neither `kind` nor `reason`.
+ */
 export interface RuleResult {
   readonly id: string;
   readonly says: string;
   readonly verdict: Verdict;
   readonly path: Path | null;
+  readonly kind?: "witness";
+  readonly reason?: string;
 }
 
 /**
@@ -231,6 +237,10 @@ interface Expanded {
 
 type FieldList = readonly (readonly [string, Declaration<unknown, never>])[];
 
+type Played =
+  | { readonly broken: false }
+  | { readonly broken: true; readonly path: Path; readonly reason: string };
+
 class Search {
   readonly #fields: FieldList;
   readonly #parts: Runners;
@@ -277,7 +287,7 @@ class Search {
     for (const counted of waiting.slice(searched)) {
       this.#record(counted, this.#judge(counted.row));
     }
-    return this.#outcome();
+    return this.#outcome(starts);
   }
 
   #keyOf(row: Row): string {
@@ -403,7 +413,7 @@ class Search {
     return this.#fields.map(([name]) => ({ name, value: toJson(row[name]) }));
   }
 
-  #step(parent: Parent, after: Row): Step {
+  #step(parent: Pick<Parent, "action" | "input"> & { from: { row: Row } }, after: Row): Step {
     const before = parent.from.row;
     return {
       action: this.#name(parent.action.part, parent.action.sentence),
@@ -428,6 +438,66 @@ class Search {
       at = at.parent.from;
     }
     return { start: this.#named(at.row), steps: steps.reverse() };
+  }
+
+  #play(witness: WitnessRunner, start: Row): Played {
+    let state = start;
+    const steps: Step[] = [];
+    const broken = (reason: string): Played => ({
+      broken: true,
+      path: { start: this.#named(start), steps },
+      reason,
+    });
+    for (const [position, { action, input }] of witness.steps.entries()) {
+      const number = position + 1;
+      const id = this.#name(action.part, action.sentence);
+      const can = attempt(() => action.when(state, input));
+      if (can.fault !== null) {
+        return broken(`step ${number}: the condition of the action \`${id}\` ${can.fault} here`);
+      }
+      if (!can.value) {
+        return broken(`step ${number}, \`${id}\`, can't happen here`);
+      }
+      const next = nextState(action, state, input);
+      if (next.fault !== null) {
+        return broken(`step ${number}: the change of the action \`${id}\` ${next.fault} here`);
+      }
+      steps.push(this.#step({ from: { row: state }, action, input }, next.value));
+      state = next.value;
+      const after = state;
+      const outside = this.#fields.find(([name, declared]) => !declared.has(after[name]));
+      if (outside !== undefined) {
+        return broken(
+          `step ${number}, \`${id}\`, takes the field \`${outside[0]}\` out of the values it declares`,
+        );
+      }
+    }
+    const last = state;
+    const expected = attempt(() => witness.expect(last));
+    if (expected.fault !== null) {
+      return broken(`what the witness expects ${expected.fault} here`);
+    }
+    return expected.value ? { broken: false } : broken("what the witness expects is false here");
+  }
+
+  #witness(witness: WitnessRunner, starts: readonly Row[]): RuleResult {
+    const result = { id: this.#name(witness.part, witness.says), says: witness.says };
+    if (starts.length > this.#maxStates) {
+      return { ...result, verdict: "unknown", path: null, kind: "witness" };
+    }
+    for (const start of starts) {
+      const played = this.#play(witness, start);
+      if (played.broken) {
+        return {
+          ...result,
+          verdict: "broken",
+          path: played.path,
+          kind: "witness",
+          reason: played.reason,
+        };
+      }
+    }
+    return { ...result, verdict: "holds", path: null, kind: "witness" };
   }
 
   #findings(): Finding[] {
@@ -456,8 +526,8 @@ class Search {
     return findings;
   }
 
-  #outcome(): Exploration {
-    const rules = this.#parts.rules.map((rule): RuleResult => {
+  #outcome(starts: readonly Row[]): Exploration {
+    const always = this.#parts.rules.map((rule): RuleResult => {
       const first = this.#firstBroken.get(rule);
       const isJudged = this.#reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
       const unbroken = isJudged ? "holds" : "unknown";
@@ -468,6 +538,10 @@ class Search {
         path: first === undefined ? null : this.#pathTo(first),
       };
     });
+    const witnesses = (this.#parts.witnesses ?? []).map((witness) =>
+      this.#witness(witness, starts),
+    );
+    const rules = [...always, ...witnesses];
     const findings = this.#findings();
     const hasFailed = findings.length > 0 || rules.some((rule) => rule.verdict === "broken");
     const unfailed = this.#reason === null ? "pass" : "unfinished";

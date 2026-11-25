@@ -419,7 +419,7 @@ impl Compare<'_> {
         self.model.is_none_or(|name| draft.name == name)
             && self
                 .rule
-                .is_none_or(|id| draft.rules.iter().any(|rule| rule.id == id))
+                .is_none_or(|id| draft.rule_ids().any(|rule| rule == id))
     }
 }
 

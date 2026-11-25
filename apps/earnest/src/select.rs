@@ -7,7 +7,7 @@ pub(crate) struct Target<'a> {
 }
 
 fn has_rule(target: &Target<'_>, id: &str) -> bool {
-    target.readable.model.rules.iter().any(|rule| rule.id == id)
+    target.readable.model.rule_ids().any(|rule| rule == id)
 }
 
 fn listed(targets: &[Target<'_>]) -> String {

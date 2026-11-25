@@ -66,7 +66,7 @@ fn holds_the_asked_for(path: &str, model: Option<&str>, rule: Option<&str>) -> b
     };
     read(language, path, &source).drafts.iter().any(|draft| {
         model.is_none_or(|name| draft.name == name)
-            && rule.is_none_or(|id| draft.rules.iter().any(|each| each.id == id))
+            && rule.is_none_or(|id| draft.rule_ids().any(|each| each == id))
     })
 }
 

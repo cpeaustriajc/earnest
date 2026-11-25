@@ -17,6 +17,7 @@ const LEFT: &str = " states left on queue.";
 const BROKEN: &str = "broken";
 const HOLDS: &str = "holds";
 const UNKNOWN: &str = "unknown";
+const WITNESS: &str = "witness";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
 
@@ -145,7 +146,11 @@ pub(crate) fn differences(
                 .map_or_default(|error| format!(" ({error})"))
         )),
     }
-    for ours in &result.rules {
+    let exported = result
+        .rules
+        .iter()
+        .filter(|rule| rule.kind.as_deref() != Some(WITNESS));
+    for ours in exported {
         let Some(theirs) = rules.iter().find(|rule| rule.id == ours.id) else {
             found.push(format!("rule {}: {name} was not run on it", ours.id));
             continue;
@@ -507,6 +512,9 @@ State 1: <Initial predicate>
                         says: String::new(),
                         verdict: (*verdict).to_owned(),
                         path: None,
+                        kind: None,
+                        reason: None,
+                        repeats_from: None,
                     })
                     .collect(),
                 findings: Vec::new(),

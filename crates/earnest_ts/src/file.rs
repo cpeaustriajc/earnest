@@ -423,8 +423,8 @@ impl Reader<'_> {
             self.refuse(
                 member.call.span.start,
                 &member.id,
-                "a rule, an action or an end is an exported constant, because its id is \
-                 the name it is exported under: write `export const name = ...`",
+                "a rule, an action, an end or a witness is an exported constant, because its \
+                 id is the name it is exported under: write `export const name = ...`",
             );
             return;
         }
@@ -586,6 +586,7 @@ impl Reader<'_> {
             rules: Vec::new(),
             ends: Vec::new(),
             view: ViewDraft::default(),
+            runs: earnest_ast::RunsDraft::default(),
             constants: Vec::new(),
             helpers: Vec::new(),
         };
