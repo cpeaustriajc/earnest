@@ -26,7 +26,7 @@ export default defineConfig({
 					description: DESCRIPTION,
 					details:
 						"Earnest is in early access: nightly builds only, nothing on npm. For an agent, /prompt.md is a self-contained prompt that installs earnest and writes a first model. Read the TypeScript or Rust documentation set below rather than loading every page.",
-					promote: ["start/quickstart", "start/install", "tutorials/**", "reference/**"],
+					promote: ["start/quickstart", "start/install", "tutorials/**", "reference/**", "integrations/**"],
 					customSets: [
 						{
 							label: "TypeScript models",
@@ -48,6 +48,7 @@ export default defineConfig({
 								"start/install",
 								"tutorials/rust-model",
 								"reference/rust",
+								"integrations/smlang",
 								"reference/primitives",
 								"reference/cli",
 								"reference/output",
@@ -73,6 +74,7 @@ export default defineConfig({
 						"reference/tla",
 					],
 				},
+				{ label: "Integrations", items: ["integrations/smlang"] },
 				{ label: "Compare", items: ["compare/tla"] },
 				{ label: "Project", items: ["changelog"] },
 			],

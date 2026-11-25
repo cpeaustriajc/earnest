@@ -4,6 +4,8 @@ Searches every state an [smlang](https://crates.io/crates/smlang) 0.8 state mach
 from a Rust test, with the search of the `earnest` crate. The `statemachine!` block stays as
 written, apart from its derives.
 
+The [integration page](https://earnest.cpeaustriajc.dev/integrations/smlang/) on the docs site walks through the turnstile example, stuck states, the state limit and the limits.
+
 A test adds `derive_states: [Clone, Debug, PartialOrd, Ord, Eq]` and `derive_events: [Clone,
 Debug]`, derives `Clone`, `Debug`, `PartialEq`, `Eq` and `Hash` on its context, connects the
 generated types with `machine!`, and hands `explore` a machine and the events to try:

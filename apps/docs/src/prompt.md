@@ -6,6 +6,8 @@ A model is a small TypeScript or Rust file, in this project's language, with fie
 - Rust: https://earnest.cpeaustriajc.dev/_llms-txt/rust-models.txt
 - Full index: https://earnest.cpeaustriajc.dev/llms.txt
 
+If the project already has tests around a state machine library, an integration runs the search from those tests instead of a model file. Earnest has one for Rust's smlang: https://earnest.cpeaustriajc.dev/integrations/smlang/
+
 1. Install: `curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | sh` (Windows: `irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex`). It installs to `~/.local/bin`.
 2. Add `.earnest/` to `.gitignore`.
 3. Pick one stateful piece with rules that matter, such as a checkout, a queue, a retry loop or a permission flow. Prefer the code that the current task changes. If nothing stands out, ask me, with two or three candidates.

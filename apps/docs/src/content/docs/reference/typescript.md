@@ -97,7 +97,44 @@ Any construct outside the allowed subset makes the file `unreadable`, including:
 - `explore(Model, { exports })` performs breadth-first search in Node and returns `{ status, states, rules, findings, reason }` using the same shapes and verdicts as `earnest verify --json`.
 - `replay(Model, path, { exports })` steps through a path from `earnest verify --json` one action at a time and returns every state along the path.
 
+- `search({ starts, key, moves, rules })` runs the same breadth-first search on states that are not a model, such as plain objects or a snapshot of a state machine.
+
 One difference exists between `explore` in Node and `earnest verify`: JavaScript operators cannot be intercepted from a library, so an intermediate number exceeding `2^53 - 1` inside a rule, `end`, or `when` evaluates using JavaScript's rounded arithmetic in Node instead of faulting. Only a next state storing a value past `2^53 - 1` faults in Node. `earnest verify` is the authority on integer overflow faults. See [`packages/model/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/packages/model/README.md) for the full Node API.
+
+### Searching states that are not a model
+
+`search` takes the start states, a `key` that gives two states the same text exactly when they are the same state, and `moves`, which lists `{ move, next }` for each move that can happen from a state, in the order to try:
+
+```ts
+import { search } from "@earnestjs/model";
+
+const found = search({
+  starts: [{ gate: "Locked", paid: false }],
+  key: (s) => `${s.gate};${s.paid}`,
+  moves: (s) =>
+    s.gate === "Locked"
+      ? [
+          ...(s.paid ? [] : [{ move: "pay", next: { ...s, paid: true } }]),
+          { move: "push", next: { ...s, gate: "Open" } },
+        ]
+      : [{ move: "enter", next: { gate: "Locked", paid: false } }],
+  rules: [
+    {
+      id: "locked",
+      says: "The gate stays locked until the visitor pays",
+      holds: (s) => s.gate === "Locked" || s.paid,
+    },
+  ],
+});
+```
+
+The search counts 4 states and fails: `locked` is `broken` after one `push`. The result has the fields of `explore` (`status`, `states`, `rules`, `findings`, `reason`), but each path is a trail of your own values, `{ start, steps: [{ move, state }] }`.
+
+- A state with no move is `stuck` unless `isEnd` gives `true` for it. `isEnd` is asked only of a state with no move.
+- When `outside` gives a message for a state, the state is out of range: it is counted, is not checked against the rules and is not searched from. The first one is an `out-of-range` finding, and a rule not seen broken is `unknown`.
+- `maxStates` works as in `explore`, and the default is 5,000,000.
+- `reached()` gives the shortest trail to every counted state, in the order the search reached them.
+- `search` has no faults: an error thrown by `key`, `moves`, a rule, `isEnd` or `outside` is thrown by `search`.
 
 ## Next
 
