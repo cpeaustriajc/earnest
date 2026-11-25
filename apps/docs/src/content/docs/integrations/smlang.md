@@ -223,3 +223,4 @@ A context field that no guard bounds, such as a counter that only goes up, makes
 
 - [Rust models](/reference/rust/#searching-states-in-a-test): `explore` and `search`, the same search for an Earnest model and for any state
 - [Output, JSON, and reports](/reference/output/): what `pass`, `fail`, `unfinished` and `stuck` mean for `earnest verify`
+- [XState](/integrations/xstate/): the same search under a TypeScript state machine library
