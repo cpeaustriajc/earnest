@@ -9,7 +9,7 @@ import {
   stateLimit,
   trailTo,
 } from "./breadth.ts";
-import type { Declaration } from "./declarations.ts";
+import { type Declaration, rowsOf } from "./declarations.ts";
 import type { ActionRunner, AnyModel, RuleRunner, Runners } from "./model.ts";
 import {
   type Json,
@@ -180,12 +180,7 @@ export const nextState = (action: ActionRunner, state: Row, input: Row): Attempt
 };
 
 /** Every input an action is tried with, in the checker's order: the first input varies fastest. */
-export const inputsOf = (action: ActionRunner): readonly Row[] =>
-  action.inputs.reduceRight<Row[]>(
-    (rest, [name, declared]) =>
-      rest.flatMap((later) => declared.values().map((value) => ({ [name]: value, ...later }))),
-    [{}],
-  );
+export const inputsOf = (action: ActionRunner): readonly Row[] => rowsOf(action.inputs);
 
 interface Taken {
   readonly action: ActionRunner;

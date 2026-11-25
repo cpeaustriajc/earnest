@@ -1,5 +1,5 @@
 export * as m from "./m.ts";
-export { Declaration, MOST_VALUES_LISTED } from "./declarations.ts";
+export { Declaration, MOST_VALUES_LISTED, combinationsOf } from "./declarations.ts";
 export type { Fields, StateOf, ValueOf } from "./declarations.ts";
 export { Model } from "./model.ts";
 export type {

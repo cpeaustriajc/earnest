@@ -103,7 +103,11 @@ verify` does ("reads a value that is null"), where JavaScript would go on with `
 a number read from an optional goes through it. `m.setOf(a, b)`, `m.seqOf(a, b)` and `m.mapOf([k, v])` write collection values; a queue's
 `.initial` takes `m.seqOf(...)`. `m.forall(T, f)` and `m.exists(T, f)` range over a declaration
 or a collection. Every declaration has `values()`, which lists what it declares in the order the
-checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`.
+checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`. Its `libraryKind` is
+`null` when every value is plain JavaScript (booleans, numbers, texts, `null` and records of
+those), and otherwise names the part that holds this library's objects, such as `"set"`.
+`combinationsOf(fields)` lists every row of one value per field, in the order `explore` tries an
+action's inputs: the first field varies fastest.
 
 ## Running a model in Node
 

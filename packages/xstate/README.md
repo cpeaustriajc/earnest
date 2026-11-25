@@ -16,7 +16,8 @@ npm install --save-dev @earnestjs/xstate xstate @xstate/graph
 ```
 
 `xstate` (5.19.4 or newer) and `@xstate/graph` (3.0.4 or newer) are peer dependencies, so the
-test uses the copies the project already has.
+test uses the copies the project already has. A test that declares the context or the payloads
+with `m` imports it from `@earnestjs/model`: install the version `@earnestjs/xstate` depends on.
 
 ## Getting the paths
 
@@ -153,14 +154,102 @@ gives for `turnstile.model.ts`. The rule is broken after the one event `PUSH`.
   machine. Keep that code free of side effects, with the same result for the same snapshot and
   event.
 
+## Bounding the context and declaring payloads
+
+A context is any JavaScript, so a count that grows forever gives a new state on every event, and
+only `maxStates` stops the search. `checkMachine` takes declarations written with `m` from
+[`@earnestjs/model`](../model/README.md#the-builders) that bound it.
+`test/machines/visitor-count.ts` counts visitors who enter in groups and never stops:
+
+```ts title="test/machines/visitor-count.ts"
+import { assign, setup } from "xstate";
+
+export const visitorCount = setup({
+  types: {
+    context: {} as { visitors: number },
+    events: {} as { type: "ENTER"; group: number },
+  },
+}).createMachine({
+  id: "visitorCount",
+  context: { visitors: 0 },
+  on: {
+    ENTER: {
+      actions: assign({ visitors: ({ context, event }) => context.visitors + event.group }),
+    },
+  },
+});
+```
+
+`test/visitor-count.test.ts` declares the group size of `ENTER` and the range of `visitors`:
+
+```ts title="test/visitor-count.test.ts"
+import { m } from "@earnestjs/model";
+import { checkMachine } from "@earnestjs/xstate";
+import { expect, test } from "vitest";
+import { visitorCount } from "./machines/visitor-count.ts";
+
+test("the count leaves its range after two groups of two", () => {
+  const found = checkMachine(visitorCount, {
+    events: { ENTER: { group: m.int(1, 2) } },
+    context: { visitors: m.int(0, 3) },
+    rules: {
+      counted: {
+        says: "The count is never below zero",
+        holds: (snapshot) => snapshot.context.visitors >= 0,
+      },
+    },
+  });
+  expect(found.status).toBe("fail");
+  expect(found.states).toBe(6);
+  expect(found.rules[0]?.verdict).toBe("unknown");
+  expect(found.findings[0]?.message).toBe(
+    "the context field `visitors` leaves the values it declares",
+  );
+  expect(found.findings[0]?.path.events).toStrictEqual([
+    { type: "ENTER", group: 2 },
+    { type: "ENTER", group: 2 },
+  ]);
+});
+```
+
+The counts 0 to 3 are in range. Groups of 1 and 2 reach 4 and 5 from them, and those two states
+are out of range, 6 in all. The first state out of range is 4, after two groups of 2, and
+nothing is searched from 4 or 5.
+
+- `context` declares some fields of the context. A snapshot where one of them holds a value its
+  declaration does not have is out of range, as a model's state is in `explore`. It is counted,
+  no rule is judged in it, and nothing is searched from it. `findings` gives the first one, as
+  `out-of-range` with its shortest path and the message ``the context field `visitors` leaves the
+  values it declares``. The check fails, and a rule not seen broken is `unknown`.
+- A field the schema names but the context lacks, or holds `undefined`, is out of range: no
+  declaration has `undefined`. Declare `.optional()` and set the field to `null` instead. Inside
+  a record, a field set to `undefined` is the same as no field, as it is in the state. A field
+  the schema does not name is not checked.
+- `events` can be a record of event types, each with a declaration for each payload field, such
+  as `{ PAY: { coins: m.int(1, 2) }, PUSH: {} }`. Each type is tried with every combination of
+  its fields' values, the first field varying fastest, as `explore` tries an action's inputs
+  (`combinationsOf` from `@earnestjs/model` lists them). The event sent, and shown in a path, is
+  `{ type, ...payload }`. Types are tried in the record's key order, where JavaScript puts
+  integer-like keys first. A type with more than 1,000,000 payloads is a `RangeError`. A record
+  payload arrives frozen and is shared by every snapshot it is sent from: copy it, never change
+  it in place.
+- The keys of `context`, the event types and their fields are checked against the machine's
+  types, so a misspelt one does not compile.
+- The declarations must hold plain JavaScript values: `m.boolean()`, `m.int`, `m.enum`,
+  `m.oneOf`, `.optional()` of those, and `m.record` of all of these. A set, map, sequence,
+  queue, lock, timer, request or retry, also inside an optional or a record, holds objects of
+  `@earnestjs/model` that a context or an event does not, and `checkMachine` throws a
+  `TypeError` that names the field before it searches, as in `checkMachine can't take
+  context.tags, a set declaration`.
+
 ## Limits
 
 - The paths come in the order the search reached their states: breadth first, events in the
   order `events` lists them. When two paths to a state are equally short, the one found first is
   kept. XState's order and choice can differ, so a test must not rely on either.
 - `getSimplePaths` stays with XState.
-- `checkMachine` tries only the events `events` gives, with the payloads written there. No
-  timer fires and no invoked actor finishes, so a state left only by `after` or by `onDone` is
+- `checkMachine` tries only the events `events` gives, with the payloads written or declared
+  there. No timer fires and no invoked actor finishes, so a state left only by `after` or by `onDone` is
   reported stuck.
 - A state is its value, context and status. History, a final state's output and the child
   actors are not part of it, so two snapshots that differ only there count as one. An actor
@@ -191,6 +280,9 @@ bun run test        # vitest run
   each traversal option, and run every path's `test` against a working gate.
 - The tests of `checkMachine` compare the open turnstile with the same model checked by
   `explore`, and check the working turnstile, a stuck state, a final state and the state limit.
+- The tests of the schema compare a counter out of range with the same model checked by
+  `explore`, try each kind of declaration as a context field and as a payload, and check the
+  refusal of each kind that is not plain.
 - `tsconfig.json` sets `skipLibCheck`: the declarations `xstate` ships do not compile under
   `exactOptionalPropertyTypes`, which this package keeps on for its own code.
 - `bun run build` and `prepack` work as in `@earnestjs/model`.
