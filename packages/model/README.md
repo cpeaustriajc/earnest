@@ -146,6 +146,53 @@ input is missing or undeclared, the action's `when` is false, the action can't b
 the state after the action differs from the step's `state`. Without `exports` a step is matched
 by its `label`, the action's sentence.
 
+## Searching states that are not a model
+
+`search` runs the same breadth-first search as `explore` on states the library knows nothing
+about, such as plain objects. Give it the start states, a `key` that names a state, and `moves`,
+which lists `{ move, next }` from a state:
+
+```ts
+import { search } from "@earnestjs/model";
+
+const found = search({
+  starts: [{ gate: "Locked", paid: false }],
+  key: (s) => `${s.gate};${s.paid}`,
+  moves: (s) =>
+    s.gate === "Locked"
+      ? [
+          ...(s.paid ? [] : [{ move: "pay", next: { ...s, paid: true } }]),
+          { move: "push", next: { ...s, gate: "Open" } },
+        ]
+      : [{ move: "enter", next: { gate: "Locked", paid: false } }],
+  rules: [
+    {
+      id: "locked",
+      says: "The gate stays locked until the visitor pays",
+      holds: (s) => s.gate === "Locked" || s.paid,
+    },
+  ],
+});
+```
+
+It counts 4 states and fails: `locked` is `broken` after one `push`. The result has the words of
+`explore` (`status`, `states`, `rules`, `findings`, `reason`), but each path is a trail of the
+caller's own values, `{ start, steps: [{ move, state }] }`.
+
+- States are judged in the order they are reached: start states in the order given, then the
+  moves of each state in the order `moves` lists them. States with the same `key` are one state.
+- `rules` are judged in every counted state that is not out of range, also the states the state
+  limit kept the search from going on from. `maxStates` works as in `explore`.
+- A state with no move is `stuck` unless `isEnd` gives `true` for it. `isEnd` is asked only of
+  a state with no move.
+- When `outside` gives a message for a state, the state is out of range: it is counted, is not
+  checked against the rules and is not searched from. The first one is an `out-of-range` finding
+  with that message, and a rule not seen broken is `unknown`.
+- `reached()` gives the shortest trail to every counted state, in the order the search reached
+  them. Each trail is built as it is asked for.
+- There are no faults: an error thrown by `key`, `moves`, a rule, `isEnd` or `outside` is thrown
+  by `search`.
+
 ## Where Node and the checker differ
 
 - Arithmetic past 2^53 - 1 is a fault in the checker, "computes a number too large to hold",

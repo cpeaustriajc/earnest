@@ -1,3 +1,14 @@
+import {
+  type Reach,
+  type SearchMove,
+  type Status,
+  type Verdict,
+  type Visit,
+  type Visitor,
+  breadthFirst,
+  stateLimit,
+  trailTo,
+} from "./breadth.ts";
 import type { Declaration } from "./declarations.ts";
 import type { ActionRunner, AnyModel, RuleRunner, Runners } from "./model.ts";
 import {
@@ -42,13 +53,6 @@ export interface Path {
   readonly steps: readonly Step[];
 }
 
-/**
- * `unknown` means the rule was not seen broken, but the search stopped early, the rule could
- * not be evaluated in a state it reached, or a state out of range or a fault in an action or an
- * end cut the search short, so some state was not judged or not reached.
- */
-export type Verdict = "holds" | "broken" | "unknown";
-
 /** One rule's result. `path` is the shortest path to a state that breaks it, or `null`. */
 export interface RuleResult {
   readonly id: string;
@@ -71,13 +75,6 @@ export interface Finding {
   readonly message: string;
   readonly path: Path;
 }
-
-/**
- * `unfinished` means the state limit stopped the search before anything was found wrong. Every
- * state that is counted has its rules judged, also the ones the limit kept the search from
- * going on from.
- */
-export type Status = "pass" | "fail" | "unfinished";
 
 /**
  * What `explore` found. `states` counts distinct states, out-of-range ones included. `findings`
@@ -104,9 +101,6 @@ export interface ExploreOptions {
   readonly maxStates?: number;
   readonly exports?: Exports;
 }
-
-/** The state limit `explore` uses when it is given none, the same as `earnest verify`. */
-export const DEFAULT_MAX_STATES = 5_000_000;
 
 /**
  * Gives the function that names a part of a model: the name it is exported under in `exports`,
@@ -171,13 +165,6 @@ const numberFault = (json: Json): string | null => {
   return inside.map(numberFault).find((fault) => fault !== null) ?? null;
 };
 
-const stateLimit = (maxStates: number): number => {
-  if (!Number.isInteger(maxStates) || maxStates < 0) {
-    throw new Error(`maxStates must be a whole number that is not negative, not ${maxStates}`);
-  }
-  return maxStates;
-};
-
 /**
  * Applies an action and gives the next state, or the fault that stops it. Besides the faults of
  * `attempt`, a next state that holds `NaN`, which `%` by zero gives, or a number too large for
@@ -200,29 +187,18 @@ export const inputsOf = (action: ActionRunner): readonly Row[] =>
     [{}],
   );
 
-interface Parent {
-  readonly from: Visited;
+interface Taken {
   readonly action: ActionRunner;
   readonly input: Row;
 }
 
-interface Visited {
-  readonly row: Row;
-  readonly key: string;
-  readonly parent: Parent | null;
-}
-
-interface Successor {
-  readonly action: ActionRunner;
-  readonly input: Row;
-  readonly next: Row;
-}
+type Visited = Visit<Row, Taken>;
 
 interface Expanded {
   readonly outside: string | null;
   readonly broken: RuleRunner[];
   readonly unjudged: RuleRunner[];
-  readonly successors: Successor[];
+  readonly successors: SearchMove<Row, Taken>[];
   trouble: string | null;
   isCutShort: boolean;
   isEnabled: boolean;
@@ -231,19 +207,16 @@ interface Expanded {
 
 type FieldList = readonly (readonly [string, Declaration<unknown, never>])[];
 
-class Search {
+class Search implements Visitor<Row, Taken> {
   readonly #fields: FieldList;
   readonly #parts: Runners;
   readonly #inputs: ReadonlyMap<ActionRunner, readonly Row[]>;
   readonly #name: (part: object, fallback: string) => string;
-  readonly #maxStates: number;
-  readonly #seen = new Set<string>();
   readonly #firstBroken = new Map<RuleRunner, Visited>();
   readonly #unjudged = new Set<RuleRunner>();
   #stuck: Visited | null = null;
   #outside: { readonly at: Visited; readonly field: string } | null = null;
   #trouble: { readonly at: Visited; readonly message: string } | null = null;
-  #reason: string | null = null;
   #isCutShort = false;
 
   constructor(fields: FieldList, parts: Runners, options: ExploreOptions) {
@@ -251,51 +224,16 @@ class Search {
     this.#parts = parts;
     this.#inputs = new Map(parts.actions.map((action) => [action, inputsOf(action)]));
     this.#name = namer(options.exports);
-    this.#maxStates = stateLimit(options.maxStates ?? DEFAULT_MAX_STATES);
   }
 
-  run(starts: readonly Row[]): Exploration {
-    const waiting: Visited[] = [];
-    for (const start of starts) {
-      this.#visit(start, null, waiting);
-    }
-    let searched = 0;
-    for (const visited of waiting) {
-      if (this.#reason !== null) {
-        break;
-      }
-      searched += 1;
-      const expanded = this.#expand(visited.row);
-      this.#record(visited, expanded);
-      for (const successor of expanded.successors) {
-        const parent = { from: visited, action: successor.action, input: successor.input };
-        if (!this.#visit(successor.next, parent, waiting)) {
-          break;
-        }
-      }
-    }
-    for (const counted of waiting.slice(searched)) {
-      this.#record(counted, this.#judge(counted.row));
-    }
-    return this.#outcome();
+  expand(at: Visited): readonly SearchMove<Row, Taken>[] {
+    const expanded = this.#expand(at.state);
+    this.#record(at, expanded);
+    return expanded.successors;
   }
 
-  #keyOf(row: Row): string {
-    return this.#fields.map(([name]) => keyOf(row[name])).join(";");
-  }
-
-  #visit(row: Row, parent: Parent | null, waiting: Visited[]): boolean {
-    const key = this.#keyOf(row);
-    if (this.#seen.has(key)) {
-      return true;
-    }
-    if (this.#seen.size >= this.#maxStates) {
-      this.#reason = `state limit of ${this.#maxStates}`;
-      return false;
-    }
-    this.#seen.add(key);
-    waiting.push({ row, key, parent });
-    return true;
+  judge(at: Visited): void {
+    this.#record(at, this.#judge(at.state));
   }
 
   #judge(state: Row): Expanded {
@@ -369,7 +307,7 @@ class Search {
       found.isEnabled = true;
       const next = nextState(action, state, input);
       if (next.fault === null) {
-        found.successors.push({ action, input, next: next.value });
+        found.successors.push({ move: { action, input }, next: next.value });
       } else {
         found.trouble ??= `the change of the action \`${id}\` ${next.fault}`;
         found.isCutShort = true;
@@ -403,12 +341,11 @@ class Search {
     return this.#fields.map(([name]) => ({ name, value: toJson(row[name]) }));
   }
 
-  #step(parent: Parent, after: Row): Step {
-    const before = parent.from.row;
+  #step({ action, input }: Taken, before: Row, after: Row): Step {
     return {
-      action: this.#name(parent.action.part, parent.action.sentence),
-      label: parent.action.sentence,
-      input: parent.action.inputs.map(([name]) => ({ name, value: toJson(parent.input[name]) })),
+      action: this.#name(action.part, action.sentence),
+      label: action.sentence,
+      input: action.inputs.map(([name]) => ({ name, value: toJson(input[name]) })),
       changes: this.#fields
         .filter(([name]) => keyOf(before[name]) !== keyOf(after[name]))
         .map(([name]) => ({
@@ -421,13 +358,13 @@ class Search {
   }
 
   #pathTo(target: Visited): Path {
-    const steps: Step[] = [];
-    let at = target;
-    while (at.parent !== null) {
-      steps.push(this.#step(at.parent, at.row));
-      at = at.parent.from;
-    }
-    return { start: this.#named(at.row), steps: steps.reverse() };
+    const { start, steps } = trailTo(target);
+    return {
+      start: this.#named(start),
+      steps: steps.map(({ move, state }, index) =>
+        this.#step(move, steps[index - 1]?.state ?? start, state),
+      ),
+    };
   }
 
   #findings(): Finding[] {
@@ -456,10 +393,10 @@ class Search {
     return findings;
   }
 
-  #outcome(): Exploration {
+  outcome({ visits, reason }: Reach<Row, Taken>): Exploration {
     const rules = this.#parts.rules.map((rule): RuleResult => {
       const first = this.#firstBroken.get(rule);
-      const isJudged = this.#reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
+      const isJudged = reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
       const unbroken = isJudged ? "holds" : "unknown";
       return {
         id: this.#name(rule.part, rule.says),
@@ -470,13 +407,13 @@ class Search {
     });
     const findings = this.#findings();
     const hasFailed = findings.length > 0 || rules.some((rule) => rule.verdict === "broken");
-    const unfailed = this.#reason === null ? "pass" : "unfinished";
+    const unfailed = reason === null ? "pass" : "unfinished";
     return {
       status: hasFailed ? "fail" : unfailed,
-      states: this.#seen.size,
+      states: visits.length,
       rules,
       findings,
-      reason: this.#reason,
+      reason,
     };
   }
 }
@@ -489,5 +426,10 @@ class Search {
  * `earnest verify`, so the two results can be compared. Pass the model file's exports as
  * `exports` to get the same ids.
  */
-export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration =>
-  new Search(Object.entries(model.fields), model.runners(), options).run(model.starts());
+export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration => {
+  const maxStates = stateLimit(options.maxStates);
+  const fields = Object.entries(model.fields);
+  const found = new Search(fields, model.runners(), options);
+  const key = (row: Row): string => fields.map(([name]) => keyOf(row[name])).join(";");
+  return found.outcome(breadthFirst(model.starts(), key, maxStates, found));
+};
