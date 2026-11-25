@@ -33,6 +33,17 @@ impl Move {
         self
     }
 
+    pub(super) fn taken<State>(step: &Step<State>) -> Self {
+        Self {
+            action: step.action.to_owned(),
+            input: step
+                .input
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        }
+    }
+
     fn matches<State>(&self, step: &Step<State>) -> bool {
         step.action == self.action
             && step.input.len() == self.input.len()
@@ -141,9 +152,5 @@ pub fn replay<State: Behavior + Clone>(
 }
 
 fn describe<State>(step: &Step<State>) -> String {
-    let mut text = Move::new(step.action);
-    for (name, value) in &step.input {
-        text = text.with(name, value);
-    }
-    format!("`{text}`")
+    format!("`{}`", Move::taken(step))
 }

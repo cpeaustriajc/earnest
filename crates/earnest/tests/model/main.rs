@@ -4,6 +4,7 @@
 mod behavior;
 mod collections;
 mod derives;
+mod explore;
 mod listed;
 mod parts;
 mod replays;
