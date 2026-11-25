@@ -24,6 +24,7 @@ The repository follows the workspace layout used by oxc: one crate per concern, 
 | `crates/earnest`, `crates/earnest_macros` | Rust model library and proc macros |
 | `crates/earnest_smlang` | Searches an smlang state machine from a Rust test |
 | `packages/model` | TypeScript model library (`@earnestjs/model`) |
+| `packages/xstate` | Path generator that runs XState's model-based tests on Earnest's search (`@earnestjs/xstate`) |
 | `packages/cli` | npm CLI launcher (`@earnestjs/cli`) and per-platform binary packages |
 | `tasks/conformance` | Conformance models with hand-derived state counts, verdicts, and paths |
 | `tasks/benchmark` | Speed and instruction-count benchmarks with hand-derived state counts |
@@ -72,6 +73,9 @@ bun run --cwd packages/model test        # vitest
 bun run --cwd packages/cli typecheck
 bun run --cwd packages/cli format
 bun run --cwd packages/cli test
+bun run --cwd packages/xstate typecheck
+bun run --cwd packages/xstate format
+bun run --cwd packages/xstate test
 just docs                                # builds apps/docs and llms.txt sets
 ```
 
@@ -79,9 +83,9 @@ just docs                                # builds apps/docs and llms.txt sets
 
 ## Releasing to crates.io and npm
 
-`.github/workflows/release.yml` publishes all 15 crates and the seven `@earnestjs` npm packages. A tag `v<version>` that matches the workspace version starts it. The checker is under the GPL (`LICENSE`); the `earnest`, `earnest_macros` and `earnest_smlang` crates and `@earnestjs/model` are under the LGPL (`LICENSE.LESSER`).
+`.github/workflows/release.yml` publishes all 15 crates and the eight `@earnestjs` npm packages. A tag `v<version>` that matches the workspace version starts it. The checker is under the GPL (`LICENSE`); the `earnest`, `earnest_macros` and `earnest_smlang` crates, `@earnestjs/model` and `@earnestjs/xstate` are under the LGPL (`LICENSE.LESSER`).
 
-1. Set one version in `Cargo.toml` (`[workspace.package]` and `[workspace.dependencies]`), in each `earnest = { path = ... }` line of `crates/earnest_rs`, `crates/earnest_smlang`, `tasks/break_it` and `tasks/models`, in `packages/cli/package.json` with its `optionalDependencies`, in `packages/model/package.json` and in each `packages/cli/platforms/*/package.json`. Update the nightly tag in `install.sh` and `install.ps1` too.
+1. Set one version in `Cargo.toml` (`[workspace.package]` and `[workspace.dependencies]`), in each `earnest = { path = ... }` line of `crates/earnest_rs`, `crates/earnest_smlang`, `tasks/break_it` and `tasks/models`, in `packages/cli/package.json` with its `optionalDependencies`, in `packages/model/package.json`, in `packages/xstate/package.json` with its `@earnestjs/model` dependency, and in each `packages/cli/platforms/*/package.json`. Update the nightly tag in `install.sh` and `install.ps1` too.
 2. Run the workflow by hand with **publish** off. It builds the five binaries, packs every npm tarball and runs `cargo publish --workspace --dry-run`.
 3. Push the tag: `git tag v<version> && git push origin v<version>`.
 
@@ -98,7 +102,7 @@ Both registries set up trusted publishing only on a crate or package that alread
 
 1. Run the workflow by hand with **publish** off, and download its npm tarballs: `gh run download <run id> --pattern 'npm-*' --dir <folder>`.
 2. Check out the commit that run built. Log in with `cargo login` and a crates.io token that may publish new crates, then run `python3 -I .github/scripts/publish_crates.py`. crates.io limits how fast new crate names appear, so the script waits between crates and can take over an hour. Revoke the token afterwards.
-3. Log in with `npm login`, and publish each tarball from step 1 with `npm publish <tarball> --access public --provenance=false`: the platform packages first, then `@earnestjs/model`, then `@earnestjs/cli`. Provenance needs CI, so only later releases carry it.
+3. Log in with `npm login`, and publish each tarball from step 1 with `npm publish <tarball> --access public --provenance=false`: the platform packages first, then `@earnestjs/model`, then `@earnestjs/xstate`, then `@earnestjs/cli`. Provenance needs CI, so only later releases carry it.
 4. Set up the trusted publisher on each new crate and package, with the settings above.
 5. Push the tag `v<version>` on that commit. The workflow finds every crate and package already published and skips them.
 
