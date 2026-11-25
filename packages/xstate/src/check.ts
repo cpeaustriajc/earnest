@@ -72,14 +72,39 @@ export type MachineEvents<TMachine extends AnyStateMachine> =
   | ((snapshot: SnapshotFrom<TMachine>) => readonly EventFromLogic<TMachine>[])
   | MachineEventSchema<TMachine>;
 
+type ContextKey<TContext> = TContext extends unknown ? keyof TContext : never;
+
+type ContextField<TContext, Key> = TContext extends unknown
+  ? Key extends keyof TContext
+    ? TContext[Key]
+    : never
+  : never;
+
+type MayLack<TContext, Key> = TContext extends unknown
+  ? Key extends keyof TContext
+    ? {} extends Pick<TContext, Key>
+      ? true
+      : undefined extends TContext[Key]
+        ? true
+        : false
+    : true
+  : never;
+
+type DeclaredField<TContext, Key> =
+  | Exclude<ContextField<TContext, Key>, undefined>
+  | (MayLack<TContext, Key> extends false ? never : null);
+
 /**
  * A declaration written with `m` from `@earnestjs/model` for some fields of the machine's
  * context, such as `{ visitors: m.int(0, 3) }`. Only declarations of plain JavaScript values are
- * taken, as in `MachinePayloadSchema`. Fields it does not name are not checked.
+ * taken, as in `MachinePayloadSchema`. Fields it does not name are not checked. Any field of any
+ * member of a union context can be named, its declaration checked against that field's type in
+ * the members that have it. Where a member lacks the field, or the field is optional or may be
+ * `undefined`, the declaration may be `.optional()`, which also takes a missing field.
  */
 export type MachineContextSchema<TMachine extends AnyStateMachine> = {
-  readonly [Field in keyof ContextFrom<TMachine>]?: Declaration<
-    ContextFrom<TMachine>[Field],
+  readonly [Field in ContextKey<ContextFrom<TMachine>>]?: Declaration<
+    DeclaredField<ContextFrom<TMachine>, Field>,
     never
   >;
 };
@@ -91,9 +116,11 @@ export type MachineContextSchema<TMachine extends AnyStateMachine> = {
  * `input` is the machine's input, used to make the initial snapshot. `maxStates` stops the
  * search before it holds more distinct states than this; the default is 5,000,000. `context`
  * bounds the search: a snapshot whose context has a value outside what `context` declares for
- * it, `undefined` and a missing field included, is out of range. It is counted, no rule is
- * judged in it and nothing is searched from it, as `explore` does with a model's state out of
- * range.
+ * it is out of range. A missing field and `undefined` are out of range too, unless the
+ * declaration is `.optional()`, which takes them as it takes `null`. A value a record
+ * declaration checks must be plain data at every level: an object that is not a plain object,
+ * such as a `Date`, is out of range. A snapshot out of range is counted, no rule is judged in it
+ * and nothing is searched from it, as `explore` does with a model's state out of range.
  */
 export interface CheckMachineOptions<TMachine extends AnyStateMachine> {
   readonly events: MachineEvents<TMachine>;
@@ -222,14 +249,58 @@ const stateKey = (snapshot: AnyMachineSnapshot): string => {
 
 type Declared = Declaration<unknown, never>;
 
-type Schema = Readonly<Record<string, Declared | undefined>>;
+type Fields = readonly (readonly [string, Declared])[];
 
-const article = (word: string): string => (/^[aeiou]/.test(word) ? `an ${word}` : `a ${word}`);
+const article = (word: string): string =>
+  /^[aeio]/i.test(word) || word.startsWith("u") ? `an ${word}` : `a ${word}`;
 
-const plainFields = (option: string, schema: Schema): readonly (readonly [string, Declared])[] =>
-  Object.entries(schema).flatMap(([name, declared]) => {
+const isDeclaration = (value: unknown): value is Declared =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof Reflect.get(value, "kind") === "string" &&
+  typeof Reflect.get(value, "count") === "number" &&
+  typeof Reflect.get(value, "has") === "function" &&
+  typeof Reflect.get(value, "values") === "function";
+
+const described = (value: unknown): string => {
+  if (value === null) {
+    return "null";
+  }
+  if (isDeclaration(value)) {
+    return `${article(value.kind)} declaration`;
+  }
+  if (Array.isArray(value)) {
+    return "an array";
+  }
+  if (typeof value === "object") {
+    return isPlain(value) ? "a plain object" : article(kindOf(value));
+  }
+  if (typeof value === "string") {
+    return `the text ${JSON.stringify(value)}`;
+  }
+  return typeof value === "function" ? "a function" : `the ${typeof value} ${String(value)}`;
+};
+
+const EACH_FIELD = "give a declaration written with m from @earnestjs/model for each field";
+
+const fieldRecord = (option: string, value: unknown, expected: string): object => {
+  if (typeof value === "object" && value !== null && isPlain(value) && !isDeclaration(value)) {
+    return value;
+  }
+  throw new TypeError(
+    `checkMachine can't take ${option}: it is ${described(value)}, not ${expected}`,
+  );
+};
+
+const plainFields = (option: string, schema: object): Fields =>
+  Object.entries(schema).flatMap(([name, declared]: readonly [string, unknown]) => {
     if (declared === undefined) {
       return [];
+    }
+    if (!isDeclaration(declared)) {
+      throw new TypeError(
+        `checkMachine can't take ${option}.${name}: it is ${described(declared)}, not a declaration; write one with m from @earnestjs/model, such as m.int(0, 3), or m.record({ ... }) for an object`,
+      );
     }
     const held: string | null | undefined = declared.libraryKind;
     if (held === undefined) {
@@ -248,6 +319,25 @@ const plainFields = (option: string, schema: Schema): readonly (readonly [string
 
 type EventList = (snapshot: AnyMachineSnapshot) => readonly EventObject[];
 
+const payloadsOf = (events: object): readonly (readonly [string, Fields])[] =>
+  Object.entries(events).flatMap(([type, payload]: readonly [string, unknown]) => {
+    if (payload === undefined) {
+      return [];
+    }
+    const option = `events.${type}`;
+    const fields = fieldRecord(
+      option,
+      payload,
+      `a record of payload fields; ${EACH_FIELD}, such as { group: m.int(1, 2) }, or {} for none`,
+    );
+    if (Object.hasOwn(fields, "type")) {
+      throw new TypeError(
+        `checkMachine can't take ${option}.type: an event's type is its key in events`,
+      );
+    }
+    return [[type, plainFields(option, fields)] as const];
+  });
+
 const eventListOf = (events: MachineEvents<AnyStateMachine>): EventList => {
   if (typeof events === "function") {
     return events;
@@ -255,19 +345,14 @@ const eventListOf = (events: MachineEvents<AnyStateMachine>): EventList => {
   if (Array.isArray(events)) {
     return () => events;
   }
-  const declared: readonly (readonly [string, Schema | undefined])[] = Object.entries(events);
-  const listed = declared.flatMap(([type, payload]) => {
-    if (payload === undefined) {
-      return [];
-    }
-    if (Object.hasOwn(payload, "type")) {
-      throw new TypeError(
-        `checkMachine can't take events.${type}.type: an event's type is its key in events`,
-      );
-    }
-    const fields = Object.fromEntries(plainFields(`events.${type}`, payload));
+  const schema = fieldRecord(
+    "events",
+    events,
+    "a list of events, a function that gives one, or a record of event types, such as { ENTER: { group: m.int(1, 2) } }",
+  );
+  const listed = payloadsOf(schema).flatMap(([type, fields]) => {
     try {
-      return combinationsOf(fields).map((row) => ({ type, ...row }));
+      return combinationsOf(Object.fromEntries(fields)).map((row) => ({ type, ...row }));
     } catch (error) {
       throw new RangeError(
         `checkMachine can't list the payloads of events.${type}: ${error instanceof Error ? error.message : String(error)}`,
@@ -285,6 +370,16 @@ const eventsToTry = (events: EventList, snapshot: AnyMachineSnapshot) => {
   return events(snapshot).filter((event) => snapshot.can(event));
 };
 
+const isPlainData = (value: unknown): boolean => {
+  if (typeof value !== "object" || value === null) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isPlainData);
+  }
+  return isPlain(value) && Object.values(value).every(isPlainData);
+};
+
 const withoutUndefined = (value: unknown): unknown =>
   typeof value === "object" && value !== null && !Array.isArray(value) && isPlain(value)
     ? Object.fromEntries(
@@ -294,18 +389,22 @@ const withoutUndefined = (value: unknown): unknown =>
       )
     : value;
 
+const inRange = (declared: Declared, value: unknown): boolean =>
+  value === undefined
+    ? declared.kind === "optional"
+    : isPlainData(value) && declared.has(withoutUndefined(value));
+
 const outsideOf =
-  (fields: readonly (readonly [string, Declared])[]) =>
+  (fields: Fields) =>
   ({ snapshot }: Reached): string | null => {
     const context: unknown = snapshot.context;
     const field = fields.find(
       ([name, declared]) =>
-        !declared.has(
-          withoutUndefined(
-            typeof context === "object" && context !== null
-              ? Reflect.get(context, name)
-              : undefined,
-          ),
+        !inRange(
+          declared,
+          typeof context === "object" && context !== null && Object.hasOwn(context, name)
+            ? Reflect.get(context, name)
+            : undefined,
         ),
     );
     return field === undefined
@@ -335,7 +434,17 @@ const check = (
   options: CheckMachineOptions<AnyStateMachine>,
 ): MachineCheck<AnyStateMachine> => {
   const events = eventListOf(options.events);
-  const context = options.context === undefined ? null : plainFields("context", options.context);
+  const context =
+    options.context === undefined
+      ? null
+      : plainFields(
+          "context",
+          fieldRecord(
+            "context",
+            options.context,
+            `a record of context fields; ${EACH_FIELD}, such as { visitors: m.int(0, 3) }`,
+          ),
+        );
   const found = search({
     ...stepping(machine, {
       ...(options.input === undefined ? {} : { input: options.input }),
@@ -393,7 +502,9 @@ const check = (
  * error thrown by a guard, an `assign`, the context factory or a rule is thrown by
  * `checkMachine`, also one XState catches into a snapshot whose status is `error`. A
  * declaration in `context` or in an event schema whose values are not plain JavaScript, such as
- * `m.set(...)`, is a `TypeError` before the search starts, naming the option and the field.
+ * `m.set(...)`, is a `TypeError` before the search starts, naming the option and the field. So
+ * is an entry that is no declaration at all, such as a number or an uncalled `m.int`, and an
+ * event type whose payload is not a plain record of fields, a whole `m.record(...)` included.
  */
 export const checkMachine = <TMachine extends AnyStateMachine>(
   machine: TMachine,

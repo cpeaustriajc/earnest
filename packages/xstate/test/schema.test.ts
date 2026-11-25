@@ -176,7 +176,7 @@ const kinds = [
   ["enum", m.enum(["a", "b"]), ["a", "b"], ["c", undefined]],
   ["oneOf of numbers", m.oneOf([2, 4]), [2, 4], [3, "2"]],
   ["oneOf of booleans", m.oneOf([true]), [true], [false]],
-  ["optional", m.int(0, 1).optional(), [null, 0, 1], [2, undefined]],
+  ["optional", m.int(0, 1).optional(), [null, 0, 1], [2]],
   [
     "record",
     m.record({ on: m.boolean(), level: m.int(0, 1).optional() }),
@@ -225,13 +225,13 @@ for (const [name, declared, inside, outside] of kinds) {
   });
 }
 
-test("a context field that is missing is out of range, even when its declaration is optional", () => {
+test("a context field that is missing is in range when its declaration is optional", () => {
   const found = checkMachine(holding, {
     input: { held: undefined },
     events: [],
     context: { held: m.boolean().optional() },
   });
-  expect(found.findings.map(({ kind }) => kind)).toStrictEqual(["out-of-range"]);
+  expect(found.findings.map(({ kind }) => kind)).toStrictEqual(["stuck"]);
 });
 
 const refused = [

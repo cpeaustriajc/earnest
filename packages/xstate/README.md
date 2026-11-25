@@ -224,10 +224,17 @@ nothing is searched from 4 or 5.
   no rule is judged in it, and nothing is searched from it. `findings` gives the first one, as
   `out-of-range` with its shortest path and the message ``the context field `visitors` leaves the
   values it declares``. The check fails, and a rule not seen broken is `unknown`.
-- A field the schema names but the context lacks, or holds `undefined`, is out of range: no
-  declaration has `undefined`. Declare `.optional()` and set the field to `null` instead. Inside
-  a record, a field set to `undefined` is the same as no field, as it is in the state. A field
-  the schema does not name is not checked.
+- A field the schema names but the context lacks, or holds `undefined`, is out of range, unless
+  its declaration is `.optional()`: an optional field is in range when it is missing,
+  `undefined` or `null`. For the context `{ mode: "on"; level: number } | { mode: "off" }`,
+  declare `context: { level: m.int(0, 3).optional() }`; without `.optional()`, every snapshot of
+  the member that lacks `level` is out of range. An optional declaration so no longer tells a
+  stray `undefined` from `null`.
+  Inside a record, a field set to `undefined` is the same as no field, as it is in the state, and
+  a missing field is out of range even when it is optional. A field the schema does not name is
+  not checked.
+- A value a record declaration checks must be plain data at every level. An object that is not
+  a plain object, such as a `Date` where `m.record({})` is declared, is out of range.
 - `events` can be a record of event types, each with a declaration for each payload field, such
   as `{ PAY: { coins: m.int(1, 2) }, PUSH: {} }`. Each type is tried with every combination of
   its fields' values, the first field varying fastest, as `explore` tries an action's inputs
@@ -237,13 +244,20 @@ nothing is searched from 4 or 5.
   payload arrives frozen and is shared by every snapshot it is sent from: copy it, never change
   it in place.
 - The keys of `context`, the event types and their fields are checked against the machine's
-  types, so a misspelt one does not compile.
+  types, so a misspelt one does not compile. `context` may name a field of any member of a union
+  context.
 - The declarations must hold plain JavaScript values: `m.boolean()`, `m.int`, `m.enum`,
   `m.oneOf`, `.optional()` of those, and `m.record` of all of these. A set, map, sequence,
   queue, lock, timer, request or retry, also inside an optional or a record, holds objects of
   `@earnestjs/model` that a context or an event does not, and `checkMachine` throws a
   `TypeError` that names the field before it searches, as in `checkMachine can't take
   context.tags, a set declaration`.
+- An entry that is not a declaration, which plain JavaScript or a cast lets through, is a
+  `TypeError` before the search too. It names the entry and says what it found: `checkMachine
+  can't take context.visitors: it is the number 1, not a declaration; write one with m from
+  @earnestjs/model, such as m.int(0, 3), or m.record({ ... }) for an object`. An event type's entry must be a record of payload
+  fields, `{}` for none; anything else, a whole `m.record(...)` included, is refused the same
+  way.
 
 ## Limits
 

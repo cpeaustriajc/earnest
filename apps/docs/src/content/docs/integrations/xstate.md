@@ -293,7 +293,10 @@ The counts 0 to 3 are in range. Groups of 1 and 2 reach 4 and 5 from them, and t
 - The state is counted, no rule is judged in it, and nothing is searched from it.
 - `findings` gives the first one as `out-of-range`, with its shortest path and a message that names the field.
 - The check fails, and a rule not seen broken is `unknown`.
-- A field the schema names but the context lacks, or holds `undefined`, is out of range. Declare `.optional()` and set the field to `null` instead.
+- A field the schema names but the context lacks, or holds `undefined`, is out of range, unless its declaration is `.optional()`. An optional field is in range when it is missing, `undefined` or `null`, so it does not tell a stray `undefined` from `null`.
+- For the union context `{ mode: "on"; level: number } | { mode: "off" }`, declare `context: { level: m.int(0, 3).optional() }`. Without `.optional()`, every snapshot of the member that lacks `level` is out of range.
+- Inside a record, a field set to `undefined` is the same as no field, and a missing field is out of range even when it is optional.
+- A value a record declaration checks must be plain data at every level. An object that is not a plain object, such as a `Date` where `m.record({})` is declared, is out of range.
 - A field the schema does not name is not checked.
 
 ### Declare event payloads
@@ -309,7 +312,9 @@ The counts 0 to 3 are in range. Groups of 1 and 2 reach 4 and 5 from them, and t
 
 The declarations must hold plain JavaScript values: `m.boolean()`, `m.int`, `m.enum`, `m.oneOf`, `.optional()` of those, and `m.record` of all of these. A set, map, sequence, queue, lock, timer, request or retry holds objects of `@earnestjs/model` that a context or an event does not. `checkMachine` throws a `TypeError` that names the field before it searches.
 
-The keys of `context`, the event types and their payload fields are checked against the machine's types, so a misspelt one does not compile.
+An entry that is not a declaration, which plain JavaScript or a cast lets through, is also a `TypeError` before the search. The message names the entry and says what was found, as in ``checkMachine can't take context.visitors: it is the number 1, not a declaration; write one with m from @earnestjs/model, such as m.int(0, 3), or m.record({ ... }) for an object``. An event type's entry must be a record of payload fields, `{}` for none. Anything else, a whole `m.record(...)` included, is refused the same way.
+
+The keys of `context`, the event types and their payload fields are checked against the machine's types, so a misspelt one does not compile. `context` may name a field of any member of a union context.
 
 ## What Earnest adds
 
