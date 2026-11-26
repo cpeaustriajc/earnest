@@ -45,6 +45,12 @@ pub(crate) struct Choice {
     pub(crate) slot: usize,
     pub(crate) domain: Domain,
     pub(crate) values: Vec<Value>,
+    pub(crate) from: Option<Expr>,
+}
+
+pub(crate) enum Picked {
+    Listed(Domain, Vec<Value>),
+    Computed(Expr),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -624,7 +630,19 @@ impl<'a> Reader<'a> {
         Self::checked(all)
     }
 
-    pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<(Domain, Vec<Value>)> {
+    pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<Picked> {
+        let id = match &opdef.expr {
+            Quint::App { id, .. } => *id,
+            _ => opdef.id,
+        };
+        self.picked_from_set(opdef)
+            .map_err(|refused| match refused.id {
+                Some(_) => refused,
+                None => refused.at(id),
+            })
+    }
+
+    fn picked_from_set(&mut self, opdef: &'a Def) -> Read<Picked> {
         let feature = format!("`nondet {}`", opdef.name);
         let Quint::App { opcode, args, .. } = &opdef.expr else {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");
@@ -635,7 +653,24 @@ impl<'a> Reader<'a> {
         if builtin(opcode) != Some(Builtin::OneOf) {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");
         }
-        let computed = "`oneOf` over a set computed from the state or from another `nondet`";
+        if let Quint::Name { name, .. } = source {
+            match name.as_str() {
+                "Bool" => {
+                    let values = vec![Value::Bool(false), Value::Bool(true)];
+                    return Ok(Picked::Listed(Domain::Bool, values));
+                }
+                "Int" | "Nat" => {
+                    return self.refuse(
+                        &feature,
+                        &format!(
+                            "`{name}.oneOf()` picks among numbers without end, which the checker \
+                             cannot list: pick from a range such as `0.to(9)`"
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
         if let Quint::App { opcode, args, .. } = source
             && builtin(opcode) == Some(Builtin::Range)
         {
@@ -644,7 +679,12 @@ impl<'a> Reader<'a> {
             for each in &ends {
                 match constant(each, self.slots)? {
                     Some(Value::Int(number)) => numbers.push(number),
-                    _ => return self.refuse(&feature, computed),
+                    Some(_) => {
+                        return self.refuse("`to`", "a range whose ends are not integers");
+                    }
+                    None => {
+                        return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
+                    }
                 }
             }
             let [lo, hi] = numbers.as_slice() else {
@@ -658,7 +698,7 @@ impl<'a> Reader<'a> {
                 );
             }
             let values = domain.values();
-            return Ok((domain, values));
+            return Ok(Picked::Listed(domain, values));
         }
         let set = self.pure(source)?;
         match constant(&set, self.slots)? {
@@ -670,15 +710,18 @@ impl<'a> Reader<'a> {
                     );
                 }
                 let values: Vec<Value> = items.iter().cloned().collect();
-                Ok((Domain::OneOf(values.clone()), values))
+                Ok(Picked::Listed(Domain::OneOf(values.clone()), values))
             }
             Some(_) => self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set"),
-            None => self.refuse(&feature, computed),
+            None => Ok(Picked::Computed(set)),
         }
     }
 
     fn nondet(&mut self, opdef: &'a Def, body: &'a Quint) -> Read<Vec<Path>> {
-        let (domain, values) = self.picked_from(opdef)?;
+        let (domain, values, from) = match self.picked_from(opdef)? {
+            Picked::Listed(domain, values) => (domain, values, None),
+            Picked::Computed(set) => (Domain::Any, Vec::new(), Some(set)),
+        };
         let slot = self.slots;
         self.slots += 1;
         let mut paths = self.with_bound(opdef.id, Bound::Value(Expr::Local(slot)), |reader| {
@@ -694,6 +737,7 @@ impl<'a> Reader<'a> {
             slot,
             domain,
             values,
+            from,
         };
         for path in &mut paths {
             path.choices.insert(0, choice.clone());
