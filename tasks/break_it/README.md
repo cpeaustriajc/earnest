@@ -907,3 +907,138 @@ without a number TLC can't hold, and for a quantifier, where it is stricter.
 
 `--time-limit` across `--jobs` (timed). tla-rs. Windows. A `confirm` that is excused for a
 true difference, as above.
+
+## Seventh pass
+
+A seventh adversarial pass, made on commit d82552f against the code for witnesses, rules about
+runs (`m.eventually` and `fair: true`) and setups (`m.setup`), in TypeScript models. Its tests
+are in `tests/break_it/seventh.rs` and its files in `models/seventh/`. Every file passes `tsc`
+with `strict` against `packages/model`. Every number below is derived by hand from the model and
+the contract (the brief of issue #51, `packages/model/src/model.ts`, `reference/output.md`).
+Each test fails today. TLC could not be run in this pass (see "Not covered").
+
+### `--rule` refused for every model that has a setup
+
+`seventh/jar.model.ts`, model `Jar`: `n` from 0, `cap` 2, `add` while `n < cap`, `full` at `n ===
+cap`, the rule `low` (`s.n <= 1`) and the setup `small` (`cap: 1`). As declared: `n` 0, 1, 2 (3
+states), `low` broken after two steps. In `small`: `n` 0, 1 (2 states), `low` holds. `verify
+--rule low` checks the one model that has `low`, in both of its runs, and exits 1. Today it
+prints ``error: the rule `low` is in the models `Jar`, `Jar`: name one with `--model` `` and
+exits 2, for every rule, eventually rule and witness of the declared run; the advice can't be
+followed, since `--model Jar` names both runs (with `--model Jar` the run works). Cause:
+`apps/earnest/src/select.rs`, the match on `with_rule.len()`, counts each setup's run as another
+model. `earnest tla` has the same advice for two setups whose ids give one module name (`$one`
+and `_one` both give `Jar__one`). Test:
+`a_rule_of_a_model_with_a_setup_can_be_chosen_with_rule_alone`.
+
+### `--base` does not list a removed eventually rule or witness
+
+`seventh/changes/before/climb.model.ts`: `Climb` (`n` 0 to 3) with the eventually rule `climbs`
+and the witness `three`; `after/climb.model.ts` is the same file without both. With `--base
+HEAD`, `removed` is "present at `--base`, absent in the working tree (deleted rule ...)", and
+both are listed in `rules` (with a `kind`). Today `ruleChanges` is empty; a removed setup is not
+listed either, though it takes a whole run away. Right result: `climbs` and `three` `removed`.
+Cause: `model_changes` in `apps/earnest/src/changes.rs` compares only `draft.rules`, never
+`draft.runs`. Test: `a_removed_rule_about_runs_and_a_removed_witness_are_listed_as_removed`.
+
+### A rule loosened in a setup's states is listed as `changed`
+
+`seventh/changes/{before,after}/large.model.ts`: `Jar` with `cap` 1 as declared and the setup
+`large` (`cap: 2`); only `low` changes, from `s.n <= 1` to `s.n <= 2`. As declared `n` is 0 or 1,
+where the two conditions agree. In `large` the state `n = 2, cap = 2` is reached after two
+steps: it passes the new rule and breaks the old one, and the run `Jar (large)` goes from `fail`
+to `pass`. `loosened` is "some reachable state of the new model satisfies the new rule and breaks
+the old rule". Today: `changed`. Cause: `rule_changes` in `apps/earnest/src/changes.rs` keeps
+only the target with `runs.chosen.is_none()` and `told_apart` searches the declared start states
+only. Test: `a_rule_loosened_in_the_states_of_a_setup_is_listed_as_loosened`.
+
+### Two models of one name on one line share a cached result
+
+`seventh/one_line.model.ts`: `export const A = m.model("Jar", ...); export const B =
+m.model("Jar", ...);` on line 3. `A`: `n` 0 to 2, an end at 2, no rule: `pass`, 3 states. `B`:
+`k` 0, 1, an end at 1, `lowB` (`s.k === 0`) broken after one step: `fail`, 2 states. The first
+`verify --json` says exactly that and exits 1. The second, from `.earnest/`, says `pass`, 3
+states for both and exits 0: a broken rule is gone. Cause: `ModelResult::is_of` in
+`apps/earnest/src/run.rs` finds a cached result by name, line and setup id, which both models
+share. Test: `two_models_of_one_name_on_one_line_keep_their_own_cached_results`.
+
+### Two models of one name in one file are compared with each other under `--base`
+
+`seventh/changes/{before,after}/twins.model.ts`: `A = m.model("Jar", ...)` (`n` 0 to 2, rule
+`lowA`) and `B = m.model("Jar", ...)` (`n` 0 to 3, rule `lowB`). With the file as committed,
+`--base HEAD` lists `lowB` `added` and `lowA` `removed`, though nothing changed ("unchanged rules
+are omitted"). After `lowB` goes from `s.n <= 1` to `s.n <= 2` (`n = 2` is reached in `B`, so it
+is `loosened`), the list is the same two wrong entries and the loosening is not listed. Right
+result: nothing, then `lowB` `loosened` alone. Cause: `rule_changes` in
+`apps/earnest/src/changes.rs` pairs each model with `old.iter().find(|draft| draft.name ==
+new.name)`, the first base model of that name, for both. The fourth pass found two files with a
+model of one name each correct. Test:
+`two_models_of_one_name_in_one_file_are_each_compared_with_their_own_base`.
+
+### Settled after the pass
+
+All five tests pass. The runs of one model (as declared and in each setup) are one model to
+`--rule`, so `--rule low` checks `low` in both runs of `Jar` (unit tests in
+`apps/earnest/src/select.rs`); `tla` and `confirm` number two runs of one model whose module
+names TLA+ spells alike apart (`Jar__one`, `Jar__one_2`), and still refuse two models of one
+name (tests in `apps/earnest/src/commands.rs`). `--base` lists rules about runs, witnesses and
+setups as `added`, `removed`, `reworded` or `changed`, with `kind` in JSON and the kind in
+round brackets after the id in text: a witness and a setup keep their source text in the
+TypeScript reader, and an eventually rule is compared by its `after` and `reaches` (tests in
+`apps/earnest/src/changes.rs`, `crates/earnest_ts/src/members.rs` and
+`crates/earnest_chart/tests/writer/report.rs`). A rule is `loosened` or `tightened` when a
+state of the model as declared or of any of its setups tells the old rule from the new. Two
+models of one name in one file are told apart by their order in the file, in the cache and
+under `--base`; `unreadable` was not taken, since the tests of this pass ask for both models
+to be checked (unit tests in `apps/earnest/src/run.rs` and `changes.rs`). `m.step((inc), {})`
+is read as `m.step(inc, {})`. The Rust reader reads no witness or setup yet, so the source
+text of both is filled in by the TypeScript reader only.
+
+### Attacked and found correct
+
+Each compared with `explore` in Node (status, states, rules with paths, reasons and
+`repeatsFrom`, findings) and derived by hand:
+
+- Weak fairness: a fair action enabled at one state of a loop (broken, the loop passes a state
+  where it is off), two fair actions each enabled at one state of a loop, a fair action with an
+  input of which one value stutters and one leaves the loop (holds), a fair action that only
+  stutters, an end inside a loop (the run goes on), a stuck state, several start states, `after`
+  true at a start, true only where `reaches` is, true in no reachable state, a loop reached only
+  after `reaches` held; the TLA+ export of each (`WF_vars(Next)`, one `WF_vars` per fair action,
+  `<>` and `~>`).
+- Shortest paths: grids of 90 751 and 4 004 031 states whose nearest loop is 551 and 3 991
+  steps in, 4 steps long (`--jobs 1` and `4`, the same path), a triangle of 80 601 states with 401 stuck states at the same depth and
+  `after` at the middle (the same tie broken the same way by the checker, Node and every
+  `--jobs`).
+- `unknown`: `--max-states` under, at and over the count, an out-of-range step, a fault in an
+  action's change, a fault in an end; a fault in another plain rule leaves the eventually rule
+  judged (`holds`), the same in Node.
+- Setups of an optional, a record with its fields out of order, a set of records, a sequence, a
+  sum and a constant, `null` for an optional, a field with several start values; witnesses that
+  name a setup are played and listed in its run only; `explore` with `setup` agrees on every
+  run; `tla` gives each setup its own `Init`.
+- Witness inputs: a negative constant, `1 + 1`, `-0`, `2e0`, `0x1`, `1_0`, a record, a set with
+  a repeated member, `null` for an optional; `m.step` on an action without inputs.
+- The reader: 31 spellings of `m.eventually`, `m.setup` and `m.witness` (`&&`, `.call`, `m[".."]`,
+  a comma, an IIFE, a record, a list, destructuring, `satisfies`, `!`, `let`, `var`, `export
+  default`, a bare statement, a block, `if`, `export { x as y }`, an import of the model from
+  another file): each refused with a sentence, none dropped. `after: undefined`, `fair:
+  undefined`, `setup: undefined`, `{ reaches }` written short and `m.step((inc), {})` are legal
+  TypeScript and refused.
+- TLA+ names: fields `Spec`, `vars`, `ELSE` and `Action_go` beside an action `go`, ids with `$`
+  and `é`, `a$` beside `a_`, `ok$` beside `ok_`: each renamed apart; a model `Jar_big` beside the
+  setup `big` of `Jar` is refused. Sentences with quotes, `\`, tabs and line breaks in text,
+  JSON and the report.
+- `--jobs` 1, 2, 3, 4 and 8 and three cached runs over 13 files with setups: identical JSON.
+
+### Seen, not written up
+
+- A model named `"Jar (big)"` beside the setup `big` of `Jar` gives two text lines `Jar (big)`
+  (the JSON tells them apart by `setup`).
+- `earnest chart` prints one diagram per run with no word of which setup it is.
+
+### Not covered
+
+TLC: `earnest confirm --tlc` and running `tla2tools.jar` were refused by this session's
+permission rules, so no eventually verdict was compared with TLC; the exports were read by hand.
+tla-rs. `--time-limit`.

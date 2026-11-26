@@ -562,6 +562,7 @@ State 1: <Initial predicate>
 
     fn checked(states: usize, rules: &[(&str, &str)]) -> Checked {
         Checked {
+            position: 0,
             result: ModelResult {
                 name: "Oven".to_owned(),
                 setup: None,

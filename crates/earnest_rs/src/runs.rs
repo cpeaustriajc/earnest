@@ -321,6 +321,7 @@ impl Reader<'_> {
             says,
             place: place_of(signature.fn_token.span),
             starts,
+            text: self.body_text(&method.block),
         })
     }
 
@@ -387,6 +388,11 @@ impl Reader<'_> {
         let expect = self.term(condition);
         self.witness_state = None;
         self.bound.truncate(kept);
+        let body = self.body_text(&method.block);
+        let text = match &setup {
+            Some((named, _)) => format!("setup = {named}; {body}"),
+            None => body,
+        };
         Some(WitnessDraft {
             id,
             says: written.says,
@@ -395,6 +401,7 @@ impl Reader<'_> {
             steps,
             state_name: Some(state),
             expect,
+            text,
         })
     }
 

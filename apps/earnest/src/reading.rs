@@ -11,6 +11,7 @@ const REPORTED_BY_ID: [&str; 3] = ["rule", "eventually", "witness"];
 pub(crate) struct Readable {
     pub(crate) draft: Draft,
     pub(crate) model: Model,
+    pub(crate) position: usize,
 }
 
 #[derive(Debug)]
@@ -154,7 +155,7 @@ fn understand(reading: Reading) -> Content {
     }
     let mut models = Vec::with_capacity(reading.drafts.len());
     let mut problems = Vec::new();
-    for draft in reading.drafts {
+    for (position, draft) in reading.drafts.into_iter().enumerate() {
         match lower(&draft) {
             Ok(model) => {
                 let in_setups: Vec<Model> = (0..model.runs.setups.len())
@@ -163,10 +164,12 @@ fn understand(reading: Reading) -> Content {
                 models.push(Readable {
                     draft: draft.clone(),
                     model,
+                    position,
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
                     draft: draft.clone(),
                     model,
+                    position,
                 }));
             }
             Err(found) => problems.extend(found),

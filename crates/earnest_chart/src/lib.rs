@@ -16,7 +16,7 @@ mod report;
 mod select;
 mod text;
 
-pub use changes::{ChangeKind, RuleChange, RuleChanges, RuleText, rule_change_lines};
+pub use changes::{ChangeKind, ChangedPart, RuleChange, RuleChanges, RuleText, rule_change_lines};
 pub use markdown::one_line;
 pub use mermaid::{chart, chart_outline, chart_with_limit};
 pub use report::{

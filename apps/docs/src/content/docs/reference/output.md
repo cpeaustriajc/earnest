@@ -187,15 +187,33 @@ JSON output populates `ruleChanges`:
 
 Every change includes its file path (the last field in text/report output and `file` in JSON), distinguishing two models with the same name in different files.
 
+Rules about runs (`m.eventually`), witnesses and setups (`m.setup`) are listed too. Their kind follows the id in round brackets in text and report output, and is `kind` in JSON: `"eventually"`, `"witness"` or `"setup"`. A plain rule has no `kind` key and nothing after its id.
+
+```text
+rule changes since origin/main
+  removed    Climb.climbs (eventually)  "The count reaches three"  src/climb.model.ts
+  changed    Climb.half (setup)  src/climb.model.ts
+    was  "Half full"  { n: 2 }
+    now  "Half full"  { n: 1 }
+```
+
+Their `holds` is the source they are compared by, normalized as conditions are (see below):
+
+| Kind | `holds` |
+|---|---|
+| `eventually` | `reaches: <condition>`, or `after: <condition>; reaches: <condition>` when the rule has an `after` |
+| `witness` | The object with its `setup`, `steps` and `expect` |
+| `setup` | The object with the fields it starts elsewhere |
+
 ### Change kinds
 
 | `change` | Meaning |
 |---|---|
 | `added` | Present in the working tree, absent at `--base` |
 | `removed` | Present at `--base`, absent in the working tree (deleted rule, deleted model, deleted or renamed file, file that no longer imports the library, or file that became unreadable) |
-| `loosened` | Some reachable state of the new model satisfies the new rule and breaks the old rule |
-| `tightened` | Some reachable state satisfies the old rule and breaks the new rule, and no reachable state loosens it |
-| `changed` | The condition changed semantically, but no reachable state separates old and new, the old condition cannot be evaluated against the new model, or one condition faults without another state loosening or tightening it |
+| `loosened` | Some reachable state of the new model, as declared or in one of its setups, satisfies the new rule and breaks the old rule |
+| `tightened` | Some reachable state, as declared or in one of its setups, satisfies the old rule and breaks the new rule, and no reachable state loosens it |
+| `changed` | The condition changed semantically, but no reachable state separates old and new, the old condition cannot be evaluated against the new model, or one condition faults without another state loosening or tightening it. A rule about runs, a witness or a setup whose `holds` changed is always `changed`: no state is searched for it |
 | `reworded` | Only the rule's sentence changed |
 
 Additional rules for `--base`:
@@ -203,6 +221,7 @@ Additional rules for `--base`:
 - Unchanged rules are omitted. Comments and whitespace edits do not count as changes; conditions are normalized so each run of whitespace is a single space.
 - Every shared rule is compared even if its own text was not edited. The base rule is evaluated using the constants and helpers from the base commit, so changing a constant or helper that weakens a rule still reports `loosened`.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
+- Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
 - Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
 - With `--model <name>`, removed models matching `<name>` are still reported even if the model no longer exists in the working tree; exit `2` occurs only when neither the working tree nor `--base` contains `<name>`.
 

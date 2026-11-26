@@ -210,11 +210,23 @@ pub fn limits(model: &Model) -> Vec<String> {
 /// has it; otherwise letters TLA+ lacks become `_` and a taken name gets `_2`, `_3` and so on.
 #[must_use]
 pub fn write(model: &Model) -> Files {
+    write_apart_from(model, &[])
+}
+
+/// [`write`], with a module name that is none of `modules`: when the name [`write`] gives is
+/// one of them, it gets `_2`, `_3` and so on, as a taken name does inside a module. Give it the
+/// names of the modules already written, so two runs of one model whose names TLA+ spells
+/// alike get files of their own.
+#[must_use]
+pub fn write_apart_from(model: &Model, modules: &[&str]) -> Files {
     let mut names = Names::of_a_module(EVERY_HELPER.iter().map(|helper| helper.name()));
-    let name = names.claim(&match model.setup() {
-        Some(setup) => format!("{}_{}", model.name, setup.id),
-        None => model.name.clone(),
-    });
+    let name = names.claim_apart_from(
+        &match model.setup() {
+            Some(setup) => format!("{}_{}", model.name, setup.id),
+            None => model.name.clone(),
+        },
+        modules,
+    );
     let variables: Vec<Variable> = model
         .fields
         .iter()

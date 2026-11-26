@@ -4,8 +4,8 @@ use crate::discovery::{
 use crate::reading::{ModelFile, read};
 use crate::run::Bounds;
 use crate::select::Target;
-use earnest_ast::{Draft, RuleDraft};
-use earnest_chart::{ChangeKind, RuleChange, RuleText};
+use earnest_ast::{ConditionDraft, Draft, RuleDraft};
+use earnest_chart::{ChangeKind, ChangedPart, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
 use earnest_ir::{Code, Expr, Model, Op, Rule};
 use earnest_semantic::lower_with_earlier;
@@ -23,6 +23,24 @@ pub(crate) enum Kind {
     Tightened,
     Changed,
     Reworded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Part {
+    Eventually,
+    Witness,
+    Setup,
+}
+
+impl Part {
+    fn for_the_chart(self) -> ChangedPart {
+        match self {
+            Self::Eventually => ChangedPart::Eventually,
+            Self::Witness => ChangedPart::Witness,
+            Self::Setup => ChangedPart::Setup,
+        }
+    }
 }
 
 impl Kind {
@@ -66,6 +84,8 @@ pub(crate) struct Difference {
     pub(crate) model: String,
     pub(crate) id: String,
     pub(crate) change: Kind,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub(crate) part: Option<Part>,
     pub(crate) was: Option<Wording>,
     pub(crate) now: Option<Wording>,
 }
@@ -77,6 +97,7 @@ impl Difference {
             model: &self.model,
             id: &self.id,
             change: self.change.for_the_chart(),
+            part: self.part.map_or(ChangedPart::Rule, Part::for_the_chart),
             was: self.was.as_ref().map(Wording::for_the_chart),
             now: self.now.as_ref().map(Wording::for_the_chart),
         }
@@ -267,13 +288,7 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
 }
 
 fn by_wording(was: &RuleDraft, now: &RuleDraft) -> Option<Kind> {
-    if was.text != now.text {
-        Some(Kind::Changed)
-    } else if was.says != now.says {
-        Some(Kind::Reworded)
-    } else {
-        None
-    }
+    by_text(&Wording::of(was), &Wording::of(now))
 }
 
 fn told_apart(
@@ -308,7 +323,12 @@ fn told_apart(
             ]
         })
         .collect();
-    let broken = broken_rules(model.clone(), compared, bounds);
+    let in_setups = (0..model.runs.setups.len()).filter_map(|position| model.in_setup(position));
+    let runs: Vec<Model> = std::iter::once(model.clone()).chain(in_setups).collect();
+    let broken: Vec<String> = runs
+        .into_iter()
+        .flat_map(|run| broken_rules(run, compared.clone(), bounds))
+        .collect();
     pairs
         .iter()
         .zip(&lowered)
@@ -329,8 +349,74 @@ fn told_apart(
         .collect()
 }
 
-fn one_sided(file: &str, model: &str, rule: &RuleDraft, change: Kind) -> Difference {
-    let wording = Some(Wording::of(rule));
+#[derive(Clone)]
+struct Named<'d> {
+    id: &'d str,
+    part: Option<Part>,
+    wording: Wording,
+}
+
+impl<'d> Named<'d> {
+    fn rule(rule: &'d RuleDraft) -> Self {
+        Self {
+            id: &rule.id,
+            part: None,
+            wording: Wording::of(rule),
+        }
+    }
+
+    fn part(id: &'d str, part: Part, says: &str, holds: String) -> Self {
+        Self {
+            id,
+            part: Some(part),
+            wording: Wording {
+                says: says.to_owned(),
+                holds,
+            },
+        }
+    }
+
+    fn is_the_same_as(&self, other: &Self) -> bool {
+        self.id == other.id && self.part == other.part
+    }
+}
+
+fn condition_of(after: Option<&ConditionDraft>, reaches: &ConditionDraft) -> String {
+    match after {
+        Some(after) => format!("after: {}; reaches: {}", after.text, reaches.text),
+        None => format!("reaches: {}", reaches.text),
+    }
+}
+
+fn about_runs(draft: &Draft) -> Vec<Named<'_>> {
+    let runs = &draft.runs;
+    let eventually = runs.eventually.iter().map(|rule| {
+        let holds = condition_of(rule.after.as_ref(), &rule.reaches);
+        Named::part(&rule.id, Part::Eventually, &rule.says, holds)
+    });
+    let witnesses = runs.witnesses.iter().map(|witness| {
+        Named::part(
+            &witness.id,
+            Part::Witness,
+            &witness.says,
+            witness.text.clone(),
+        )
+    });
+    let setups = runs
+        .setups
+        .iter()
+        .map(|setup| Named::part(&setup.id, Part::Setup, &setup.says, setup.text.clone()));
+    eventually.chain(witnesses).chain(setups).collect()
+}
+
+fn every_part(draft: &Draft) -> Vec<Named<'_>> {
+    let mut parts: Vec<Named<'_>> = draft.rules.iter().map(Named::rule).collect();
+    parts.extend(about_runs(draft));
+    parts
+}
+
+fn one_sided(file: &str, model: &str, named: Named<'_>, change: Kind) -> Difference {
+    let wording = Some(named.wording);
     let (was, now) = match change {
         Kind::Removed => (wording, None),
         Kind::Added | Kind::Loosened | Kind::Tightened | Kind::Changed | Kind::Reworded => {
@@ -340,11 +426,52 @@ fn one_sided(file: &str, model: &str, rule: &RuleDraft, change: Kind) -> Differe
     Difference {
         file: file.to_owned(),
         model: model.to_owned(),
-        id: rule.id.clone(),
+        id: named.id.to_owned(),
         change,
+        part: named.part,
         was,
         now,
     }
+}
+
+fn by_text(was: &Wording, now: &Wording) -> Option<Kind> {
+    if was.holds != now.holds {
+        Some(Kind::Changed)
+    } else if was.says != now.says {
+        Some(Kind::Reworded)
+    } else {
+        None
+    }
+}
+
+fn changes_about_runs(old: Option<&Draft>, new: &Draft) -> Vec<Difference> {
+    let old_parts = old.map_or_else(Vec::new, about_runs);
+    let new_parts = about_runs(new);
+    let mut changes = Vec::new();
+    for now in &new_parts {
+        let Some(was) = old_parts.iter().find(|was| was.is_the_same_as(now)) else {
+            changes.push(one_sided(&new.file, &new.name, now.clone(), Kind::Added));
+            continue;
+        };
+        if let Some(change) = by_text(&was.wording, &now.wording) {
+            changes.push(Difference {
+                file: new.file.clone(),
+                model: new.name.clone(),
+                id: now.id.to_owned(),
+                change,
+                part: now.part,
+                was: Some(was.wording.clone()),
+                now: Some(now.wording.clone()),
+            });
+        }
+    }
+    changes.extend(
+        old_parts
+            .into_iter()
+            .filter(|was| !new_parts.iter().any(|now| now.is_the_same_as(was)))
+            .map(|was| one_sided(&new.file, &new.name, was, Kind::Removed)),
+    );
+    changes
 }
 
 pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) -> Vec<Difference> {
@@ -360,7 +487,7 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
         .rules
         .iter()
         .filter(|now| was_of(&now.id).is_none())
-        .map(|now| one_sided(&new.file, &new.name, now, Kind::Added))
+        .map(|now| one_sided(&new.file, &new.name, Named::rule(now), Kind::Added))
         .collect();
     for ((was, now), kind) in kept.iter().zip(kinds) {
         if let Some(change) = kind {
@@ -369,6 +496,7 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
                 model: new.name.clone(),
                 id: now.id.clone(),
                 change,
+                part: None,
                 was: Some(Wording::of(was)),
                 now: Some(Wording::of(now)),
             });
@@ -380,8 +508,9 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
         old_rules
             .iter()
             .filter(|was| !new.rules.iter().any(|now| now.id == was.id))
-            .map(|was| one_sided(&new.file, &new.name, was, Kind::Removed)),
+            .map(|was| one_sided(&new.file, &new.name, Named::rule(was), Kind::Removed)),
     );
+    changes.extend(changes_about_runs(old, new));
     changes
 }
 
@@ -423,18 +552,41 @@ impl Compare<'_> {
     }
 }
 
+fn namesakes_before(drafts: &[&Draft], position: usize) -> usize {
+    let Some(draft) = drafts.get(position) else {
+        return 0;
+    };
+    drafts
+        .iter()
+        .take(position)
+        .filter(|earlier| earlier.name == draft.name)
+        .count()
+}
+
+fn namesake<'d>(drafts: &[&'d Draft], name: &str, namesakes_before: usize) -> Option<&'d Draft> {
+    drafts
+        .iter()
+        .filter(|draft| draft.name == name)
+        .nth(namesakes_before)
+        .copied()
+}
+
 pub(crate) fn removed_with_their_model(
     compare: &Compare<'_>,
     old: &[Draft],
-    now: &[&str],
+    now: &[&Draft],
 ) -> Vec<Difference> {
+    let old: Vec<&Draft> = old.iter().collect();
     old.iter()
-        .filter(|draft| !now.contains(&draft.name.as_str()) && compare.selects(draft))
-        .flat_map(|draft| {
-            draft
-                .rules
-                .iter()
-                .map(|rule| one_sided(&draft.file, &draft.name, rule, Kind::Removed))
+        .enumerate()
+        .filter(|(position, draft)| {
+            namesake(now, &draft.name, namesakes_before(&old, *position)).is_none()
+                && compare.selects(draft)
+        })
+        .flat_map(|(_, draft)| {
+            every_part(draft)
+                .into_iter()
+                .map(|part| one_sided(&draft.file, &draft.name, part, Kind::Removed))
         })
         .collect()
 }
@@ -465,20 +617,23 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             AtBase::Absent => Vec::new(),
             AtBase::Models(drafts) => drafts,
         };
+        let now: Vec<&Draft> = file
+            .models()
+            .iter()
+            .filter(|readable| readable.model.runs.chosen.is_none())
+            .map(|readable| &readable.draft)
+            .collect();
+        let old_drafts: Vec<&Draft> = old.iter().collect();
         for target in targets.iter().filter(|target| {
             target.file.path == file.path && target.readable.model.runs.chosen.is_none()
         }) {
             let new = &target.readable.draft;
-            let was = old.iter().find(|draft| draft.name == new.name);
+            let before = namesakes_before(&now, target.readable.position);
+            let was = namesake(&old_drafts, &new.name, before);
             compared
                 .changes
                 .extend(model_changes(was, new, compare.bounds));
         }
-        let now: Vec<&str> = file
-            .models()
-            .iter()
-            .map(|readable| readable.draft.name.as_str())
-            .collect();
         compared
             .changes
             .extend(removed_with_their_model(compare, &old, &now));
@@ -715,6 +870,7 @@ mod tests {
                     model: "Tank".to_owned(),
                     id: "fresh".to_owned(),
                     change: Kind::Added,
+                    part: None,
                     was: None,
                     now: Some(Wording {
                         says: "never seven".to_owned(),
@@ -726,6 +882,7 @@ mod tests {
                     model: "Tank".to_owned(),
                     id: "gone".to_owned(),
                     change: Kind::Removed,
+                    part: None,
                     was: Some(Wording {
                         says: "never five".to_owned(),
                         holds: "s.level !== 5".to_owned(),
@@ -773,6 +930,7 @@ mod tests {
             model: "Cart".to_owned(),
             id: "oneAddAtATime".to_owned(),
             change: Kind::Loosened,
+            part: None,
             was: Some(Wording {
                 says: "one".to_owned(),
                 holds: "s.inFlight <= 1".to_owned(),
@@ -1143,6 +1301,183 @@ mod tests {
             1,
             "the file is named as unreadable at the base: {:?}",
             compared.warnings("HEAD")
+        );
+    }
+
+    fn tank_and(runs: &str) -> Draft {
+        let source = format!("import {{ m }} from \"@earnestjs/model\";\n{REST_OF_THE_TANK}{runs}");
+        let mut reading = earnest_ts::read(FILE, &source);
+        assert!(
+            reading.problems.is_empty(),
+            "the test model is readable: {:?}",
+            reading.problems
+        );
+        reading.drafts.remove(0)
+    }
+
+    fn listed(old: &str, new: &str) -> Vec<(String, Kind, Option<super::Part>)> {
+        model_changes(Some(&tank_and(old)), &tank_and(new), bounds())
+            .into_iter()
+            .map(|change| (change.id, change.change, change.part))
+            .collect()
+    }
+
+    const FILLS: &str = "export const fills = m.eventually(Tank, \"it fills\", { reaches: (s) => s.level === 3 });\n";
+    const TWICE: &str = "export const twice = m.witness(Tank, \"twice\", { steps: [fill, fill], expect: (s) => s.level === 2 });\n";
+    const HALF: &str = "export const half = m.setup(Tank, \"half\", { level: 2 });\n";
+
+    #[test]
+    fn rules_about_runs_witnesses_and_setups_are_added_and_removed_with_their_kind() {
+        use super::Part::{Eventually, Setup, Witness};
+        let every = format!("{FILLS}{TWICE}{HALF}");
+        assert_eq!(
+            listed("", &every),
+            [
+                ("fills".to_owned(), Kind::Added, Some(Eventually)),
+                ("twice".to_owned(), Kind::Added, Some(Witness)),
+                ("half".to_owned(), Kind::Added, Some(Setup)),
+            ],
+            "each part the new model has and the old one lacks"
+        );
+        assert_eq!(
+            listed(&every, ""),
+            [
+                ("fills".to_owned(), Kind::Removed, Some(Eventually)),
+                ("twice".to_owned(), Kind::Removed, Some(Witness)),
+                ("half".to_owned(), Kind::Removed, Some(Setup)),
+            ],
+            "each part the old model has and the new one lacks"
+        );
+        assert_eq!(
+            listed(&every, &every),
+            [],
+            "nothing changed, nothing is listed"
+        );
+    }
+
+    #[test]
+    fn a_part_about_runs_whose_content_changed_is_changed_and_one_with_a_new_sentence_reworded() {
+        use super::Part::{Eventually, Setup, Witness};
+        let old = format!("{FILLS}{TWICE}{HALF}");
+        let new = format!(
+            "{}{}{}",
+            FILLS.replace("=== 3", "=== 2"),
+            TWICE.replace("\"twice\"", "\"two fills\""),
+            HALF.replace("level: 2", "level: 1")
+        );
+        assert_eq!(
+            listed(&old, &new),
+            [
+                ("fills".to_owned(), Kind::Changed, Some(Eventually)),
+                ("twice".to_owned(), Kind::Reworded, Some(Witness)),
+                ("half".to_owned(), Kind::Changed, Some(Setup)),
+            ],
+            "no state is searched for these: a new condition is `changed`"
+        );
+    }
+
+    #[test]
+    fn an_eventually_rule_shows_where_it_starts_and_what_it_reaches() {
+        let after = "export const refills = m.eventually(Tank, \"it refills\", { after: (s) => s.level === 1, reaches: (s) => s.level === 3 });\n";
+        let changes = model_changes(None, &tank_and(&format!("{FILLS}{after}")), bounds());
+        let shown: Vec<&str> = changes
+            .iter()
+            .filter_map(|change| Some(change.now.as_ref()?.holds.as_str()))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                "reaches: s.level === 3",
+                "after: s.level === 1; reaches: s.level === 3"
+            ],
+            "each condition the rule has, named"
+        );
+    }
+
+    #[test]
+    fn a_rule_about_runs_serializes_its_kind_and_a_plain_rule_none() {
+        let changes = model_changes(None, &tank_and(FILLS), bounds());
+        assert_eq!(
+            serde_json::to_value(&changes).unwrap(),
+            serde_json::json!([{
+                "file": "tank.model.ts",
+                "model": "Tank",
+                "id": "fills",
+                "change": "added",
+                "kind": "eventually",
+                "was": null,
+                "now": { "says": "it fills", "holds": "reaches: s.level === 3" },
+            }]),
+            "`kind` as in the model's `rules`"
+        );
+    }
+
+    fn jar(cap: &str, low: &str) -> Draft {
+        let source = format!(
+            "import {{ m }} from \"@earnestjs/model\";\n\
+             export const Jar = m.model(\"Jar\", {{ n: m.int(0, 2).initial(0), cap: m.int(1, 2).initial({cap}) }});\n\
+             export const add = m.action(Jar, \"add\", {{ when: (s) => s.n < s.cap, changes: (s) => ({{ n: s.n + 1 }}) }});\n\
+             export const full = m.end(Jar, \"full\", (s) => s.n === s.cap);\n\
+             export const low = m.rule(Jar, \"low\", (s) => {low});\n\
+             export const large = m.setup(Jar, \"large\", {{ cap: 2 }});\n"
+        );
+        let mut reading = earnest_ts::read("jar.model.ts", &source);
+        assert!(
+            reading.problems.is_empty(),
+            "the test model is readable: {:?}",
+            reading.problems
+        );
+        reading.drafts.remove(0)
+    }
+
+    #[test]
+    fn a_state_only_a_setup_reaches_tells_the_old_rule_from_the_new() {
+        let found: Vec<Kind> =
+            model_changes(Some(&jar("1", "s.n <= 1")), &jar("1", "s.n <= 2"), bounds())
+                .into_iter()
+                .map(|change| change.change)
+                .collect();
+        assert_eq!(
+            found,
+            [Kind::Loosened],
+            "`n = 2` is reached in `large` only"
+        );
+        let tightened: Vec<Kind> =
+            model_changes(Some(&jar("1", "s.n <= 2")), &jar("1", "s.n <= 1"), bounds())
+                .into_iter()
+                .map(|change| change.change)
+                .collect();
+        assert_eq!(
+            tightened,
+            [Kind::Tightened],
+            "the same state, the other way round"
+        );
+    }
+
+    const TWINS_AT_BASE: &str = "import { m } from \"@earnestjs/model\";\n\
+        export const A = m.model(\"Jar\", { n: m.int(0, 2).initial(0) });\n\
+        export const lowA = m.rule(A, \"low A\", (s) => s.n <= 2);\n\
+        export const B = m.model(\"Jar\", { n: m.int(0, 3).initial(0) });\n\
+        export const lowB = m.rule(B, \"low B\", (s) => s.n <= 3);\n";
+
+    #[test]
+    fn two_models_of_one_name_in_one_file_are_paired_in_their_order() {
+        let folder = tempfile::tempdir().expect("a temporary folder can be made");
+        let root = folder.path();
+        put(root, "twins.model.ts", TWINS_AT_BASE);
+        run_git(root, &["init", "--quiet", "."]);
+        run_git(root, &["add", "--all"]);
+        run_git(root, &["commit", "--quiet", "--message", "base"]);
+        assert_eq!(changes_since_the_base(root, None), [], "nothing changed");
+        let second = TWINS_AT_BASE
+            .find("export const B")
+            .expect("the second model is in the file");
+        let without_the_second = &TWINS_AT_BASE[..second];
+        put(root, "twins.model.ts", without_the_second);
+        assert_eq!(
+            changes_since_the_base(root, None),
+            [change("Jar", "lowB", Kind::Removed)],
+            "the second `Jar` is gone, and the first is as it was"
         );
     }
 }

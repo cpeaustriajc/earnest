@@ -497,6 +497,9 @@ pub struct WitnessDraft {
     pub state_name: Option<String>,
     /// The condition that must be true after the last step.
     pub expect: Term,
+    /// The source text of its setup, steps and condition in the normal form of
+    /// [`condition_text`], kept to tell whether the witness was rewritten.
+    pub text: String,
 }
 
 /// One setup of a model: other values for some fields to start at.
@@ -511,6 +514,9 @@ pub struct SetupDraft {
     /// The fields that start elsewhere, each with where it is written and its one start value.
     /// Every other field starts where the model declares.
     pub starts: Vec<(String, Place, Term)>,
+    /// The source text of the fields it starts elsewhere in the normal form of
+    /// [`condition_text`], kept to tell whether the setup was rewritten.
+    pub text: String,
 }
 
 /// What a model says about whole runs instead of single states.

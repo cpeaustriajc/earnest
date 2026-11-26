@@ -125,6 +125,7 @@ fn rules_about_runs_are_listed_after_the_rules_and_before_the_witnesses() {
         steps: Vec::new(),
         state_name: Some("s".to_owned()),
         expect: equal(field("n"), int(0)),
+        text: String::new(),
     });
     source
         .runs

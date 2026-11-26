@@ -23,6 +23,7 @@ fn setup(id: &str, starts: Vec<(&str, Term)>) -> SetupDraft {
             .into_iter()
             .map(|(name, value)| (name.to_owned(), HERE, value))
             .collect(),
+        text: String::new(),
     }
 }
 
@@ -38,6 +39,7 @@ fn witness(id: &str, setup: Option<&str>) -> WitnessDraft {
         steps: Vec::new(),
         state_name: Some("s".to_owned()),
         expect: equal(field("hand"), int(0)),
+        text: String::new(),
     }
 }
 

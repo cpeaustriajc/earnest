@@ -13,7 +13,7 @@ use earnest_chart::{
     skipped_section,
 };
 use earnest_check::Status;
-use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write};
+use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write, write_apart_from};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -323,21 +323,25 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
 }
 
 fn exported(targets: &[Target<'_>]) -> Result<Vec<Files>, String> {
-    let all: Vec<Files> = targets
-        .iter()
-        .map(|target| write(&target.readable.model))
-        .collect();
-    for (position, files) in all.iter().enumerate() {
-        if all
-            .iter()
-            .take(position)
-            .any(|earlier| earlier.name == files.name)
-        {
+    let mut all: Vec<Files> = Vec::with_capacity(targets.len());
+    for target in targets {
+        let files = write(&target.readable.model);
+        let Some(clash) = all.iter().position(|earlier| earlier.name == files.name) else {
+            all.push(files);
+            continue;
+        };
+        let is_one_model = targets
+            .get(clash)
+            .is_some_and(|earlier| earlier.is_run_of_one_model_with(target));
+        if !is_one_model {
             return Err(format!(
                 "two models export as the module `{}`: name one file, or one model with `--model`",
                 files.name
             ));
         }
+        let taken: Vec<&str> = all.iter().map(|earlier| earlier.name.as_str()).collect();
+        let apart = write_apart_from(&target.readable.model, &taken);
+        all.push(apart);
     }
     Ok(all)
 }
@@ -426,7 +430,7 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
     let mut everything_agrees = true;
     for ((target, ran), exported) in targets.iter().zip(&ran).zip(&all) {
         let model = &target.readable.model;
-        let ours = match checked(model, ran) {
+        let ours = match checked(target.readable, ran) {
             Ok(ours) => ours,
             Err(error) => {
                 to_stderr(&format!("error: {error}"));
@@ -598,6 +602,57 @@ mod tests {
             ),
             NO_MODEL,
             "a skipped file that is gone"
+        );
+    }
+
+    fn loaded(path: &str, source: &str) -> crate::reading::ModelFile {
+        let found =
+            crate::discovery::Found::model(path, crate::discovery::Language::TypeScript, source);
+        let file = crate::reading::load(found);
+        assert!(
+            file.problems().is_empty(),
+            "the test file is readable: {:?}",
+            file.problems()
+        );
+        file
+    }
+
+    fn module_names(files: &[crate::reading::ModelFile]) -> Result<Vec<String>, String> {
+        let targets = crate::select::select(files, None, None)?;
+        let exported = super::exported(&targets)?;
+        Ok(exported.into_iter().map(|files| files.name).collect())
+    }
+
+    const JAR: &str = "import { m } from \"@earnestjs/model\";\n\
+        export const Jar = m.model(\"Jar\", { n: m.int(0, 2).initial(0) });\n\
+        export const $one = m.setup(Jar, \"one\", { n: 1 });\n\
+        export const _one = m.setup(Jar, \"also one\", { n: 1 });\n";
+
+    #[test]
+    fn two_runs_of_one_model_that_spell_one_module_name_are_numbered_apart() {
+        let files = [loaded("jar.model.ts", JAR)];
+        assert_eq!(
+            module_names(&files),
+            Ok(vec![
+                "Jar".to_owned(),
+                "Jar__one".to_owned(),
+                "Jar__one_2".to_owned()
+            ]),
+            "`$one` and `_one` both spell `Jar__one`, and the second gets `_2`"
+        );
+    }
+
+    #[test]
+    fn two_models_that_spell_one_module_name_are_still_refused() {
+        let files = [loaded("a.model.ts", CLIMB), loaded("b.model.ts", CLIMB)];
+        assert_eq!(
+            module_names(&files),
+            Err(
+                "two models export as the module `Climb`: name one file, or one model with \
+                 `--model`"
+                    .to_owned()
+            ),
+            "two models of one name in two files"
         );
     }
 }

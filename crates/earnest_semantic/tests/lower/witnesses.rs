@@ -48,6 +48,7 @@ fn witness(steps: Vec<StepDraft>, expect: Term) -> WitnessDraft {
         steps,
         state_name: Some("s".to_owned()),
         expect,
+        text: String::new(),
     }
 }
 

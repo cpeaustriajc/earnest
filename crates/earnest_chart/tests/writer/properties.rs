@@ -264,6 +264,7 @@ proptest! {
             model: &name,
             id: &value,
             change: ChangeKind::Tightened,
+            part: earnest_chart::ChangedPart::Rule,
             was: side,
             now: side,
         }];

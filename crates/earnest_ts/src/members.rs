@@ -76,6 +76,13 @@ struct StateFunction {
     text: String,
 }
 
+fn without_parentheses<'p, 'a>(expr: &'p Expression<'a>) -> &'p Expression<'a> {
+    match expr {
+        Expression::ParenthesizedExpression(inner) => without_parentheses(&inner.expression),
+        other => other,
+    }
+}
+
 fn pick<'p, 'a>(entries: &Entries<'p, 'a>, key: &str) -> Option<&'p Expression<'a>> {
     entries
         .iter()
@@ -453,6 +460,7 @@ impl Reader<'_> {
             says,
             place: self.place(start),
             starts,
+            text: condition_text(self.text(written.span()), Quoting::TypeScript),
         })
     }
 
@@ -512,6 +520,10 @@ impl Reader<'_> {
         };
         let setup = pick(&entries, "setup").and_then(|written| self.setup_named(written, draft));
         let condition = self.state_function(expected)?;
+        let written = call
+            .arguments
+            .get(WITNESS_OBJECT)
+            .and_then(Argument::as_expression)?;
         Some(WitnessDraft {
             id,
             says,
@@ -520,6 +532,7 @@ impl Reader<'_> {
             steps,
             state_name: condition.state_name,
             expect: condition.term,
+            text: condition_text(self.text(written.span()), Quoting::TypeScript),
         })
     }
 
@@ -573,7 +586,11 @@ impl Reader<'_> {
                 if !self.is_library(root.name.as_str()) || callee.property.name != STEP {
                     return None;
                 }
-                let [Argument::Identifier(action), given] = call.arguments.as_slice() else {
+                let [named, given] = call.arguments.as_slice() else {
+                    return None;
+                };
+                let Expression::Identifier(action) = without_parentheses(named.as_expression()?)
+                else {
                     return None;
                 };
                 if !is_action(action.name.as_str()) {
@@ -1427,6 +1444,51 @@ mod tests {
             found,
             [(6, 45, "`lit`".to_owned())],
             "the setup of `N` in a witness of `M`"
+        );
+    }
+
+    #[test]
+    fn an_action_in_parentheses_is_a_step_of_m_step_as_it_is_of_the_list() {
+        let found = witness(
+            "export const pressed = m.witness(M, \"Press\", \
+             { steps: [m.step((press), { times: 1, by: \"key\" })], expect: () => true });\n",
+        );
+        let actions: Vec<&str> = found
+            .steps
+            .iter()
+            .map(|step| step.action.as_str())
+            .collect();
+        assert_eq!(actions, ["press"], "the action inside the parentheses");
+    }
+
+    #[test]
+    fn a_witness_and_a_setup_keep_their_source_text_in_normal_form() {
+        let found = draft(&format!(
+            "{ACTIONS}export const low = m.setup(M, \"Low\", {{ n:   1 /* one */ }});\n\
+             export const once = m.witness(M, \"Once\", \
+             {{ setup: low,\n  steps: [bump], expect: (s) => s.n === 2 }});\n"
+        ));
+        let setups: Vec<&str> = found
+            .runs
+            .setups
+            .iter()
+            .map(|setup| setup.text.as_str())
+            .collect();
+        assert_eq!(
+            setups,
+            ["{ n: 1 }"],
+            "the fields, without the comment and the spaces"
+        );
+        let witnesses: Vec<&str> = found
+            .runs
+            .witnesses
+            .iter()
+            .map(|witness| witness.text.as_str())
+            .collect();
+        assert_eq!(
+            witnesses,
+            ["{ setup: low, steps: [bump], expect: (s) => s.n === 2 }"],
+            "the setup, the steps and the condition, on one line"
         );
     }
 }
