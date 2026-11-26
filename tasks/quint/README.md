@@ -3632,3 +3632,30 @@ refused, now with "a chain of steps where one step is wanted: `then`, `reps`, `e
 Tests: `quint_first::a_module_of_runs_only_on_a_plain_import_is_played_with_or_without_init_and_step_named`,
 `a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows`,
 `a_definition_that_chains_steps_is_played_where_a_run_calls_it`, and `kept_tests`.
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `641c099`:
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: `Finished`, no warnings. `just
+  lint-library`: `Finished`, no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 83 suites, 2074 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `18 page(s) built`, `Complete!`.
+- `just counts`: every row `met` (largest change `+0.38%`, `mixed/shelf`, limit 2.00%). Not
+  re-recorded.
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.624 s, 1 worker 2.029 s, 192.2 MiB).
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, all in `tasks/conformance/runs/`, which `origin/main` does not have, as
+  in the earlier slices. Against `origin/claude/lucid-brown-f5xvr8`: `392 runs, 0 differences`.
+- `tests_kept.py --base origin/main`: `tests kept: 1653 tests, 4795 assertions (base: 1304,
+  3798)`.
+- `earnest confirm --tlc` (Apalache 0.62.4's jar): `same` for `TwoInstances` (4 states) and
+  `FirstSteps` (4 states).
+
+### Unfinished
+
+- The path of a run whose first action can't happen prints an empty `start` line.
+- An argument of a chained helper that reads the state is refused; Quint would evaluate it.
+- `start_states`' own fault messages name `init` even for a run's first action.
