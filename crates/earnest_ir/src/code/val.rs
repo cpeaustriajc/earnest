@@ -81,6 +81,7 @@ pub(super) struct Sweeping {
 
 #[derive(Clone, Debug)]
 pub(super) struct Carrying {
+    shelf: Shelf,
     total: usize,
     item: usize,
     unit: u64,
@@ -167,12 +168,14 @@ impl Val {
                 body: Cond::of(body, shared),
             })),
             Expr::Fold {
+                shelf,
                 source,
                 start,
                 total,
                 item,
                 body,
             } => Self::Fold(Box::new(Carrying {
+                shelf: *shelf,
                 total: *total,
                 item: *item,
                 unit: shared.unit(),
@@ -236,6 +239,7 @@ impl Val {
                 let collection = carrying.source.eval(frame)?;
                 let first = carrying.start.eval(frame)?;
                 let folding = Folding {
+                    shelf: carrying.shelf,
                     total: carrying.total,
                     item: carrying.item,
                     body: &carrying.body,

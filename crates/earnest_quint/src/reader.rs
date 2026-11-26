@@ -122,6 +122,7 @@ fn reads_state(expr: &Expr, bound: &[usize]) -> bool {
             total,
             item,
             body,
+            ..
         } => {
             reads_state(source, bound)
                 || reads_state(start, bound)

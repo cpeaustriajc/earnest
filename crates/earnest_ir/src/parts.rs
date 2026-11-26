@@ -120,6 +120,7 @@ impl<'e> Binders<'e> {
                 total,
                 item,
                 body,
+                ..
             } => {
                 self.add(*total, Binder::Sweep);
                 self.add(*item, Binder::Sweep);

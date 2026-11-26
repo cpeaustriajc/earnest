@@ -2,7 +2,7 @@
 //! fault, powers and runs of numbers. Each case is evaluated by the reference walk and by the
 //! prepared [`Code`], which must agree, and is checked against values worked out by hand.
 
-use earnest_ir::{Code, Expr, Fault, Frame, MapOp, Math, Op, SeqOp, SetOp, eval};
+use earnest_ir::{Code, Expr, Fault, Frame, MapOp, Math, Op, SeqOp, SetOp, Shelf, eval};
 use earnest_value::Value;
 
 const SLOTS: usize = 4;
@@ -54,7 +54,12 @@ fn map_value(pairs: &[(i64, i64)]) -> Value {
 }
 
 fn fold(source: Value, start: Expr, body: Expr) -> Expr {
+    let shelf = match source {
+        Value::Seq(_) => Shelf::Seq,
+        _ => Shelf::Set,
+    };
     Expr::Fold {
+        shelf,
         source: Box::new(Expr::Const(source)),
         start: Box::new(start),
         total: TOTAL,
@@ -118,6 +123,23 @@ fn a_fault_in_a_step_of_a_fold_is_the_folds_fault() {
         apply(Op::Math(Math::Divide), &[int(6), Expr::Local(ITEM)]),
     ));
     assert_eq!(answer, Err(Fault::Division), "6 / 0 is taken first");
+}
+
+#[test]
+fn a_fold_over_a_set_declared_a_sequence_is_of_the_wrong_kind() {
+    let declared = Expr::Fold {
+        shelf: Shelf::Seq,
+        source: Box::new(Expr::Const(set_value(&[1]))),
+        start: Box::new(int(0)),
+        total: TOTAL,
+        item: ITEM,
+        body: Box::new(int(0)),
+    };
+    assert_eq!(
+        both(&declared),
+        Err(Fault::WrongKind),
+        "a set is not a sequence"
+    );
 }
 
 #[test]

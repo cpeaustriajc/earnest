@@ -253,6 +253,7 @@ pub fn eval(expr: &Expr, frame: &mut Frame<'_>) -> Result<Value, Fault> {
             test.over(&eval(source, frame)?, frame, truth)
         }
         Expr::Fold {
+            shelf,
             source,
             start,
             total,
@@ -262,6 +263,7 @@ pub fn eval(expr: &Expr, frame: &mut Frame<'_>) -> Result<Value, Fault> {
             let collection = eval(source, frame)?;
             let first = eval(start, frame)?;
             let folding = Folding {
+                shelf: *shelf,
                 total: *total,
                 item: *item,
                 body: &**body,
@@ -273,6 +275,7 @@ pub fn eval(expr: &Expr, frame: &mut Frame<'_>) -> Result<Value, Fault> {
 }
 
 pub(crate) struct Folding<'b, B> {
+    pub(crate) shelf: Shelf,
     pub(crate) total: usize,
     pub(crate) item: usize,
     pub(crate) body: &'b B,
@@ -287,10 +290,10 @@ impl<B> Folding<'_, B> {
         frame: &mut Frame<'_>,
         step: impl Fn(&B, &mut Frame<'_>) -> Evaluated,
     ) -> Evaluated {
-        match collection {
-            Value::Set(items) => self.through(items.iter(), first, frame, step),
-            Value::Seq(items) => self.through(items.iter(), first, frame, step),
-            other => Err(wrong_or_null(other)),
+        match (self.shelf, collection) {
+            (Shelf::Set, Value::Set(items)) => self.through(items.iter(), first, frame, step),
+            (Shelf::Seq, Value::Seq(items)) => self.through(items.iter(), first, frame, step),
+            (_, other) => Err(wrong_or_null(other)),
         }
     }
 

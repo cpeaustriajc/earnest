@@ -28,6 +28,7 @@
 //!   no variable is written with `vars = vars` beside it, because TLC misjudges a temporal
 //!   property over a constant.
 
+mod faulting;
 mod helper;
 mod kind;
 mod limits;

@@ -26,7 +26,7 @@ pub(crate) enum Data {
     In,
     Sweep(Sweep, Shelf),
     SetMap,
-    Fold,
+    Fold(Shelf),
     Flatten,
     Powerset,
     IsFinite,
@@ -62,7 +62,8 @@ pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
         "forall" => Data::Sweep(Sweep::Every, Shelf::Set),
         "select" => Data::Sweep(Sweep::Filter, Shelf::Seq),
         "map" => Data::SetMap,
-        "fold" | "foldl" => Data::Fold,
+        "fold" => Data::Fold(Shelf::Set),
+        "foldl" => Data::Fold(Shelf::Seq),
         "flatten" => Data::Flatten,
         "powerset" => Data::Powerset,
         "isFinite" => Data::IsFinite,
@@ -200,7 +201,12 @@ impl<'a> Reader<'a> {
     }
 
     fn folded(carried: &Carried, source: Expr, start: Expr, body: Expr) -> Expr {
+        Self::folded_as(Shelf::Set, carried, source, start, body)
+    }
+
+    fn folded_as(shelf: Shelf, carried: &Carried, source: Expr, start: Expr, body: Expr) -> Expr {
         Expr::Fold {
+            shelf,
             source: boxed(source),
             start: boxed(start),
             total: carried.total,
@@ -318,14 +324,14 @@ impl<'a> Reader<'a> {
                 };
                 Ok(Self::folded(&carried, source, start, body))
             }
-            Data::Fold => {
+            Data::Fold(kept_as) => {
                 self.given(opcode, args, 3)?;
                 let source = self.pure(&args[0])?;
                 let start = self.pure(&args[1])?;
                 let lambda = self.lambda(&args[2], 2, opcode)?;
                 let carried = self.carried();
                 let body = self.under(lambda, vec![carried.total(), carried.item()])?;
-                Ok(Self::folded(&carried, source, start, body))
+                Ok(Self::folded_as(kept_as, &carried, source, start, body))
             }
             Data::Flatten => {
                 self.given(opcode, args, 1)?;

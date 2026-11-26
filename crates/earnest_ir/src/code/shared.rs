@@ -81,6 +81,7 @@ impl Shared {
                 total,
                 item,
                 body,
+                ..
             } => {
                 let mut changed = self.narrowed(source, scope);
                 changed |= self.narrowed(start, scope);

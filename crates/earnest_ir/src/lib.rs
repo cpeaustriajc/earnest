@@ -260,6 +260,8 @@ pub enum Expr {
     /// A running value carried through the items of a set, in its order, or of a sequence:
     /// `start`, then `body` with the value so far in `total` and the next item in `item`.
     Fold {
+        /// The kind of collection `source` must give. Another kind is [`Fault::WrongKind`].
+        shelf: Shelf,
         /// The collection whose items are taken.
         source: Box<Self>,
         /// The value before the first item.

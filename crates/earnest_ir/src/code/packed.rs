@@ -946,12 +946,14 @@ fn given(expr: &Expr, inputs: &[(usize, Value)]) -> Expr {
             body: boxed(body),
         },
         Expr::Fold {
+            shelf,
             source,
             start,
             total,
             item,
             body,
         } => Expr::Fold {
+            shelf: *shelf,
             source: boxed(source),
             start: boxed(start),
             total: *total,
