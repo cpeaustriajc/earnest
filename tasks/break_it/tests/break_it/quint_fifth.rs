@@ -82,3 +82,37 @@ fn every_seeded_model_whose_step_guards_its_fair_actions_has_the_answers_of_quin
         }
     }
 }
+
+#[test]
+fn a_run_under_fairness_of_the_step_stops_only_where_no_fair_action_could_change_its_variables() {
+    let report = compiled(
+        "stops",
+        include_str!("../../models/quint_fifth/stops/stops.json"),
+    );
+    let model = report.model("stops");
+    assert_eq!(
+        model["states"], 12,
+        "as `quint verify --backend tlc` counts\n{report}"
+    );
+    let wanted = [
+        ("both", "holds"),
+        ("sendOnly", "broken"),
+        ("stepOnly", "broken"),
+        ("stutter", "broken"),
+        ("leads", "holds"),
+        ("parts", "holds"),
+        ("parts#2", "holds"),
+        ("parts#3", "holds"),
+        ("sendsAfter", "holds"),
+        ("bumpNarrow", "holds"),
+    ];
+    for (id, verdict) in wanted {
+        assert_eq!(
+            rule(model, id)["verdict"],
+            verdict,
+            "`{id}`: a run may stay in the closed state only where neither the step nor a fair \
+             action alone can change the state: `pay` can while unpaid, `send` only once paid, \
+             `touch` never; each verdict is `quint verify --backend tlc`'s\n{report}"
+        );
+    }
+}
