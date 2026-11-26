@@ -4483,3 +4483,92 @@ Proof, on the tree merged with the integration head `6362d76` (#71):
 - `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
   runs, 64 differences`, all in `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts`
   and `clock.model.ts`, as on the integration head before this slice (#69's report).
+
+## No checks file (#72, second part): report
+
+The owner removed `earnest.quint.json`. Rewritten #72 (2026-11-26, about 10:57), built on the
+marks of the first part. Quint 0.33.1 from npm, Node 22, Java on PATH.
+
+What was built:
+
+- **Which module is a check** (`quint.rs`, `marked_checks`): only a module whose own doc
+  comment starts with `@check` (`"doc"` on the module in `quint parse`). Every `.qnt` file below
+  the folders searched, or named, is parsed once. A marked module that sees `init` and `step`
+  searches; one with no marked property it can search for, or no `init`/`step`, plays its runs
+  only. Its modules are taken in the order of the file.
+- **Runs**: a check plays every run it sees whose name ends in `Test`; `/// @check` on a run of
+  any name plays it too, `/// @check broken` says it must fail. With a marked run the check's
+  runs are `Runs::Named` of all of them in the file's order (`Places::runs_played`), else
+  `Runs::Tests`.
+- **The four unreadable cases**, each at the mark's line: an unknown word after `@check` (on a
+  module too), a marked module with a `const`, a marked module with nothing to judge, and a
+  marked definition or run no check sees (compared by module and name, across files, so a spec
+  marked in `doors.qnt` and seen by `setups.qnt` is not reported).
+- **A leftover `earnest.quint.json`** (`migrate.rs`): `unreadable` at that file, nothing checked
+  by it. For each entry the message gives the module mark with `file:line`, each property with
+  its mark and its definition's `file:line`, a note when a mark on the spec also counts in other
+  listed setups that did not list it, the runs to mark or rename, and for another `init`/`step`
+  or a `name` the module to add (`/// @check` + `import Spec(...) as V`, rebuilt from the
+  instance's own text in the source map's span, with `.*` turned into `as V`). A setup with
+  definitions of its own and a `.*` instance can't be imported under a name (Quint keeps a
+  second copy of its state: tried on `own.qnt` `Tight`), so for that shape the message lists the
+  lines to add to a copy instead. Multi-line messages keep their lines in the text output.
+- **`export`** of an instance is read as an import of it (`more.qnt` `Exported`).
+- **`confirm --quint`** (#73, merged at `6a4d280`): `QuintCheck` is filled for a marked check;
+  `@check reachable P` goes to Quint as `--invariants 'not(P)'`.
+
+Samples moved to marks, each re-recorded with the real Quint where the tests read its output
+(parse, typecheck, compile and, for `setups/` and `imports/`, the source maps):
+`first/`, `imports/`, `setups/`, `confirm/`, `marked/` (`listed/` gone; `runs/`, `rules/`,
+`old/` new), `models/` (`guard` gone, no test used it), and in `tasks/break_it/models/quint_second`
+`project/`, `random/` (and `generate.py`), `named_runs/` (`init`/`step` written in `Named`),
+`runs_not_played/`; `cached_runs/` went with its two tests.
+
+The real run of every folder below `tasks/quint` that holds `.qnt` files, with no checks file
+anywhere except `marked/old/`, compared model by model with the binary of `bf3f90f` on the same
+folders with their checks files (status, states, each old rule's verdict and path):
+
+| Folder | Result |
+|---|---|
+| `setups/` | every old model alike; `Single`: `run upTest` unreadable before, a `runsNotPlayed` note now; `S1`..`S17` (`many.qnt`) and `Single` are new checks, as the tests checked them |
+| `imports/` | every old model alike; `Good`, `Printing`, `fault` and the two false assumptions are new, as the tests checked them |
+| `first/` | every old model alike but `OnlyRuns`, `fail` -> `pass` (`thirdOverTest` renamed); 17 modules the tests checked are new checks |
+| `confirm/` | every old model alike; `setup` (`fixtures/skipped`) is new |
+| `marked/` | as in the first part, and `runs/`, `rules/`, `old/` as their tests say |
+| `models/`, `probe/` | no marked module, `0 models`, as before (they had no checks file) |
+| `break_it/.../project` | every old model alike |
+
+Ids that changed, with the reason:
+
+- `first/OnlyRuns.qnt`: `thirdOverTest` -> `thirdOver`, marked `@check broken`: a check plays
+  every `…Test` run, so a run that must break is renamed and marked.
+- `setups/more.qnt` `Exported` and `Plain`: `ok`, `below`, `grows` -> `okOne`, `belowOne`,
+  `growsOne`: `Exported`'s `export B.*` makes its own `init`/`step` clash, so its properties are
+  written as marked `val`s of other names, and `Plain` takes the same names so the test that sets
+  the two beside each other still compares them.
+- Rules added, none changing a model's status: `ByOwn`, `ByName` `+fullTest`; `Two` `+upTest`,
+  `+fullTest` (a `runs` list or `false` can't be said); `imports` `three` `+neverAllOpen`,
+  `named` `+counted`, `+neverAllOpen`, `Both` `+noDownAtTop` (a mark on a spec counts in every
+  check that sees it); `printing` `fault`'s first-action fault now names `P::seed`.
+- Kept by writing the module so: `setups` `Small`, `Dim`, `Tight`, `Named`, `Reexported`, `ByOwn`,
+  `ByName`, `Two`, `Pair`, `Plain`, and break_it `project` `three`..`huge` import the spec under a
+  name and mark their own `val p = V::p` (and `run`), so a property listed for one setup is not
+  judged in the others; paths and state counts stayed the same.
+
+Tests that went, with what replaced them:
+
+- `quint_checks`: the checks-file errors -> `a_checks_file_right_or_wrong_is_unreadable_at_itself`;
+  a list of runs, a listed run the module lacks, a check with no runs -> `a_marked_run_is_played_…`
+  and `quint_marks::a_marked_module_with_no_init_or_step_…`.
+- `quint_expected`: two named checks of one module -> `two_marked_modules_are_two_models…`; two
+  checks that compile alike, two checks without names, editing the runs alone, an expression
+  item: no such entry exists any more. "Editing the expectations compiles nothing" is now
+  `editing_a_mark_checks_again`, which compiles once: the mark is in the `.qnt` file.
+- `quint_actions::one_file_written_two_ways_with_one_main_is_unreadable`: no entries any more.
+- `break_it`: the two `cached_runs` tests (an entry or its runs changed) ->
+  `quint_marks::a_changed_mark_checks_again_and_changes_the_quint_entries`.
+
+The behavior tests' fake `quint` serves the parse recorded from Quint with the `doc` of each mark
+put in as Quint 0.33.1 gives it, and appends a `// marked:` line to the `.qnt` so the caches see
+the change; `quint_marks`, `quint_setups`, `quint_imports`, `quint_first` and `quint_confirm` read
+fixtures recorded from the marked files themselves.
