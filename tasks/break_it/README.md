@@ -1833,7 +1833,7 @@ typecheck`, `oneOf` over sets from the state, the #63 fixes, Reads 1 (#64) and R
 made on commit 7f18149 of the integration branch with Quint 0.33.1 from npm. Its tests are in
 `tests/break_it/quint_second.rs` and its files in `models/quint_second/`: each `.qnt` beside the
 JSON `quint compile --target json` (or `quint typecheck`) wrote for it, to a file, so the tests
-need no Node. Each of the six tests fails today. The oracles: `quint verify --backend tlc`
+need no Node. Each of the seven tests there, and one more under `tests/tlc/`, fails today. The oracles: `quint verify --backend tlc`
 (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties,
 `quint test --backend typescript` for runs, and `quint run --backend typescript` and `--backend
 rust` (which could be fetched this time) for single values. `tla2tools.jar` is the one the
@@ -1866,8 +1866,9 @@ distinct states and `[ok]`; `quint run --backend typescript --invariant small` f
 violation. Earnest: `fail`, ``fault  the condition of the action `step#2` uses a value of the
 wrong kind in this state`` in the start state, and `small` is `unknown`. In a larger model with
 `quint test` passing, every run through such an action broke with ``step 1: the set the action
-`exec#3` picks from uses a value of the wrong kind here``. In `t = A(1)` the `B` branch binds `s` to `A`'s value `1` and works out `1.oneOf()`. A
-guard inside the branch (`s.size() > 0`) is fine; only a `nondet` is hit. Cause: `cases` in
+`exec#3` picks from uses a value of the wrong kind here``. In `t = A(1)` the `B` branch binds
+`s` to `A`'s value `1` and works out `1.oneOf()`. A guard inside the branch (`s.size() > 0`) is
+fine; only a `nondet` is hit. Cause: `cases` in
 `crates/earnest_quint/src/reader.rs` puts `tag == "B"` first among the path's guards, but the
 branch's `nondet` is a pick of the path, whose set the search works out before it tests any
 guard. Right result: `pass`, 4 states, `small` holds. Test:
@@ -1888,8 +1889,9 @@ folding five 11-item tuples into a list, TLC's state prints `<<0, …, 0, 1>>, <
 0, 1), (0, …, 1, 0), (1, …)`: it compares the fields `_1, _10, _11, _2, …` by name. `earnest
 confirm --tlc` can't see it: the export writes the same order (`pick.v_1 < other.v_1 \/ … v_10
 … v_2`), and on a copy of the module whose invariant reads a variable (`n == 0 implies …`) it
-says `same` while Quint's TLC run holds. Cause: the tuple case of the order behind
-`Op::InTlcOrder` (`crates/earnest_ir`). Right result: `lastFirst` holds. Test:
+says `same` while Quint's TLC run holds. Cause: earnest holds a Quint tuple as a record of the
+fields `_1`, `_2`, …, and `Op::InTlcOrder` (`crates/earnest_ir`) compares a record's fields by
+name. Right result: `lastFirst` holds. Test:
 `a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`.
 
 ### The runs of a spec imported only under a name are dropped
@@ -1949,6 +1951,44 @@ stops on the same module (`[failure] TLC encountered an error`). In a setup, eve
 replaced by its value, so an invariant over constants only (`val sane = N > 0`, when false)
 meets this. `fold_tuple10` meets it too. Right result: `same`. Test:
 `confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken`.
+
+### `confirm --tlc` can't compare variants whose values have different types
+
+`models/quint_second/confirm/variant_compare.qnt`: `type Holder = Nobody | Held(str)`, `holder`
+goes from `Nobody` to `Held("a")` while a map gets a key (`m' = m.put(1, 1)`), and the invariant
+`known` is `holder == Nobody or holder == Held("a")`. Earnest and `quint verify --backend tlc`
+say it holds in both states. `earnest confirm --tlc` prints `differs`, ``rule known: the checker
+says holds, TLC says unknown (Evaluating invariant Rule_known failed.)``: TLC stops with
+`Attempted to check equality of string "a" with non-string: <<>>`. The export writes a variant as
+the record `[tag |-> "Held", value |-> "a"]`, and `Nobody` as `[tag |-> "Nobody", value |->
+<<>>]`. TLC compares a record's fields in the order it first met their names, and the export's
+helper `MapSet(map, key, value)`, written whenever the model updates a map, makes it meet `value`
+before `tag`, so TLC compares `"a"` with `<<>>` before it sees that the tags differ. Without the
+map the same module is `same`. Apalache writes a variant as a record with one field named by the
+tag (`[Held |-> "a"]`, as TLC's state prints show in Quint's own runs), which TLC compares
+without error. The project model meets it on its state count and every rule (`holder == Held(n)`, `net` of three
+kinds of message). Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the
+`tlc` feature, as the first pass's TLC tests are: `cargo test --locked -p earnest_break_it
+--features tlc --test tlc quint_second`. Test:
+`tlc_compares_variants_whose_values_have_different_types_in_the_export`.
+
+### A cached result is served after the check's `runs` changed
+
+`models/quint_second/cached_runs/cached_runs.qnt`: `run upTest = init.then(step).expect(v == 1)`
+and `run downTest = init.then(step).expect(v == 0)`; `quint test` passes `upTest` and fails
+`downTest`. Check it with `"runs": ["upTest"]` (`pass`), then change the entry to `"runs":
+["downTest"]` and run `earnest verify` again: it prints `pass  cached_runs  3 states  0 ms  (cached)`,
+the first run's result with `upTest` holding, where `earnest verify --no-cache` prints `fail` with
+`downTest` broken. The same from `true` to a list, from a list to none, and on a built setup
+(the project model's `setups` kept `releaseTest` after its `runs` became `["grantTest"]`). The
+docs say a compiled module is reused while the check's `runs` are the same, and that the result
+cache serves "a check whose compiled JSON is unchanged". Cause: the result cache's key holds the
+compiled (or built) JSON as `source` (`apps/earnest/src/quint.rs`), and `quint compile` takes no
+runs, so the JSON is the same; `key_of` puts `runs` in the compile cache's key only. The runs are
+chosen later, in `read_located(…, &job.check.runs)`. Right result: the second run plays
+`downTest` and fails, as a full run does. The test plays it with a fake `quint` that hands back
+the recorded `parse.json` and `cached_runs.json`. Test:
+`a_cached_result_is_not_served_for_a_check_whose_runs_changed`.
 
 ### Legal Quint that earnest still refuses
 

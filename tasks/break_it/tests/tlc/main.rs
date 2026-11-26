@@ -4,6 +4,7 @@
 
 mod quint_random;
 mod quint_reads;
+mod quint_second;
 mod runs;
 mod stutters;
 

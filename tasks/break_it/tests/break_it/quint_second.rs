@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
@@ -119,52 +119,134 @@ fn a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them() {
     );
 }
 
+struct QuintFixtures<'a> {
+    file: &'a str,
+    source: &'a str,
+    typecheck: &'a str,
+    compiled: &'a str,
+    checks: &'a str,
+}
+
+struct RecordedQuint {
+    folder: TempDir,
+    quint: PathBuf,
+}
+
+impl RecordedQuint {
+    fn new(fixtures: &QuintFixtures<'_>) -> Self {
+        let folder = TempDir::new().expect("a temporary folder can be made");
+        let fake = folder.path().join("fake");
+        fs::create_dir_all(&fake).expect("the fake's folder can be made");
+        program(&fake, "quint", FAKE_QUINT);
+        for (name, text) in [
+            ("typecheck.json", fixtures.typecheck),
+            ("compiled.json", fixtures.compiled),
+        ] {
+            fs::write(fake.join(name), text).expect("a fixture can be written");
+        }
+        let recorded = Self {
+            folder,
+            quint: fake.join("quint"),
+        };
+        recorded.write(fixtures.file, fixtures.source);
+        recorded.write("earnest.quint.json", fixtures.checks);
+        recorded
+    }
+
+    fn write(&self, name: &str, text: &str) {
+        fs::write(self.folder.path().join(name), text).expect("a file can be written");
+    }
+
+    fn verify(&self, arguments: &[&str]) -> Value {
+        let output = Command::new(binary())
+            .args(["verify", "--json"])
+            .args(arguments)
+            .arg(".")
+            .env("EARNEST_QUINT", &self.quint)
+            .current_dir(self.folder.path())
+            .output()
+            .expect("earnest starts");
+        serde_json::from_slice(&output.stdout).expect("earnest verify prints JSON")
+    }
+}
+
+fn verified_with_recorded_quint(fixtures: &QuintFixtures<'_>) -> Value {
+    RecordedQuint::new(fixtures).verify(&["--no-cache"])
+}
+
+fn model_named<'a>(report: &'a Value, name: &str) -> &'a Value {
+    report["models"]
+        .as_array()
+        .and_then(|models| models.iter().find(|model| model["name"] == name))
+        .unwrap_or(&Value::Null)
+}
+
 #[test]
 fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them() {
-    let folder = TempDir::new().expect("a temporary folder can be made");
-    let fake = folder.path().join("fake");
-    fs::create_dir_all(&fake).expect("the fake's folder can be made");
-    program(&fake, "quint", FAKE_QUINT);
-    for (name, text) in [
-        (
-            "typecheck.json",
-            include_str!("../../models/quint_second/named_runs/typecheck.json"),
-        ),
-        (
-            "compiled.json",
-            include_str!("../../models/quint_second/named_runs/Named.json"),
-        ),
-    ] {
-        fs::write(fake.join(name), text).expect("a fixture can be written");
-    }
-    fs::write(
-        folder.path().join("named_runs.qnt"),
-        include_str!("../../models/quint_second/named_runs/named_runs.qnt"),
-    )
-    .expect("the spec can be written");
-    fs::write(
-        folder.path().join("earnest.quint.json"),
-        r#"{ "checks": [ { "file": "named_runs.qnt", "main": "Named", "init": "C::init", "step": "C::step", "runs": true } ] }"#,
-    )
-    .expect("the checks file can be written");
-    let output = Command::new(binary())
-        .args(["verify", "--json", "--no-cache", "."])
-        .env("EARNEST_QUINT", fake.join("quint"))
-        .current_dir(folder.path())
-        .output()
-        .expect("earnest starts");
-    let report: Value = serde_json::from_slice(&output.stdout).expect("earnest verify prints JSON");
-    let named = report["models"]
-        .as_array()
-        .and_then(|models| models.iter().find(|model| model["name"] == "Named"))
-        .unwrap_or(&Value::Null);
+    let report = verified_with_recorded_quint(&QuintFixtures {
+        file: "named_runs.qnt",
+        source: include_str!("../../models/quint_second/named_runs/named_runs.qnt"),
+        typecheck: include_str!("../../models/quint_second/named_runs/typecheck.json"),
+        compiled: include_str!("../../models/quint_second/named_runs/Named.json"),
+        checks: r#"{ "checks": [ { "file": "named_runs.qnt", "main": "Named", "init": "C::init", "step": "C::step", "runs": true } ] }"#,
+    });
     assert_eq!(
-        rule(named, "upTest")["verdict"],
+        rule(model_named(&report, "Named"), "upTest")["verdict"],
         "holds",
         "`quint test --main Named` plays `Named::C::upTest` and prints `ok Named::C::upTest \
          passed 1 test(s)`; the docs say `\"runs\": true` plays the spec's runs whose name ends \
          in `Test`, `C::name` under a name, and the same check beside a second check of the \
          file plays it\n{report:#}"
+    );
+}
+
+fn run_ids(model: &Value) -> Vec<(String, String)> {
+    model["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|found| {
+            found["says"]
+                .as_str()
+                .is_some_and(|says| says.contains("Quint run"))
+        })
+        .map(|found| {
+            (
+                found["id"].as_str().unwrap_or_default().to_owned(),
+                found["verdict"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_cached_result_is_not_served_for_a_check_whose_runs_changed() {
+    let recorded = RecordedQuint::new(&QuintFixtures {
+        file: "cached_runs.qnt",
+        source: include_str!("../../models/quint_second/cached_runs/cached_runs.qnt"),
+        typecheck: include_str!("../../models/quint_second/cached_runs/parse.json"),
+        compiled: include_str!("../../models/quint_second/cached_runs/cached_runs.json"),
+        checks: r#"{ "checks": [ { "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"] } ] }"#,
+    });
+    let first = recorded.verify(&[]);
+    recorded.write(
+        "earnest.quint.json",
+        r#"{ "checks": [ { "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["downTest"] } ] }"#,
+    );
+    let second = recorded.verify(&[]);
+    let fresh = recorded.verify(&["--no-cache"]);
+    let expected = vec![("downTest".to_owned(), "broken".to_owned())];
+    assert_eq!(
+        run_ids(model_named(&fresh, "cached_runs")),
+        expected,
+        "a full run plays the one run listed, `downTest`, which `quint test` fails\n{fresh:#}"
+    );
+    assert_eq!(
+        run_ids(model_named(&second, "cached_runs")),
+        expected,
+        "the docs key a compiled module by the check's `runs` among the rest; the second run \
+         lists `downTest` and nothing else, as the full run does, not the first run's \
+         `upTest`\nfirst: {first:#}\nsecond: {second:#}"
     );
 }
 
