@@ -50,8 +50,8 @@ fn most_id(value: &Value) -> u64 {
 /// What `quint typecheck --out` wrote for a `.qnt` file: every module of it, unflattened.
 ///
 /// [`Typechecked::setup`] builds from it the module `quint compile --main <setup>` would give
-/// for a setup of the plain shape `module Small { import Spec(K = e).* }`, so that a file of
-/// many setups costs one Quint run.
+/// for a setup such as `module Small { import Spec(K = e).* }`, so that a file of many setups
+/// costs one Quint run.
 #[derive(Debug)]
 pub struct Typechecked {
     modules: Vec<Value>,
@@ -124,9 +124,10 @@ impl Typechecked {
     }
 
     /// The JSON `quint compile --target json` would write for `check`, with the runs of the
-    /// imported module that `check` plays kept, or `None` when the setup is of a shape this
-    /// does not build: anything but one `import Spec(...).*` of a module that imports nothing,
-    /// with every constant given an expression of builtins only, and definitions of its own.
+    /// instantiated modules that `check` plays kept, or `None` when the setup is of a shape this
+    /// does not build. It builds a module made of instances (`import Spec(K = e).*` or
+    /// `import Spec(K = e) as C`) of modules that import nothing, `import Lib.*` of modules of
+    /// definitions only, `export C.*` of its own instances, and definitions of its own.
     #[must_use]
     pub fn setup(&self, check: &Setup<'_>) -> Option<String> {
         let filler = Filler::new(self, check.main)?;
@@ -134,92 +135,166 @@ impl Typechecked {
     }
 }
 
+struct Instance<'t> {
+    alias: Option<&'t str>,
+    namespace: String,
+    visible: bool,
+    declarations: HashMap<u64, &'t Value>,
+    constants: HashMap<u64, (&'t Value, &'t Value)>,
+    typedefs: HashMap<&'t str, &'t Value>,
+    fresh_ids: bool,
+}
+
+type Target = (Option<usize>, u64, String, &'static str);
+
 struct Filler<'t> {
     typechecked: &'t Typechecked,
     main: &'t Value,
-    namespace: String,
-    spec: HashMap<u64, &'t Value>,
+    instances: Vec<Instance<'t>>,
+    by_declaration: HashMap<u64, usize>,
+    by_instance: HashMap<u64, usize>,
     own: HashMap<u64, &'t Value>,
-    constants: HashMap<u64, (&'t Value, &'t Value)>,
-    typedefs: HashMap<&'t str, &'t Value>,
-    renamed: HashMap<u64, String>,
+    renamed: HashMap<(Option<usize>, u64), String>,
+    refreshed: HashMap<(usize, u64), u64>,
     pushed: Vec<Value>,
     names: HashSet<String>,
-    visiting: HashSet<u64>,
+    visiting: HashSet<(Option<usize>, u64)>,
     entries: Map<String, Value>,
     next: u64,
 }
 
-fn builtins_only(expr: &Value, table: &Map<String, Value>) -> bool {
-    let own = number(expr, "id").is_none_or(|id| !table.contains_key(&id.to_string()));
-    own && match expr {
-        Value::Object(fields) => fields.values().all(|field| builtins_only(field, table)),
-        Value::Array(items) => items.iter().all(|item| builtins_only(item, table)),
-        _ => true,
+fn plain_import<'t>(typechecked: &'t Typechecked, declaration: &Value) -> Fill<Vec<&'t Value>> {
+    if text(declaration, "defName") != Some("*") || declaration.get("qualifiedName").is_some() {
+        return None;
     }
+    let module = typechecked.module(text(declaration, "protoName")?)?;
+    let mut definitions = Vec::new();
+    for each in list(module, "declarations") {
+        match text(each, "kind")? {
+            "def" => definitions.push(each),
+            "typedef" => {}
+            _ => return None,
+        }
+    }
+    Some(definitions)
+}
+
+fn instance<'t>(
+    typechecked: &'t Typechecked,
+    main_name: &str,
+    declaration: &'t Value,
+) -> Fill<Instance<'t>> {
+    let alias = text(declaration, "qualifiedName");
+    let proto = text(declaration, "protoName")?;
+    let spec_module = typechecked.module(proto)?;
+    let mut declarations = HashMap::new();
+    let mut declared_constants = HashMap::new();
+    let mut typedefs = HashMap::new();
+    for each in list(spec_module, "declarations") {
+        let id = number(each, "id");
+        match text(each, "kind")? {
+            "var" | "def" => {
+                declarations.insert(id?, each);
+            }
+            "const" => {
+                declared_constants.insert(text(each, "name")?, (id?, each));
+            }
+            "typedef" => {
+                typedefs.insert(text(each, "name")?, each);
+            }
+            _ => return None,
+        }
+    }
+    let mut constants = HashMap::new();
+    for pair in list(declaration, "overrides") {
+        let [parameter, expr] = pair.as_array()?.as_slice() else {
+            return None;
+        };
+        let (id, constant) = declared_constants.get(text(parameter, "name")?)?;
+        if constants.insert(*id, (*constant, expr)).is_some() {
+            return None;
+        }
+    }
+    if constants.len() != declared_constants.len() {
+        return None;
+    }
+    Some(Instance {
+        alias,
+        namespace: format!("{main_name}{SEPARATOR}{}", alias.unwrap_or(proto)),
+        visible: alias.is_none(),
+        declarations,
+        constants,
+        typedefs,
+        fresh_ids: false,
+    })
 }
 
 impl<'t> Filler<'t> {
     fn new(typechecked: &'t Typechecked, main_name: &str) -> Fill<Self> {
         let main = typechecked.module(main_name)?;
-        let mut instance = None;
+        let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();
+        let mut exports = Vec::new();
+        let mut protos: HashMap<&str, usize> = HashMap::new();
         for declaration in list(main, "declarations") {
             match text(declaration, "kind")? {
-                "instance" if instance.is_none() && declaration.get("qualifiedName").is_none() => {
-                    instance = Some(declaration);
+                "instance" => {
+                    *protos.entry(text(declaration, "protoName")?).or_insert(0) += 1;
+                    instances.push(instance(typechecked, main_name, declaration)?);
                 }
+                "import" => {
+                    for definition in plain_import(typechecked, declaration)? {
+                        own.insert(number(definition, "id")?, definition);
+                    }
+                }
+                "export" => exports.push(declaration),
                 "def" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
+                "typedef" => {}
                 _ => return None,
             }
         }
-        let instance = instance?;
-        let proto = text(instance, "protoName")?;
-        let spec_module = typechecked.module(proto)?;
-        let mut spec = HashMap::new();
-        let mut declared_constants = HashMap::new();
-        let mut typedefs = HashMap::new();
-        for declaration in list(spec_module, "declarations") {
-            let id = number(declaration, "id");
-            match text(declaration, "kind")? {
-                "var" | "def" => {
-                    spec.insert(id?, declaration);
-                }
-                "const" => {
-                    declared_constants.insert(text(declaration, "name")?, (id?, declaration));
-                }
-                "typedef" => {
-                    typedefs.insert(text(declaration, "name")?, declaration);
-                }
-                _ => return None,
-            }
-        }
-        let mut constants = HashMap::new();
-        for pair in list(instance, "overrides") {
-            let [parameter, expr] = pair.as_array()?.as_slice() else {
-                return None;
-            };
-            let (id, declaration) = declared_constants.get(text(parameter, "name")?)?;
-            if !builtins_only(expr, &typechecked.table)
-                || constants.insert(*id, (*declaration, expr)).is_some()
-            {
-                return None;
-            }
-        }
-        if constants.len() != declared_constants.len() {
+        if instances.is_empty() {
             return None;
+        }
+        for export in exports {
+            let alias = text(export, "protoName")?;
+            let exported = instances
+                .iter_mut()
+                .find(|each| each.alias == Some(alias))
+                .filter(|_| {
+                    text(export, "defName") == Some("*") && export.get("qualifiedName").is_none()
+                })?;
+            exported.visible = true;
+        }
+        let mut by_declaration = HashMap::new();
+        let mut by_instance = HashMap::new();
+        let instance_declarations: Vec<&Value> = list(main, "declarations")
+            .iter()
+            .filter(|each| text(each, "kind") == Some("instance"))
+            .collect();
+        for (position, (each, declaration)) in
+            instances.iter_mut().zip(instance_declarations).enumerate()
+        {
+            let proto = text(declaration, "protoName")?;
+            each.fresh_ids = protos.get(proto).copied().unwrap_or(0) > 1;
+            by_instance.insert(number(declaration, "id")?, position);
+            if !each.fresh_ids {
+                for id in each.declarations.keys().chain(each.constants.keys()) {
+                    by_declaration.insert(*id, position);
+                }
+            }
         }
         Some(Self {
             typechecked,
             main,
-            namespace: format!("{main_name}{SEPARATOR}{proto}"),
-            spec,
+            instances,
+            by_declaration,
+            by_instance,
             own,
-            constants,
-            typedefs,
             renamed: HashMap::new(),
+            refreshed: HashMap::new(),
             pushed: Vec::new(),
             names: HashSet::new(),
             visiting: HashSet::new(),
@@ -232,6 +307,28 @@ impl<'t> Filler<'t> {
         self.typechecked.table.get(&id.to_string())
     }
 
+    fn fresh(&mut self) -> u64 {
+        let id = self.next;
+        self.next = self.next.saturating_add(1);
+        id
+    }
+
+    fn id_in(&mut self, within: Option<usize>, id: u64) -> u64 {
+        let Some(position) = within.filter(|position| {
+            self.instances
+                .get(*position)
+                .is_some_and(|each| each.fresh_ids)
+        }) else {
+            return id;
+        };
+        if let Some(found) = self.refreshed.get(&(position, id)) {
+            return *found;
+        }
+        let new = self.fresh();
+        self.refreshed.insert((position, id), new);
+        new
+    }
+
     fn push(&mut self, declaration: Value) {
         if let Some(name) = text(&declaration, "name")
             && self.names.insert(name.to_owned())
@@ -240,27 +337,46 @@ impl<'t> Filler<'t> {
         }
     }
 
-    fn inlined(&self, annotation: &Value) -> Fill<Value> {
+    fn namespace_of(&self, within: Option<usize>) -> Option<String> {
+        within
+            .and_then(|position| self.instances.get(position))
+            .map(|each| each.namespace.clone())
+    }
+
+    fn inlined(&self, within: usize, annotation: &Value) -> Fill<Value> {
+        let typedefs = &self.instances.get(within)?.typedefs;
         let mut annotation = annotation.clone();
         for _ in 0..MOST_ALIASES {
             if text(&annotation, "kind") != Some("const") {
                 return Some(annotation);
             }
-            let alias = self.typedefs.get(text(&annotation, "name")?)?;
+            let alias = typedefs.get(text(&annotation, "name")?)?;
             annotation = alias.get("type")?.clone();
         }
         None
     }
 
-    fn reach(&mut self, target: u64) -> Fill<()> {
-        if let Some((declaration, expr)) = self.constants.get(&target).copied() {
-            let name = namespaced(&self.namespace, text(declaration, "name")?);
+    fn reach(&mut self, target: u64, within: Option<usize>) -> Fill<()> {
+        if !self.visiting.insert((within, target)) {
+            return Some(());
+        }
+        if let Some(position) = within
+            && let Some((declaration, expr)) = self
+                .instances
+                .get(position)?
+                .constants
+                .get(&target)
+                .copied()
+        {
+            let space = self.namespace_of(within)?;
+            let id = self.id_in(within, target);
+            let expr = self.expr(expr, None)?;
             let mut constant = json!({
                 "kind": "def",
                 "qualifier": "pureval",
                 "expr": expr,
-                "id": target,
-                "name": name,
+                "id": id,
+                "name": namespaced(&space, text(declaration, "name")?),
                 "depth": 0,
             });
             if let Some(annotation) = declaration.get("typeAnnotation") {
@@ -269,24 +385,24 @@ impl<'t> Filler<'t> {
             self.push(constant);
             return Some(());
         }
-        let (declaration, within) = match (self.spec.get(&target), self.own.get(&target)) {
-            (Some(found), _) => (*found, Some(self.namespace.clone())),
-            (None, Some(found)) => (*found, None),
-            (None, None) => return None,
+        let declaration = match within {
+            Some(position) => *self.instances.get(position)?.declarations.get(&target)?,
+            None => *self.own.get(&target)?,
         };
         let name = text(declaration, "name")?;
-        let shown = within
-            .as_deref()
-            .map_or_else(|| name.to_owned(), |space| namespaced(space, name));
-        if self.names.contains(&shown) || !self.visiting.insert(target) {
+        let shown = self
+            .namespace_of(within)
+            .map_or_else(|| name.to_owned(), |space| namespaced(&space, name));
+        if self.names.contains(&shown) {
             return Some(());
         }
         let mut copy = declaration.clone();
         copy["name"] = Value::String(shown);
+        copy["id"] = json!(self.id_in(within, target));
         if text(declaration, "kind") == Some("var") {
-            copy["typeAnnotation"] = self.inlined(declaration.get("typeAnnotation")?)?;
+            copy["typeAnnotation"] = self.inlined(within?, declaration.get("typeAnnotation")?)?;
         } else {
-            copy["expr"] = self.expr(declaration.get("expr")?, within.as_deref())?;
+            copy["expr"] = self.expr(declaration.get("expr")?, within)?;
         }
         if let Value::Object(fields) = &mut copy {
             fields.remove("importedFrom");
@@ -296,30 +412,80 @@ impl<'t> Filler<'t> {
         Some(())
     }
 
-    fn used(&mut self, id: u64, written: &str, within: Option<&str>) -> Fill<String> {
+    fn owner(&self, entry: &Value, target: u64, within: Option<usize>) -> Option<usize> {
+        if let Some(position) = within {
+            return self
+                .instances
+                .get(position)
+                .filter(|each| {
+                    each.declarations.contains_key(&target) || each.constants.contains_key(&target)
+                })
+                .map(|_| position);
+        }
+        if self.own.contains_key(&target) {
+            return None;
+        }
+        entry
+            .get("importedFrom")
+            .filter(|imported| text(imported, "kind") == Some("instance"))
+            .and_then(|imported| number(imported, "id"))
+            .and_then(|instance| self.by_instance.get(&instance).copied())
+            .or_else(|| self.by_declaration.get(&target).copied())
+    }
+
+    fn used(&mut self, id: u64, written: &str, within: Option<usize>) -> Fill<String> {
         let Some(entry) = self.entry(id) else {
             return Some(written.to_owned());
         };
         let target = number(entry, "id")?;
-        let top = number(entry, "depth").unwrap_or(0) == 0 && text(entry, "kind") != Some("param");
+        let kind = text(entry, "kind")?;
+        let top = number(entry, "depth").unwrap_or(0) == 0 && kind != "param";
+        let owner = self.owner(entry, target, within);
+        let local = within.or(owner);
         if top {
-            self.reach(target)?;
+            if owner.is_none() && !self.own.contains_key(&target) {
+                return None;
+            }
+            self.reach(target, owner)?;
+        }
+        let refreshed = local.is_some_and(|position| {
+            self.instances
+                .get(position)
+                .is_some_and(|each| each.fresh_ids)
+        });
+        if refreshed {
+            let new_target = self.id_in(local, target);
+            let new_kind = if kind == "const" { "def" } else { kind };
+            let node = self.id_in(within, id);
+            self.entries.insert(
+                node.to_string(),
+                json!({ "kind": new_kind, "id": new_target }),
+            );
         }
         let base = self
             .renamed
-            .get(&target)
+            .get(&(local, target))
             .cloned()
             .unwrap_or_else(|| written.to_owned());
-        let from_spec = self.spec.contains_key(&target) || self.constants.contains_key(&target);
-        Some(match within {
-            Some(space) => namespaced(space, &base),
-            None if top && from_spec => namespaced(&self.namespace, text(entry, "name")?),
-            None => base,
+        Some(match (within, owner) {
+            (Some(_), _) => namespaced(&self.namespace_of(within)?, &base),
+            (None, Some(_)) if top => namespaced(&self.namespace_of(owner)?, text(entry, "name")?),
+            _ => base,
         })
     }
 
-    fn expr(&mut self, expr: &Value, within: Option<&str>) -> Fill<Value> {
+    fn renamed_name(&self, written: &str, within: Option<usize>) -> String {
+        match self.namespace_of(within) {
+            Some(space) => namespaced(&space, written),
+            None => written.to_owned(),
+        }
+    }
+
+    fn expr(&mut self, expr: &Value, within: Option<usize>) -> Fill<Value> {
         let mut copy = expr.clone();
+        if let Some(id) = number(expr, "id") {
+            copy["id"] = json!(self.id_in(within, id));
+        }
         match text(expr, "kind")? {
             "name" => {
                 let id = number(expr, "id")?;
@@ -339,14 +505,12 @@ impl<'t> Filler<'t> {
                 let lambda = number(expr, "id")?;
                 let mut params = Vec::new();
                 for param in list(expr, "params") {
+                    let id = number(param, "id")?;
                     let unshadowed = format!("{}_{lambda}", text(param, "name")?);
-                    self.renamed
-                        .insert(number(param, "id")?, unshadowed.clone());
+                    self.renamed.insert((within, id), unshadowed.clone());
                     let mut renamed = param.clone();
-                    renamed["name"] = Value::String(within.map_or_else(
-                        || unshadowed.clone(),
-                        |space| namespaced(space, &unshadowed),
-                    ));
+                    renamed["id"] = json!(self.id_in(within, id));
+                    renamed["name"] = Value::String(self.renamed_name(&unshadowed, within));
                     params.push(renamed);
                 }
                 copy["params"] = Value::Array(params);
@@ -367,13 +531,11 @@ impl<'t> Filler<'t> {
                     written.to_owned()
                 };
                 if shadowing {
-                    self.renamed.insert(def, unshadowed.clone());
+                    self.renamed.insert((within, def), unshadowed.clone());
                 }
                 let mut renamed = opdef.clone();
-                renamed["name"] = Value::String(within.map_or_else(
-                    || unshadowed.clone(),
-                    |space| namespaced(space, &unshadowed),
-                ));
+                renamed["id"] = json!(self.id_in(within, def));
+                renamed["name"] = Value::String(self.renamed_name(&unshadowed, within));
                 renamed["expr"] = self.expr(opdef.get("expr")?, within)?;
                 copy["opdef"] = renamed;
                 copy["expr"] = self.expr(expr.get("expr")?, within)?;
@@ -383,15 +545,12 @@ impl<'t> Filler<'t> {
         Some(copy)
     }
 
-    fn fresh(&mut self) -> u64 {
-        let id = self.next;
-        self.next = self.next.saturating_add(1);
-        id
-    }
-
-    fn named(&self, name: &str, qualifiers: &[&str]) -> Fill<(u64, String, &'static str)> {
-        let fits = |declaration: &Value| {
-            text(declaration, "name") == Some(name)
+    fn named(&self, name: &str, qualifiers: &[&str]) -> Fill<Target> {
+        let fits = |declaration: &Value, wanted: &str| {
+            text(declaration, "name") == Some(wanted)
+                && declaration
+                    .get("expr")
+                    .is_none_or(|expr| text(expr, "kind") != Some("lambda"))
                 && match text(declaration, "kind") {
                     Some("var") => qualifiers.contains(&"var"),
                     Some("def") => text(declaration, "qualifier")
@@ -399,44 +558,49 @@ impl<'t> Filler<'t> {
                     _ => false,
                 }
         };
-        let own: Vec<&Value> = self
-            .own
-            .values()
-            .copied()
-            .filter(|each| fits(each))
-            .collect();
-        let spec: Vec<&Value> = self
-            .spec
-            .values()
-            .copied()
-            .filter(|each| fits(each))
-            .collect();
-        let lambda = |declaration: &Value| {
-            declaration
-                .get("expr")
-                .is_some_and(|expr| text(expr, "kind") == Some("lambda"))
-        };
-        match (own.as_slice(), spec.as_slice()) {
-            ([found], []) if !lambda(found) => {
-                Some((number(found, "id")?, name.to_owned(), kind_of(found)))
-            }
-            ([], [found]) if !lambda(found) => Some((
-                number(found, "id")?,
-                namespaced(&self.namespace, name),
-                kind_of(found),
-            )),
-            _ => None,
+        let mut found: Vec<(Option<usize>, u64, &str)> = Vec::new();
+        let (alias, wanted) = name
+            .split_once(SEPARATOR)
+            .map_or((None, name), |(alias, rest)| (Some(alias), rest));
+        if alias.is_none() {
+            found.extend(
+                self.own
+                    .iter()
+                    .filter(|(_, declaration)| fits(declaration, wanted))
+                    .map(|(id, _)| (None, *id, wanted)),
+            );
         }
+        for (position, each) in self.instances.iter().enumerate() {
+            let seen = match alias {
+                Some(_) => each.alias == alias,
+                None => each.visible,
+            };
+            if seen {
+                found.extend(
+                    each.declarations
+                        .iter()
+                        .filter(|(_, declaration)| fits(declaration, wanted))
+                        .map(|(id, _)| (Some(position), *id, wanted)),
+                );
+            }
+        }
+        let [(within, target, written)] = found.as_slice() else {
+            return None;
+        };
+        let (within, target) = (*within, *target);
+        let declaration = match within {
+            Some(position) => *self.instances.get(position)?.declarations.get(&target)?,
+            None => *self.own.get(&target)?,
+        };
+        let shown = self.renamed_name(written, within);
+        Some((within, target, shown, kind_of(declaration)))
     }
 
-    fn special(
-        &mut self,
-        (name, qualifier): (&str, &str),
-        listed: &[(u64, String, &'static str)],
-    ) -> Fill<()> {
+    fn special(&mut self, (name, qualifier): (&str, &str), listed: &[Target]) -> Fill<()> {
         let mut args = Vec::with_capacity(listed.len());
-        for (target, shown, kind) in listed {
-            self.reach(*target)?;
+        for (within, raw, shown, kind) in listed {
+            self.reach(*raw, *within)?;
+            let target = self.id_in(*within, *raw);
             let id = self.fresh();
             self.entries
                 .insert(id.to_string(), json!({ "kind": kind, "id": target }));
@@ -454,23 +618,53 @@ impl<'t> Filler<'t> {
         Some(())
     }
 
-    fn played(&self, runs: &Runs) -> Vec<u64> {
-        let mut found: Vec<(u64, &str)> = self
-            .spec
-            .iter()
-            .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
-            .filter_map(|(id, declaration)| Some((*id, text(declaration, "name")?)))
-            .filter(|(_, name)| match runs {
-                Runs::None => false,
-                Runs::Tests => name.ends_with(TESTS_END_WITH),
-                Runs::Named(names) => names.iter().any(|each| each == name),
-            })
-            .collect();
-        found.sort_unstable();
-        found.into_iter().map(|(id, _)| id).collect()
+    fn played(&self, runs: &Runs) -> Vec<(usize, u64)> {
+        let mut found = Vec::new();
+        for (position, each) in self.instances.iter().enumerate() {
+            let mut runs_here: Vec<(u64, &str)> = each
+                .declarations
+                .iter()
+                .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
+                .filter_map(|(id, declaration)| Some((*id, text(declaration, "name")?)))
+                .filter(|(_, name)| match runs {
+                    Runs::None => false,
+                    Runs::Tests => name.ends_with(TESTS_END_WITH),
+                    Runs::Named(names) => names.iter().any(|listed| {
+                        listed == name
+                            || each
+                                .alias
+                                .is_some_and(|alias| *listed == format!("{alias}{SEPARATOR}{name}"))
+                    }),
+                })
+                .collect();
+            runs_here.sort_unstable();
+            found.extend(runs_here.into_iter().map(|(id, _)| (position, id)));
+        }
+        found
+    }
+
+    fn roots(&mut self) -> Fill<()> {
+        let main = self.main;
+        for declaration in list(main, "declarations") {
+            match text(declaration, "kind") {
+                Some("instance") => {
+                    let overrides: Vec<&Value> = list(declaration, "overrides")
+                        .iter()
+                        .filter_map(|pair| pair.get(1))
+                        .collect();
+                    for expr in overrides {
+                        self.expr(expr, None)?;
+                    }
+                }
+                Some("def") => self.reach(number(declaration, "id")?, None)?,
+                _ => {}
+            }
+        }
+        Some(())
     }
 
     fn filled(mut self, check: &Setup<'_>) -> Fill<String> {
+        self.roots()?;
         let actions = ["action"];
         let init = self.named(check.init, &actions)?;
         let step = self.named(check.step, &actions)?;
@@ -484,15 +678,6 @@ impl<'t> Filler<'t> {
             .iter()
             .map(|name| self.named(name, &["temporal"]))
             .collect::<Fill<Vec<_>>>()?;
-        let mut own: Vec<u64> = list(self.main, "declarations")
-            .iter()
-            .filter(|declaration| text(declaration, "kind") == Some("def"))
-            .filter_map(|declaration| number(declaration, "id"))
-            .collect();
-        own.retain(|id| self.own.contains_key(id));
-        for id in own {
-            self.reach(id)?;
-        }
         self.special(("q::init", "action"), &[init])?;
         self.special(("q::step", "action"), &[step])?;
         if !invariants.is_empty() {
@@ -501,13 +686,17 @@ impl<'t> Filler<'t> {
         if !temporal.is_empty() {
             self.special(("q::temporalProps", "temporal"), &temporal)?;
         }
-        for run in self.played(check.runs) {
-            self.reach(run)?;
+        for (position, run) in self.played(check.runs) {
+            self.reach(run, Some(position))?;
         }
         let mut table = Map::new();
         for (key, entry) in &self.typechecked.table {
             let target = number(entry, "id")?;
-            let kind = if self.constants.contains_key(&target) {
+            let constant = self
+                .instances
+                .iter()
+                .any(|each| !each.fresh_ids && each.constants.contains_key(&target));
+            let kind = if constant {
                 "def"
             } else {
                 text(entry, "kind")?

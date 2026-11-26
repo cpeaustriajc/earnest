@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::support::{Run, Sandbox, find_model, model, repository, rule};
+use crate::support::{Run, Sandbox, model, repository, rule};
 
 const FAKE: &str = r#"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -52,7 +52,7 @@ case "$1" in
 esac
 "#;
 
-const SPECS: [&str; 10] = [
+const SPECS: [&str; 11] = [
     "ints",
     "kinds",
     "pure",
@@ -62,10 +62,11 @@ const SPECS: [&str; 10] = [
     "clock",
     "clockbits",
     "lamp",
+    "more",
     "compiled",
 ];
 
-const COMPILED: [&str; 18] = [
+const COMPILED: [&str; 23] = [
     "ints.Low",
     "ints.High",
     "kinds.Setup",
@@ -80,13 +81,20 @@ const COMPILED: [&str; 18] = [
     "lamp.Dim",
     "lamp.Bright",
     "lamp.Blinding",
+    "more.Named",
+    "more.Reexported",
+    "more.ByOwn",
+    "more.ByName",
+    "more.Two",
+    "more.Pair",
+    "more.Plain",
     "compiled.Nested",
-    "compiled.Aliased",
-    "compiled.ByName",
-    "compiled.Exported",
+    "compiled.Renamed",
 ];
 
-const FALLBACKS: [&str; 5] = ["Large", "Nested", "Aliased", "ByName", "Exported"];
+const FALLBACKS: [&str; 2] = ["Nested", "Renamed"];
+
+const SAME_AS: [(&str, &str); 1] = [("Exported", "Plain")];
 
 fn setups(name: &str) -> String {
     let path = repository().join("tasks/quint/setups").join(name);
@@ -222,16 +230,18 @@ fn every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flatte
     let theirs = quint.earnest(&["verify", "--json", "specs"]).json();
     assert_eq!(
         quint.compiled_mains().len(),
-        COMPILED.len(),
+        COMPILED.len() + SAME_AS.len(),
         "with no typecheck, every setup is compiled: {:?}",
         quint.calls()
     );
     let mut compared = 0;
-    for compiled in COMPILED {
-        let main = compiled.split_once('.').map_or(compiled, |(_, main)| main);
-        let Some(flattened) = find_model(&theirs, main) else {
-            continue;
-        };
+    let mains = COMPILED
+        .iter()
+        .map(|compiled| compiled.split_once('.').map_or(*compiled, |(_, main)| main))
+        .map(|main| (main, main))
+        .chain(SAME_AS);
+    for (main, flattened_as) in mains {
+        let flattened = model(&theirs, flattened_as);
         let built = model(&ours, main);
         for key in ["status", "states", "reason"] {
             assert_eq!(
@@ -249,7 +259,11 @@ fn every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flatte
         }
         compared += 1;
     }
-    assert_eq!(compared, 17, "every readable setup is compared\n{theirs}");
+    assert_eq!(
+        compared,
+        COMPILED.len() + SAME_AS.len(),
+        "every setup is compared\n{theirs}"
+    );
 }
 
 #[test]
@@ -309,17 +323,38 @@ fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() 
         ]),
         "{report}"
     );
-    let by_name = report["unreadable"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|problem| problem["feature"] == "`run upTest`")
-        .unwrap_or_else(|| panic!("a compiled setup can't play an imported run\n{report}"));
+    for (main, runs) in [
+        ("Named", &["upTest", "fullTest"][..]),
+        ("Reexported", &["upTest", "fullTest", "ownTest"][..]),
+        ("ByOwn", &["upTest"][..]),
+        ("ByName", &["upTest"][..]),
+        ("Exported", &["upTest", "fullTest"][..]),
+    ] {
+        let holding: Vec<(&str, &str)> = runs.iter().map(|run| (*run, "holds")).collect();
+        assert_eq!(
+            verdicts(main),
+            pairs(&holding),
+            "as `quint test --main {main}` judges them\n{report}"
+        );
+    }
+    let problem = |feature: &str, file: &str| -> String {
+        report["unreadable"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|problem| problem["feature"] == feature && problem["file"] == file)
+            .and_then(|problem| problem["message"].as_str())
+            .unwrap_or_else(|| panic!("{feature} in {file} is unreadable\n{report}"))
+            .to_owned()
+    };
     assert!(
-        by_name["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("drops the runs of imported modules")),
-        "{by_name}"
+        problem("`run upTest`", "specs/compiled.qnt")
+            .contains("drops the runs of imported modules"),
+        "a compiled setup can't play an imported run\n{report}"
+    );
+    assert!(
+        problem("a run", "specs/more.qnt").contains("does not start with `init`"),
+        "a run of one of two instances starts from part of the state\n{report}"
     );
 }
 
@@ -371,17 +406,18 @@ fn a_setup_of_another_shape_is_compiled_and_a_second_run_compiles_nothing() {
     let quint = Quint::new(
         r#"{ "checks": [
           { "file": "clock.qnt", "main": "Small", "invariants": ["timeBounded"] },
-          { "file": "clock.qnt", "main": "Large", "invariants": ["inv"] }
+          { "file": "clock.qnt", "main": "Large", "invariants": ["inv"] },
+          { "file": "compiled.qnt", "main": "Nested", "invariants": ["ok"] }
         ] }"#,
     );
     let run = quint.earnest(&["verify", "specs"]);
     run.exits(0);
     assert_eq!(
         quint.compiled_mains(),
-        names(&["Large"]),
-        "`import Clock(...) as C` is compiled, `Small` is built\n{run}"
+        names(&["Nested"]),
+        "an instance of an instance is compiled, `Small` and `Large` are built\n{run}"
     );
-    assert_eq!(quint.of_kind("typecheck").len(), 1, "{:?}", quint.calls());
+    assert_eq!(quint.of_kind("typecheck").len(), 2, "{:?}", quint.calls());
     quint.sandbox.write("fake/calls", "");
     let again = quint.earnest(&["verify", "specs"]);
     again.exits(0);
