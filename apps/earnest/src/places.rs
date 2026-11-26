@@ -129,6 +129,26 @@ fn names_of(module: &Value, at: &HashMap<u64, (String, u32, u32)>) -> Option<Nam
                     names.seen.push(seen_of(kind, declaration, proto));
                 }
             }
+            (Some("export"), _, _) => {
+                let exported = text(declaration, "protoName").and_then(|alias| {
+                    names
+                        .instances
+                        .iter()
+                        .find(|(each, _)| each == alias)
+                        .map(|(_, proto)| proto.clone())
+                });
+                if let Some(proto) = exported {
+                    names.instances.push((proto.clone(), proto.clone()));
+                    names.seen.push(Seen {
+                        proto,
+                        prefix: String::new(),
+                        only: text(declaration, "defName")
+                            .filter(|name| *name != EVERY_NAME)
+                            .map(str::to_owned),
+                        id: None,
+                    });
+                }
+            }
             (Some(CONSTANT), Some(name), Some(id)) => {
                 names.constants = true;
                 names.declared.push((name.to_owned(), id));
@@ -499,6 +519,11 @@ impl Places {
                 }
             }
         }
+        found.sort_by_key(|each| {
+            self.at
+                .get(&each.id)
+                .map(|(file, line, column)| (file.clone(), *line, *column))
+        });
         found
     }
 

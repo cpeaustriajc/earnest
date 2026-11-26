@@ -24,11 +24,16 @@ module Spec {
     }
   }
 
+  /// @check
+
   val inRange = level >= Limits.low and level <= Limits.high
+  /// @check
   val paired = Pair._1 >= 0 and Pair._2 != ""
+  /// @check
   val known = Names.contains(who)
 }
 
+/// @check
 module Setup {
   import Spec(
     On = true,

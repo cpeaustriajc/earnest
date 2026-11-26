@@ -13,8 +13,12 @@ module Spec {
   action init = all { at' = 0, visited' = Set(0) }
   action step = all { at' = ahead(at), visited' = visited.union(Set(ahead(at))) }
 
+  /// @check
+
   val inside = Cells.contains(at)
+  /// @check
   val notAll = visited.size() < Size
 }
 
+/// @check
 module Four { import Spec(Size = 4).* }
