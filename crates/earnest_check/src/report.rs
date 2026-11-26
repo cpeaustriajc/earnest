@@ -1,6 +1,7 @@
 use crate::expand::{Whence, chosen};
 use crate::explore::Search;
 use crate::graph::Graph;
+use crate::limits::asked;
 use crate::outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleKind, RuleOutcome, Shown, Status, Step,
     Verdict,
@@ -182,7 +183,7 @@ impl Search<'_> {
             .rules
             .iter()
             .zip(self.first_broken.iter().zip(&self.unjudged))
-            .filter(|(rule, _)| only_rule.is_none_or(|wanted| wanted == rule.id))
+            .filter(|(rule, _)| asked(only_rule, &rule.id))
             .map(|(rule, (first, unjudged))| RuleOutcome {
                 id: rule.id.clone(),
                 says: rule.says.clone(),

@@ -8,7 +8,7 @@ mod workers;
 
 use crate::expand::{Asked, Budget, Expand, FromRows, Mark, Move, Whence, Width};
 use crate::helpers::Helpers;
-use crate::limits::{Limits, TIME_LIMIT_REASON};
+use crate::limits::{Limits, TIME_LIMIT_REASON, asked};
 use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
@@ -111,7 +111,7 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         .runs
         .eventually
         .iter()
-        .any(|rule| only_rule.is_none_or(|wanted| wanted == rule.id));
+        .any(|rule| asked(only_rule, &rule.id));
     if judges_runs && !limits.keep_graph {
         let keeping = Limits {
             keep_graph: true,

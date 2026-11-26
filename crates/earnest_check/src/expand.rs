@@ -1,3 +1,4 @@
+use crate::limits::asked;
 use crate::picks::{Cursor, Next, sets_of};
 use crate::store::{Decoder, RangeSlot, RowLayout, Store, hash_words};
 use earnest_ir::{
@@ -1386,7 +1387,7 @@ impl Expand<'_> {
             frame: None,
         };
         for (position, rule) in model.rules.iter().enumerate() {
-            if self.only_rule.is_some_and(|wanted| wanted != rule.id) {
+            if !asked(self.only_rule, &rule.id) {
                 continue;
             }
             let packed = self.from_rows.rules.get(position).and_then(Option::as_ref);

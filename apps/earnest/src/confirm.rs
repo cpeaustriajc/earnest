@@ -21,6 +21,7 @@ const EVENTUALLY: &str = "eventually";
 const TLC_STATES: &str = "states";
 const JAVA_TEMPORARY_FILES: &str = "java";
 const PROPERTY_BROKEN: &str = "Temporal properties were violated.";
+const ONE_PROPERTY_BROKEN: (&str, &str) = ("Temporal property ", " was violated.");
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
 
@@ -180,8 +181,17 @@ pub(crate) struct RunsRun {
     pub(crate) run: TlcRun,
 }
 
+fn says_broken(error: &str) -> bool {
+    let (before, after) = ONE_PROPERTY_BROKEN;
+    error == PROPERTY_BROKEN
+        || error
+            .strip_prefix(before)
+            .and_then(|rest| rest.strip_suffix(after))
+            .is_some_and(|name| !name.is_empty() && !name.contains(' '))
+}
+
 fn runs_verdict(rule: &RunsRun) -> &'static str {
-    let broke = |error: &String| error == PROPERTY_BROKEN;
+    let broke = |error: &String| says_broken(error);
     if rule.run.errors.iter().any(broke) {
         BROKEN
     } else if rule.run.errors.is_empty() && rule.run.distinct_states.is_some() {
@@ -212,7 +222,7 @@ pub(crate) fn runs_differences(checked: &Checked, rules: &[RunsRun], tool: Tool)
                 .run
                 .errors
                 .iter()
-                .find(|error| *error != PROPERTY_BROKEN)
+                .find(|error| !says_broken(error))
                 .map_or_default(|error| format!(" ({error})"));
             found.push(format!(
                 "rule {}: the checker says {}, {name} says {verdict}{error}",
@@ -863,6 +873,34 @@ State 1: <Initial predicate>
             merged(Vec::new()),
             TlcRun::default(),
             "no run, nothing found"
+        );
+    }
+
+    #[test]
+    fn a_broken_temporal_property_is_read_in_the_words_of_either_tlc() {
+        use super::{BROKEN, RunsRun, UNKNOWN, runs_verdict};
+        let broken = |error: &str| RunsRun {
+            id: "reach".to_owned(),
+            run: TlcRun {
+                distinct_states: Some(3),
+                violated: Vec::new(),
+                errors: vec![error.to_owned()],
+            },
+        };
+        assert_eq!(
+            runs_verdict(&broken("Temporal properties were violated.")),
+            BROKEN,
+            "the TLC inside Apalache's jar"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property Eventually_reach was violated.")),
+            BROKEN,
+            "tla2tools.jar 1.8 names the property"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property was violated for some reason.")),
+            UNKNOWN,
+            "any other words are an error"
         );
     }
 }
