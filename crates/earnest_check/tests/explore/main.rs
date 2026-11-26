@@ -9,6 +9,7 @@ mod graphs;
 mod lending;
 mod limits;
 mod rules;
+mod scripts;
 mod storage;
 mod turnstile;
 mod witnesses;

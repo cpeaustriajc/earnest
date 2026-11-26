@@ -91,7 +91,7 @@ pub(crate) fn not_read(opcode: &str) -> Option<&'static str> {
         return Some("temporal properties are not read yet");
     }
     if RUNS.contains(&opcode) {
-        return Some("runs are not read yet");
+        return Some("run operators are read only in a `run`");
     }
     NOT_READ
         .iter()

@@ -705,3 +705,105 @@ fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
         "the file Quint read from `../shared` changed, so the check is compiled again\n{edited}"
     );
 }
+
+fn with_stuck(runs: &str) -> Quint {
+    let quint = Quint::new();
+    quint
+        .sandbox
+        .write("fake/compiled/stuck.json", &sample("stuck.json"));
+    quint.with_specs(
+        "models",
+        &["stuck"],
+        &format!(
+            r#"{{ "checks": [
+          {{ "file": "stuck.qnt", "main": "stuck", "invariants": ["ok"]{runs} }}
+        ] }}"#
+        ),
+    );
+    quint
+}
+
+fn verdicts(report: &serde_json::Value) -> Vec<(String, String)> {
+    model(report, "stuck")["rules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|rule| {
+            (
+                rule["id"].as_str().unwrap_or_default().to_owned(),
+                rule["verdict"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn pairs(all: &[(&str, &str)]) -> Vec<(String, String)> {
+    all.iter()
+        .map(|(id, verdict)| ((*id).to_owned(), (*verdict).to_owned()))
+        .collect()
+}
+
+#[test]
+fn a_check_with_runs_true_plays_the_runs_whose_names_end_in_test() {
+    let quint = with_stuck(r#", "runs": true"#);
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    assert_eq!(
+        verdicts(&run.json()),
+        pairs(&[
+            ("ok", "holds"),
+            ("toTwoTest", "holds"),
+            ("thirdTest", "broken"),
+            ("withNondetTest", "holds"),
+            ("assertedTest", "holds"),
+            ("wrongExpectTest", "broken"),
+        ]),
+        "the invariant, then each run as quint test judges it\n{run}"
+    );
+}
+
+#[test]
+fn a_check_with_a_list_of_runs_plays_exactly_those() {
+    let quint = with_stuck(r#", "runs": ["wrongExpectTest", "toTwoTest"]"#);
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    assert_eq!(
+        verdicts(&run.json()),
+        pairs(&[
+            ("ok", "holds"),
+            ("wrongExpectTest", "broken"),
+            ("toTwoTest", "holds"),
+        ]),
+        "the listed runs, in the list's order\n{run}"
+    );
+}
+
+#[test]
+fn a_listed_run_the_module_lacks_makes_the_check_unreadable_and_is_named() {
+    let quint = with_stuck(r#", "runs": ["toTwoTest", "missingTest"]"#);
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let features: Vec<String> = problems(&report)
+        .into_iter()
+        .map(|(_, _, _, feature)| feature)
+        .collect();
+    assert_eq!(features, ["`run missingTest`"], "{run}");
+    assert!(
+        message_of(&report).contains("has no run of this name"),
+        "{run}"
+    );
+}
+
+#[test]
+fn a_check_that_asks_for_no_runs_ignores_the_runs_of_its_module() {
+    let quint = with_stuck("");
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(0);
+    assert_eq!(
+        verdicts(&run.json()),
+        pairs(&[("ok", "holds")]),
+        "the runs are neither played nor refused\n{run}"
+    );
+}

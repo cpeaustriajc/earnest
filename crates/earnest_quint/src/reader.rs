@@ -75,7 +75,7 @@ impl Path {
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
 
-enum Bound<'a> {
+pub(crate) enum Bound<'a> {
     Value(Expr),
     Operator(&'a Def),
 }
@@ -246,6 +246,22 @@ impl<'a> Reader<'a> {
                 "the compiled file does not hold this definition",
             ),
         }
+    }
+
+    pub(crate) fn definition(&self, id: u64, name: &str) -> Read<&'a Def> {
+        let entry = self.entry(id, name)?;
+        self.operator(entry, name)
+    }
+
+    pub(crate) fn hold(&mut self, id: u64, value: Expr) -> Option<Bound<'a>> {
+        self.bound.insert(id, Bound::Value(value))
+    }
+
+    pub(crate) fn release(&mut self, id: u64, was: Option<Bound<'a>>) {
+        match was {
+            Some(was) => self.bound.insert(id, was),
+            None => self.bound.remove(&id),
+        };
     }
 
     fn enter<T>(&mut self, def: &Def, read: impl FnOnce(&mut Self) -> Read<T>) -> Read<T> {
@@ -469,7 +485,7 @@ impl<'a> Reader<'a> {
         Ok(built)
     }
 
-    fn is_action(&self, expr: &Quint) -> bool {
+    pub(crate) fn is_action(&self, expr: &Quint) -> bool {
         match expr {
             Quint::App { id, opcode, args } => match builtin(opcode) {
                 Some(Builtin::ActionAll | Builtin::ActionAny | Builtin::Assign) => true,
@@ -511,20 +527,7 @@ impl<'a> Reader<'a> {
         }
         match expr {
             Quint::App { id, opcode, args } => match builtin(opcode) {
-                Some(Builtin::ActionAll | Builtin::And) => {
-                    let mut joined = vec![Path::default()];
-                    for each in args {
-                        let next = self.paths(each)?;
-                        if joined.len().saturating_mul(next.len()) > MOST_ACTIONS {
-                            return Err(too_many_actions());
-                        }
-                        joined = joined
-                            .iter()
-                            .flat_map(|first| next.iter().map(|second| first.joined(second)))
-                            .collect();
-                    }
-                    Ok(joined)
-                }
+                Some(Builtin::ActionAll | Builtin::And) => self.all_paths(args),
                 Some(Builtin::ActionAny | Builtin::Or) => {
                     let mut all = Vec::new();
                     for each in args {
@@ -555,6 +558,21 @@ impl<'a> Reader<'a> {
                 Ok(vec![Path::guarded(self.pure(expr)?)])
             }
         }
+    }
+
+    pub(crate) fn all_paths(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {
+        let mut joined = vec![Path::default()];
+        for each in args {
+            let next = self.paths(each)?;
+            if joined.len().saturating_mul(next.len()) > MOST_ACTIONS {
+                return Err(too_many_actions());
+            }
+            joined = joined
+                .iter()
+                .flat_map(|first| next.iter().map(|second| first.joined(second)))
+                .collect();
+        }
+        Ok(joined)
     }
 
     fn action(&mut self, def: &'a Def, arguments: Vec<Expr>) -> Read<Vec<Path>> {
@@ -606,7 +624,7 @@ impl<'a> Reader<'a> {
         Self::checked(all)
     }
 
-    fn picked_from(&mut self, opdef: &'a Def) -> Read<(Domain, Vec<Value>)> {
+    pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<(Domain, Vec<Value>)> {
         let feature = format!("`nondet {}`", opdef.name);
         let Quint::App { opcode, args, .. } = &opdef.expr else {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");

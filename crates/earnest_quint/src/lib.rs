@@ -6,7 +6,9 @@
 //! operators, the integer, boolean, text, record, tuple, set, map, list and variant operators
 //! (`match` among them), `if`, `let`, `nondet` over a set that does not change, and the
 //! module's `init`, `step`, listed invariants and listed temporal properties, each with the
-//! weak fairness it names. Everything else makes the file unreadable; nothing is skipped.
+//! weak fairness it names, and the `run` definitions a check chooses (by default each whose
+//! name ends in `Test`), as [`earnest_ir::Script`]s. Everything else makes the file unreadable;
+//! nothing is skipped.
 //!
 //! The compiled JSON holds no line numbers, so every problem is placed at line 1, column 1,
 //! and names the definition it was found in.
@@ -16,6 +18,7 @@ mod data;
 mod json;
 mod model;
 mod reader;
+mod runs;
 mod scan;
 mod starts;
 mod temporal;
@@ -31,19 +34,18 @@ pub fn is_compiled_quint(source: &str) -> bool {
     serde_json::from_str::<json::Probe>(source).is_ok_and(|probe| probe.stage == "compiling")
 }
 
-/// Which runs of the main module a check asks for, as listed in `earnest.quint.json`.
-///
-/// The reader takes it and does not play runs yet: a `run` definition in the module is still
-/// refused.
+/// Which `run` definitions of the main module are played, as a check lists them in
+/// `earnest.quint.json`. The runs it does not choose are not read at all.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Runs {
-    /// No run is played.
+    /// No run is played, and the module's runs are ignored.
     #[default]
     None,
-    /// The runs whose name ends in `Test`, as `quint test` picks them.
+    /// The runs whose name ends in `Test`, as `quint test` picks them with no `--match`.
     Tests,
-    /// The runs with these names.
+    /// The runs with these names, in this order. A name the module has no run of makes the
+    /// file unreadable.
     Named(Vec<String>),
 }
 
@@ -75,7 +77,8 @@ impl Located {
     }
 }
 
-/// Reads the compiled Quint module in `source`, from the file at `path`.
+/// Reads the compiled Quint module in `source`, from the file at `path`, with the runs whose
+/// name ends in `Test` played, as `quint test` plays them.
 ///
 /// # Errors
 ///
@@ -83,18 +86,18 @@ impl Located {
 /// names the construct and the definition it is in. A source that is not compiled Quint JSON is
 /// one problem.
 pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
-    read_located(path, source, &Runs::None)
+    read_located(path, source, &Runs::Tests)
         .map_err(|located| located.into_iter().map(|each| each.problem).collect())
 }
 
-/// Reads the compiled Quint module in `source`, from the file at `path`, as [`read`] does, for
-/// a check that asks for `runs`.
+/// Reads the compiled Quint module in `source`, from the file at `path`, as [`read`] does, with
+/// the runs that `runs` chooses played.
 ///
 /// # Errors
 ///
 /// The problems of [`read`], each with the id and the definition it was found in, when the
-/// reader knows them.
-pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec<Located>> {
+/// reader knows them, and each run that `runs` names and the module lacks.
+pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
         vec![Located::new(
             Problem::new(
@@ -110,7 +113,7 @@ pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec
             None,
         )]
     })?;
-    model::model(path, &compiled).map_err(|refused| {
+    model::model(path, &compiled, runs).map_err(|refused| {
         refused
             .into_iter()
             .map(|refusal| {
@@ -124,6 +127,8 @@ pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec
     })
 }
 
+#[cfg(test)]
+mod run_tests;
 #[cfg(test)]
 mod tests;
 

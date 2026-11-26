@@ -92,10 +92,45 @@ The reader takes variables of every type but operators: integers, booleans, text
 
 Still refused, each named in the problem:
 
-- Not yet read, and being built: runs (`run` definitions), and a `oneOf` over a set computed from the state or from another `nondet`.
+- Not yet read, and being built: a `oneOf` over a set computed from the state or from another `nondet`.
 - Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (write `foldl`), `fieldNames`, `apalache::generate`, `q::debug`, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
 
 The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
+
+## Runs
+
+A check with `"runs": true` plays the module's `run` definitions whose name ends in `Test`, as `quint test` picks them. A list plays exactly the runs it names, in its order; a name the module has no run of makes the check `unreadable` and is named. Without `runs`, the module's runs are not read. A compiled `.json` named on the command line plays the runs whose name ends in `Test`.
+
+Each run is listed after the invariants and temporal properties, with `"kind": "witness"`, the run's name as its id, and the sentence ``The Quint run `name` passes``. A broken run shows the path it broke on and a `why` line:
+
+```text
+fail        runs  12 states  0 ms
+  broken  pickSomeTest  "The Quint run `pickSomeTest` passes"
+    start  y = 0, picked = 0
+    1. pick  v = 1  picked: 0 -> 1
+    end    y = 0, picked = 1
+    why    what the run expects after step 1 is false here
+```
+
+A run starts with `init`, from every start state. Earnest reads these run operators as `quint test` judges them:
+
+| Operator | What earnest does |
+|---|---|
+| `A.then(B)` | `B` is the next step. A step that can't happen breaks the run |
+| `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after `init` |
+| `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
+| `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
+| `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step |
+| `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
+| a run's name | That run, played in place |
+
+A step plays every way its action can happen: each branch of an `any` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. One difference goes the other way too: for a `nondet` at the top of a run, Quint takes another value when the run is false for one, and earnest needs every value to pass.
+
+A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
+
+Refused, each named in the problem: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
+
+The compiled JSON holds only the runs written in the checked module itself. Runs written in a module it imports, such as the runs of `Clock` in `module Small { import Clock(MaxTime = 3).* }`, are not in it yet.
 
 A module flattened from an instance names its definitions after it: a rule of `import Clock(MaxTime = 3).*` in the module `Small` is `Small::Clock::inRange`.
 

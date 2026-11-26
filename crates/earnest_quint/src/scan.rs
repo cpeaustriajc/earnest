@@ -54,12 +54,7 @@ fn definition(def: &Def) -> Option<Refusal> {
         return Some(refusal(&format!("`{}`", def.name), why).within(&def.name));
     }
     match def.qualifier.as_str() {
-        "temporal" => None,
-        "run" => Some(in_definition(
-            &format!("`run {}`", def.name),
-            "runs are not read yet",
-            &def.name,
-        )),
+        "temporal" | "run" => None,
         _ => body(def, &def.name),
     }
 }

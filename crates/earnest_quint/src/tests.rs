@@ -229,8 +229,10 @@ fn a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs() {
 }
 
 #[test]
-fn a_run_is_refused_and_named() {
-    refused_with(TESTED, "`run oneTest`", "runs are not read yet");
+fn a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules() {
+    let tested = model(TESTED);
+    let ids: Vec<&str> = tested.rule_ids().collect();
+    assert_eq!(ids, ["oneTest"], "the run is the model's one check");
 }
 
 #[test]
