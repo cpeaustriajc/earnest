@@ -1304,3 +1304,225 @@ TLC and tla-rs: running `tla2tools.jar` through `earnest confirm --tlc` and inst
 `tla-tools` were refused by this session's permission rules, so no verdict was compared with an
 external checker. Rust formatting (`rustfmt` adds no comma after `..self.clone()`, and no model
 here wraps a call's arguments). Windows. Quint models.
+
+## First Quint pass
+
+An adversarial pass over the Quint reader (`crates/earnest_quint`, the `.qnt` side of
+`apps/earnest`), made on commit e66f839 of the integration branch with Quint 0.33.1. Its tests
+are in `tests/break_it/quint_first.rs` and its files in `models/quint_first/`: each `.qnt` beside
+the `.json` that `quint compile --target json` wrote for it, which the tests read, so they need
+no Node. Each of the five tests fails today. The oracles: `quint verify --backend tlc` (Apalache
+0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties, and Quint's
+TypeScript evaluator (`quint --backend typescript`, `quint run --backend typescript`, `quint test
+--backend typescript`) for single values and runs; Quint's Rust evaluator could not be fetched
+(GitHub answered `Forbidden`). Only cases where earnest matches neither backend are findings: the
+32-bit and negative `/` and `%` cases the spike measured are left out.
+
+### `range` that counts down is a fault
+
+`models/quint_first/range_down.qnt`: `n` from 3 down to 1 (3 states), the invariant `short` is
+`range(n, 1).length() <= n`. Quint's TypeScript evaluator gives `range(3, 1)` as `[3, 2]` (the
+REPL prints `[3, 2]`), Quint's TLC run gives `[]` (`range(3, 1) == []` holds, `== [3, 2]` is
+violated). Either way `short` holds: `quint verify --backend tlc --invariant short
+range_down.qnt` prints `[ok] No violation found`, and so does `quint run --backend typescript
+--invariant short`. Earnest: `fail`, `fault  the rule short computes a power or a run of numbers
+that is not defined in this state` in the start state, `short` `unknown`. Cause: `Op::Ascending`
+in `crates/earnest_ir/src/eval.rs` returns `Fault::Undefined` for `lo > hi`, and `data.rs` maps
+`range` to it. Right result: `short` holds, or the file refused naming `range` (the two backends
+disagree on the value). Test: `a_range_that_counts_down_is_not_a_fault`.
+
+### `setToMap` keeps the other pair of a key given twice
+
+`models/quint_first/set_to_map.qnt`: the invariant `firstKept` is
+`Set((1, 3), (1, 2)).setToMap() == Map(1 -> 2)`. Both backends give `Map(1 -> 2)`: TLC keeps the
+first pair in its order, the TypeScript evaluator the last it was given (the REPL prints
+`Map(1 -> 2)`; for `Set((1, 2), (1, 3))` it prints `Map(1 -> 3)` and TLC still gives
+`Map(1 -> 2)`). `quint verify --backend tlc --invariant firstKept` prints `[ok] No violation
+found`. Earnest: `firstKept` broken in the start state. With text values it goes the same way:
+`Set((2, "x"), (1, "y"), (2, "a")).setToMap()` is `Map(1 -> "y", 2 -> "a")` in both backends and
+`2 -> "x"` in earnest. Cause: `Data::SetToMap` in `crates/earnest_quint/src/data.rs` folds the
+pairs in earnest's order with `MapOp::Set`, so the last pair of a key wins. Right result:
+`firstKept` holds, or the file refused naming `setToMap`. Test:
+`a_set_of_pairs_with_a_key_twice_becomes_the_map_both_backends_give`.
+
+### `fold` over maps, sets and lists takes another order than both backends
+
+`models/quint_first/fold_order.qnt`: three invariants fold a set into a list of sizes:
+`maps` is `Set(Map(2 -> 0), Map(1 -> 0, 3 -> 0)).fold(List(), (sizes, m) =>
+sizes.append(m.keys().size())) == [1, 2]`, `sets` the same over `Set(Set(2), Set(1, 2, 3))` with
+`[1, 3]`, `lists` over `Set([2], [1, 2, 3])` with `[1, 3]`. TLC sorts a set of collections by
+size first (a start state printed by TLC: `sets = <<{}, {2}, {1, 2, 3}>>`, `lists = <<<<>>,
+<<2>>, <<1, 2, 3>>>>`, `maps = <<(2 :> 0), (1 :> 0 @@ 3 :> 0)>>`), the TypeScript evaluator folds
+in the written order, and both agree here: `quint verify --backend tlc` and `quint run --backend
+typescript` find no violation of any of the three. Earnest folds in the order of its own values,
+where `{1, 2, 3}` comes before `{2}` (lexicographic, as Rust orders a `BTreeSet`, a `Vec` and a
+`BTreeMap`), and all three are broken in the start state. The same order is what a
+`S.fold(List(), (l, e) => l.append(e))` turns into a list, which a project then reads with
+`head()` or an index. Texts and variants are a third order (TLC `"a", "b", "ab", "B"`, earnest
+`"B", "a", "ab", "b"`), not written as a test because the two backends differ there. Quint leaves
+the order of `fold` unspecified, but a check here gives the verdict neither backend gives.
+Cause: `Expr::Fold` over a set walks earnest's `Value` order (`crates/earnest_value`). Right
+result: each holds, or the file refused naming `fold`. Test:
+`a_fold_over_maps_sets_and_lists_takes_the_order_both_backends_take`.
+
+### Fairness of an action the step joins with another is judged on the join
+
+`models/quint_first/fair_part.qnt`: `step = all { any { move, rest }, tick }`, where `move` is
+`all { x < 3, x' = x + 1 }`, `rest` is `x' = x` and `tick` is `all { t < 1, t' = t + 1 }`; 3
+states, and every behaviour ends after one step in `x = 1, t = 1` or `x = 0, t = 1`. The property
+`reachesThree` is `weakFair(move, (x, t)) implies eventually(x == 3)`. `move` alone does not give
+`t'`, so `ENABLED <<move>>_(x, t)` is `x < 3`, true in both end states, where no step can happen:
+no fair behaviour exists, and the property holds. Quint's TLC run stops: `quint verify --backend
+tlc --temporal reachesThree fair_part.qnt` prints `The action formula A appearing in a WF_v(A) or
+SF_v(A) operator does not specify the primed value of the variable t occurring in the state
+formula v` and `[failure] TLC encountered an error`. Earnest: `reachesThree` broken after `move`
+(`x: 0 -> 1, t: 0 -> 1`, "nothing changes the state from here"). Cause: `fair_part` in
+`crates/earnest_quint/src/temporal.rs` takes `step.parts["move"]`, the paths of `move` already
+joined with `tick`, so the fairness is of `move` and `tick` together. Right result: `holds`, or
+the file refused naming `weakFair`, never `broken`. Test:
+`fairness_of_an_action_the_step_joins_with_another_is_not_judged_broken`.
+
+### Membership in a wide range runs out of memory
+
+`models/quint_first/wide_range.qnt`: `n` from 0 to 2 (3 states), the invariant `inBounds` is
+`n.in(0.to(1000000000))`. Quint's TLC run and `quint run --backend typescript` find no violation
+in under a second. Earnest builds the whole set in every state: with 1 000 000 000 it asks for
+16 000 000 016 bytes at once (`memory allocation of 16000000016 bytes failed`, exit 134 under a
+4 GiB limit; without a limit the kernel killed it here, with no line printed), and with
+10 000 000 it passes in 1.8 s for 3 states. Cause: `Op::Interval` in
+`crates/earnest_ir/src/eval.rs` makes the set before `SetOp::Has` asks for one item; `nondet` and
+`powerset` refuse sets past 1 000 000 values, an expression does not. Right result: `pass` with
+3 states. The test runs earnest under `ulimit -v 4194304` so that it fails fast instead of
+taking the machine's memory. Test: `membership_in_a_wide_range_does_not_run_out_of_memory`.
+
+### Legal Quint that earnest refuses
+
+Each line is a construct `quint typecheck` accepts, the message earnest gives (feature, then the
+message, with the place it reports). Every message names the construct; the ones marked
+*unclear* do not say why or what to write instead. Constructs a project with records, sets,
+maps, `int` and `str` fields, setups and `nondet ... oneOf()` is likely to use come first.
+
+| Construct | Message |
+|---|---|
+| `nondet b = Bool.oneOf()`, `Bool.size()` | `` `Bool` ``: the compiled file does not say what this name is, in the definition `step` (*unclear*) |
+| `x.in(Nat)`, `x.in(Int)` | `` `Nat` `` / `` `Int` ``: the compiled file does not say what this name is (*unclear*) |
+| `S.getOnlyElement()` | `` `getOnlyElement` ``: the compiled file does not say what this name is (*unclear*) |
+| `match` used as an action: `match o { Some(n) => all { x' = n, ... } \| None => all { ... } }` | `` `assign` ``: an action used inside an expression, in the definition `step` (*unclear*: points at an assignment, not at `match`) |
+| `weakFair(step, vars)` with `val vars = (x, o)`, Quint's usual way to write it | `` `weakFair` ``: fairness over something that is not a tuple of the state variables (*unclear*: it is a tuple of all of them) |
+| `weakFair(step, x)` where the module has more variables | `` `weakFair` ``: fairness over only some of the state variables is not read: list them all |
+| `weakFair(mv(1), (x, o))` | `` `weakFair` ``: fairness of an action given arguments is not read: name the step or one of its actions |
+| `weakFair(a, ...)` where `a` is an action inside a top-level action of `step` | fairness of something that is not the step or one of its top-level actions |
+| `strongFair(step, ...)` | `` `strongFair` ``: only `weakFair(A, vars)` is read as fairness, not strong fairness |
+| `always(enabled(step))`, `always(next(x) >= x)`, `always(step.orKeep(...))`, `always(eventually(step.mustChange(...)))` | `` `enabled` `` / `` `next` `` / `` `orKeep` `` / `` `mustChange` ``: a temporal operator inside `always` (or `eventually`) is not read: only `eventually(P)`, `always(P)`, `always(eventually(P))` and leads-to over state conditions are |
+| `eventually(always(P))` | `` `always` ``: `eventually(always(…))` is not read: the checker finds runs that reach a state, not runs that stay |
+| `not(eventually(P))` | `` `eventually` ``: a temporal operator under `not` is not read |
+| `assert(P)` inside an action that is not a run step | `` `assert` ``: run operators are read only in a `run` |
+| `S.chooseSome()` | `chooseSome`, whose choice Quint's backends make differently, is not read |
+| `l.foldr(...)`, also in a definition nothing uses | `foldr` is not read: write `foldl`, in the definition `unused` (the whole check is refused for a helper no check reads) |
+| `S.allListsUpTo(n)`, `allLists` | the set of every list over a set is not read |
+| `nondet m = setOfMaps(K, V).oneOf()` | the set of every map between two sets is not read |
+| `r.fieldNames()` | the field names of a record are not read |
+| `q::debug(...)` | `q::debug` is not read |
+| `pure def app(f: int => int, v: int): int = f(v)` called with a lambda | an operator as a value: an operator passed as a value is not read yet |
+| the same called with a named operator, `app(inc, x)` | `` `inc` ``: an operator used as a value |
+| `nondet v = 0.to(2000000).oneOf()` | `` `nondet v` ``: a range of more than 1000000 values |
+| `S.powerset()` of 20 items or more | the powerset of a set of more than 19 items |
+| `init` with more than 1 000 000 combinations of its `nondet`s | `init` picks among more than 1000000 combinations |
+| a literal past 64 bits, `x < 100000000000000000000` | `` `1e+20` ``: an integer beyond 64 bits (*unclear*: the number is shown as `1e+20`) |
+| a run that does not start with `init`, `2.reps(i => ...)` as a whole run | a run that does not start with `init`: Quint plays a run from no state, at line 1, column 1 (the place is not given) |
+| `0.reps(...)` | a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset |
+| an action parameter named like a variable, `action mv(y: int): bool = all { ..., y' = y }` | `` `y_28` ``: an assignment to something that is not a variable (Quint compiles `y'` to the parameter too, and its simulator stops with `Variable y not set`) |
+| `runs: true` on a setup whose `...Test` runs are written in the imported spec | not refused: none of them is played and the check passes, while `quint test --main Setup` plays `Setup::Spec::upTest` (the docs say so; flattening setups is another builder's) |
+
+Read and judged as Quint does (`quint typecheck` clean, verdict as TLC or `quint test`): `val`
+and `def` inside an action, `match` in an assigned value, record spread, generic sum types and
+operators, `type` aliases for variables, a lambda over a tuple pattern, `nondet` over
+`powerset`, `tuples`, records, a mapped set and map keys, nested maps, maps with record keys,
+lists of records, tuple and text variables, definitions used before they are written, shadowed
+lambda parameters and `let` names, `[1, 2][1]`, `init` that calls another action, `import
+Spec(...) as S` with `S::init`, `S::step`, `S::inv` and a temporal property through `S::`.
+
+### Attacked and found correct
+
+- 134 single expressions over every builtin `data.rs` and `builtins.rs` map, on edge values
+  (empty and nested collections, sets of records and variants, maps with tuple, record and
+  variant keys, `put`, `set` and `setBy` on a missing key, `slice`, `replaceAt` and `nth` at
+  and past the bounds, `head` and `tail` of empty lists, `indices`, `0^0`, `2^(-1)`, division by
+  zero, `iff`, `implies` chains, string equality, `match` with and without `_`, tuples in
+  tuples, `fold` with `-` and `* 2 +`, `foldl`, `mapBy`, `Map` with a key twice): each value equal
+  to the TypeScript evaluator's, each runtime error a fault, apart from the findings above and
+  `fold` whose TypeScript order is the written one (TLC's order agrees with earnest on integers).
+- A step with an action called twice with different arguments, a guard that reads a key only
+  when another guard is true, `x' = y` beside `y' = x`, `nondet` inside `any` inside `all` with a
+  guard after the `any`: 870 states and four invariant verdicts, as TLC.
+- 19 temporal properties on two models where the answer depends on stuttering (an action that is
+  a stutter in some states, a branch that only stutters, `nondet` inside a fair action, fairness
+  of the step, of an action of two branches against fairness of each branch, of a nested `any`,
+  `always(eventually)`, `leadsTo`, `always(P implies eventually(Q))`, conjunctions numbered
+  `#2`, a property that fails in one of two start states): every verdict as TLC.
+- 21 runs against `quint test --backend typescript`: `fail()` after the first, a middle and the
+  last step, `nondet` at the top and inside a step where one value disables it, `expect` in the
+  middle, after `init` and at the end, `reps` of 1 and 3 with the index, `assert`, `any`, a run
+  that calls a run, an alias of `init`, constant runs, arguments read from the state.
+- Two setups of one spec with constants of type `int`, `Set[str]`, a record, `str -> int`,
+  `List[int]` and `bool`, used in `init`, a `nondet` set, a guard and a fold (22 and 114 states,
+  each verdict and the temporal property as TLC); `earnest confirm --tlc` on the `.qnt` gives
+  `same` for both.
+- `weakFair(step, x) implies ...` on a step that stops at `x = 2`: `eventually(x == 5)` broken,
+  `eventually(x == 2)`, `leadsTo` and `always(eventually(x == 2))` holding, as TLC.
+- Compiled modules past 64 KiB (`G4` is 119 KiB): read whole through `earnest verify G4.qnt`,
+  though `quint compile` cuts its output at 65 536 bytes when its standard output is a pipe.
+- The caches: an edit of an imported file and of the spec in both directions changes the verdict
+  each time, never printing the old one.
+- The checks file: wrong types, unknown keys, an unknown `main`, invariant or run name, a
+  temporal name that is a `val`, `init` naming the step, a missing file: each `unreadable`
+  naming the key or Quint's error, exit 1.
+- A seeded random comparison, `tests/tlc/quint_random.rs` (see below).
+
+### A seeded random comparison
+
+`models/quint_first/random/generate.py SEED` prints a module with an `int`, a `bool`, a
+`Set[int]`, an `int -> int`, a record and a `List[int]`; two to four guarded actions with
+`nondet` over written sets, `put`, `setBy`, `mapBy`, `with`, `slice`, `tail`, `replaceAt`, an
+`if` in assigned values, sometimes a nested `any`, and two or three random invariants with
+`fold`, `foldl`, `exists`, `forall`, `iff`, `implies` and `indices`. Seeds 1 to 59 were compared with `quint verify
+--backend tlc` (one run for the state count, one for each invariant): all 59 agree on the state
+count (1 to 2 649 states) and on all 148 verdicts. Ten of them (seeds 4, 6, 16, 21, 25, 28, 29,
+33, 47 and 56, 8 to 2 304 states, 25 verdicts of both kinds) are committed as `random/G*.qnt`,
+their compiled `random/G*.json` and `random/expected.json`, Quint's TLC answers;
+`every_seeded_quint_model_has_the_states_and_verdicts_of_quint_s_tlc_run` in
+`tests/tlc/quint_random.rs` reads the JSON with no Node, compares earnest's states and verdicts
+with `expected.json`, and runs `earnest confirm --tlc` on each. It passes today (28 s):
+`cargo test --locked -p earnest_break_it --features tlc --test tlc quint_random`, here with
+`EARNEST_TLC_JAR` naming the TLC inside Apalache's jar
+(`~/.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar`), since downloading `tla2tools.jar`
+was refused by this session's permission rules. To make more:
+`python3 generate.py SEED > GSEED.qnt` and `quint compile --target json --main GSEED --invariant
+inv0,inv1[,inv2] GSEED.qnt > GSEED.json`, with the output going to a file: through a pipe
+`quint` 0.33.1 stops writing after 65 536 bytes.
+
+### Seen, not written up
+
+- A refusal in a run is reported at line 1, column 1 of the `.qnt` file, though `quint parse`
+  gave the run's place.
+- `--rule inRange` on a check of a setup says `no model has a rule inRange` (exit 2): the id is
+  `Small::Spec::inRange`. The docs' table says "`--rule inRange` selects it" and the runs
+  section says the id is flattened; a project whose checks are all setups has to write the
+  long ids.
+- Two entries `{"file": "a.qnt", ...}` and `{"file": "./a.qnt", ...}` with the same `main` are
+  two models named `a`; the docs say the same `file` and `main` twice is `unreadable`.
+- Paths and the chart print a tuple as `{_1: 1, _2: 5}` and a variant as `{tag: "Aa", value:
+  {}}`, earnest's own encoding, not Quint's `(1, 5)` and `Aa`.
+- The docs say that for a `nondet` at the top of a run "Quint takes another value when the run
+  is false for one". `quint test --backend typescript` on
+  `nondet v = Set(1, 2).oneOf() init.then(put1(v)).expect(x == 1)` fails ("failed after 2
+  test(s)", `Expect condition does not hold true`): it does not retry there, which is what
+  earnest does too (inside a step it does retry, as earnest plays every value).
+- The version of `quint` is kept by the program's real path, size and modification time; a
+  wrapper script that starts another `quint` without changing keeps the old version text.
+
+### Not covered
+
+The Rust evaluator of Quint (could not be fetched). Apalache's own checking (`quint verify`
+without `--backend tlc`). `oneOf` over a set computed from the state and setups flattened by
+earnest, which other builders are adding. Windows.
