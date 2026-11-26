@@ -455,12 +455,17 @@ fn blobs(top: &Path, commit: &str, names: &[String]) -> Option<Vec<Vec<u8>>> {
         requests.push_str(name);
         requests.push('\n');
     }
-    let writer = thread::spawn(move || input.write_all(requests.as_bytes()));
+    let mut answers = child.stdout.take()?;
     let mut output = Vec::new();
-    let read = child.stdout.take()?.read_to_end(&mut output);
-    let written = writer.join().ok()?;
+    let exchanged = thread::scope(|scope| {
+        let writer =
+            earnest_threads::start(scope, None, move || input.write_all(requests.as_bytes()));
+        let read = answers.read_to_end(&mut output).is_ok();
+        let written = writer.is_ok_and(|writer| matches!(writer.join(), Ok(Ok(()))));
+        read && written
+    });
     let ended = child.wait().ok()?;
-    if read.is_err() || written.is_err() || !ended.success() {
+    if !exchanged || !ended.success() {
         return None;
     }
     let mut contents = Vec::with_capacity(names.len());
