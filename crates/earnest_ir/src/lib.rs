@@ -185,7 +185,10 @@ pub enum Op {
     /// sequence, a map or a record with fewer items comes first; two of one size compare item
     /// by item, a set in this same order, a map its keys and then their values, a record its
     /// field names and then its values. Numbers, booleans and texts keep their own order, so
-    /// texts are alphabetical, where TLC takes them in the order it first met them.
+    /// texts are alphabetical, where TLC takes them in the order it first met them. An optional
+    /// second argument is a sequence of the field names that are a tuple's items, in position
+    /// order: a record whose fields are all among them compares its items by position, as TLC
+    /// compares a tuple.
     InTlcOrder,
     /// True when its argument is true. False is [`Fault::Asserted`]: an `assert` in a Quint
     /// action, which Quint's backends read differently when it is false.

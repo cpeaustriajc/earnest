@@ -96,6 +96,7 @@ impl Path {
 }
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
+const TUPLE_ITEMS_OUT_OF_NAME_ORDER: usize = 10;
 const MATCH: &str = "matchVariant";
 const ACTION_AS_A_VALUE: &str = "an action where Quint wants a value, such as an operator's \
                                  argument or a condition: an action is read as a part of `init`, \
@@ -894,6 +895,19 @@ impl<'a> Reader<'a> {
         Ok(all)
     }
 
+    pub(crate) fn in_tlc_order(&self, set: Expr) -> Expr {
+        let tuple_items: Vec<Value> = (1..)
+            .map_while(|position| self.symbols.find(&format!("_{position}")))
+            .map(Value::Str)
+            .collect();
+        let arguments = if tuple_items.len() < TUPLE_ITEMS_OUT_OF_NAME_ORDER {
+            vec![set]
+        } else {
+            vec![set, Expr::Const(Value::seq(tuple_items))]
+        };
+        Expr::Apply(Op::InTlcOrder, arguments)
+    }
+
     pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<Picked> {
         let id = match &opdef.expr {
             Quint::App { id, .. } => *id,
@@ -979,10 +993,8 @@ impl<'a> Reader<'a> {
                         ),
                     );
                 }
-                let listed = Expr::Apply(
-                    Op::InTlcOrder,
-                    vec![Expr::Const(Value::Set(std::sync::Arc::clone(&items)))],
-                );
+                let listed =
+                    self.in_tlc_order(Expr::Const(Value::Set(std::sync::Arc::clone(&items))));
                 let values = match constant(&listed, self.slots)? {
                     Some(Value::Seq(values)) => values.to_vec(),
                     _ => items.iter().cloned().collect(),
