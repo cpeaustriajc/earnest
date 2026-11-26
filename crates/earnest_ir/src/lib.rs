@@ -86,6 +86,11 @@ pub enum MapOp {
     Size,
     /// The set of its keys.
     Keys,
+    /// The key's value. A key without one is [`Fault::Missing`].
+    MustGet,
+    /// The map with the key's value replaced by the third argument. A key without a value is
+    /// [`Fault::Missing`].
+    Replace,
 }
 
 /// A primitive on a sequence or a queue. The sequence is the first argument.
@@ -109,6 +114,22 @@ pub enum SeqOp {
     Pop,
     /// Whether the second argument is an item.
     Includes,
+    /// The item at the position in the second argument, counted from 0. A position with no
+    /// item is [`Fault::Missing`].
+    Nth,
+    /// The first item. An empty sequence is [`Fault::Missing`].
+    Head,
+    /// The sequence without its first item. An empty sequence is [`Fault::Missing`].
+    Tail,
+    /// The items of the first sequence, then those of the second.
+    Concat,
+    /// The items from the position in the second argument up to, not including, the position
+    /// in the third, counted from 0. Positions that are not `0 <= second <= third <= size` are
+    /// [`Fault::Missing`].
+    Slice,
+    /// The sequence with the item at the position in the second argument, counted from 0,
+    /// replaced by the third argument. A position with no item is [`Fault::Missing`].
+    ReplaceAt,
 }
 
 /// An operation on evaluated arguments, used in [`Expr::Apply`].
@@ -145,6 +166,15 @@ pub enum Op {
     Map(MapOp),
     /// A primitive on a sequence or a queue.
     Seq(SeqOp),
+    /// The first number to the power of the second. A negative power and zero to the power
+    /// zero are [`Fault::Undefined`].
+    Power,
+    /// The set of whole numbers from the first to the second, both included. Empty when the
+    /// first is above the second.
+    Interval,
+    /// The sequence of whole numbers from the first up to, not including, the second. A first
+    /// number above the second is [`Fault::Undefined`].
+    Ascending,
 }
 
 /// What an [`Expr::Sweep`] does with the test's answers.
@@ -225,6 +255,22 @@ pub enum Expr {
         /// The collection whose items are tried.
         source: Box<Self>,
         /// The test, which gives true or false.
+        body: Box<Self>,
+    },
+    /// A running value carried through the items of a set, in its order, or of a sequence:
+    /// `start`, then `body` with the value so far in `total` and the next item in `item`.
+    Fold {
+        /// The kind of collection `source` must give. Another kind is [`Fault::WrongKind`].
+        shelf: Shelf,
+        /// The collection whose items are taken.
+        source: Box<Self>,
+        /// The value before the first item.
+        start: Box<Self>,
+        /// The slot `body` reads the value so far from.
+        total: usize,
+        /// The slot `body` reads the current item from.
+        item: usize,
+        /// The next value.
         body: Box<Self>,
     },
 }
@@ -309,7 +355,8 @@ pub struct End {
 /// One rule about whole runs: a state every run reaches.
 ///
 /// A run never stops while an action can still change the state, and it does not put off
-/// forever an action listed in [`Runs::fair`] that stays possible. Every such run from a state
+/// forever an action listed in [`Runs::fair`] that stays possible, unless `fair` gives the
+/// rule's own [`Fairness`]. Every such run from a state
 /// the rule starts from must come to a state where `reaches` is true, which may be that state.
 #[derive(Clone, Debug)]
 pub struct Eventually {
@@ -326,6 +373,23 @@ pub struct Eventually {
     pub reaches: Code,
     /// How many local slots `after` and `reaches` need.
     pub slots: usize,
+    /// The runs this rule is judged over, when the rule says so itself. `None` is the model's:
+    /// a run never stops while an action can change the state, and [`Runs::fair`] is fair.
+    pub fair: Option<Fairness>,
+}
+
+/// Which runs a rule about runs is judged over, when the rule says so itself.
+///
+/// It is the TLA+ weak fairness of each part: a part that can change the state from some point
+/// on forever does so infinitely often. A run that is fair to all of it may stay in one state
+/// forever when no fair part can change the state there.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fairness {
+    /// Whether the whole step is fair: a run never stops while an action can change the state.
+    pub step: bool,
+    /// The fair parts of the step, each the positions in [`Model::actions`] of the actions it
+    /// is made of. A part is taken when any one of its actions is.
+    pub actions: Vec<Vec<usize>>,
 }
 
 /// One step of a [`Witness`].

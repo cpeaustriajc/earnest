@@ -3,6 +3,7 @@
 mod build;
 mod counts;
 mod eventually;
+mod fairness;
 mod findings;
 mod graphs;
 mod lending;

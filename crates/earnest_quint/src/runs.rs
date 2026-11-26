@@ -133,7 +133,7 @@ impl<'a> Run<'_, 'a> {
             _ if self.reader.is_action(expr) => self.plan(expr, chosen),
             _ => {
                 let holds = self.reader.pure(expr)?;
-                match constant(&holds)? {
+                match constant(&holds, self.reader.slots)? {
                     Some(Value::Bool(holds)) => self.push(Plan {
                         must_not_finish: !holds,
                         ..Self::without_steps(chosen)
@@ -222,7 +222,7 @@ impl<'a> Run<'_, 'a> {
             return self.refuse("`reps`", "a `reps` whose step does not take one index");
         };
         let counted = self.reader.pure(count)?;
-        let Some(Value::Int(times)) = constant(&counted)? else {
+        let Some(Value::Int(times)) = constant(&counted, self.reader.slots)? else {
             return self.refuse(
                 "`reps`",
                 "a `reps` whose count is not a constant number when the file is read",
@@ -296,7 +296,6 @@ impl<'a> Run<'_, 'a> {
             };
             asserts.push(self.reader.pure(condition)?);
         }
-        self.reader.fresh_slots();
         let paths = if asserted.is_empty() {
             self.reader.paths(expr)?
         } else {
@@ -308,7 +307,7 @@ impl<'a> Run<'_, 'a> {
         };
         let first = self.actions.len();
         for (id, path) in ids(&paths, fallback).into_iter().zip(&paths) {
-            let taken = action(id, path, self.fields)?;
+            let taken = action(id, path, self.fields, self.reader.slots)?;
             self.actions.push(taken);
         }
         drawn.steps.push(Step {
@@ -332,13 +331,14 @@ fn script<'a>(reader: &mut Reader<'a>, def: &'a Def, init: u64, fields: &[String
         plans: Vec::new(),
     };
     run.plans(&def.expr, &mut Vec::new())?;
+    let slots = run.reader.slots;
     Ok(Script {
         id: def.name.clone(),
         says: format!("The Quint run `{}` passes", def.name),
         line: DECLARED_ON,
         actions: run.actions,
         plans: run.plans,
-        slots: 0,
+        slots,
     })
 }
 

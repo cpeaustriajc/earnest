@@ -496,6 +496,11 @@ impl Reader<'_> {
                 )
             })
             .collect();
+        self.method_texts = own
+            .iter()
+            .filter(|method| role_of(&method.attrs).is_none())
+            .map(|method| (name_of(&method.sig.ident), self.body_text(&method.block)))
+            .collect();
         self.method_types = own
             .iter()
             .filter_map(|method| match &method.sig.output {
@@ -525,6 +530,7 @@ impl Reader<'_> {
         self.methods.clear();
         self.method_types.clear();
         self.method_params.clear();
+        self.method_texts.clear();
         self.model_name = None;
         draft
     }

@@ -27,14 +27,19 @@
 //!   what it reaches, or `~>` from where it starts to what it reaches. A condition that reads
 //!   no variable is written with `vars = vars` beside it, because TLC misjudges a temporal
 //!   property over a constant.
+//! - When a rule about runs says its own fairness, `Spec` has no fairness: `Init` and
+//!   `[][Next]_vars`. Each rule's property is then `Fairness => Property`, where `Fairness` is
+//!   the rule's own (weak fairness of `Next` when the whole step is fair, and of the disjunction
+//!   of each fair part's actions) or else the model's.
 
+mod faulting;
 mod helper;
 mod kind;
 mod limits;
 mod names;
 mod scribe;
 
-use earnest_ir::{Action, Expr, Model};
+use earnest_ir::{Action, Expr, Fairness, Model};
 use earnest_value::Value;
 use helper::{EVERY_HELPER, Helper};
 use kind::Kind;
@@ -372,18 +377,14 @@ impl Writer<'_> {
             return (None, Vec::new());
         }
         let specification = self.names.claim(SPEC);
-        let mut parts = vec![
-            STARTS.to_owned(),
-            format!("[][{STEPS}]_{EVERY_VARIABLE}"),
-            format!("WF_{EVERY_VARIABLE}({STEPS})"),
-        ];
-        for action in model
-            .runs
-            .fair
-            .iter()
-            .filter_map(|position| actions.get(*position))
-        {
-            parts.push(format!("WF_{EVERY_VARIABLE}({action})"));
+        let own_fairness = model.runs.eventually.iter().any(|rule| rule.fair.is_some());
+        let model_fairness = Fairness {
+            step: true,
+            actions: model.runs.fair.iter().map(|action| vec![*action]).collect(),
+        };
+        let mut parts = vec![STARTS.to_owned(), format!("[][{STEPS}]_{EVERY_VARIABLE}")];
+        if !own_fairness {
+            parts.extend(weak_fairness(&model_fairness, actions));
         }
         let fairness = parts.join(" /\\ ");
         blocks.push(definition(&specification, &[fairness]));
@@ -397,6 +398,16 @@ impl Writer<'_> {
                     format!("({after}) ~> ({reaches})")
                 }
                 None => format!("<>({reaches})"),
+            };
+            let body = if own_fairness {
+                let fair = weak_fairness(rule.fair.as_ref().unwrap_or(&model_fairness), actions);
+                if fair.is_empty() {
+                    body
+                } else {
+                    format!("({}) => ({body})", fair.join(" /\\ "))
+                }
+            } else {
+                body
             };
             blocks.push(definition(&name, &[body]));
             properties.push(Property {
@@ -555,6 +566,24 @@ fn reads_the_state(expr: &Expr) -> bool {
         Expr::Sweep { source, body, .. } => reads_the_state(source) || reads_the_state(body),
         _ => false,
     }
+}
+
+fn weak_fairness(fairness: &Fairness, actions: &[String]) -> Vec<String> {
+    let mut parts = Vec::new();
+    if fairness.step {
+        parts.push(format!("WF_{EVERY_VARIABLE}({STEPS})"));
+    }
+    for part in &fairness.actions {
+        let named: Vec<&str> = part
+            .iter()
+            .filter_map(|position| actions.get(*position))
+            .map(String::as_str)
+            .collect();
+        if !named.is_empty() {
+            parts.push(format!("WF_{EVERY_VARIABLE}({})", named.join(" \\/ ")));
+        }
+    }
+    parts
 }
 
 fn definition(name: &str, lines: &[String]) -> String {

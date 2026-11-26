@@ -1,13 +1,15 @@
 use crate::{is_compiled_quint, read};
 use earnest_diagnostics::Problem;
-use earnest_ir::{Expr, Model};
+use earnest_ir::{Expr, Model, Op, SetOp};
 use earnest_value::{Domain, Value};
+use std::collections::BTreeSet;
 
 const COUNTER: &str = include_str!("../../../tasks/quint/models/counter.json");
 const MIXED: &str = include_str!("../../../tasks/quint/models/mixed.json");
 const STARTS: &str = include_str!("../../../tasks/quint/models/starts.json");
 const PARAMS: &str = include_str!("../fixtures/params.json");
 const LATER: &str = include_str!("../fixtures/later.json");
+const GROWS: &str = include_str!("../fixtures/grows.json");
 const TESTED: &str = include_str!("../fixtures/tested.json");
 const TEXT: &str = include_str!("../fixtures/text.json");
 const SET_VARIABLE: &str = include_str!("../fixtures/setvar.json");
@@ -17,6 +19,9 @@ const POWER: &str = include_str!("../fixtures/power.json");
 const WIDE: &str = include_str!("../fixtures/wide.json");
 const MANY: &str = include_str!("../fixtures/many.json");
 const OVERFLOW: &str = include_str!("../fixtures/overflow.json");
+const BANK: &str = include_str!("../../../tasks/quint/models/bank.json");
+const SHAPES: &str = include_str!("../../../tasks/quint/models/shapes.json");
+const REFUSED: &str = include_str!("../fixtures/refused.json");
 
 fn model(source: &str) -> Model {
     read("model.json", source).unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
@@ -200,10 +205,26 @@ fn every_state_is_an_end_so_none_is_stuck() {
 
 #[test]
 fn a_temporal_property_is_refused_and_named() {
-    refused_with(
-        LATER,
-        "`temporal grows`",
-        "temporal properties are not read yet",
+    refused_with(LATER, "`always`", "`eventually(always(…))` is not read");
+}
+
+#[test]
+fn a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs() {
+    let read = model(GROWS);
+    let ids: Vec<&str> = read
+        .runs
+        .eventually
+        .iter()
+        .map(|rule| rule.id.as_str())
+        .collect();
+    assert_eq!(ids, ["grows"], "`eventually(x > 3)` is one rule about runs");
+    assert_eq!(
+        read.runs
+            .eventually
+            .first()
+            .and_then(|rule| rule.fair.clone()),
+        Some(earnest_ir::Fairness::default()),
+        "without `weakFair` nothing is fair"
     );
 }
 
@@ -215,18 +236,156 @@ fn a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules() {
 }
 
 #[test]
-fn text_is_refused_with_the_definition_it_is_in() {
-    refused_with(TEXT, "text", "in the definition `named`");
+fn text_is_read_as_a_value() {
+    let text = model(TEXT);
+    assert_eq!(
+        text.rules[0].holds.expr(),
+        &Expr::Choose(
+            Box::new(Expr::Apply(
+                Op::Equal,
+                vec![
+                    Expr::Const(Value::Str(text.symbols.find("a").expect("a is a text"))),
+                    Expr::Const(Value::Str(text.symbols.find("a").expect("a is a text"))),
+                ]
+            )),
+            Box::new(Expr::Apply(
+                Op::Order(earnest_ir::Order::GreaterOrEqual),
+                vec![Expr::Field(0), Expr::Const(Value::Int(0))]
+            )),
+            Box::new(Expr::Const(Value::Bool(false))),
+        ),
+        "named compares two texts"
+    );
 }
 
 #[test]
-fn a_set_variable_is_refused() {
-    refused_with(SET_VARIABLE, "`var s`", "a variable that holds sets");
+fn a_set_variable_holds_every_value_and_its_step_is_read() {
+    let sets = model(SET_VARIABLE);
+    assert_eq!(
+        sets.fields[0].domain,
+        Domain::Any,
+        "a set variable, like an int, holds any value"
+    );
+    assert_eq!(
+        sets.fields[0].starts,
+        [Value::set(BTreeSet::new())],
+        "s starts empty"
+    );
+    assert_eq!(
+        sets.actions[0].updates[0]
+            .as_ref()
+            .map(earnest_ir::Code::expr),
+        Some(&Expr::Apply(
+            Op::Set(SetOp::Union),
+            vec![
+                Expr::Field(0),
+                Expr::SetOf(vec![Expr::Const(Value::Int(1))])
+            ]
+        )),
+        "the step is s.union(Set(1))"
+    );
 }
 
 #[test]
-fn a_set_operator_is_refused_with_the_definition_it_is_in() {
-    refused_with(SET_VARIABLE, "`union`", "in the definition `step`");
+fn every_variable_of_the_bank_holds_any_value_and_starts_empty() {
+    let bank = model(BANK);
+    let fields: Vec<(&str, &Domain)> = bank
+        .fields
+        .iter()
+        .map(|field| (field.name.as_str(), &field.domain))
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            ("log", &Domain::Any),
+            ("total", &Domain::Any),
+            ("byName", &Domain::Any)
+        ],
+        "a list, an int and a map, in the order of the compiled file"
+    );
+    assert_eq!(
+        bank.runs.starts,
+        Some(vec![vec![
+            Value::seq(Vec::new()),
+            Value::Int(0),
+            Value::map(std::collections::BTreeMap::new())
+        ]]),
+        "one start state: an empty list, 0 and an empty map"
+    );
+}
+
+#[test]
+fn a_nondet_over_a_constant_set_of_texts_lists_the_texts_in_order() {
+    let bank = model(BANK);
+    let names: Vec<&str> = bank.actions[0].inputs[0]
+        .values
+        .iter()
+        .map(|value| match value {
+            Value::Str(text) => bank.symbols.name(*text),
+            _ => "",
+        })
+        .collect();
+    assert_eq!(
+        names,
+        ["alice", "bob"],
+        "Names = Set(\"alice\", \"bob\") is worked out when the file is read"
+    );
+    assert_eq!(
+        ids(&bank),
+        ["open", "deposit"],
+        "the step is any {{ open(name), deposit(name, amount) }}"
+    );
+}
+
+#[test]
+fn texts_are_named_in_alphabetical_order_whatever_order_the_file_has_them_in() {
+    let bank = model(BANK);
+    let alice = bank.symbols.find("alice").expect("alice is a text");
+    let bob = bank.symbols.find("bob").expect("bob is a text");
+    let paid = bank.symbols.find("paid").expect("paid is a text");
+    assert!(
+        alice < bob && bob < paid,
+        "a set of texts is sorted by the text, as Quint sorts it"
+    );
+}
+
+#[test]
+fn a_variant_is_a_record_of_its_tag_and_its_value() {
+    let shapes = model(SHAPES);
+    let starts = shapes.runs.starts.expect("shapes lists its start state");
+    let shown: Vec<String> = starts[0]
+        .iter()
+        .map(|value| shapes.symbols.show(value))
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            "{_1: 0, _2: \"x\"}",
+            "{tag: \"Red\", value: {}}",
+            "{tag: \"Quiet\", value: {}}"
+        ],
+        "light is Red, inbox is Quiet and pair the tuple (0, \"x\")"
+    );
+}
+
+#[test]
+fn an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in() {
+    refused_with(REFUSED, "`chooseSome`", "in the definition `step`");
+    refused_with(REFUSED, "`foldr`", "write `foldl`");
+}
+
+#[test]
+fn a_powerset_of_a_set_from_the_state_is_refused() {
+    let found = problems(
+        &REFUSED
+            .replace("\"chooseSome\"", "\"union\"")
+            .replace("\"foldr\"", "\"foldl\""),
+    );
+    assert!(
+        found.iter().any(|problem| problem.feature == "`powerset`"
+            && problem.message.contains("a set that does not change")),
+        "s.powerset() reads the state: {found:?}"
+    );
 }
 
 #[test]
@@ -244,8 +403,18 @@ fn a_step_that_leaves_a_variable_unassigned_is_refused() {
 }
 
 #[test]
-fn an_integer_power_is_refused() {
-    refused_with(POWER, "`ipow`", "integer powers are not read yet");
+fn an_integer_power_is_read() {
+    let power = model(POWER);
+    assert_eq!(
+        power.actions[0].updates[0]
+            .as_ref()
+            .map(earnest_ir::Code::expr),
+        Some(&Expr::Apply(
+            Op::Power,
+            vec![Expr::Field(0), Expr::Const(Value::Int(2))]
+        )),
+        "x ^ 2"
+    );
 }
 
 #[test]

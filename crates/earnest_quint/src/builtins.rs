@@ -13,7 +13,6 @@ pub(crate) enum Builtin {
     ActionAny,
     Assign,
     OneOf,
-    SetOf,
     Range,
 }
 
@@ -41,64 +40,31 @@ pub(crate) fn builtin(opcode: &str) -> Option<Builtin> {
         "actionAny" => Builtin::ActionAny,
         "assign" => Builtin::Assign,
         "oneOf" => Builtin::OneOf,
-        "Set" => Builtin::SetOf,
         "to" => Builtin::Range,
         _ => return None,
     };
     Some(found)
 }
 
-const RECORDS: [&str; 4] = ["Rec", "field", "with", "fieldNames"];
-const TUPLES: [&str; 3] = ["Tup", "item", "tuples"];
-const SETS: [&str; 18] = [
-    "contains",
-    "in",
-    "union",
-    "intersect",
-    "exclude",
-    "subseteq",
-    "filter",
-    "map",
-    "fold",
-    "exists",
-    "forall",
-    "size",
-    "chooseSome",
-    "powerset",
-    "flatten",
-    "isFinite",
-    "allLists",
-    "allListsUpTo",
+const NOT_READ: [(&str, &str); 8] = [
+    (
+        "chooseSome",
+        "`chooseSome`, whose choice Quint's backends make differently, is not read",
+    ),
+    ("allLists", "the set of every list over a set is not read"),
+    (
+        "allListsUpTo",
+        "the set of every list over a set is not read",
+    ),
+    (
+        "setOfMaps",
+        "the set of every map between two sets is not read",
+    ),
+    ("foldr", "`foldr` is not read: write `foldl`"),
+    ("fieldNames", "the field names of a record are not read"),
+    ("apalache::generate", "Apalache's `generate` is not read"),
+    ("q::debug", "`q::debug` is not read"),
 ];
-const MAPS: [&str; 9] = [
-    "Map",
-    "get",
-    "keys",
-    "put",
-    "set",
-    "setBy",
-    "mapBy",
-    "setToMap",
-    "setOfMaps",
-];
-const LISTS: [&str; 15] = [
-    "List",
-    "append",
-    "concat",
-    "head",
-    "tail",
-    "length",
-    "nth",
-    "indices",
-    "replaceAt",
-    "slice",
-    "range",
-    "select",
-    "foldl",
-    "foldr",
-    "allListsUpTo",
-];
-const VARIANTS: [&str; 2] = ["variant", "matchVariant"];
 const TEMPORAL: [&str; 9] = [
     "always",
     "eventually",
@@ -110,7 +76,7 @@ const TEMPORAL: [&str; 9] = [
     "mustChange",
     "enabled",
 ];
-const RUNS: [&str; 8] = [
+const RUNS: [&str; 7] = [
     "then",
     "reps",
     "expect",
@@ -118,28 +84,17 @@ const RUNS: [&str; 8] = [
     "assert",
     "q::test",
     "q::testOnce",
-    "q::debug",
 ];
 
-pub(crate) fn kind_of_builtin(opcode: &str) -> Option<&'static str> {
-    let groups: [(&[&str], &str); 8] = [
-        (&RECORDS, "records"),
-        (&TUPLES, "tuples"),
-        (&SETS, "sets"),
-        (&MAPS, "maps"),
-        (&LISTS, "lists"),
-        (&VARIANTS, "variants and `match`"),
-        (&TEMPORAL, "temporal properties"),
-        (&RUNS, "run operators outside a `run`"),
-    ];
-    if opcode == "ipow" {
-        return Some("integer powers");
+pub(crate) fn not_read(opcode: &str) -> Option<&'static str> {
+    if TEMPORAL.contains(&opcode) {
+        return Some("temporal properties are not read yet");
     }
-    if opcode == "apalache::generate" {
-        return Some("Apalache's `generate`");
+    if RUNS.contains(&opcode) {
+        return Some("run operators are read only in a `run`");
     }
-    groups
+    NOT_READ
         .iter()
-        .find(|(names, _)| names.contains(&opcode))
-        .map(|(_, kind)| *kind)
+        .find(|(name, _)| *name == opcode)
+        .map(|(_, why)| *why)
 }

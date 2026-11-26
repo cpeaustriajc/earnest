@@ -360,6 +360,14 @@ impl<'a> Scribe<'a> {
                 source,
                 body,
             } => self.sweep((*sweep, *shelf), *slot, source, body, scope),
+            Expr::Fold {
+                shelf,
+                source,
+                start,
+                total,
+                item,
+                body,
+            } => self.fold((*shelf, source), start, (*total, *item), body, scope),
             _ => unknown("an expression of a kind added after it was written"),
         }
     }
@@ -406,7 +414,11 @@ impl<'a> Scribe<'a> {
             Kind::Record(fields) => Some(fields.clone()),
             _ => None,
         };
-        let kind = on.kind.join(&Kind::Record(kinds_of(&replaced)));
+        let kind = if on.kind == Kind::Unknown {
+            Kind::Unknown
+        } else {
+            on.kind.join(&Kind::Record(kinds_of(&replaced)))
+        };
         let needed: Vec<Option<String>> = std::iter::once(on.sound.clone())
             .chain(replaced.iter().map(|(_, each)| each.sound.clone()))
             .collect();
@@ -530,6 +542,58 @@ impl<'a> Scribe<'a> {
             _ => unknown("a test over a collection of a kind added after it was written"),
         };
         done.needing([over.sound, each])
+    }
+
+    fn fold(
+        &mut self,
+        (declared, source): (Shelf, &Expr),
+        start: &Expr,
+        (total, item): (usize, usize),
+        body: &Expr,
+        scope: &mut Scope,
+    ) -> Written {
+        let over = self.expr(source, scope);
+        let first = self.expr(start, scope);
+        let operator = scope.claim("Fold");
+        let rest = scope.claim("rest");
+        let so_far = scope.bind(total, "total", first.kind.clone());
+        let each = scope.bind(item, "item", over.kind.item());
+        let step = self.expr(body, scope);
+        scope.release();
+        scope.release();
+        let kind = match (&over.kind, declared) {
+            (Kind::Unknown, Shelf::Seq) => Kind::seq(Kind::Unknown),
+            (Kind::Unknown, _) => Kind::set(Kind::Unknown),
+            (known, _) => known.clone(),
+        };
+        let (empty, taken, left) = match &kind {
+            Kind::Seq(_) => (
+                NULL.to_owned(),
+                format!("Head({rest})"),
+                format!("Tail({rest})"),
+            ),
+            Kind::Set(inner) => {
+                let other = scope.claim("other");
+                let pick = scope.claim("pick");
+                let least = self.before(inner, &pick, &other, scope).map_or_else(
+                    || "TRUE".to_owned(),
+                    |before| format!("\\A {other} \\in ({rest} \\ {{{pick}}}) : {before}"),
+                );
+                (
+                    "{}".to_owned(),
+                    format!("CHOOSE {pick} \\in {rest} : {least}"),
+                    format!("({rest} \\ {{{each}}})"),
+                )
+            }
+            _ => return unknown("a fold over a collection whose kind it does not know"),
+        };
+        let text = format!(
+            "(LET RECURSIVE {operator}(_, _) {operator}({so_far}, {rest}) == IF {rest} = {empty} \
+             THEN {so_far} ELSE LET {each} == {taken} IN {operator}({}, {left}) IN \
+             {operator}({}, {}))",
+            step.text, first.text, over.text
+        );
+        Written::new(text, first.kind.join(&step.kind)).needing([over.sound, first.sound])
     }
 
     fn apply(&mut self, op: Op, arguments: &[Expr], scope: &mut Scope) -> Written {
@@ -734,6 +798,8 @@ fn alone(op: Op, on: &Written) -> Option<Written> {
         ),
         Op::Seq(SeqOp::Shift) => call(Helper::SeqShift, &[text], on.kind.clone()),
         Op::Seq(SeqOp::Pop) => call(Helper::SeqPop, &[text], on.kind.clone()),
+        Op::Seq(SeqOp::Head) => call(Helper::SeqHead, &[text], on.kind.item()),
+        Op::Seq(SeqOp::Tail) => call(Helper::SeqTail, &[text], on.kind.clone()),
         _ => return None,
     })
 }
@@ -770,7 +836,10 @@ fn pair(op: Op, first: &Written, second: &Written, third: Option<&Written>) -> W
         }
         Op::Set(set_op) => on_set(set_op, first, second),
         Op::Map(map_op) => on_map(map_op, first, second, third),
-        Op::Seq(seq_op) => on_seq(seq_op, first, second),
+        Op::Seq(seq_op) => on_seq(seq_op, first, second, third),
+        Op::Power => call(Helper::Power, &[left, right], Kind::Int),
+        Op::Interval => Written::new(format!("({left}..{right})"), Kind::set(Kind::Int)),
+        Op::Ascending => call(Helper::Ascending, &[left, right], Kind::seq(Kind::Int)),
         _ => unknown("an operation added after it was written"),
     }
 }
@@ -813,11 +882,19 @@ fn on_map(op: MapOp, first: &Written, second: &Written, third: Option<&Written>)
             )
         }
         (MapOp::Set, None) => unknown("a map set without a value"),
+        (MapOp::MustGet, _) => call(Helper::MapMustGet, &[map, key], first.kind.value()),
+        (MapOp::Replace, Some(value)) => call(
+            Helper::MapReplace,
+            &[map, key, &value.text],
+            first
+                .kind
+                .join(&Kind::map(second.kind.clone(), value.kind.clone())),
+        ),
         _ => unknown("a map primitive added after it was written"),
     }
 }
 
-fn on_seq(op: SeqOp, first: &Written, second: &Written) -> Written {
+fn on_seq(op: SeqOp, first: &Written, second: &Written, third: Option<&Written>) -> Written {
     let (seq, other) = (&first.text, &second.text);
     match op {
         SeqOp::Get => found(
@@ -831,6 +908,24 @@ fn on_seq(op: SeqOp, first: &Written, second: &Written) -> Written {
             first.kind.join(&Kind::seq(second.kind.clone())),
         ),
         SeqOp::Includes => call(Helper::SeqIncludes, &[seq, other], Kind::Bool),
+        SeqOp::Nth => call(Helper::SeqNth, &[seq, other], first.kind.item()),
+        SeqOp::Concat => Written::new(
+            format!("({seq} \\o {other})"),
+            first.kind.join(&second.kind),
+        ),
+        SeqOp::Slice | SeqOp::ReplaceAt => match third {
+            Some(last) if op == SeqOp::Slice => call(
+                Helper::SeqSlice,
+                &[seq, other, &last.text],
+                first.kind.clone(),
+            ),
+            Some(last) => call(
+                Helper::SeqReplaceAt,
+                &[seq, other, &last.text],
+                first.kind.join(&Kind::seq(last.kind.clone())),
+            ),
+            None => unknown("a sequence primitive without its third argument"),
+        },
         _ => unknown("a sequence primitive added after it was written"),
     }
 }

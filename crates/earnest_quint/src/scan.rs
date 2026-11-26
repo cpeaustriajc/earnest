@@ -1,11 +1,10 @@
-use crate::builtins::{builtin, kind_of_builtin};
+use crate::builtins::not_read;
+use crate::data::data_builtin;
 use crate::json::{Declaration, Def, Expr};
 use crate::reader::{Refusal, refusal};
 
-const LEFT_FOR_LATER: [(&str, &str); 2] = [
-    ("q::temporalProps", "temporal properties are not read yet"),
-    ("q::inductiveInv", "inductive invariants are not read yet"),
-];
+const LEFT_FOR_LATER: [(&str, &str); 1] =
+    [("q::inductiveInv", "inductive invariants are not read yet")];
 
 fn in_definition(feature: &str, why: &str, name: &str) -> Refusal {
     refusal(feature, &format!("{why}, in the definition `{name}`"))
@@ -13,41 +12,27 @@ fn in_definition(feature: &str, why: &str, name: &str) -> Refusal {
 
 fn variable(name: &str, kind: &str) -> Option<Refusal> {
     let what = match kind {
-        "int" | "bool" => return None,
-        "str" => "text",
-        "rec" | "row" => "records",
-        "set" => "sets",
-        "fun" => "maps",
-        "list" => "lists",
-        "tup" => "tuples",
-        "sum" => "variants",
-        _ => "values of this type",
+        "int" | "bool" | "str" | "rec" | "row" | "set" | "fun" | "list" | "tup" | "sum" => {
+            return None;
+        }
+        other => other,
     };
     Some(refusal(
         &format!("`var {name}`"),
-        &format!("a variable that holds {what}: only `int` and `bool` variables are read yet"),
+        &format!("a variable whose type is `{what}`, which the reader does not know"),
     ))
 }
 
 fn expression(expr: &Expr, within: &str) -> Option<Refusal> {
     match expr {
-        Expr::Int { .. } | Expr::Bool { .. } | Expr::Name { .. } => None,
-        Expr::Str {} => Some(in_definition("text", "text is not read yet", within)),
-        Expr::Lambda { .. } => Some(in_definition(
-            "an anonymous operator",
-            "an operator written inside an expression is not read yet",
-            within,
-        )),
+        Expr::Int { .. } | Expr::Bool { .. } | Expr::Name { .. } | Expr::Str { .. } => None,
+        Expr::Lambda { expr, .. } => expression(expr, within),
         Expr::Let { opdef, expr } => body(opdef, within).or_else(|| expression(expr, within)),
         Expr::App { opcode, args, .. } => {
-            if builtin(opcode).is_none()
-                && let Some(kind) = kind_of_builtin(opcode)
+            if data_builtin(opcode).is_none()
+                && let Some(why) = not_read(opcode)
             {
-                return Some(in_definition(
-                    &format!("`{opcode}`"),
-                    &format!("{kind} are not read yet"),
-                    within,
-                ));
+                return Some(in_definition(&format!("`{opcode}`"), why, within));
             }
             args.iter().find_map(|each| expression(each, within))
         }
@@ -66,11 +51,7 @@ fn definition(def: &Def) -> Option<Refusal> {
         return Some(refusal(&format!("`{}`", def.name), why));
     }
     match def.qualifier.as_str() {
-        "temporal" => Some(in_definition(
-            &format!("`temporal {}`", def.name),
-            "temporal properties are not read yet",
-            &def.name,
-        )),
+        "temporal" => None,
         "run" => None,
         _ => body(def, &def.name),
     }
@@ -89,10 +70,7 @@ pub(crate) fn refused(declarations: &[Declaration]) -> Vec<Refusal> {
                 &format!("`const {name}`"),
                 "a constant without a value: compile the module that gives it one",
             )),
-            Declaration::Typedef { name } => Some(refusal(
-                &format!("`type {name}`"),
-                "type definitions are not read yet",
-            )),
+            Declaration::Typedef {} => None,
             Declaration::Def(def) => definition(def),
             Declaration::Other => Some(refusal(
                 "a declaration",
