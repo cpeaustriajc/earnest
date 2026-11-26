@@ -573,7 +573,39 @@ pub struct FairStep {
     /// The positions in [`Model::fields`] of which the step must change one, in the order the
     /// fairness named them. Empty is any field.
     pub over: Vec<usize>,
+    /// The action read from its own definition, outside the step, as TLA+ reads `WF_e(A)`.
+    /// When present, [`FairStep::action`] and [`FairStep::inputs`] are not used: the step is
+    /// possible in a state where some way through `A` alone changes a field of `over`, and an
+    /// arrow counts when some way through `A` alone gives its target and changes `over`.
+    pub alone: Option<Alone>,
 }
+
+/// An action read from its own definition, apart from the step that calls it, for fairness.
+///
+/// Each of [`Alone::actions`] is one way through the definition. An update that is `None`
+/// leaves the field free: the rest of the step gives it, so any value is allowed, where in
+/// [`Model::actions`] `None` keeps the field's value.
+///
+/// Two are equal when their [`Alone::named`] is: the same definition given the same arguments.
+#[derive(Clone, Debug)]
+pub struct Alone {
+    /// The definition and the arguments it is given, as written: `pay(1)`.
+    pub named: String,
+    /// Each way through the definition, with its inputs, guard and the fields it gives.
+    pub actions: Vec<Action>,
+    /// The inputs of [`Alone::actions`] whose set reads the state, as [`Runs::picks`] gives
+    /// them for [`Model::actions`]: [`Pick::script`] is `None` and [`Pick::action`] is the
+    /// position in [`Alone::actions`].
+    pub picks: Vec<Pick>,
+}
+
+impl PartialEq for Alone {
+    fn eq(&self, other: &Self) -> bool {
+        self.named == other.named
+    }
+}
+
+impl Eq for Alone {}
 
 /// One part of a chart label.
 #[derive(Clone, Debug)]

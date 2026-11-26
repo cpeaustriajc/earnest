@@ -1,7 +1,7 @@
 import random, sys
 
 
-def model(seed):
+def model(seed, guarded_calls=False):
     rnd = random.Random(seed)
     name = f"R{seed}"
     buyers = rnd.choice(["Set(1, 2)", "Set(1, 2, 3)"])
@@ -51,6 +51,16 @@ def model(seed):
     branches = [f"nondet b = BUYERS.oneOf() all {{ buy(b), flag' = flag, tok' = tok }}"]
     if direct:
         branches.append("all { buy(1), flag' = flag, tok' = tok }")
+    if guarded_calls:
+        around = rnd.choice(["all", "if"])
+        guard = be(1)
+        if around == "all":
+            branches[0] = f"nondet p = BUYERS.oneOf() all {{ {guard}, buy(p), flag' = flag, tok' = tok }}"
+        else:
+            branches[0] = (f"nondet p = BUYERS.oneOf() if ({guard}) all {{ buy(p), flag' = flag, tok' = tok }} "
+                           f"else all {{ flag' = not(flag), cnt' = cnt, last' = last, tok' = tok }}")
+        if direct:
+            branches[1] = f"all {{ {be(1)}, buy(1), flag' = flag, tok' = tok }}"
     if cycle:
         branches.append(f"nondet b = BUYERS.oneOf() all {{ reset(b), flag' = flag, tok' = tok }}")
     branches.append("all { flag' = not(flag), cnt' = cnt, last' = last, tok' = tok }")
@@ -111,4 +121,4 @@ def model(seed):
 
 
 if __name__ == "__main__":
-    print(model(int(sys.argv[1])), end="")
+    print(model(int(sys.argv[1]), sys.argv[2:] == ["guarded"]), end="")

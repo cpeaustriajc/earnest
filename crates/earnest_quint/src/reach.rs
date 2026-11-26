@@ -57,3 +57,20 @@ pub(crate) fn variables_reached<'a>(
     }
     walk.variables
 }
+
+pub(crate) fn defs_reached<'a>(
+    table: &'a HashMap<String, Entry>,
+    defs: &HashMap<u64, &'a Def>,
+    roots: &[&Quint],
+) -> BTreeSet<u64> {
+    let mut walk = Walk {
+        table,
+        defs,
+        entered: BTreeSet::new(),
+        variables: BTreeSet::new(),
+    };
+    for root in roots {
+        walk.expr(root);
+    }
+    walk.entered
+}

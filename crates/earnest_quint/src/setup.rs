@@ -89,7 +89,9 @@ fn imported_into<'t>(
                 }
                 let proto = text(each, "protoName")?;
                 let inner = typechecked.module(proto)?;
-                into.modules.push(proto);
+                if !into.modules.contains(&proto) {
+                    into.modules.push(proto);
+                }
                 let prefix = alias.map_or_else(
                     || prefix.to_owned(),
                     |alias| format!("{prefix}{alias}{SEPARATOR}"),
@@ -340,7 +342,9 @@ fn instance<'t>(
             "assume" => {}
             "import" if whole(each) => {
                 let proto = text(each, "protoName")?;
-                imports.modules.push(proto);
+                if !imports.modules.contains(&proto) {
+                    imports.modules.push(proto);
+                }
                 let prefix = text(each, "qualifiedName")
                     .map_or_else(String::new, |alias| format!("{alias}{SEPARATOR}"));
                 imported_into(
@@ -354,18 +358,18 @@ fn instance<'t>(
             _ => return None,
         }
     }
-    let mut prefixes = HashMap::new();
+    let mut prefixes: HashMap<u64, String> = HashMap::new();
     let mut imported = HashSet::new();
     for (each, prefix) in imports.definitions {
         let id = number(each, "id")?;
         if declarations.contains_key(&id) && !imported.contains(&id) {
             return None;
         }
-        if prefixes
-            .insert(id, prefix.clone())
-            .is_some_and(|before| before != prefix)
-        {
-            return None;
+        match prefixes.get(&id) {
+            Some(before) if before.len() <= prefix.len() => {}
+            _ => {
+                prefixes.insert(id, prefix);
+            }
         }
         imported.insert(id);
         declarations.insert(id, each);

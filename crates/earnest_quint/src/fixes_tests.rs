@@ -4,7 +4,6 @@ use earnest_value::Value;
 
 const FIXES: &str = include_str!("../fixtures/fixes.json");
 const FAIR_PART: &str = include_str!("../fixtures/fairpart.json");
-const MOVE: usize = 0;
 
 fn fixes() -> Model {
     read("fixes.json", FIXES).unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
@@ -80,7 +79,18 @@ fn fairness_of_an_action_that_assigns_every_variable_or_of_the_step_is_read() {
         fair("moveFair"),
         Some(Fairness {
             step: false,
-            actions: vec![vec![MOVE]],
+            actions: vec![vec![
+                model.actions.len()
+                    + model
+                        .runs
+                        .fair_steps
+                        .iter()
+                        .position(|step| step
+                            .alone
+                            .as_ref()
+                            .is_some_and(|alone| alone.named == "move()"))
+                        .expect("`move` alone is a fair step")
+            ]],
         })
     );
     assert_eq!(
