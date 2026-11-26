@@ -156,11 +156,16 @@ pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
 }
 
 pub(crate) fn unreadable_lines(file: &ModelFile) -> Vec<String> {
-    let mut lines = vec![format!(
+    let mut header = format!(
         "{:<STATUS_WIDTH$}{INDENT}{}",
         "unreadable",
         one_line(&file.path)
-    )];
+    );
+    if let Some(check) = file.quint_check() {
+        header.push_str(INDENT);
+        header.push_str(&one_line(check));
+    }
+    let mut lines = vec![header];
     lines.extend(
         problem_lines(file)
             .into_iter()

@@ -5,6 +5,7 @@ use crate::discovery::{discover, language_of};
 use crate::print::{
     no_model_line, problem_lines, skipped_line, to_stderr, to_stdout, unreadable_lines,
 };
+use crate::quint;
 use crate::reading::{ModelFile, load, read};
 use crate::run::{Bounds, Graphs, Ran, Search, checked, explore_each};
 use crate::select::{Target, held_back, select, select_with_removed};
@@ -48,10 +49,13 @@ pub(crate) struct Gathered {
     pub(crate) no_model: Vec<String>,
 }
 
-pub(crate) fn gather(models: &Models) -> Result<Gathered, String> {
+pub(crate) fn gather(models: &Models, jobs: usize) -> Result<Gathered, String> {
     let discovered = discover(&models.paths)?;
+    let mut files: Vec<ModelFile> = discovered.found.into_iter().map(load).collect();
+    files.extend(quint::checked(&discovered.listed, jobs));
+    files.sort_by(|first, second| Path::new(&first.path).cmp(Path::new(&second.path)));
     Ok(Gathered {
-        files: discovered.found.into_iter().map(load).collect(),
+        files,
         skipped: discovered.skipped,
         no_model: discovered.no_model,
     })
@@ -189,7 +193,10 @@ pub(crate) fn chart_command(arguments: &Chart) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.selection.models)?;
+    } = gather(
+        &arguments.selection.models,
+        limits_of(&arguments.bounds).jobs,
+    )?;
     let rule = arguments.selection.rule.as_deref();
     let model = arguments.selection.models.model.as_deref();
     let targets = select(&files, model, rule)
@@ -235,7 +242,10 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.selection.models)?;
+    } = gather(
+        &arguments.selection.models,
+        limits_of(&arguments.bounds).jobs,
+    )?;
     let rule = arguments.selection.rule.as_deref();
     let model = arguments.selection.models.model.as_deref();
     let selected = select_with_removed(&files, model, rule, arguments.base.as_deref())
@@ -356,7 +366,7 @@ pub(crate) fn tla_command(arguments: &Tla) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.models)?;
+    } = gather(&arguments.models, Bounds::new(0, None, None).jobs)?;
     let model = arguments.models.model.as_deref();
     let targets = select(&files, model, None)
         .map_err(|error| refusing(&skipped, &no_model, model, None, error))?;
@@ -420,7 +430,7 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.models)?;
+    } = gather(&arguments.models, bounds.jobs)?;
     let model = arguments.models.model.as_deref();
     let targets = select(&files, model, None)
         .map_err(|error| refusing(&skipped, &no_model, model, None, error))?;

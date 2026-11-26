@@ -405,3 +405,60 @@ fn rule_changes_against_the_base_are_listed_once_per_model() {
         "the change of the model's rule\n{run}"
     );
 }
+
+fn committed_clock() -> Sandbox {
+    let sandbox = clock();
+    git(&sandbox, &["init", "--quiet"]);
+    git(&sandbox, &["add", CLOCK]);
+    git(
+        &sandbox,
+        &["commit", "--quiet", "--message", "Model the clock"],
+    );
+    sandbox
+}
+
+#[test]
+fn a_rule_named_by_rule_that_is_only_at_the_base_is_listed_removed() {
+    let sandbox = committed_clock();
+    let without = sandbox
+        .read(CLOCK)
+        .replace(
+            "export const syncs = m.eventually(Clock, \"The clock syncs\", {\n\treaches: (s) => s.synced,\n});\n",
+            "",
+        )
+        .replace(
+            "export const syncsAhead = m.witness(Clock, \"A clock ahead can sync\", {\n\tsetup: ahead,\n\tsteps: [sync],\n\texpect: (s) => s.synced,\n});\n",
+            "",
+        );
+    assert!(
+        !without.contains("syncs =") && !without.contains("syncsAhead"),
+        "the fixture still has `syncs` or `syncsAhead`"
+    );
+    sandbox.write(CLOCK, &without);
+    for (id, kind) in [("syncs", "eventually"), ("syncsAhead", "witness")] {
+        let run = sandbox.earnest(&["verify", "--base", "HEAD", "--rule", id, "--json"]);
+        assert_ne!(run.code, Some(2), "`{id}` is at the base\n{run}");
+        let report = run.json();
+        let listed: Vec<(&Value, &Value, &Value)> = report["ruleChanges"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the report has `ruleChanges`\n{run}"))
+            .iter()
+            .map(|change| (&change["id"], &change["change"], &change["kind"]))
+            .collect();
+        assert!(
+            listed.contains(&(&json!(id), &json!("removed"), &json!(kind))),
+            "`{id}` is removed since the base, as `--model` lists a removed model\n{run}"
+        );
+    }
+}
+
+#[test]
+fn a_rule_named_by_rule_that_is_neither_here_nor_at_the_base_exits_2() {
+    let sandbox = committed_clock();
+    let run = sandbox.earnest(&["verify", "--base", "HEAD", "--rule", "nowhere"]);
+    run.exits(2);
+    assert!(
+        run.stderr.contains("no model has a rule `nowhere`"),
+        "the error names the rule\n{run}"
+    );
+}

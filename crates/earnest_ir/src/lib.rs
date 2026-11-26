@@ -355,7 +355,8 @@ pub struct End {
 /// One rule about whole runs: a state every run reaches.
 ///
 /// A run never stops while an action can still change the state, and it does not put off
-/// forever an action listed in [`Runs::fair`] that stays possible. Every such run from a state
+/// forever an action listed in [`Runs::fair`] that stays possible, unless `fair` gives the
+/// rule's own [`Fairness`]. Every such run from a state
 /// the rule starts from must come to a state where `reaches` is true, which may be that state.
 #[derive(Clone, Debug)]
 pub struct Eventually {
@@ -372,6 +373,23 @@ pub struct Eventually {
     pub reaches: Code,
     /// How many local slots `after` and `reaches` need.
     pub slots: usize,
+    /// The runs this rule is judged over, when the rule says so itself. `None` is the model's:
+    /// a run never stops while an action can change the state, and [`Runs::fair`] is fair.
+    pub fair: Option<Fairness>,
+}
+
+/// Which runs a rule about runs is judged over, when the rule says so itself.
+///
+/// It is the TLA+ weak fairness of each part: a part that can change the state from some point
+/// on forever does so infinitely often. A run that is fair to all of it may stay in one state
+/// forever when no fair part can change the state there.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fairness {
+    /// Whether the whole step is fair: a run never stops while an action can change the state.
+    pub step: bool,
+    /// The fair parts of the step, each the positions in [`Model::actions`] of the actions it
+    /// is made of. A part is taken when any one of its actions is.
+    pub actions: Vec<Vec<usize>>,
 }
 
 /// One step of a [`Witness`].
@@ -404,6 +422,56 @@ pub struct Witness {
     pub slots: usize,
 }
 
+/// One step of a [`Plan`]: the actions it may take, and what is checked around it.
+#[derive(Clone, Debug)]
+pub struct Stage {
+    /// The positions in [`Script::actions`] of the actions the step may take. Each action
+    /// with each combination of its inputs' values is one alternative: the step can happen
+    /// when at least one alternative can, and every alternative that can is played.
+    pub choices: Vec<usize>,
+    /// A condition on the state before the step, checked before any alternative. False is a
+    /// failed assertion, not a step that can't happen. It must give a boolean.
+    pub asserts: Option<Code>,
+    /// A condition on the state after the step. It must give a boolean.
+    pub expect: Option<Code>,
+    /// Whether the step must not be able to happen. Only the last step of a plan is refused:
+    /// the plan holds where no alternative can happen and breaks where one can.
+    pub refused: bool,
+}
+
+/// One way to play a [`Script`], from every start state of the model.
+#[derive(Clone, Debug)]
+pub struct Plan {
+    /// The values the run chose before its first step, each with its name, printed with a
+    /// broken plan. Empty when the run chooses nothing.
+    pub chosen: Vec<(String, Value)>,
+    /// A condition on the start state, before the first step. It must give a boolean.
+    pub start: Option<Code>,
+    /// The steps, first to last.
+    pub steps: Vec<Stage>,
+    /// Whether a branch that gets through every step breaks the plan: the run is false there.
+    pub must_not_finish: bool,
+}
+
+/// A generalised witness: steps that each choose among alternatives, with conditions after
+/// any step, played along every resolution of the choices. A [`Witness`] is the case of one
+/// alternative per step, with its inputs given, and one condition at the end.
+#[derive(Clone, Debug)]
+pub struct Script {
+    /// The run's name.
+    pub id: String,
+    /// The run's sentence.
+    pub says: String,
+    /// The line it is declared on, counted from 1.
+    pub line: u32,
+    /// The actions the steps take. They are the script's own, not the model's.
+    pub actions: Vec<Action>,
+    /// The plans. The script holds when every plan holds.
+    pub plans: Vec<Plan>,
+    /// How many local slots the conditions of the plans need.
+    pub slots: usize,
+}
+
 /// One setup: other values for some fields to start at.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Setup {
@@ -424,7 +492,10 @@ pub struct Setup {
 /// each state, and none when the set is empty, so the action cannot happen there.
 #[derive(Clone, Debug)]
 pub struct Pick {
-    /// The position of the action in [`Model::actions`].
+    /// The position in [`Runs::scripts`] of the script whose [`Script::actions`] hold the
+    /// action. `None` for an action of [`Model::actions`].
+    pub script: Option<usize>,
+    /// The position of the action in [`Model::actions`], or in the script's actions.
     pub action: usize,
     /// The position of the input in [`Action::inputs`].
     pub input: usize,
@@ -442,6 +513,9 @@ pub struct Runs {
     pub eventually: Vec<Eventually>,
     /// The witnesses.
     pub witnesses: Vec<Witness>,
+    /// The generalised witnesses, played from the start states of whichever setup the model
+    /// starts in.
+    pub scripts: Vec<Script>,
     /// The setups the model is also checked in.
     pub setups: Vec<Setup>,
     /// The inputs whose values are worked out in each state.
@@ -516,7 +590,8 @@ pub struct Model {
 
 impl Model {
     /// The id of everything this model is checked for and reported by its id: each rule, then
-    /// each rule about runs, then each witness that is played from this model's start states.
+    /// each rule about runs, then each witness that is played from this model's start states,
+    /// then each script.
     pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
         let always = self.rules.iter().map(|rule| rule.id.as_str());
         let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
@@ -526,7 +601,8 @@ impl Model {
             .iter()
             .filter(|witness| witness.setup == self.runs.chosen)
             .map(|witness| witness.id.as_str());
-        always.chain(eventually).chain(witnesses)
+        let scripts = self.runs.scripts.iter().map(|script| script.id.as_str());
+        always.chain(eventually).chain(witnesses).chain(scripts)
     }
 
     /// The setup this model starts in, when [`Self::in_setup`] gave it.

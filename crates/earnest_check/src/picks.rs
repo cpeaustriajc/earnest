@@ -1,17 +1,29 @@
-use earnest_ir::{Code, Fault, Frame, Input, Model};
+use earnest_ir::{Action, Code, Fault, Frame, Input, Model, Pick};
 use earnest_value::Value;
 
-pub(crate) fn sets_of(model: &Model, action: usize) -> Option<Box<[Option<Code>]>> {
-    let inputs = model.actions.get(action)?.inputs.len();
+pub(crate) fn sets_for(
+    picks: &[Pick],
+    script: Option<usize>,
+    action: usize,
+    inputs: usize,
+) -> Option<Box<[Option<Code>]>> {
     let mut sets: Vec<Option<Code>> = vec![None; inputs];
     let mut picked = false;
-    for pick in model.runs.picks.iter().filter(|pick| pick.action == action) {
+    for pick in picks
+        .iter()
+        .filter(|pick| pick.script == script && pick.action == action)
+    {
         if let Some(place) = sets.get_mut(pick.input) {
             *place = Some(pick.from.clone());
             picked = true;
         }
     }
     picked.then(|| sets.into_boxed_slice())
+}
+
+pub(crate) fn sets_of(model: &Model, action: usize) -> Option<Box<[Option<Code>]>> {
+    let inputs = model.actions.get(action)?.inputs.len();
+    sets_for(&model.runs.picks, None, action, inputs)
 }
 
 pub(crate) enum Next {
@@ -115,25 +127,19 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Every combination of values the inputs of the action at `action` in [`Model::actions`] take
-/// in `state`, each in the order of the action's inputs, in the order the search numbers them:
-/// the first input turns slowest, and each input's set is worked out with the earlier inputs
-/// in their slots. An input listed in [`earnest_ir::Runs::picks`] takes the items of its set in
-/// that state; any other input takes its listed values. A set that faults leaves out the
-/// combinations under it, and the first such fault is given beside the list. Empty for a
-/// position past the last action.
-pub(crate) fn combinations(
-    model: &Model,
-    action: usize,
+/// Every combination of values the inputs of `action` take in `state`, each in the order of
+/// the action's inputs, in the order the search numbers them: the first input turns slowest,
+/// and each input's set is worked out with the earlier inputs in their slots. An input with a
+/// set in `sets`, by its position, takes the items of that set in that state; any other input
+/// takes its listed values. A set that faults leaves out the combinations under it, and the
+/// first such fault is given beside the list.
+pub(crate) fn combinations_of(
+    action: &Action,
+    sets: &[Option<Code>],
     state: &[Value],
 ) -> (Vec<Vec<Value>>, Option<Fault>) {
-    let Some(found) = model.actions.get(action) else {
-        return (Vec::new(), None);
-    };
-    let sets =
-        sets_of(model, action).unwrap_or_else(|| vec![None; found.inputs.len()].into_boxed_slice());
-    let mut frame = Frame::new(state, found.slots);
-    let mut cursor = Cursor::new(&found.inputs, &sets);
+    let mut frame = Frame::new(state, action.slots);
+    let mut cursor = Cursor::new(&action.inputs, sets);
     let mut all = Vec::new();
     let mut first_fault = None;
     loop {
@@ -145,4 +151,20 @@ pub(crate) fn combinations(
             Next::Done => return (all, first_fault),
         }
     }
+}
+
+/// Every combination of values the inputs of the action at `action` in [`Model::actions`] take
+/// in `state`, as [`combinations_of`] gives them, with the sets [`earnest_ir::Runs::picks`]
+/// names for that action. Empty for a position past the last action.
+pub(crate) fn combinations(
+    model: &Model,
+    action: usize,
+    state: &[Value],
+) -> (Vec<Vec<Value>>, Option<Fault>) {
+    let Some(found) = model.actions.get(action) else {
+        return (Vec::new(), None);
+    };
+    let sets =
+        sets_of(model, action).unwrap_or_else(|| vec![None; found.inputs.len()].into_boxed_slice());
+    combinations_of(found, &sets, state)
 }

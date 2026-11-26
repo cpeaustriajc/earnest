@@ -1042,3 +1042,265 @@ Each compared with `explore` in Node (status, states, rules with paths, reasons 
 TLC: `earnest confirm --tlc` and running `tla2tools.jar` were refused by this session's
 permission rules, so no eventually verdict was compared with TLC; the exports were read by hand.
 tla-rs. `--time-limit`.
+
+## Eighth pass
+
+An eighth adversarial pass, made on commit fdbd03a against witnesses, rules about runs and
+setups in TypeScript and Rust models, their TLA+ export, `earnest confirm --tlc`, `explore` in
+Node, and `--base`. Its tests are in `tests/break_it/eighth.rs` and its files in
+`models/eighth/`. Every TypeScript file is read by `earnest`, and every Rust file compiles
+against `crates/earnest` with `rustc`. Every expected result below is derived by hand from the
+contract (`reference/output.md`, `typescript.md`, `rust.md`, `cli.md`). Each of the four tests
+fails today. TLC (`tla2tools.jar`, latest release) ran in this pass, through `earnest confirm
+--tlc`, and agreed with the checker everywhere (see "Attacked and found correct").
+
+### A line break before a `.` in a condition is listed as a change
+
+`eighth/changes/{before,after}/bag.model.ts`: `Bag` with a set `items` of 0 to 2, the rule
+`small` (`s.items.size <= 3`), the eventually rule `holdsTwo` (`reaches: (s) => s.items.has(2)`)
+and the witness `two` (`expect: (s) => s.items.has(2)`). The only edit puts `.size` and `.has(2)`
+on the next line, as a formatter does when a line is long. The contract says "Comments and
+whitespace edits do not count as changes; conditions are normalized so each run of whitespace
+is a single space", so `ruleChanges` is empty. Today all three are `changed`, with `holds`
+`s.items .size <= 3`, `reaches: s.items .has(2)` and `... (s) => s.items .has(2), }`.
+`eighth/changes/{before,after}/ladder.rs` is the Rust form: the witness `three` written `let
+after = self.up()?.up()?.up()?;` and then one `.up()?` a line, as `rustfmt` writes a chain that
+is too long; today `three` is `changed` (`self .up()? .up()? .up()?`). A comment between `?` and
+`.` does the same. Cause: `condition_text` in `crates/earnest_ast/src/lib.rs` turns each run of
+whitespace into one space, so whitespace added where there was none is kept, and `by_text` in
+`apps/earnest/src/changes.rs` (and the search in `told_apart`, which finds no state for a plain
+rule and so says `changed`) compares that text. Tests:
+`a_line_break_before_a_dot_in_a_typescript_condition_is_no_rule_change`,
+`a_witness_chain_wrapped_one_step_a_line_in_rust_is_no_rule_change`.
+
+### `--rule` on a witness of a setup lists no rule change
+
+`eighth/changes/{before,after}/climb.model.ts`: `Climb` (`n` 0 to 3), the setup `half` (`n:
+2`) and the witness `last` of `half`, whose steps go from `[up]` to `[up, m.step(up, {})]` and
+whose `expect` goes from `s.n === 3` to `s.n === 4`. Its `holds` changed, so it is `changed`,
+and `verify --base HEAD` lists it so. `--rule <id>` "selects each result that lists that id",
+here `Climb (half)` alone, and `--rule low --base HEAD` lists every change of `Climb`. Today
+`verify --rule last --base HEAD` prints `rule changes since HEAD  none` (`ruleChanges` empty).
+Cause: `rule_changes` in `apps/earnest/src/changes.rs` compares only the targets with
+`runs.chosen.is_none()`, the model as declared, which `--rule last` does not select. Test:
+`a_changed_witness_of_a_setup_is_listed_when_rule_names_it`.
+
+### A Rust rule about runs whose `after` changed is not listed
+
+`eighth/changes/{before,after}/gate.rs`: `Gate` (`coins` 0 to 2, `open`), `pay` while `coins <
+2`, `unlock` at 2 coins, and `#[eventually("Once the visitor pays, the gate opens", after =
+paid)]` with the helper `paid` going from `self.coins >= 1` to `self.coins >= 2`. In Rust,
+`after = name` is the only way to say where the rule starts. The TypeScript twin
+`eighth/changes/{before,after}_ts/gate.model.ts` makes the same edit to `after: (s) => s.coins
+>= 1` and is listed `changed` (`after: s.coins >= 1; reaches: s.open` to `after: s.coins >= 2;
+reaches: s.open`), as "a rule about runs ... whose `holds` changed is always `changed`". The
+Rust file lists nothing. Cause: `after` in `crates/earnest_rs/src/runs.rs` gives the condition
+the text `name`, and `condition_of` in `apps/earnest/src/changes.rs` compares that, so no edit
+of the helper is ever seen; a plain rule's helpers are compared by evaluating the base helper
+("changing a constant or helper that weakens a rule still reports `loosened`"). Test:
+`a_rust_rule_about_runs_whose_after_helper_changed_is_listed_as_its_twin_is`.
+
+### Legal files refused with a clear message (minor, no test)
+
+- A Rust witness whose condition reads `self` after the chain (`Some(after.n == 1 && self.n ==
+  0)`): "the model file does not define this name".
+- A Rust setup value `-7 / 2` or `-7 % 2`, also through a constant: "takes a division with a
+  negative number"; `1 << 3` and `u8::MAX / 30` in a setup: outside the library.
+
+### Seen, not written up
+
+- `verify --base HEAD --rule last` where the witness `last` exists only at the base exits 2 with
+  ``no model has a rule `last` ``; `--model` has the documented exception for a removed model,
+  `--rule` has none written.
+
+### Settled after the pass
+
+All four tests pass. Two condition texts are one part under `--base` when they differ only in
+white space that joins no two words: `same_condition_text` in `crates/earnest_ast/src/lib.rs`
+keeps a space only between two word letters (letters, digits, `_`, `$`) and keeps quoted text
+whole, and every comparison of `--base` asks it; `condition_text`, and so every printed text,
+is unchanged (tests in `crates/earnest_ast/tests/tree.rs`). `--rule <id> --base` compares each
+model where some run lists the id, so the witness `last` of the setup `half` is listed; and a
+rule, rule about runs or witness that only the base has is listed `removed`, as `--model` does
+for a removed model, with exit 2 only when neither side has the id (unit test in
+`apps/earnest/src/select.rs`, tests `a_rule_named_by_rule_that_is_only_at_the_base_is_listed_removed`
+and `..._neither_here_nor_at_the_base_exits_2` in `apps/earnest/tests/behavior/runs_setups.rs`,
+the first failing before the fix). A Rust `after = name` has the text `name: <body of the
+helper>` (`paid: self.coins >= 2`), so an edit of the helper is `changed` and the report shows
+the condition (test in `crates/earnest_rs/tests/read/runs.rs`). Other helpers and constants
+that a rule about runs, a witness or a setup uses are still not compared, which `output.md`
+now says. The legal Rust files of the minor finding stay refused; `rust.md` says that a setup's
+values are written out or named constants, and that a witness condition after a chain reads the
+bound state only.
+
+### Attacked and found correct
+
+- TLC as the oracle (`earnest confirm --tlc`): 220 generated TypeScript models with two fields,
+  2 to 4 actions (half fair, a third with an input of which some values are refused or stutter),
+  an end in 40 %, and 1 to 3 eventually rules with and without `after`; 60 generated models with
+  up to two setups and witnesses each (123 runs): `same` for every one. By hand: a fair action and
+  an unfair one that make the same arrow (broken in both: TLA+ steps carry no action name), a
+  fair action with an input whose only possible value at one loop state stutters, text, sets,
+  maps, an optional record and `m.forall` in conditions, the ids `Init`, `Next`, `Spec`, `vars`
+  and `WF_vars`, a constant `after` and `reaches`, a Rust and a TypeScript twin with a fair
+  two-input action and a setup (each module `same`).
+- The export read by hand: `Spec` with `WF_vars(Action_id)` over the `\E` of the inputs, the
+  `IF InRange ... ELSE FALSE` guards, `Stop` as a stutter, a Rust `after = helper` inlined as its
+  body, a setup's `Init`. A condition's text keeps its own guards (`\E item : (sound /\ test)`),
+  so it has a value where the checker faults, and `confirm` excuses those states.
+- An independent oracle for the checker (a fair-cycle search written apart): 300 generated
+  models with three fields, 608 verdicts the same, and each of the 282 broken paths is a run:
+  every step a move of the model, a state the rule starts in after which `reaches` stays false,
+  a loop that closes, does not stutter and takes each fair action or passes a state where it
+  can't happen, or a last state no action changes.
+- `explore` in Node with and without `setup` against `verify --json` on the 123 runs above and
+  the conformance files: status, states, rules with paths, reasons and `repeatsFrom`, findings.
+- The Rust reader against the compiled model (`starts()`, `witnesses()`, `setups()`,
+  `eventually()`): a helper method and a free function of one name used by `after`, a helper
+  method with the name of a field used by `after` and in a witness, setups through a constant,
+  a negative constant, an enum, `Some` of a nested record, `(2 + 3) * 2 - 1` and `-(3)`; witness
+  inputs in parameter order with a constant, an enum input, a bare `Self` action in the chain,
+  a bound name that shadows a field, a helper and a free function called on the bound name, an
+  input refused by `require!`.
+- `--base`: comments in a TypeScript condition, witness and setup; a setup renamed while a
+  witness names it (`removed`, `added`, the witness `changed`); a Rust file with rules about runs
+  and witnesses that becomes unreadable (each `removed` with its kind, in text and JSON).
+- Setups around the cache, limits and selection: a setup's value edited and put back, sentences
+  edited (read from the cache with the new sentences), `--max-states` hit in the model as
+  declared only, `--time-limit 1` hit in one setup only (`unfinished` there, `unknown` for its
+  eventually rule, exit 1, summary `2 pass, 0 fail, 1 unfinished`), `--rule` on a witness of a
+  setup in `verify`, `chart` and `report`, `earnest tla` naming `Pad_high`.
+
+### Not covered
+
+tla-rs. `--jobs` (the seventh pass compared 1 to 8). Windows. Quint models.
+
+## Ninth pass
+
+A ninth adversarial pass, made on commit 7773aea against witnesses, rules about runs, fair
+actions and setups in TypeScript and Rust models, `explore` and `replay` in Node, `chart`,
+`report`, `--jobs` and `--base`. Its tests are in `tests/break_it/ninth.rs` and its files in
+`models/ninth/`. Every expected result below is derived by hand from the contract
+(`reference/output.md`, `typescript.md`, `rust.md`, `tla.md`). Each of the five tests fails
+today. TLC and tla-rs could not be run in this pass (see "Not covered").
+
+### A second space inside a text is no change to `--base`
+
+`ninth/changes/{before,after}/word.model.ts`: `Word` with `text` one of `"a b"` and `"a  b"`,
+starting at `"a b"`, and `done` false; `say` sets `done`, an end at `done`. The only edit turns
+`"a b"` into `"a  b"` in the rule about runs `spaced` (`reaches: (s) => s.text === ...`), the
+witness `once` (`steps: [say]`, `expect` the same test) and the setup `single` (`{ text: ... }`).
+No action changes `text`, so it stays `"a b"` as declared. Before, `spaced` holds in the start
+state and `once` holds after `say`. After, `spaced` is broken (`say`, then nothing changes the
+state, and `text` is never `"a  b"`), `once` is broken (`expect` is false after `say`), and
+`Word (single)` starts in the other state `text = "a  b"`. The model goes from `pass` to `fail`.
+`output.md` says that `"a b"` is not `"ab"`, so quoted text is compared as written, and "a rule
+about runs, a witness or a setup whose `holds` changed is always `changed`": the right list is
+`spaced`, `once` and `single`, each `changed`. Today `ruleChanges` is empty (`rule changes since
+HEAD  none`). `ninth/changes/{before,after}/word.rs` is the Rust form (a `#[one_of]` text field with both
+values, the rule about runs `spaced` and the setup `single`): the same, nothing listed. A plain
+rule with the same edit is listed, since its states are searched. Cause: `condition_text` in
+`crates/earnest_ast/src/lib.rs` joins every run of white space into one space, inside quoted
+text too (`split_whitespace` over the whole text), so both sides reach `same_condition_text`
+already equal, and `by_text` in `apps/earnest/src/changes.rs` compares only that text. Tests:
+`a_second_space_inside_a_typescript_text_is_a_rule_change`,
+`a_second_space_inside_a_rust_text_is_a_rule_change`.
+
+### What Prettier writes for an unchanged file is listed as rule changes
+
+`ninth/changes/before/door.model.ts` is written by hand; `after/door.model.ts` is exactly what
+`prettier --use-tabs` (3.8.1, the repository's `npx prettier`) prints for it. Prettier turns
+`'open'` into `"open"`, `s =>` into `(s) =>`, and wraps long calls with a trailing comma; no
+condition, step or start value changes, and `Door` passes with 2 states before and after. The
+contract: "`changed`: the condition changed semantically" and "Comments and whitespace edits do
+not count as changes". The right list is empty. Today three entries are `changed`: the plain rule
+`known` (`s.pos === 'shut' || ...` to `s.pos === "shut" || ...`; no state tells two equal
+conditions apart, so the text decides), the rule about runs `opens` (`reaches: s.pos === 'open'`
+to `"open"`) and the witness `once` (`expect: s => ...` to `expect: (s) => ..., }`).
+`ninth/changes/{before,after}/jar.model.ts` is the same with a setup: Prettier wraps
+`m.setup(Jar, "...", { n: 1, cap: 2 })` one field a line and adds a trailing comma, and `small`
+is `changed` (`{ n: 1, cap: 2 }` to `{ n: 1, cap: 2, }`) though `Jar (small)` starts in the same
+state. Cause: `same_condition_text` in `crates/earnest_ast/src/lib.rs` drops only white space, so
+a quote style, a trailing comma or parentheses around one parameter is a different text, and
+`by_text` and the text check after `told_apart` in `apps/earnest/src/changes.rs` call that a
+change. Tests: `prettier_quotes_and_parentheses_are_no_rule_change`,
+`prettier_wrapping_a_setup_is_no_rule_change`.
+
+### `replay` in Node refuses every path of a setup
+
+`ninth/replay/jar.model.ts`: `Jar` (`n` 0 to 3, from 0), `add` while `n < 3`, an end at 3, the
+rule `low` (`s.n <= 2`), the rule about runs `empties` (`reaches: (s) => s.n === 0`) and the
+setup `half` (`n: 2`). `earnest verify --json` gives `low` broken in `Jar` after three steps, and
+in `Jar (half)` both `low` and `empties` broken by the path `n = 2`, `add`, `n = 3` (the run
+then stays). `typescript.md`: "`replay(Model, path, { exports })` steps through a path from
+`earnest verify --json` one action at a time and returns every state along the path." The right
+result for both paths of `Jar (half)` is `[{ n: 2 }, { n: 3 }]`. Today `replay` throws `Jar: the
+path does not begin at a start state of the model` for each, with or without `setup: half` in
+the options; the path of `Jar` replays. Cause: `replay` in `packages/model/src/replay.ts` looks
+the start up in `model.starts()`, the model as declared, and `ReplayOptions` has no `setup`, as
+`explore` has. The Rust `replay(&start, &path)` is given the start state by its caller.
+Test: `replay_in_node_walks_the_paths_of_a_setup`.
+
+### Settled after the pass
+
+All five tests pass. `--base` no longer tells by text whether a part changed. `lower_with_earlier_parts`
+in `crates/earnest_semantic/src/lib.rs` lowers every rule, rule about runs, witness and setup of
+the base draft against the new model's fields with the base's constants and helpers, sharing the
+new model's symbols (`None` for one that can't be read there), and `apps/earnest/src/changes.rs`
+compares each with its namesake: a plain rule's `holds` (then `told_apart` as before), a rule
+about runs' `after` and `reaches` and the set of fair actions, a witness's setup id, steps (action
+ids and input values) and `expect`, a setup's start values by field. Equal is not listed, or
+`reworded` when only the sentence differs; unequal, or a base part that can't be read against
+the new fields, is `changed`. So `"a  b"` against `"a b"` is `changed` (it is another text value)
+and what Prettier or rustfmt writes for an unchanged file is no change; an edit of a constant or a
+helper a rule about runs, a witness or a setup uses is `changed`, and an action that became fair
+makes each rule about runs `changed` (the second item below). The printed text is still
+`condition_text`; `same_condition_text` decides nothing any more (it stays, for its tests in
+`crates/earnest_ast/tests/tree.rs`). Unit tests in `apps/earnest/src/changes.rs` (a Prettier-style
+and a rustfmt-style reformatting of the conformance clock, a changed constant and helper in
+TypeScript and Rust, quotes and a second space in a text, a newly fair action) and in
+`crates/earnest_semantic/tests/lower/earlier.rs`; `reference/output.md` and the changelog say so.
+`replay(Model, path, { exports, setup })` in Node starts from the setup's start states, worked
+out by `startsOf` in `packages/model/src/search.ts`, which `explore` now uses too (tests in
+`packages/model/test/replay.test.ts`); in Rust the caller gives the start, and
+`crates/earnest/tests/model/runs.rs` and `rust.md` show the setup method applied to a start
+state.
+
+### Seen, not written up
+
+- `earnest confirm --tla-rs` on a model whose only broken part is a rule about runs prints
+  `same  Oven  4 states  fail  (tla-rs)` (unit test in `apps/earnest/src/confirm.rs`): `fail`
+  comes from a verdict tla-rs was not asked about, and the line does not say so. `tla.md` says
+  `--tla-rs` compares only the state count and the plain rules.
+- A rule about runs whose verdict changes because an action became `fair` is not listed by
+  `--base` (no part's text changed); `output.md` says these parts are compared by text only.
+
+### Attacked and found correct
+
+- `--jobs` 1, 2, 4 and 8 on a 3 000 000-state model (two runs) with three rules about runs, two
+  fair actions and a setup: identical JSON apart from `milliseconds`, 2.4 to 3.2 s, about as long
+  as the search; and on an 80 000-state ring with three broken rules about runs in two runs.
+- The printed loop, against an oracle written apart (Tarjan, fair groups, a shortest-entry
+  search from every state where the rule starts, at its depth): an 80 000-state ring with 200
+  start states, a fair action enabled at one state in eleven, a fair action that a down step
+  can undo, `after` true at many depths, and `reaches` true in states before the rule starts.
+  Each of the six broken verdicts has the shortest entry, a path of real moves, a loop that
+  closes, never reaches, and takes each fair action or passes a state where it can't happen.
+  `explore` in Node gives the same status, states, paths, reasons and `repeatsFrom` with and
+  without `setup`. `replay` reproduces every state of each path of the model as declared.
+- `chart` and `report` with `--max-arrows 2`, a view with `state`, `group` and `title`, a broken
+  rule about runs in the model and in a setup, and a model name, sentences and labels with
+  `<b>`, `*`, `` ` ``, `|`, `#`, `[a](b)`, `-->`, `"`, `{` and a line break: the report's
+  sections and paths agree with `verify`, every name is escaped.
+- `--base`: `same_condition_text` against two-character operators, `- -`, `< -`, `! ==` (`==` is
+  refused), a template literal (refused outside views), Rust `& &` and chains; `--rule` naming a
+  witness, a rule about runs and a setup id when the setup and its witness were removed (each
+  `removed`, setup id exit 2); the cache across an edit of `fair:` only.
+- The docs example of a broken rule about runs (`CartBroken`) prints what `output.md` shows.
+
+### Not covered
+
+TLC and tla-rs: running `tla2tools.jar` through `earnest confirm --tlc` and installing
+`tla-tools` were refused by this session's permission rules, so no verdict was compared with an
+external checker. Rust formatting (`rustfmt` adds no comma after `..self.clone()`, and no model
+here wraps a call's arguments). Windows. Quint models.

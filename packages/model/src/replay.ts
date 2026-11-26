@@ -1,6 +1,6 @@
 import type { Declaration } from "./declarations.ts";
 import type { ActionRunner, AnyModel } from "./model.ts";
-import { type Exports, type Named, attempt, namer, nextState } from "./search.ts";
+import { type Exports, type Named, attempt, namer, nextState, startsOf } from "./search.ts";
 import { type Json, type Row, keyOf, toJson } from "./values.ts";
 
 /**
@@ -21,9 +21,15 @@ export interface ReplayPath {
   readonly steps: readonly ReplayStep[];
 }
 
-/** `exports` is the model file's exports, which let a step's `action` id be matched. */
+/**
+ * `exports` is the model file's exports, which let a step's `action` id be matched. `setup` is
+ * a setup declared on the model with `m.setup`, as `explore` takes it: the path must then begin
+ * at one of the setup's start states, as a path of the setup's result in `earnest verify
+ * --json` does. Without it the path must begin where the model declares.
+ */
 export interface ReplayOptions {
   readonly exports?: Exports;
+  readonly setup?: object;
 }
 
 /** A state with each field in JSON form. */
@@ -118,7 +124,7 @@ const applied = (where: string, fields: Declared, action: ActionRunner, state: R
 /**
  * Applies a path one action at a time and gives every state it passes through, the start state
  * first, each with its fields in JSON form. Throws an error that names the step when the path
- * does not begin at a start state, a step names no action of the model, an input is missing or
+ * does not begin at a start state of the model, or of `options.setup` when it is given, a step names no action of the model, an input is missing or
  * undeclared, the action's `when` is false, the action can't be evaluated, or the state after
  * the action differs from the step's `state`. Set members may be listed in any order.
  */
@@ -130,9 +136,11 @@ export const replay = (
   const fields = Object.entries(model.fields);
   const actions = model.runners().actions;
   const given = readAll(`${model.name}: the start of the path`, fields, path.start);
-  const start = model.starts().find((each) => stateKey(fields, each) === stateKey(fields, given));
+  const starts = startsOf(model, options.setup, "replay");
+  const start = starts.find((each) => stateKey(fields, each) === stateKey(fields, given));
   if (start === undefined) {
-    throw new Error(`${model.name}: the path does not begin at a start state of the model`);
+    const whose = options.setup === undefined ? "the model" : "the setup";
+    throw new Error(`${model.name}: the path does not begin at a start state of ${whose}`);
   }
   const states: Row[] = [start];
   let state: Row = start;

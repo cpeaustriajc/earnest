@@ -839,6 +839,31 @@ and names the construct and the definition it is in.
 - `cargo test --locked`: 80 suites, 1673 passed, 0 failed.
 - `tests_kept.py --base origin/main`: `tests kept: 1365 tests, 3953 assertions (base: 1304, 3798)`.
 
+### After merging slices 2 and 5 (the orchestrator's review)
+
+- Merged `claude/lucid-brown-f5xvr8` at `7773aea` (a merge, no rebase). Conflicts: `scan.rs`
+  (the head's meaning kept: its read types and message for `var`, its `data_builtin`/`not_read`
+  test, `Typedef` no longer refused; with `.within(name)` and `.at(*id)` added), `main.rs` of the
+  behavior tests, this README and the changelog (both sides kept).
+- Places for the new refusals: every refusal in `data.rs` and `temporal.rs` goes through
+  `Reader::refuse`, so it carries the definition; `model.rs`'s "assigns this variable twice" and
+  "leaves this variable unassigned" now carry the action's name too.
+- The line test uses `models/choose.qnt` (`chooseSome`, still refused), with its parse and source
+  map from Quint 0.33.1 (`sourceIndex` made relative); the record fixtures are gone.
+- (a) An unreadable check's header names its module after the file: `unreadable  clock.qnt  Small`
+  (`ModelFile::quint_check`, shared with the result cache's name). Test:
+  `two_unreadable_checks_of_one_file_are_told_apart_by_their_module`.
+- (b) The compiled JSON names imported files only as `importedFrom.fromSource` (`"./sub/spec"`),
+  relative to the importing file and only for the definitions flattening kept, so it was not used.
+  `quint parse --source-map` lists every file it loaded, by absolute path, in `sourceIndex`. So
+  earnest now parses each listed `.qnt` file first (once, cached), and keys the compile on the
+  contents of exactly those files; the cached parse is reused while each of them is unchanged.
+  When the parse fails, the `.qnt` tree below the checks folder stands in, as before. Test:
+  `editing_a_file_imported_from_a_parent_folder_compiles_the_check_again`; with real Quint, an
+  edit of `../shared/lib.qnt` turned `pass use 4 states (cached)` into `fail` with a new path.
+- Docs: `reference/quint.md` lists what the head reads and refuses, runs and a `oneOf` over a set
+  computed from the state as "not yet"; `output.md` shows the header.
+
 ### Unfinished, and the next step
 
 - Problems sit at line 1, column 1: slice 3 matches ids against `quint parse --source-map`.
@@ -1076,73 +1101,6 @@ table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/sr
   `0 differences`. The 64 are the 16 model files of the integration branch that are not on
   `origin/main` (4 runs each: `tasks/conformance/runs/cart.model.ts`, `cart_broken`, `clock` and
   the rest of that folder's witness and setup models), which `origin/main` cannot read.
-  `just same-answers fdbd03a` (this branch's base): `every model file: 392 runs, 0 differences`,
-  every sweep 0.
-- `cargo fmt --check`: exit 0.
-- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
-- `just lint-library`: both passes `Finished`, exit 0.
-- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
-- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
-- `cargo test --locked` (after `bun install --frozen-lockfile`): 1839 passed, 0 failed.
-- `tests_kept.py --base origin/main`: `tests kept: 1507 tests, 4396 assertions (base: 1304, 3798)`.
-  **Against the integration branch** (`--base origin/claude/lucid-brown-f5xvr8`) it reports 8
-  changed lines, all in one test: `apps/earnest/tests/behavior/quint.rs`,
-  `a_record_variable_makes_the_file_unreadable_and_names_the_construct`. That slice-1 test pins
-  the refusal of a record variable, which this slice lifts, so it failed by design. It is now
-  `a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit`, line for line
-  in the same place with three assertions, and needs the owner's override at the merge. Four
-  slice-1 unit tests in `crates/earnest_quint/src/tests.rs` (not a guarded path) that pinned the
-  refusal of text, a set variable, a set operator and `ipow` now test that these are read.
-
-### The operator table's source
-
-`quint repl -q --backend typescript -r table.qnt::table`, Quint 0.33.1, one case name per line;
-84 cases in `crates/earnest_quint/fixtures/table.qnt`, the printed answers in
-`crates/earnest_quint/src/table.rs`. The case list and the raw output are reproducible from the
-`.qnt` alone.
-
-### Refused, by name
-
-`chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (the refusal says to write
-`foldl`), `fieldNames`, `apalache::generate`, `q::debug`, `powerset` of a set computed from the
-state or of more than 19 items, a `oneOf` over a set computed from the state or from another
-`nondet` (slice 3), temporal properties and runs (as in slice 1), a field name, tag or tuple
-position that is not written out, an operator argument that takes the wrong number of
-parameters, and a variable whose type the reader does not know. Everything slice 1 refused
-beyond records, tuples, sets, maps, lists, text, variants and `ipow` is still refused.
-
-### Forms without a full TLA+ spelling
-
-- Comparing two variants whose values are of different kinds (`s == Dot` with `s` a
-  `Circle(1)`) stops TLC: it compares the `value` field first and cannot compare `1` with
-  `<<>>`. The `everything` fixture tests `select` through `match` instead. Writing a variant's
-  value apart per tag would fix it; left for later.
-- A fold over a set whose item kind is unknown (a `Domain::Any` field's keys) takes the items in
-  TLC's `CHOOSE` order. A fold whose answer depends on the order can then differ from earnest
-  (the same caveat as Quint's own evaluator, above).
-- A condition a fold's step needs (`Written::sound`, for `Unwrap` and `Fit`) is not carried out
-  of the `LET RECURSIVE`; Quint models produce neither, and the faulting helpers stop TLC with
-  their `Assert`.
-
-### Doubts about existing code
-
-- `Kind::join(Unknown, known)` gives `known`, so a joined kind can claim to know every field of
-  a record it saw part of. The `with` fix covers the unknown base; other uses of the join are
-  unchanged.
-- TLC prints a record's fields in its own order (`[value |-> ..., tag |-> ...]`), unlike
-  earnest. This matters only for reading traces.
-- The spike's "15 states for shapes" is TLC's count when it stops at the violation; the model
-  has 21.
-
-### Unfinished, and the next step
-
-- Not done: a spelling of mixed-kind variant equality in TLA+, `foldr`, `fieldNames`.
-- Inputs over a set of records or variants show the value as a record (`name = {tag: ...}`);
-  printing variants as Quint does (`Ping(0)`) would need a marker in `Value` or in the model,
-  which this slice did not add.
-- Next: slice 3 (`oneOf` over a set computed from the state, and lines from the source map).
-  `picked_from` in `reader.rs` already works out any set that does not change; slice 3 replaces
-  its `computed` refusal.
 
 ## Slice 3: what is checked
 
@@ -1158,7 +1116,7 @@ compiled from it with Quint 0.33.1:
 quint compile --target json --main serve --invariant everyoneOnce,annNotFirst serve.qnt > serve.json
 quint compile --target json --main keys --invariant atMostThree,bobBelowThree keys.qnt > keys.json
 quint compile --target json --main pass --invariant oneHolder,neverC pass.qnt > pass.json
-quint compile --target json --main grows --invariant lastSeen,belowForty grows.qnt > grows.json
+quint compile --target json --main widening --invariant lastSeen,belowForty widening.qnt > widening.json
 quint compile --target json --main drain --invariant notNegative,notEmpty drain.qnt > drain.json
 quint compile --target json --main mixedpick --invariant inRange,noFour mixedpick.qnt > mixedpick.json
 quint compile --target json --main initpick initpick.qnt > initpick.json          # refused
@@ -1170,11 +1128,11 @@ quint compile --target json --main flags flags.qnt > flags.json
 
 | Model | What it picks | States | Holds | Broken, and the path |
 |---|---|---:|---|---|
-| `serve` | `who` from `pending`, one request at a time | 8: each subset of `{"ann", "bob", "cy"}` left pending | `everyoneOnce` | `annNotFirst`: `serve  who = "ann"` |
-| `keys` | `who` from the keys of `balances` whose balance is below 3 | 6: ann 1 to 3 times bob 2 to 3 | `atMostThree` | `bobBelowThree`: `bump  who = "bob"` |
-| `pass` | `giver` from `has`, then `taker` from everyone but `giver` | 3: one token with `a`, `b` or `c` | `oneHolder` | `neverC`: `give  giver = "a", taker = "c"` |
-| `grows` | `x` from `seen`, which grows to 40 items | 781: `seen = {0..k}` with `last` below `k` for `k` from 1 to 39, 780, and the start | `lastSeen` | `belowForty`: 39 steps `extend  x = 0` to `x = 38` |
-| `drain` | `n` from `1.to(left)`, empty at `left = 0`, the only action | 5: `left` from 0 to 4; no stuck state, since a Quint model may stop anywhere | `notNegative` | `notEmpty`: `take  n = 4` |
+| `serve` | `who` from `pending`, one request at a time | 8: each subset of `{"ann", "bob", "cy"}` left pending | `everyoneOnce` | `annNotFirst`: `step  who = "ann"` |
+| `keys` | `who` from the keys of `balances` whose balance is below 3 | 6: ann 1 to 3 times bob 2 to 3 | `atMostThree` | `bobBelowThree`: `step  who = "bob"` |
+| `pass` | `giver` from `has`, then `taker` from everyone but `giver` | 3: one token with `a`, `b` or `c` | `oneHolder` | `neverC`: `step  giver = "a", taker = "c"` |
+| `widening` | `x` from `seen`, which grows to 40 items | 781: `seen = {0..k}` with `last` below `k` for `k` from 1 to 39, 780, and the start | `lastSeen` | `belowForty`: 39 steps `step  x = 0` to `x = 38` |
+| `drain` | `n` from `1.to(left)`, empty at `left = 0`, the only action | 5: `left` from 0 to 4; no stuck state, since a Quint model may stop anywhere | `notNegative` | `notEmpty`: `step  n = 4` |
 | `mixedpick` | `by` from `Set(1, 2)` and `a` from `bag` in `move`; `n` from `1.to(3)` in `add` | 16: every subset of 1 to 4 | `inRange` | `noFour`: `add  n = 2`, `move  by = 2, a = 2` |
 
 ### TLC, as Quint runs it
@@ -1190,8 +1148,8 @@ each invariant, in `crates/earnest_quint/fixtures`. TLC's lines:
 | `--main keys --invariant bobBelowThree keys.qnt` | `Error: Invariant q_inv is violated.` `6 states generated, 6 distinct states found` `[violation] Found an issue (687ms).` |
 | `--main pass --invariant oneHolder pass.qnt` | `7 states generated, 3 distinct states found, 0 states left on queue.` `[ok] No violation found (629ms).` |
 | `--main pass --invariant neverC pass.qnt` | `Error: Invariant q_inv is violated.` `5 states generated, 3 distinct states found` `[violation] Found an issue (621ms).` |
-| `--main grows --invariant lastSeen grows.qnt` | `21283 states generated, 781 distinct states found, 0 states left on queue.` `[ok] No violation found (886ms).` |
-| `--main grows --invariant belowForty grows.qnt` | `Error: Invariant q_inv is violated.` `19762 states generated, 743 distinct states found` `[violation] Found an issue (851ms).` |
+| `--main widening --invariant lastSeen widening.qnt` | `21283 states generated, 781 distinct states found, 0 states left on queue.` `[ok] No violation found (728ms).` |
+| `--main widening --invariant belowForty widening.qnt` | `Error: Invariant q_inv is violated.` `19762 states generated, 743 distinct states found` `[violation] Found an issue (765ms).` |
 | `--main drain --invariant notNegative drain.qnt` | `11 states generated, 5 distinct states found, 0 states left on queue.` `[ok] No violation found (646ms).` |
 | `--main drain --invariant notEmpty drain.qnt` | `Error: Invariant q_inv is violated.` `11 states generated, 5 distinct states found` `[violation] Found an issue (638ms).` |
 | `--main mixedpick --invariant inRange mixedpick.qnt` | `89 states generated, 16 distinct states found, 0 states left on queue.` `[ok] No violation found (609ms).` |
@@ -1203,22 +1161,23 @@ count is TLC's count at the stop.
 ### earnest and its TLA+ export
 
 `earnest verify crates/earnest_quint/fixtures/<module>.json`, each model's result line and the
-steps of its broken rule's path:
+steps of its broken rule's path. An action that `step` reaches only through names (`action step = serve`)
+is named `step` since slice 5; `mixedpick`'s `any` keeps `add` and `move`:
 
 ```text
 fail        serve  8 states  0 ms
   broken  annNotFirst  "The Quint invariant `annNotFirst` holds"
     start  pending = {"ann", "bob", "cy"}, served = {}
-    1. serve  who = "ann"  pending: {"ann", "bob", "cy"} -> {"bob", "cy"}, served: {} -> {"ann"}
+    1. step  who = "ann"  pending: {"ann", "bob", "cy"} -> {"bob", "cy"}, served: {} -> {"ann"}
 fail        keys  6 states  0 ms
-    1. bump  who = "bob"  balances: {"ann" -> 1, "bob" -> 2} -> {"ann" -> 1, "bob" -> 3}
+    1. step  who = "bob"  balances: {"ann" -> 1, "bob" -> 2} -> {"ann" -> 1, "bob" -> 3}
 fail        pass  3 states  0 ms
-    1. give  giver = "a", taker = "c"  has: {"a"} -> {"c"}
-fail        grows  781 states  38 ms
-    1. extend  x = 0  seen: {0} -> {0, 1}
+    1. step  giver = "a", taker = "c"  has: {"a"} -> {"c"}
+fail        widening  781 states  24 ms
+    1. step  x = 0  seen: {0} -> {0, 1}
     ... 39 steps
 fail        drain  5 states  0 ms
-    1. take  n = 4  left: 4 -> 0
+    1. step  n = 4  left: 4 -> 0
 fail        mixedpick  16 states  0 ms
     1. add  n = 2  bag: {} -> {2}
     2. move  by = 2, a = 2  bag: {2} -> {4}
@@ -1241,7 +1200,7 @@ Action_give ==
 same     serve  8 states  fail
 same     keys  6 states  fail
 same     pass  3 states  fail
-same     grows  781 states  fail
+same     widening  781 states  fail
 same     drain  5 states  fail
 same     mixedpick  16 states  fail
 ```
@@ -1377,3 +1336,1258 @@ Quint has no set of every string, so there is nothing to refuse for one.
   each set with the earlier choices in place, like `Cursor`.
 - Next: slice 5 (temporal properties) and slice 6 (runs) can merge on top of this. Each touches
   `Runs` beside `picks`, and the expansion only through `Successors`.
+
+## Slice 5: what is checked
+
+`earnest verify <file>.json` reads the temporal properties a module was compiled with
+(`quint compile --target json --main M --temporal p,q …`, issue #57) and checks each with the
+liveness pass of `earnest_check`; `earnest confirm --tlc` compares every verdict with TLC.
+
+Compiled with Quint 0.33.1:
+
+```sh
+cd tasks/quint/probe
+quint compile --target json --main fair2 --temporal hearFairOnly,tickFairOnly,bothFair,stepFairH fair2.qnt > fair2.json
+cd ../models
+quint compile --target json --main SmallBits --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > smallbits.json
+quint compile --target json --main LargeBits --invariant inv --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > largebits.json
+quint compile --target json --main swing --temporal swingFair,outFair,stepFair,safe swing.qnt > swing.json
+```
+
+`models/clock.qnt` keeps `seen: Set[str]` and `Nodes: Set[str]`, which slice 1 does not read
+(sets and text are slice 2), so `models/clockbits.qnt` is the same `Clock` with each node one
+bit of an `int` (`Nodes` is 3 in `SmallBits` and 7 in `LargeBits`). TLC gives the two files the
+same counts and the same verdicts, below. `LargeBits` names the four properties of its instance
+`C` as its own, because `--temporal` takes names of the main module. `swing.qnt` is new: its
+broken runs are loops.
+
+### Fairness when the step is not fair
+
+TLA+ meaning, which TLC checks: `WF_vars(A)` is `<>[]ENABLED <A>_vars => []<><A>_vars`, where
+`<A>_vars` is an `A` step that changes `vars`. With `vars` every state variable, an `A` step that
+leaves the state as it is does not count, which is why the liveness pass drops such edges. A
+behaviour that stays in one state forever takes only stuttering steps.
+
+A rule is broken when some fair behaviour from a state where it starts never reaches what it
+wants. In a finite graph such a behaviour, from some point on, either
+
+1. **stays in one state `s` forever.** `WF_vars(A)` then holds exactly when `<A>_vars` is not
+   enabled at `s`: it is enabled forever otherwise, and never taken. `WF_vars(Next)` holds
+   exactly when `s` has no edge to another state. So `s` is a place to stay when no fair part
+   (and, if the step is fair, no action at all) can change the state there; or
+2. **moves forever inside one group** (strongly connected set of states that do not reach the
+   goal), visiting a set `S` of at least two states and taking a set of edges infinitely often.
+   `WF_vars(A)` then holds exactly when `A` is disabled at some state of `S` (it is then not
+   enabled from some point on forever) or an `A` edge inside `S` is taken infinitely often.
+   Taking `S` as the whole group is never worse: it adds states where `A` may be disabled and
+   edges that take `A`, and a tour of a strongly connected group can visit all its states and
+   take all its edges. Stuttering steps in between change nothing: `A` stays enabled across
+   them. `WF_vars(Next)` holds in this case too, so whole-step fairness adds nothing here.
+
+So a state is "doomed" (a run can stay there or around it forever) when case 1 holds for it or
+case 2 holds for its group, which is `doomed` in `eventually.rs` with one more check for case 1
+(`Hunt::stays`). Two remarks:
+
+- For a group of two states or more, case 1 at a state `s` implies case 2: every fair part is
+  disabled at `s`, which is in the group. So the groups `doomed` picks are the ones it picked
+  before, as the spike said; what is new is case 1 for states that have ways out, singletons and
+  states in groups alike. Where case 1 holds the run is reported as a stop, not as a loop.
+- With the whole step fair, case 1 is "no way out", which is the old test: earnest's own models
+  give the same verdicts, paths and sentences, and pay one match per state.
+
+A fair part is a set of actions: `weakFair(hear, vars)` is fair to every action the step unfolds
+from `hear` (`hear`, `hear#2`, …), as one disjunction, which is weaker than each alone. The model's
+`Runs::fair` stays one action per part.
+
+The new sentence for case 1 at a state with ways out is "the run may stop here, because no step
+it must take can change the state from here". A state with no way out keeps "nothing changes the
+state from here, so the run can stay in it forever".
+
+The TLA+ export: when a rule has its own fairness, `Spec` is `Init /\ [][Next]_vars` and each
+property is `(fairness) => (property)`, with the model's own fairness (`WF_vars(Next)` and each
+fair action) for a rule that has none. `earnest confirm --tlc` checks each property in its own
+run of TLC as before. A model whose rules have no fairness of their own is written byte for byte
+as before.
+
+### Each property: by hand, TLC, earnest
+
+By hand:
+
+- **fair2** (`t` 0 to 3, `h` either: 4 × 2 = **8** states). `tick` adds 1 to `t` below 3, `hear`
+  sets `h` once.
+  - `hearFairOnly`: after `hear`, only `tick` can change the state and it is not fair, so the run
+    may stop at `t = 0`: **broken**. (TLC's run ticks twice first, then hears and stutters; both
+    are fair to `hear`.)
+  - `tickFairOnly`: `tick` stays possible until `t = 3`, so it happens: **holds**.
+  - `bothFair` (`eventually(t == 3)` and `eventually(h)`): each fair action is possible until
+    taken: both **hold**.
+  - `stepFairH`: the whole step is fair, and every run ends at `t = 3, h`, the one state with no
+    way out: **holds**.
+- **SmallBits** (`time` 0 to 3, `seen` 0 to 3: **16** states) and **LargeBits** (`time` 0 to 8,
+  `seen` 0 to 7: **72**).
+  - `allHeard`: nothing is fair, so a run may stop in the start state, where `seen` is 0:
+    **broken**, with a path of no steps.
+  - `timeAdvances`, `leads`: the step is fair; `time` and `seen` only grow, so every run ends at
+    `time == MaxTime` and all heard: **hold**.
+  - `fairHear`: `tick` is possible until `MaxTime`, `hear` until all are heard, so both happen,
+    and the run then stays at `seen == Nodes`: **holds**.
+  - `inv` (LargeBits): `time` never passes 8: **holds**.
+- **swing** (`n` 0 to 2: **3** states). `a` takes 0 to 1, `b` 1 to 0, `out` 0 or 1 to 2.
+  - `swingFair`: the run `a, b, a, …` is fair to `a` and to `b` and never takes `out`: **broken**,
+    a loop of steps 1 to 2.
+  - `outFair`: `out` is possible in both states of the loop, so it happens: **holds**.
+  - `stepFair`: the same loop is fair to the whole step: **broken**.
+  - `safe` (`always(n <= 2)`, a plain rule): **holds**.
+
+| Module | Property | By hand | `quint verify --backend tlc` | `earnest confirm --tlc` |
+|---|---|---|---|---|
+| fair2 (8) | `hearFairOnly` | broken | violated, 8 states | same |
+| | `tickFairOnly` | holds | ok | same |
+| | `bothFair` (two rules) | holds, holds | ok | same |
+| | `stepFairH` | holds | ok | same |
+| SmallBits (16) | `allHeard` | broken | violated (stutters after 4 steps), 16 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| LargeBits (72) | `allHeard` | broken | violated, 72 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| swing (3) | `swingFair` | broken, loop | violated, "Back to state 1" | same |
+| | `outFair` | holds | ok | same |
+| | `stepFair` | broken, loop | violated, "Back to state 1" | same |
+| | `safe` | holds | ok | same |
+
+The original `clock.qnt` gives TLC the same lines: `Small` 16 states, `allHeard` violated and the
+other three ok; `Large` (`--temporal C::allHeard` and so on) 72 states, the same verdicts.
+
+TLC, as Quint runs it (one command per property; each output cut to the verdict, the state count
+and the counterexample's actions):
+
+```text
+=== quint verify --backend tlc --main fair2 --temporal hearFairOnly probe/fair2.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 3: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 4: <hear line 30, col 9 to line 30, col 35 of module fair2>
+State 5: Stuttering
+11 states generated, 8 distinct states found, 0 states left on queue.
+[violation] Found an issue (684ms).
+=== quint verify --backend tlc --main fair2 --temporal tickFairOnly probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main fair2 --temporal bothFair probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (579ms).
+=== quint verify --backend tlc --main fair2 --temporal stepFairH probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main Small --temporal allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 3: <Small_Clock_hear line 45, col 5 to line 47, col 46 of module Small>
+State 4: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 5: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (628ms).
+=== quint verify --backend tlc --main Small --temporal timeAdvances models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (608ms).
+=== quint verify --backend tlc --main Small --temporal fairHear models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (575ms).
+=== quint verify --backend tlc --main Small --temporal leads models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (646ms).
+=== quint verify --backend tlc --main SmallBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 3: <SmallBits_ClockBits_hear line 46, col 5 to line 50, col 62 of module SmallBits>
+State 4: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 5: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (673ms).
+=== quint verify --backend tlc --main SmallBits --temporal timeAdvances models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (604ms).
+=== quint verify --backend tlc --main SmallBits --temporal fairHear models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (577ms).
+=== quint verify --backend tlc --main SmallBits --temporal leads models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (606ms).
+=== quint verify --backend tlc --main LargeBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, tick, tick, tick, hear, tick, tick, tick, hear, tick
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (650ms).
+=== quint verify --backend tlc --main LargeBits --temporal timeAdvances models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (720ms).
+=== quint verify --backend tlc --main LargeBits --temporal fairHear models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (668ms).
+=== quint verify --backend tlc --main LargeBits --temporal leads models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (672ms).
+=== quint verify --backend tlc --main Large --temporal C::allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, hear, hear, tick × 7
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (660ms).
+=== quint verify --backend tlc --main Large --temporal C::timeAdvances models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (678ms).
+=== quint verify --backend tlc --main Large --temporal C::fairHear models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (645ms).
+=== quint verify --backend tlc --main Large --temporal C::leads models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (671ms).
+=== quint verify --backend tlc --main swing --temporal swingFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (649ms).
+=== quint verify --backend tlc --main swing --temporal outFair swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (657ms).
+=== quint verify --backend tlc --main swing --temporal stepFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (621ms).
+=== quint verify --backend tlc --main swing --temporal safe swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (628ms).
+```
+
+The two LargeBits/Large counterexamples are shortened to their action names; the full traces
+have the same shape as the Small ones.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+fail        LargeBits  72 states  1 ms
+  broken  allHeard  "The Quint temporal property `allHeard` holds"
+    start  LargeBits::C::time = 0, LargeBits::C::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        SmallBits  16 states  0 ms
+  broken  SmallBits::ClockBits::allHeard  "The Quint temporal property `SmallBits::ClockBits::allHeard` holds"
+    start  SmallBits::ClockBits::time = 0, SmallBits::ClockBits::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        swing  3 states  0 ms
+  broken  swingFair  "The Quint temporal property `swingFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+  broken  stepFair  "The Quint temporal property `stepFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+fail        fair2  8 states  0 ms
+  broken  hearFairOnly  "The Quint temporal property `hearFairOnly` holds"
+    start  t = 0, h = false
+    1. hear  h: false -> true
+    end    t = 0, h = true
+    why    the run may stop here, because no step it must take can change the state from here
+4 models: 0 pass, 4 fail, 0 unfinished
+$ earnest confirm --tlc target/tools/tla2tools.jar tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+same     LargeBits  72 states  fail
+same     SmallBits  16 states  fail
+same     swing  3 states  fail
+same     fair2  8 states  fail
+```
+
+In JSON each property is a rule with `"kind": "eventually"`, its path, and `repeatsFrom` for a
+loop or the stop sentence as `reason`; `safe` (`always(n <= 2)`) is a plain rule.
+
+The tests:
+
+- `crates/earnest_check/tests/explore/fairness.rs`: a state without ways out (nothing fair, the
+  step fair), a stop where an unfair action could go on, the model's fairness kept for a rule
+  without its own, a loop that needs each fair action's turn (and `WF(out \/ a)` weaker than
+  `WF(out) /\ WF(a)`), and a fair action that is not always possible. Every model is searched with
+  1 and 4 workers, which must agree.
+- `crates/earnest_quint/src/temporal/tests.rs` on `fixtures/properties.qnt`: each shape that is
+  read and each refusal, one property at a time.
+- `apps/earnest/tests/behavior/quint_temporal.rs`: the CLI on fair2, SmallBits and swing, and
+  `--rule` on one property.
+- `tasks/break_it/tests/tlc/stutters.rs`: 40 seeds of small generated Quint JSON (one to three
+  `int` variables, one to five actions, one to four properties, each with no fairness, the step,
+  one action, two actions, or the step and one action, and each of `eventually`, `leadsTo`,
+  `always(eventually)` and the spelled-out leads-to), each through `earnest confirm --tlc`, which
+  must say `same`. It asserts at least one broken and one holding property for every kind of
+  fairness. Generating the JSON was less code than building `earnest_ir::Model`s and driving
+  TLC by hand, and it covers the reader too. A deliberate break (the step fair for every rule)
+  fails it at seed 7: `rule p1: the checker says holds, TLC says broken`.
+
+## Slice 5: report
+
+### Done
+
+- `earnest_ir::Fairness { step, actions: Vec<Vec<usize>> }` and `Eventually::fair:
+  Option<Fairness>`. `None` keeps the model's fairness, and the TypeScript and Rust readers give
+  `None`. A fair part is a list of actions, not one action, because a Quint action unfolds into
+  several (`weakFair(hear)` is one disjunction). No field of `Model`, `Field` or `Action` changed.
+- `earnest_check::eventually`: fair parts in place of fair actions, and `Stops` (where nothing
+  changes the state, or where nothing fair does) for each rule; a rule with its own fairness
+  gets its own `possible` flags. Case 1 above is reported as a stop with the new sentence when
+  the state has ways out.
+- `earnest_tla`: `Spec` without fairness and `(fairness) => (property)` for every property, when
+  any rule has its own fairness; otherwise unchanged.
+- `earnest_quint::temporal` (new): reads `q::temporalProps`, unfolds names of temporal
+  definitions, and gives rules about runs and plain rules. `scan.rs` no longer refuses temporal
+  definitions; `model.rs` passes the step's actions by top-level name, and follows the whole
+  chain of aliases from `q::step` (`LargeBits::step = C::step`), so that actions are named after
+  `tick` and `hear` and not all after `C::step`.
+- Samples: `models/clockbits.qnt` (with `smallbits.json`, `largebits.json`), `models/swing.qnt`
+  (with `swing.json`), `probe/fair2.json`.
+
+### Slice 1 tests changed
+
+`crates/earnest_quint/src/tests.rs`: `a_temporal_property_is_refused_and_named` asserted the
+refusal "temporal properties are not read yet" for `fixtures/later.qnt`
+(`eventually(x > 3)`), which this slice lifts. With the orchestrator's agreement, `later.qnt`
+is now `eventually(always(x > 3))` and the test asserts `` `always` `` with "`eventually(always(…))`
+is not read"; the new test `a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs`
+reads the old property from `fixtures/grows.qnt`. No line of a test on `origin/main` changed;
+two existing test files got one line each (`fair: None,` in an `Eventually` literal) and two
+`mod` lines were added.
+
+### Refused
+
+In a temporal property, naming the operator and the property: `strongFair`, `next`, `orKeep`,
+`mustChange`, `enabled`, `eventually(always(…))`, a temporal operator under `not`, `or`, `iff`
+or any other operator, an `implies` inside `G` (`F implies (P implies eventually(Q))`), a
+state condition outside `always`/`eventually` (TLC judges it in the start states only),
+fairness over only some variables or over something that is not a tuple of variables, fairness
+of an action given arguments (`weakFair(move(1), vars)`) or of an action with parameters, and
+fairness of anything but the step (or a name it aliases) and its top-level actions. A temporal
+definition that `--temporal` does not list is ignored, as an unused `val` is.
+
+### Doubts
+
+- Names stay qualified as slice 1 has them: a property of `SmallBits` is
+  `SmallBits::ClockBits::allHeard`, while `LargeBits`, which defines its own, gets `allHeard`.
+  Slice 3 or 4 (setups) should decide what a user sees.
+- A rule about runs whose `G` has several conjuncts gives `name`, `name#2`, …, as repeated
+  actions do. The TLA+ export spells `#` as `_` (`Eventually_bothFair_2`).
+- The step's fallback name for paths that reach no named action (an inline `any { all {…} }`)
+  is the step's name; `weakFair(step)` is the whole step, so such a path is never a fair part of
+  its own. That is right, but untested by TLC.
+- `quint verify` checks all listed properties as one conjunction; earnest and `confirm` judge
+  each alone, which gives the same verdict per property and finer output.
+
+### Checks, each with its last line
+
+- `cargo test --locked` (after `bun install --frozen-lockfile`), whole workspace before the
+  approved change to the `later` test: 70 suites, 1821 passed, 1 failed (that test); after it,
+  `earnest_quint` 40 passed, 0 failed.
+- `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,639,543 | +0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores, load 2.9): last line `wide, search time with all cores (0.095 s)
+  over search time with 1 worker (0.265 s): 0.36x, budget at most 0.75x: met`; every line `met`,
+  `grid_10m` with 4 workers 0.766 s.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps `0
+  differences`. The 64 are 4 runs each of the 16 conformance files `origin/main` does not have
+  (`tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,stove,ticket,worker}.model.ts`,
+  `runs/gate.rs`, `runs/kettle.rs`, `setups/clock.model.ts`, `setups/clock.rs`).
+  `just same-answers fdbd03a` (this branch's base): `every model file: 392 runs, 0 differences`,
+  every sweep 0.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 1839 passed, 0 failed.
+- `tests_kept.py --base origin/main`: `tests kept: 1507 tests, 4396 assertions (base: 1304, 3798)`.
+  None of slice 1's tests is on `origin/main`. The orchestrator agreed to change those that pinned
+  a refusal this slice lifts, to the new truth, renaming any whose name would lie. Every slice-1
+  test changed or renamed:
+  - `apps/earnest/tests/behavior/quint.rs`:
+    `a_record_variable_makes_the_file_unreadable_and_names_the_construct` is now
+    `a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit`: `record.qnt`
+    adds 1 to `r.n` on every step, so it has no finite count. With `--max-states 100` it is
+    `unfinished` at exactly 100 states (one per value of `r.n`) with no finding, and no
+    problem names `var r`. The refusal test of the same shape moved to a construct that is
+    still refused: the new `an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct`
+    (`chooseSome` in `step`, from `fixtures/refused.json`).
+  - `crates/earnest_quint/src/tests.rs`: `text_is_refused_with_the_definition_it_is_in` became
+    `text_is_read_as_a_value`; `a_set_variable_is_refused` and
+    `a_set_operator_is_refused_with_the_definition_it_is_in` became
+    `a_set_variable_holds_every_value_and_its_step_is_read`; `an_integer_power_is_refused`
+    became `an_integer_power_is_read`. The refusal tests of their shape are
+    `an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in` and
+    `a_powerset_of_a_set_from_the_state_is_refused`.
+
+  `tests_kept.py --base origin/claude/lucid-brown-f5xvr8` reports the changed lines of the
+  first one; the owner overrides that at the merge.
+
+### The operator table's source
+
+`quint repl -q --backend typescript -r table.qnt::table`, Quint 0.33.1, one case name per line;
+84 cases in `crates/earnest_quint/fixtures/table.qnt`, the printed answers in
+`crates/earnest_quint/src/table.rs`. The case list and the raw output are reproducible from the
+`.qnt` alone.
+
+### Refused, by name
+
+`chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (the refusal says to write
+`foldl`), `fieldNames`, `apalache::generate`, `q::debug`, `powerset` of a set computed from the
+state or of more than 19 items, a `oneOf` over a set computed from the state or from another
+`nondet` (slice 3), temporal properties and runs (as in slice 1), a field name, tag or tuple
+position that is not written out, an operator argument that takes the wrong number of
+parameters, and a variable whose type the reader does not know. Everything slice 1 refused
+beyond records, tuples, sets, maps, lists, text, variants and `ipow` is still refused.
+
+### Forms without a full TLA+ spelling
+
+- Comparing two variants whose values are of different kinds (`s == Dot` with `s` a
+  `Circle(1)`) stops TLC: it compares the `value` field first and cannot compare `1` with
+  `<<>>`. The `everything` fixture tests `select` through `match` instead. Writing a variant's
+  value apart per tag would fix it; left for later.
+- A fold over a set whose item kind is unknown (a `Domain::Any` field's keys) takes the items in
+  TLC's `CHOOSE` order. A fold whose answer depends on the order can then differ from earnest
+  (the same caveat as Quint's own evaluator, above).
+- A condition a fold's step needs (`Written::sound`, for `Unwrap` and `Fit`) is not carried out
+  of the `LET RECURSIVE`; Quint models produce neither, and the faulting helpers stop TLC with
+  their `Assert`.
+
+### Doubts about existing code
+
+- `Kind::join(Unknown, known)` gives `known`, so a joined kind can claim to know every field of
+  a record it saw part of. The `with` fix covers the unknown base; other uses of the join are
+  unchanged.
+- TLC prints a record's fields in its own order (`[value |-> ..., tag |-> ...]`), unlike
+  earnest. This matters only for reading traces.
+- The spike's "15 states for shapes" is TLC's count when it stops at the violation; the model
+  has 21.
+
+### Unfinished, and the next step
+
+- Not done: a spelling of mixed-kind variant equality in TLA+, `foldr`, `fieldNames`.
+- Inputs over a set of records or variants show the value as a record (`name = {tag: ...}`);
+  printing variants as Quint does (`Ping(0)`) would need a marker in `Value` or in the model,
+  which this slice did not add.
+- Next: slice 3 (`oneOf` over a set computed from the state, and lines from the source map).
+  `picked_from` in `reader.rs` already works out any set that does not change; slice 3 replaces
+  its `computed` refusal.
+
+- `tests_kept.py --base origin/main`: `tests kept: 1490 tests, 4372 assertions (base: 1304, 3798)`.
+- `just tlc`: every model it confirms prints `same` (49 lines, ending `same     Outcome  7222 states  pass`);
+  its clippy step first found two `needless_pass_by_value` in the new `stutters.rs`, fixed; then
+  `cargo test --locked -p earnest_break_it --features tlc --test tlc`: `test result: ok. 9
+  passed; 0 failed`, with `runs::tlc_judges_every_rule_about_runs_of_small_generated_models_as_earnest_does`
+  and the new `stutters::tlc_judges_every_quint_temporal_property_with_its_own_fairness_as_earnest_does`.
+
+### Unfinished, and the next step
+
+- `models/clock.qnt` itself becomes readable when slice 2 (sets and text) merges; then check its
+  `Small` and `Large` against the verdicts above, and retire `clockbits.qnt` or keep it as the
+  int-only sample.
+- Problems are still at line 1, column 1 (slice 3).
+- `quint verify` without `--temporal` but with temporal definitions in the module: they are
+  ignored, as Quint's TLC ignores them.
+- The user docs (`apps/docs`) do not mention Quint yet; they wait for slice 7, as slice 1 said.
+- Next: slice 3 (source places) or slice 4 (setups), which also decides the qualified names
+  above.
+
+## Slice 6: what is checked
+
+`earnest verify <file>.json` plays each `run` of the compiled main module whose name ends in
+`Test`, as `quint test` selects them (issue #59). Each is listed after the invariants with
+`"kind": "witness"`, its name as id and the sentence ``The Quint run `name` passes``.
+
+The models, each `.qnt` beside the `.json` compiled from it with Quint 0.33.1:
+
+- `models/runs.qnt`, the spike's, as it was: its `emptyTest` filters a set, which the reader
+  takes since slice 2.
+- `models/runs_ints.qnt`: `runs.qnt` with `emptyTest` choosing from `Set()` in place of
+  `Set().filter(x => x > 0)`, written before slice 2 so that it needs ints and bools alone.
+- `models/stuck.qnt`: the module `stuck` of `edge.qnt` with `Test` added to each run's name, since
+  `quint test` plays no run of the original (`quint test --main stuck edge.qnt` lists none;
+  the spike's 5 runs came from `--match`). `edge.qnt` is kept as it was.
+- `crates/earnest_quint/fixtures/played.qnt`: 22 runs that try each run operator in the ways the
+  spike did not (an `expect` after a false step, `fail()` around an `expect`, a `nondet` inside a
+  step that is false for some values, an action argument read from the state, `init` in the
+  middle, a run called by name, a `nondet` of the run that makes it false for some values).
+- `crates/earnest_quint/fixtures/unstarted.qnt`: 4 runs the reader refuses.
+
+A plain compile keeps the runs written in the main module; it needs no flag [ran]:
+
+```sh
+quint compile --target json --main runs runs.qnt > runs.json
+quint compile --target json --main runs runs_ints.qnt > runs_ints.json
+quint compile --target json --main stuck --invariant ok stuck.qnt > stuck.json
+quint compile --target json --main played played.qnt > played.json
+quint compile --target json --main unstarted unstarted.qnt > unstarted.json
+```
+
+`quint test` downloads its Rust evaluator from GitHub, which this session can't reach
+("Release v0.7.1 not found: Error: Failed to fetch from GitHub: Forbidden"), so every
+`quint test` below runs with `--backend typescript`, as the spike's did.
+
+### The verdicts
+
+| Run | `quint test` | earnest | earnest's reason |
+|---|---|---|---|
+| `failDirectTest` | ok | holds | |
+| `failChainTest` | ok | holds | |
+| `failRepsTest` | failed (QNT513, reps) | broken | step 3, `inc`, can't happen here |
+| `disabledMidTest` | failed (QNT513, then) | broken | step 3, `inc`, can't happen here |
+| `pickSomeTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here (`v = 1`) |
+| `pickAllTest` | ok (10000 samples) | holds | |
+| `plainTest` | ok | holds | |
+| `assertFalseTest` | failed (QNT508, assertion) | broken | the assertion of step 1 is false here |
+| `boolTest` | ok | holds | |
+| `stepTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here (`pick`, `v = 1`) |
+| `nondetRunTest` | ok (10000 samples) | holds | |
+| `repsIndexTest` | ok | holds | |
+| `emptyTest` | failed (QNT511, false) | broken | the run is false |
+| `toTwoTest` | ok | holds | |
+| `thirdTest` | failed (QNT513, reps) | broken | step 3, `step`, can't happen here |
+| `withNondetTest` | ok (10000 samples) | holds | |
+| `assertedTest` | ok | holds | |
+| `wrongExpectTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here |
+
+13 runs in `runs_ints.qnt` and 5 in `stuck.qnt`, as the spike counted. The original `runs.qnt`
+gives the same 13 verdicts in both (`quint test --backend typescript --main runs runs.qnt`: `7
+passing`, `6 failed`, the same six; `earnest verify tasks/quint/models/runs.json`: the same six
+broken with the same reasons). The invariant `ok` of
+`stuck` holds.
+
+| Run of `played.qnt` | `quint test` | earnest | earnest's reason |
+|---|---|---|---|
+| `expectAfterFalseTest` | failed (QNT508, "Cannot continue to expect") | broken | step 3, `inc`, can't happen here |
+| `failExpectFalseTest` | failed (QNT508, the same) | broken | step 3, `inc`, can't happen here |
+| `failExpectTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here |
+| `failExpectTrueTest` | failed (QNT511, false) | broken | the run gets through every step, and its `fail()` expects it not to |
+| `midExpectTest` | ok | holds | |
+| `gatedTest` | ok (10000 samples) | holds | |
+| `eitherTest` | ok (10000 samples) | holds | |
+| `assertFirstTest` | failed (QNT508, assertion) | broken | the assertion of step 1 is false here |
+| `argStateTest` | ok | holds | |
+| `initMidTest` | ok | holds | |
+| `nondetArgTest` | ok (10000 samples) | holds | |
+| `failCanTest` | failed (QNT511, false) | broken | step 1, `inc`, can happen here, and the run's `fail()` expects it can't |
+| `repsThenTest` | failed (QNT513, then) | broken | step 3, `inc`, can't happen here |
+| `initExpectTest` | ok | holds | |
+| `nestedExpectTest` | ok | holds | |
+| `falseBoolTest` | failed (QNT511, false) | broken | the run is false |
+| `topBoolTest` | **ok (10000 samples)** | **broken** | with `n` = 1: the run is false |
+| `topErrorTest` | failed (QNT508, expect) | broken | with `n` = 2: what the run expects after step 1 is false here |
+| `failOnlyTest` | failed (QNT511, false) | broken | step 2, `inc`, can happen here, and the run's `fail()` expects it can't |
+| `anyRunsTest` | ok (10000 samples) | holds | |
+| `valTest` | ok | holds | |
+| `calledTest` | ok | holds | |
+
+`topBoolTest` is the one difference, and earnest is the stricter one: see "How earnest plays a
+run" below.
+
+### `quint test`
+
+```text
+$ quint test --backend typescript --main runs runs_ints.qnt
+  runs
+    ok failDirectTest passed 1 test(s)
+    ok failChainTest passed 1 test(s)
+    1) failRepsTest failed after 1 test(s)
+    2) disabledMidTest failed after 1 test(s)
+    3) pickSomeTest failed after 1 test(s)
+    ok pickAllTest passed 10000 test(s)
+    ok plainTest passed 1 test(s)
+    4) assertFalseTest failed after 1 test(s)
+    ok boolTest passed 1 test(s)
+    5) stepTest failed after 4 test(s)
+    ok nondetRunTest passed 10000 test(s)
+    ok repsIndexTest passed 1 test(s)
+    6) emptyTest failed after 1 test(s)
+  7 passing (604ms)
+  6 failed
+  1) failRepsTest:
+       Error [QNT513]: Reps loop could not continue after iteration #3 evaluated to false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:18:32
+        18:   run failRepsTest = init.then(3.reps(_ => inc)).fail()
+                                           ^^^^^^^^^^^^^^^^
+  2) disabledMidTest:
+       Error [QNT513]: Cannot continue in `then` because the highlighted expression evaluated to false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:20:55
+        20:   run disabledMidTest = init.then(inc).then(inc).then(inc).then(inc)
+                                                                  ^^^
+  3) pickSomeTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:22:22
+        22:   run pickSomeTest = init.then(pick).expect(picked == 2)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4) assertFalseTest:
+       Error [QNT508]: Assertion failed
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:28:41
+        28:   run assertFalseTest = init.then(all { assert(y == 1), inc })
+                                                    ^^^^^^^^^^^^^^
+  5) stepTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:32:18
+        32:   run stepTest = init.then(step).expect(y == 1)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6) emptyTest:
+       Error [QNT511]: Test emptyTest returned false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:39:7
+        39:   run emptyTest = { nondet n = Set().oneOf()
+                  ^^^^^^^^^
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 runs_ints.qnt
+error: Tests failed
+$ quint test --backend typescript --main stuck stuck.qnt
+  stuck
+    ok toTwoTest passed 1 test(s)
+    1) thirdTest failed after 1 test(s)
+    ok withNondetTest passed 10000 test(s)
+    ok assertedTest passed 1 test(s)
+    2) wrongExpectTest failed after 1 test(s)
+  3 passing (350ms)
+  2 failed
+  1) thirdTest:
+       Error [QNT513]: Reps loop could not continue after iteration #3 evaluated to false
+        at /home/user/earnest/tasks/quint/models/stuck.qnt:8:29
+        8:   run thirdTest = init.then(3.reps(_ => step)).fail()
+                                       ^^^^^^^^^^^^^^^^^
+  2) wrongExpectTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/stuck.qnt:14:25
+        14:   run wrongExpectTest = init.then(step).expect(y == 5)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 stuck.qnt
+error: Tests failed
+```
+
+`quint test --backend typescript --main played played.qnt` ends `12 passing`, `10 failed`, with
+each verdict as in the table above.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/models/runs_ints.json
+fail        runs  12 states  0 ms
+  broken  failRepsTest  "The Quint run `failRepsTest` passes"
+    start  y = 0, picked = 0
+    1. inc  y: 0 -> 1
+    2. inc  y: 1 -> 2
+    end    y = 2, picked = 0
+    why    step 3, `inc`, can't happen here
+  broken  disabledMidTest  "The Quint run `disabledMidTest` passes"
+    start  y = 0, picked = 0
+    1. inc  y: 0 -> 1
+    2. inc  y: 1 -> 2
+    end    y = 2, picked = 0
+    why    step 3, `inc`, can't happen here
+  broken  pickSomeTest  "The Quint run `pickSomeTest` passes"
+    start  y = 0, picked = 0
+    1. pick  v = 1  picked: 0 -> 1
+    end    y = 0, picked = 1
+    why    what the run expects after step 1 is false here
+  broken  assertFalseTest  "The Quint run `assertFalseTest` passes"
+    start  y = 0, picked = 0
+    why    the assertion of step 1 is false here
+  broken  stepTest  "The Quint run `stepTest` passes"
+    start  y = 0, picked = 0
+    1. pick  v = 1  picked: 0 -> 1
+    end    y = 0, picked = 1
+    why    what the run expects after step 1 is false here
+  broken  emptyTest  "The Quint run `emptyTest` passes"
+    start  y = 0, picked = 0
+    why    the run is false
+1 model: 0 pass, 1 fail, 0 unfinished
+$ earnest verify tasks/quint/models/stuck.json
+fail        stuck  3 states  0 ms
+  broken  thirdTest  "The Quint run `thirdTest` passes"
+    start  y = 0
+    1. step  y: 0 -> 1
+    2. step  y: 1 -> 2
+    end    y = 2
+    why    step 3, `step`, can't happen here
+  broken  wrongExpectTest  "The Quint run `wrongExpectTest` passes"
+    start  y = 0
+    1. step  y: 0 -> 1
+    end    y = 1
+    why    what the run expects after step 1 is false here
+1 model: 0 pass, 1 fail, 0 unfinished
+```
+
+### Through the checks file
+
+`clock.qnt` with the real Quint 0.33.1, from a folder holding it and this `earnest.quint.json`:
+
+```json
+{
+  "checks": [
+    { "file": "clock.qnt", "main": "Large", "invariants": ["inv"], "runs": ["largeTick"] },
+    { "file": "clock.qnt", "main": "Small", "invariants": ["timeBounded"] }
+  ]
+}
+```
+
+```text
+$ EARNEST_QUINT=.../node_modules/.bin/quint earnest verify specs
+pass        Large  72 states  1 ms
+pass        Small  16 states  0 ms
+2 models: 2 pass, 0 fail, 0 unfinished
+```
+
+`Large` lists `inv` and `largeTick` (`"kind": "witness"`), both `holds`; `quint test --backend
+typescript --main Large --match largeTick clock.qnt` gives `ok largeTick passed 1 test(s)`.
+`largeTick` starts with `C::init`, which `Large`'s `init` is a name for, so it starts from the
+start states. `Small` asks for no runs, so it lists `Small::Clock::timeBounded` alone, and the
+module's runs neither count nor are refused (slice 7's tree refused it: "`run largeTick`  runs
+are not read yet"). The command slice 7 runs (`quint compile --target json --main <main> --init
+<init> --step <step> ...`, stdout to a file) keeps the main module's runs, so it is unchanged.
+
+### How earnest plays a run [ran: the probes above]
+
+- `init` as the first step is the start states, which the reader works out from `q::init`.
+  Each later operand of `then` is a step.
+- A step is every way its action can be taken: each branch of an `any`, and each value of each
+  `nondet` inside it. **Quint's `nondet` inside an action picks again until the action can
+  happen** (`gatedTest`, whose `nondet v = 1.to(3)` is false unless `v` is 2, passes 10000
+  samples), so a step can't happen only when no branch with no value can, and every branch and
+  value that can happen is played. An `if` in a step is a branch too.
+- A step that can't happen breaks the run with the path played on that branch. So does a fault,
+  a field taken out of its values, an `expect` that is false, and an `assert` that is false.
+- `expect(P)` is checked after the step it follows; after `init` it is checked on the start
+  state. Quint makes a false step before an `expect` an error (`expectAfterFalseTest`), so a
+  `fail()` around it rescues nothing.
+- `n.reps(i => A(i))` with `n` a constant when the file is read is `n` steps, each with its
+  index. A false round is an error in Quint, so `fail()` around a chain that ends in `reps`
+  breaks on every branch.
+- `fail()` around a chain whose last operand is a step (or `A.fail()` as that operand) makes the
+  last step one that must be refused: the run holds where it can't happen and breaks where it
+  can. Anywhere else, `fail()` is refused.
+- `assert(P)` as the first parts of a step's `all { ... }` is checked in the state before the
+  step, before anything else of the step, which is the order Quint evaluates it in.
+- An action's arguments are worked out in the state before the step, as Quint does
+  (`argStateTest`).
+- A `nondet` at the top of the run gives one plan per value; a `val` there is a constant. A run
+  that is a constant boolean is true or false without steps. A run called by name is played in
+  place.
+- The player explores every branch, depth first, from every start state, and skips a step it
+  has already played from the same state with no break. **Quint samples**: it plays 10000
+  random branches of a run that chooses. Exhaustive play finds every failure sampling finds, and
+  those it misses.
+- **Where earnest is stricter than `quint test`**: a `nondet` at the top of the run. Quint picks
+  another value when the run is plainly false for one (not an error): `{ nondet n =
+  1.to(3).oneOf() n == 2 }` passes. earnest requires every value to pass, and breaks it with
+  `n = 1`. An error for one value (`topErrorTest`) fails in both.
+- **Bounds**: at most 100,000 branches from one start state; past that the run is `unknown`, with
+  the reason "the run has more than 100000 branches from one start state, and the checker
+  stopped after playing that many". At most 1000 steps in a plan and 1000 plans in a run, else
+  the file is unreadable. Start states past the state limit give `unknown`, as for a witness.
+
+### Refused, by name
+
+- A run that does not start with `init` (Quint fails it: "Variable y not set").
+- A `reps` whose count is not a constant when the file is read. Quint's own typechecker refuses
+  a count read from the state ("Expected [y] and [] to be the same"), so this is a count from
+  something the reader does not fold.
+- A `reps` of 0 times or fewer: Quint passes `init.then(0.reps(_ => step))` but then leaves the
+  state unset, so an `expect` after it fails with "Variable y not set".
+- A `fail()` that is not the run's last operator (Quint errors when the step under it can
+  happen, and then leaves the state unset when it can't).
+- An `assert` after another part of a step's `all { ... }`: Quint stops at a false part before
+  it reaches the assert, so the step is plainly false there and not a failed assertion
+  (`all { y > 5, assert(false), inc }.fail()` passes in Quint), an order the reader does not keep.
+- `q::test`, `q::testOnce`, `q::debug`, an operator defined inside a run, a run with parameters,
+  and a run that is neither steps nor a constant boolean.
+- A run whose name does not end in `Test` is not read at all, as `quint test` does not play it.
+
+## Slice 6: report
+
+### Done
+
+- `earnest_ir`: `Script` (a generalised witness), `Plan` and `Stage`, held in a new field
+  `Runs::scripts`. A stage is a set of alternatives (actions of the script's own, each with
+  every combination of its inputs), an optional assertion before it, an optional `expect` after
+  it, and whether it must be refused; a plan adds a condition on the start state, the values the
+  run chose and whether getting through every step breaks it. `Model::rule_ids` lists the
+  scripts after the witnesses. `Model`, `Field`, `Action`, `Witness` and `Played` are unchanged:
+  the witness tests build `Witness` and `Played` with struct literals, so a new field would have
+  changed them (agreed with the orchestrator).
+- `earnest_check/src/witness.rs`: one depth-first player for both. A `Witness` is played as the
+  case of one alternative per step with its inputs given and one condition at the end, and
+  prints byte for byte what it printed before (every witness test passes unchanged). It plays
+  every branch from every start state, skips a step already played from the same state with no
+  break, stops at 100,000 branches from one start state with `unknown` and a reason, and gives
+  the first broken branch with the path played on it, the inputs as values and the reason.
+  Scripts come after the witnesses in the outcome, with `RuleKind::Witness`, and `only_rule`
+  selects them.
+- `earnest_quint/src/runs.rs`: reads each `run` whose name ends in `Test`, in the order written
+  (the order of the definitions' ids), as section "How earnest plays a run" above describes. The
+  edits to the other files are small: `reader.rs` exposes the binding of a name, the unfolding
+  of an `all`, `picked_from` and `is_action`; `model.rs` calls the run reader; `scan.rs` leaves
+  `run` definitions to it; the refusal of a run operator elsewhere now says "run operators are
+  read only in a `run`". Every refused run is listed, not only the first.
+- Which runs are played is the `runs` of slice 7's `earnest_quint::read_located(path, source,
+  &Runs)`, from the check's `runs` key: `Runs::None` (no key, or `false`) ignores the module's
+  runs, neither playing nor refusing them; `Runs::Tests` (`true`) plays those whose name ends in
+  `Test`; `Runs::Named` (a list) plays exactly those, in the list's order, and a name the module
+  lacks makes the check unreadable and is named (`` `run missingTest` ``). `read`, which the CLI
+  uses for a compiled `.json` named directly, is `read_located` with `Runs::Tests`.
+- A run's first step may be any name for `init`: `Large`'s `largeTick` starts with `C::init`,
+  and `Large`'s `init` is `C::init`.
+- An `unknown` witness or script makes the model `unfinished` when nothing is broken: a script
+  stopped at the branch cap gives the reason ``the run `<id>` has more than 100000 branches from
+  one start state``, a witness with more start states than the state limit keeps the search's
+  own reason (the search stopped at the same limit), and so does a search that stopped at its
+  state limit. Before, such a model was `pass`.
+- Merged with the integration head twice (slices 2 and 5, then slice 7): the run reader takes
+  their records, sets, maps and text in steps and conditions, and counts slots as slice 2's
+  reader does.
+- `apps/docs/src/content/docs/reference/quint.md` has a "Runs" section (the operators, every
+  choice tried where `quint test` samples, the branch limit and `unfinished`, runs of imported
+  modules not in the JSON yet), and the changelog a line.
+- The CLI needed no change: `rule_ids` gives `--rule` and the declared rules, the cache stores
+  outcomes as they are, `earnest confirm` compares only the rules of kind `always` with TLC, and
+  `earnest tla` exports no witness.
+- A script is played in every setup the model starts in, as the orchestrator asked. A setup
+  does not change listed start states yet, so in a Quint model with setups (slice 4) every setup
+  would give the same answer until slice 4 decides how setups change `Runs::starts`.
+
+### Tests
+
+- `crates/earnest_check/tests/explore/scripts.rs` (12): alternatives with open inputs, a step no
+  alternative can take, a condition after a middle step, a last step that must be refused in both
+  outcomes, several start states with the values a plan chose, every plan, assertions, start
+  conditions and runs that must not finish, the branch cap, `only_rule` and the order after the
+  rules; the model `unfinished` at the branch cap, with the search's own reason when it stopped
+  at its state limit, and for a witness with more start states than the limit.
+- `crates/earnest_quint/src/run_tests.rs` (11, through `read_located`): the reading of every run of `runs_ints`,
+  `stuck`, `played` and `unstarted`, and `Runs::None`, `Tests` and `Named`, with a name the
+  module lacks.
+- `apps/earnest/tests/behavior/quint_runs.rs` (6): the verdicts in JSON, for `runs_ints` and the
+  original `runs`, the text path and `why`, `--rule`, the `stuck` module and an unreadable file.
+- `apps/earnest/tests/behavior/quint_checks.rs` (4 more, through slice 7's fake `quint`): a
+  check with `runs: true`, with a list, with a name the module lacks, and with no `runs` on a
+  module that has runs.
+- Brought to the new truth (slice 1, not on `origin/main`): `a_run_is_refused_and_named` in
+  `crates/earnest_quint/src/tests.rs` is now
+  `a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules`.
+
+### Refused
+
+See "Refused, by name" above: a run that does not start with `init`, a `reps` count that is not
+a constant when the file is read or is below 1, a `fail()` that is not the run's last operator,
+an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, an operator
+defined inside a run, a run with parameters, a run that is neither steps nor a constant boolean,
+more than 1000 steps in a plan or 1000 plans in a run. Every construct the slice 1 reader
+refuses inside a step is still refused, by name.
+
+### Where earnest is stricter than `quint test`
+
+- It plays every branch, where Quint samples 10,000 of them.
+- A `nondet` at the top of a run: Quint takes another value when the run is plainly false for
+  one (`topBoolTest` passes in Quint); earnest needs every value to pass.
+- earnest agrees with Quint's TypeScript backend on the other 39 of the 40 runs above. The Rust
+  evaluator, Quint's default, could not be downloaded here, so it is not compared.
+
+### Doubts about existing code
+
+- The text output prints only broken rules, by design, so an `unknown` run shows in the result
+  line's reason and in the JSON, not under the model.
+- `Model::in_setup` does not change listed start states (slice 1's doubt), which is why a script
+  gives the same answer in every setup.
+- `earnest verify --base` still skips a compiled Quint file (slice 1's doubt), so a run added or
+  removed is not listed as a change.
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `ae5da5f` (slices 2, 5 and 7):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: `Finished`, no warnings.
+- `just lint-library`: both passes `Finished`.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `just typescript`: exit 0. `just docs`: `18 page(s) built`, `Complete!`.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 81 suites, 1927 passed, 0 failed.
+- `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,906,689,970 | 0.00% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores): every budget `met`; the last line is `wide, search time with all
+  cores (0.120 s) over search time with 1 worker (0.336 s): 0.36x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, all in `tasks/conformance/runs/` (`cart`, `cart_broken`, `clock` and the
+  others the integration branch brought), which is not on `origin/main`. `just same-answers
+  origin/claude/lucid-brown-f5xvr8` (the head merged): every sweep and `every model file: 392
+  runs, 0 differences`.
+- `tests_kept.py --base origin/main`: `tests kept: 1563 tests, 4567 assertions (base: 1304, 3798)`.
+
+### Unfinished, and the next step
+
+- Runs written in a spec that a setup module imports are dropped by `quint compile --main
+  <setup>` (spike 1.4); slice 4 has to compile the spec module too, or read `quint typecheck`.
+- Problems are at line 1, column 1 (slice 3).
+- `assert` after a guard, `reps` of 0 and runs that start elsewhere than `init` could be played
+  exactly with an ordered step; they are refused until a model needs them.
+
+## Slice 7: what is checked
+
+`earnest verify` starts the project's own `quint` for the modules listed in `earnest.quint.json`
+(issue #60). Quint 0.33.1 from npm in a scratch folder outside the repository, linked as
+`node_modules`, Java 21 on PATH, 4 cores.
+
+A folder with two spec files and five checks, using only what the reader reads today (`int`,
+`bool`, invariants, `nondet` over a set, an instance with a constant):
+
+```quint
+// A dimmer: a level that goes up to a constant and back to zero.
+module Lamp {
+  const Max: int
+
+  var level: int
+  var on: bool
+
+  action init = all { level' = 0, on' = false }
+
+  action toggle = all { on' = not(on), level' = level }
+  action brighter = all { on, level < Max, level' = level + 1, on' = on }
+  action off = all { on, level == Max, level' = 0, on' = false }
+  action step = any { toggle, brighter, off }
+
+  val levelOk = level <= 6
+  val darkWhenOff = not(on) implies level <= Max
+}
+
+module Dim {
+  import Lamp(Max = 2).*
+}
+
+module Bright {
+  import Lamp(Max = 5).*
+}
+
+module Blinding {
+  import Lamp(Max = 9).*
+}
+```
+
+```quint
+// Two counters that move together or apart.
+module tally {
+  var a: int
+  var b: int
+
+  action init = all { a' = 0, b' = 0 }
+  action both = all { a < 4, a' = a + 1, b' = b + 1 }
+  action left = all { a < 4, a' = a + 1, b' = b }
+  action reset = all { a == 4, a' = 0, b' = 0 }
+  action step = any { both, left, reset }
+
+  val bBelowA = b <= a
+  val small = a + b < 8
+}
+
+module fast {
+  var n: int
+  var even: bool
+
+  action start = all { n' = 0, even' = true }
+  action go = {
+    nondet d = Set(1, 2).oneOf()
+    all { n + d <= 6, n' = n + d, even' = (n + d) % 2 == 0 }
+  }
+
+  val parity = even iff n % 2 == 0
+}
+```
+
+```json
+{ "checks": [
+  { "file": "lamp.qnt", "main": "Dim", "invariants": ["levelOk", "darkWhenOff"] },
+  { "file": "lamp.qnt", "main": "Bright", "invariants": ["levelOk"] },
+  { "file": "lamp.qnt", "main": "Blinding", "invariants": ["levelOk"] },
+  { "file": "tally.qnt", "main": "tally", "invariants": ["bBelowA", "small"] },
+  { "file": "tally.qnt", "main": "fast", "init": "start", "step": "go", "invariants": ["parity"] }
+] }
+```
+
+### By hand
+
+- **Dim** (`Max = 2`): `level` only rises while `on`, `off` takes `Max` back to `(0, false)`, and
+  `toggle` gives every level with `on` false: `(0..2) × on/off` = **6**. `levelOk` and
+  `darkWhenOff` hold.
+- **Bright** (`Max = 5`): **12**; `levelOk` (`level <= 6`) holds.
+- **Blinding** (`Max = 9`): **20**; `levelOk` is broken at level 7: `toggle`, then 7 `brighter`,
+  **8 steps**.
+- **tally**: every `(a, b)` with `0 <= b <= a <= 4`: **15**. `bBelowA` holds; `small`
+  (`a + b < 8`) is broken at `(4, 4)` after 4 `both`.
+- **fast** (`init` `start`, `step` `go`): `n` from 0 to 6 with `even` right: **7**; `parity`
+  holds.
+
+### TLC, as Quint runs it
+
+One command per check (per invariant for `tally`). The lines kept are TLC's counts and verdicts
+and the steps of each violation; the rest is Apalache's and TLC's start-up text:
+
+```text
+=== quint verify --backend tlc --main Dim --invariant levelOk,darkWhenOff lamp.qnt
+10 states generated, 6 distinct states found, 0 states left on queue.
+[ok] No violation found (624ms).
+=== quint verify --backend tlc --main Bright --invariant levelOk lamp.qnt
+19 states generated, 12 distinct states found, 0 states left on queue.
+[ok] No violation found (587ms).
+=== quint verify --backend tlc --main Blinding --invariant levelOk lamp.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <Blinding_Lamp_toggle line 31, col 3 to line 32, col 50 of module Blinding>
+State 3: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+...                                                     (States 4 to 8 the same)
+State 9: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+22 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (624ms).
+=== quint verify --backend tlc --main tally --invariant bBelowA tally.qnt
+26 states generated, 15 distinct states found, 0 states left on queue.
+[ok] No violation found (588ms).
+=== quint verify --backend tlc --main tally --invariant small tally.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <both line 25, col 9 to line 25, col 43 of module tally>
+State 3: <both line 25, col 9 to line 25, col 43 of module tally>
+State 4: <both line 25, col 9 to line 25, col 43 of module tally>
+State 5: <both line 25, col 9 to line 25, col 43 of module tally>
+24 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (662ms).
+=== quint verify --backend tlc --main fast --init start --step go --invariant parity tally.qnt
+12 states generated, 7 distinct states found, 0 states left on queue.
+[ok] No violation found (486ms).
+```
+
+TLC stops at the first violation, so the counts of `Blinding` and of `tally` with `small` are
+partial; `tally`'s full 15 is from `bBelowA`.
+
+### earnest
+
+```text
+$ earnest verify          (in the folder, with nothing cached: 1.2 s)
+pass        Dim  6 states  0 ms
+pass        Bright  12 states  0 ms
+fail        Blinding  20 states  0 ms
+  broken  Blinding::Lamp::levelOk  "The Quint invariant `Blinding::Lamp::levelOk` holds"
+    start  Blinding::Lamp::level = 0, Blinding::Lamp::on = false
+    1. Blinding::Lamp::toggle  Blinding::Lamp::on: false -> true
+    2. Blinding::Lamp::brighter  Blinding::Lamp::level: 0 -> 1
+    ...                                    (steps 3 to 7 the same, one level each)
+    8. Blinding::Lamp::brighter  Blinding::Lamp::level: 6 -> 7
+    end    Blinding::Lamp::level = 7, Blinding::Lamp::on = true
+fail        tally  15 states  0 ms
+  broken  small  "The Quint invariant `small` holds"
+    start  a = 0, b = 0
+    1. both  a: 0 -> 1, b: 0 -> 1
+    2. both  a: 1 -> 2, b: 1 -> 2
+    3. both  a: 2 -> 3, b: 2 -> 3
+    4. both  a: 3 -> 4, b: 3 -> 4
+    end    a = 4, b = 4
+pass        fast  7 states  0 ms
+5 models: 3 pass, 2 fail, 0 unfinished
+```
+
+| Check | By hand | TLC | earnest | Invariant | By hand | TLC | earnest |
+|---|---|---|---|---|---|---|---|
+| Dim | 6 | 6 | 6 | `levelOk`, `darkWhenOff` | hold | ok | hold |
+| Bright | 12 | 12 | 12 | `levelOk` | holds | ok | holds |
+| Blinding | 20 | 15 (stopped) | 20 | `levelOk` | broken, 8 steps | violation, 8 steps | broken, 8 steps |
+| tally | 15 | 15 | 15 | `bBelowA` | holds | ok | holds |
+| | | | | `small` | broken, 4 steps | violation, 4 steps | broken, 4 steps |
+| fast | 7 | 7 | 7 | `parity` | holds | ok | holds |
+
+A construct the reader still refuses after slices 2 and 5 (`models/choose.qnt`, `chooseSome`),
+with real Quint, is reported at its line: line 7 is `  action step = x' = Set(1, 2).chooseSome()`,
+and Quint's source map starts the call at its receiver, column 22.
+
+```text
+unreadable  choose.qnt  choose
+  choose.qnt:7:22  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read, in the definition `step`
+```
+
+Before the merge, `record.qnt` and `clock.qnt` gave each refused record, set and text construct at
+its line the same way (`record.qnt:3:3 var r`, `5:22 Rec`, `7:22 Rec`, `9:12 field`); slice 2
+reads them now.
+
+### Timing: 17 checks of one file
+
+`many.qnt`: the `Lamp` module above plus 17 setup modules `S1`..`S17`
+(`module S5 { import Lamp(Max = 5).* }`), one check each with `darkWhenOff`, the shape of
+section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores:
+
+| Run | Before the merge (load 2.0 to 2.4) | After it, one `parse` first (load 1.3 to 2.3) |
+|---|---|---|
+| nothing cached, `--jobs` all cores (4 at a time) | 4.06 s | 3.91 s |
+| nothing cached, `--jobs 1` | 8.36 s | 7.69 s |
+| the second run, nothing changed (no Node started) | 0.040 s | 0.039 s |
+
+The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
+
+## Slice 7: report
+
+### Done
+
+- `earnest.quint.json` (`apps/earnest/src/checks.rs`): the keys of decision 1, checked by hand on
+  `serde_json::Value` so that each problem names its key (`checks[1].runs`). Not JSON, an unknown
+  key, a wrong type, a missing `file` or `main`, or a second entry for one `(file, main)` makes the
+  checks file `unreadable` with one problem, and nothing in it is checked.
+- Discovery (`discovery.rs`): a folder search lists every `earnest.quint.json`; a `.qnt` named on
+  the command line is listed with the `earnest.quint.json` of its folder, checked only by its
+  entries; a named `earnest.quint.json` checks all of its entries. `.qnt` files are never read by
+  a folder search. `Discovered` has a new `listed` field; `Found`, `Text` and `ModelFile` are
+  unchanged.
+- `quint.rs`: finds `quint` (`EARNEST_QUINT`, then `node_modules/.bin/quint` from the checks
+  file's folder upward, then `PATH`; on Windows `quint.cmd`, `quint.exe`, `quint`), asks its
+  version once per program, compiles each check up to `--jobs` at a time (`workers::run_each`),
+  reads the JSON with the reader, and makes one `ModelFile` per check: its path is the `.qnt`
+  file, its source the compiled JSON, its one model named after `main`. `gather` merges them into
+  the other files in path order; `gather` now takes the job count (`tla` uses all cores).
+- The cache under `.earnest/quint/`: one file per `(real .qnt path, main)` holding the key on its
+  first line and the JSON after it; `version-<hash>.json` with the program's real path, size,
+  modification time (ns) and the text of `quint --version`; `places-<hash>.json` with what
+  `quint parse --source-map` gave. The key is the FNV-64 of `cache.rs` (`fingerprint_of`, the same
+  hash, with each piece prefixed by its length) over the version text, `main`, `init`, `step`,
+  `invariants`, `temporal`, `runs`, the hash of every `.qnt` below the checks file's folder (path
+  and content), and the `.qnt` file itself. Files are written whole by rename (`write_whole`,
+  shared with the result cache).
+- The result cache (`verify.rs`): an entry is matched to its `ModelFile` by identity instead of
+  by path, and a check is cached under `<path>\n<main>`, because two checks share a `.qnt` path.
+- Lines (`places.rs`): `quint parse <file> --out ... --source-map ...` runs once for each listed
+  file (before the merge below: only for a file whose module was refused). A problem goes to the place of its expression id when the source
+  map has it, else to the definition it names (the main module first; `A::C::name` through the
+  module `C`, or the module that the instance alias `C` makes; else the one module that declares
+  `name`), else stays at 1:1. A place in another file (`import ... from "./other"`) is reported in
+  that file.
+- `crates/earnest_quint`: `Refusal` gains `id` and `within`; `scan.rs` sets `within` on every
+  refusal it names a definition for and `id` on an operator it refuses; `Reader::refuse` sets
+  `within`. `lib.rs` adds `Located`, `Runs` and `read_located(path, source, runs)`; `read` is
+  `read_located` without the extra fields. Nothing in how a module is translated changed.
+- Docs: `reference/quint.md` (in the sidebar after Rust), the promise in `README.md` (only the
+  "No runtime" and "Nothing runs" bullets), `reference/cli.md`, `tutorials/pull-request.md` and a
+  Quint bullet in `start/install.md`; `index.mdx` does not repeat the promise, so it is unchanged.
+  A changelog entry. `earnest --help` says "TypeScript, Rust or Quint".
+- Tests: `apps/earnest/tests/behavior/quint_checks.rs` (14 tests, unix only, a fake `quint` shell
+  script), unit tests in `checks.rs` (3) and `places.rs` (1), and one in
+  `crates/earnest_quint/src/tests.rs`. `choose.parse.json` and `choose.sourcemap.json` in
+  `models/` are what Quint 0.33.1 wrote for `choose.qnt`, with the absolute path in
+  `sourceIndex` replaced by `choose.qnt`; the fake writes the sandbox's path back.
+
+### The commands earnest runs
+
+```sh
+quint --version
+quint compile --target json --main <main> --init <init> --step <step> [--invariant a,b] [--temporal c,d] <file>.qnt
+quint parse <file>.qnt --out .earnest/quint/.parse-<pid>-<n>.json --source-map .earnest/quint/.map-<pid>-<n>.json
+```
+
+`<file>` is the path as earnest shows it (relative to where it runs). The parse runs first, once
+per listed `.qnt` file, then the compiles, once per check; each is skipped when its cache holds. Each starts from the folder earnest
+runs in. Verified against Quint 0.33.1:
+
+- `--invariant` and `--temporal` take one argument, names joined by commas (`--help`: "the
+  invariants to check, separated by commas"); `--init` and `--step` always passed.
+- **Not `--out`, unlike decision 4.** In 0.33.1, `compile --out f` writes every module of the
+  file, unflattened (`modules` = `Clock`, `Small`, `Large` for `--main Large`), and still prints the
+  flattened main module on stdout. The reader needs the flattened one, so earnest sends stdout to
+  a file of its own in `.earnest/quint/` and keeps it.
+- **Not a pipe either.** Read through a pipe, the JSON stopped at 65,536 bytes: Quint exits before
+  Node has written the rest. Written to a file, it is whole.
+- A failure: exit 1, nothing on stdout, and on stderr either one line (`error: [QNT404] Name 'nope'
+  not found`, `error: module Nope does not exist`) or a block whose first line is
+  `Error [QNT404]: Name 'y' not found` and whose `at <absolute path>:4:22` line gives the place.
+  Earnest takes the first line that is not blank, and the place from the first `at` line, else
+  1:1.
+
+### Runs
+
+`runs` is read into `earnest_quint::Runs` (`None`, `Tests`, `Named`) and passed to
+`read_located`, which ignores it. It is part of the cache key. Slice 6 should know:
+
+- The compiled JSON holds the runs written in the main module itself (`compile --main Large` has
+  `largeTick`) and no run of an imported module (`--main Small` has none of `Clock`'s four).
+  `quint compile` has no flag that keeps them: flattening takes an imported definition only when
+  something refers to it. To play the spec module's runs for a setup, slice 6 needs another
+  compile (`--main Clock`, which keeps every definition) or option A of section 6.
+- `scan.rs` still refuses every `run` definition, so a main module with its own runs is
+  `unreadable` today whatever `runs` says.
+
+### What is not mapped to a line
+
+- A refusal with no definition: `the compiled module` (Quint reported errors), a missing `init`
+  or `step`, more than 1000 actions from one step, a fault while `init` is worked out, more than
+  1,000,000 combinations in `init`. They stay at 1:1.
+- A refusal from `Reader::refuse` carries the definition but no expression id, so it is placed at
+  the definition (`action bump`), not at the expression. Only the operators `scan.rs` refuses
+  carry an id.
+- A construct flattened in from an instance: its ids are fresh, so it goes to the definition in
+  the imported module, found by name. A constant's value is the instance's override, but the
+  problem goes to the `const` declaration (`Small::Clock::Nodes` at `const Nodes`).
+- A compiled `.json` named on the command line: no `.qnt` to map to, so 1:1 as in slice 1.
+
+### Doubts
+
+- The rules of a module flattened from an instance are named `Blinding::Lamp::levelOk`, as the
+  reader names them, so `--rule levelOk` does not select them although `earnest.quint.json` lists
+  `levelOk`. An unreadable check declares the listed names, so there `--rule levelOk` does select
+  it. Slice 4 (setups) should decide the names.
+- The example in the "not listed" problem has three lines in the JSON `message`; the text output
+  joins them on one line, as it does for every problem.
+- The JSON `unreadable` list names no check: a problem has only `file`, `line`, `column`,
+  `feature` and `message`, so two checks of one file are told apart there only by the text
+  header.
+- The version is keyed on the program's resolved path: with `node_modules/.bin/quint` that is
+  Quint's `cli.js`, which an upgrade rewrites. A wrapper script that runs another `quint` keeps
+  its own size and time; then the version text is not asked again.
+- `earnest verify --base` still skips Quint files (slice 1's doubt), now also `.qnt` checks.
+- The Windows build is not tested: the fake is a shell script, so `quint_checks.rs` is
+  `#![cfg(unix)]`.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings, `Finished`.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1814 passed, 0
+  failed. After the merge: 81 suites, 1894 passed, 0 failed.
+- `just typescript`: `Tests  76 passed (76)` (after the merge also `189 passed`, `22 passed`).
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`; the two `[WARN]` lines (`i18n`,
+  `404`) are there on the base too. `dist/llms-full.txt` holds the new page.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps
+  `0 differences`. All 64 (4 runs each) are in 16 files that are not on `origin/main`:
+  `tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,
+  stove,ticket,worker}.model.ts`, `runs/gate.rs`, `runs/kettle.rs`,
+  `tasks/conformance/setups/clock.model.ts` and `setups/clock.rs` (the script lists 10; the
+  full list is from a copy of `same.py` with `SHOWN` raised, not committed).
+  `just same-answers fdbd03a` (the integration head this branch starts from): `every model
+  file: 392 runs, 0 differences`, every sweep 0.
+- `tests_kept.py --base origin/main`: `tests kept: 1491 tests, 4385 assertions (base: 1304, 3798)`;
+  after the merge `tests kept: 1541 tests, 4513 assertions (base: 1304, 3798)`.
+- After the merge, fmt, clippy, `just lint-library`, `cargo deny check`, `cargo machete` and
+  `just docs` (18 pages, the same two `[WARN]` lines) gave the same last lines as above.
+  `just same-answers` was not run again (not in the review's list).
+- `just counts` and `just benchmark` were not run: no search code changed.
+
+### Unfinished, and the next step
+
+- Nothing of decision 1 to 7 is left out, except the two deviations above (`--out`, the
+  one-line example in the text output).
+- Next: slices 2, 5 and 6 merge onto this; when slice 6 reads runs it gets `Runs` through
+  `read_located`, and needs the spec module's runs as said under "Runs".

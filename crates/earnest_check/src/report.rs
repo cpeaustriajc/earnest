@@ -204,7 +204,8 @@ impl Search<'_> {
         let (graph, outline) = self.graph_or_outline();
         let failed =
             !findings.is_empty() || rules.iter().any(|rule| rule.verdict == Verdict::Broken);
-        let status = match (failed, &self.reason) {
+        let reason = self.reason.clone().or_else(|| Self::unplayed(&rules));
+        let status = match (failed, &reason) {
             (true, _) => Status::Fail,
             (false, Some(_)) => Status::Unfinished,
             (false, None) => Status::Pass,
@@ -214,7 +215,7 @@ impl Search<'_> {
             states: self.store.len(),
             rules,
             findings,
-            reason: self.reason.clone(),
+            reason,
             computes_beyond_32_bits: self.computed_beyond_32_bits,
             graph,
             outline,

@@ -27,6 +27,7 @@ fn picked(mut model: Model, picks: &[(usize, usize, Expr)]) -> Model {
         model.actions[*action].inputs[*input].values.clear();
         model.actions[*action].inputs[*input].domain = Domain::Any;
         model.runs.picks.push(Pick {
+            script: None,
             action: *action,
             input: *input,
             from: Code::new(from.clone()),

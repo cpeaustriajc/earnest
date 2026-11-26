@@ -45,7 +45,7 @@ fn serving_one_pending_request_at_a_time_prints_who_was_served() {
     let path = path_under(&run.detail("serve"), &["broken", "annNotFirst"]);
     assert_eq!(path.steps.len(), 1, "{run}");
     assert!(
-        path.steps[0].starts_with("serve  who = \"ann\""),
+        path.steps[0].starts_with("step  who = \"ann\""),
         "the step names the request served, not its position in the set\n{run}"
     );
     let found = checked("serve", 8);
@@ -75,7 +75,7 @@ fn a_second_pick_from_a_set_that_depends_on_the_first_prints_both() {
 
 #[test]
 fn a_set_that_grows_to_forty_items_has_every_item_tried() {
-    let found = checked("grows", 781);
+    let found = checked("widening", 781);
     assert_eq!(rule(&found, "lastSeen")["verdict"], "holds");
     let broken = rule(&found, "belowForty");
     assert_eq!(broken["verdict"], "broken");
@@ -84,8 +84,8 @@ fn a_set_that_grows_to_forty_items_has_every_item_tried() {
 
 #[test]
 fn a_set_that_grows_past_the_state_limit_leaves_the_search_unfinished() {
-    let sandbox = with_compiled(&["grows"]);
-    let run = verify(&sandbox, "grows", &["--max-states", "100"]);
+    let sandbox = with_compiled(&["widening"]);
+    let run = verify(&sandbox, "widening", &["--max-states", "100"]);
     run.exits(1);
     assert!(run.stdout.starts_with("unfinished"), "{run}");
     assert!(run.stdout.contains("state limit of 100"), "{run}");

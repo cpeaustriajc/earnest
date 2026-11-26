@@ -274,6 +274,18 @@ pub enum Language {
     Rust,
 }
 
+impl Language {
+    /// How this language writes comments and quoted text, for [`condition_text`] and
+    /// [`same_condition_text`].
+    #[must_use]
+    pub fn quoting(self) -> Quoting {
+        match self {
+            Self::TypeScript => Quoting::TypeScript,
+            Self::Rust => Quoting::Rust,
+        }
+    }
+}
+
 impl Term {
     /// A term of `kind` that starts at `place`.
     #[must_use]
@@ -430,15 +442,28 @@ pub struct RuleDraft {
 /// dropped, each run of white space is one space and there is none at either end.
 ///
 /// A reader passes the source of a rule's condition through this before it stores it in
-/// [`RuleDraft::text`], so an edit that only moves white space does not count as a change of
-/// the rule, and neither does a comment. `quoting` says which language's comments and quoted
-/// text the source has. White space inside a text literal is folded too, so two texts can be
-/// equal when the conditions are not.
+/// [`RuleDraft::text`], the text `--base` shows. `quoting` says which language's comments and
+/// quoted text the source has. White space inside a text literal is folded too, so two texts
+/// can be equal when the conditions are not: tell whether a part changed by what it lowers to.
 #[must_use]
 pub fn condition_text(source: &str, quoting: Quoting) -> String {
     let bare = nesting::without_comments(source, quoting);
     let words: Vec<&str> = bare.split_whitespace().collect();
     words.join(" ")
+}
+
+/// Whether two texts in the normal form of [`condition_text`] are one source apart from white
+/// space: a space counts only between two word letters (letters, digits, `_` and `$`), so
+/// `s.items .size` is `s.items.size` and `return x` is not `returnx`.
+///
+/// Quoted text is kept whole, so `"a b"` is not `"ab"`; but [`condition_text`] has already
+/// folded white space inside it, so `"a  b"` and `"a b"` are the same here. Two texts this
+/// calls the same can mean different things: `--base` compares what parts lower to instead.
+#[must_use]
+pub fn same_condition_text(first: &str, second: &str, quoting: Quoting) -> bool {
+    first == second
+        || nesting::without_loose_spaces(first, quoting)
+            == nesting::without_loose_spaces(second, quoting)
 }
 
 /// A condition on one state, as an [`EventuallyDraft`] holds it.

@@ -5,6 +5,50 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint modules listed in `earnest.quint.json`
+
+`earnest verify` checks Quint modules. List each module to check, with its invariants, in `earnest.quint.json` beside the specs:
+
+```json title="specs/earnest.quint.json"
+{ "checks": [
+  { "file": "counter.qnt", "main": "counter", "invariants": ["inRange", "tooBig"] }
+] }
+```
+
+- **Quint:** earnest starts the project's own `quint` (from `EARNEST_QUINT`, then `node_modules/.bin`, then `PATH`) to compile each listed module, up to `--jobs` at a time, and only for `.qnt` files. It never installs it. Without it, each check is `unreadable`.
+- **Results:** each check is one model, named after its module, with the `.qnt` file as its file. A failed compile is `unreadable` at the line Quint gives, and a construct the reader refuses is reported at its line in the `.qnt` file.
+- **Cache:** the compiled JSON is kept in `.earnest/quint/` by `quint --version`, the check and the content of the `.qnt` files, so a second run with nothing changed starts no Node.
+- **Runs:** a check with `"runs": true` or a list of run names plays the module's `run` definitions, trying every choice where `quint test` samples. See [Runs](/reference/quint/#runs).
+- **Reads:** what the Quint reader reads from compiled JSON, now also from a listed `.qnt` file. A module compiled beforehand with `quint compile --target json` is still read with no Node.
+
+See [Quint models](/reference/quint/).
+
+## November 2026: `--base` compares parts by what they mean
+
+`earnest verify --base <ref>` and `earnest report --base <ref>` now tell whether a rule about runs, a witness or a setup changed by what it means instead of by its text. The base version is read against the working tree's fields with the base commit's constants and helpers, as plain rules already were.
+
+- **No longer listed:** an edit that only reformats, such as what Prettier or rustfmt writes for an unchanged file (quote style, parentheses around one parameter, trailing commas, line breaks), is no longer listed `changed`, for a plain rule either.
+- **Now listed:** an edit of a constant or a helper that a rule about runs, a witness or a setup uses is `changed`, and so is a second space inside a text, which was folded before. A rule about runs is also `changed` when the set of fair actions changed.
+
+See [Rule changes](/reference/output/#rule-changes---base).
+
+## November 2026: `--base` lists rules about runs, witnesses and setups
+
+`earnest verify --base <ref>` and `earnest report --base <ref>` list each rule about runs, witness and setup that was added, removed, changed or reworded since the base, after the plain rules:
+
+```text
+rule changes since origin/main
+  changed    Climb.half (setup)  src/climb.model.ts
+    was  "Half full"  { n: 2 }
+    now  "Half full"  { n: 1 }
+```
+
+- **Kind:** the id is followed by `(eventually)`, `(witness)` or `(setup)`, and JSON gives `kind`. A plain rule has neither.
+- **Changed:** an edit of the text they are compared by is `changed`; no state is searched for them. A Rust `after = name` is compared with the body of its helper. White space that a formatter adds before a `.` is no change.
+- **Selecting:** `--rule <id>` lists the changes of each model where some run lists the id, a witness of a setup included, and a part only the base has is listed `removed`.
+
+See [Rule changes](/reference/output/#rule-changes---base).
+
 ## November 2026: rules about runs and setups
 
 A rule says what must be true in every state. A rule about runs says that every run comes to a state: once approved, the cart offers checkout.

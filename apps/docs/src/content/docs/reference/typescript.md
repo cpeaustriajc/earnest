@@ -171,6 +171,7 @@ Any construct outside the allowed subset makes the file `unreadable`, including:
 - `m.witness` throws when a step is not an action declared on the model before the witness, when a step gives an input the action does not declare, or when `setup` is not a setup declared on the model before the witness. TypeScript does not compile a bare action that takes inputs in `steps`, nor `m.step` with an input the action does not declare.
 - `m.setup` throws when it names no field, a name that is not a field of the model, or a value the field does not declare. TypeScript does not compile a setup that names a field the model lacks or gives a value of the wrong type, nor an `after` or `reaches` that does not give a boolean.
 - `replay(Model, path, { exports })` steps through a path from `earnest verify --json` one action at a time and returns every state along the path.
+- `replay(Model, path, { exports, setup: behind })` replays a path of a setup's result: the path must begin at one of the setup's start states, as `explore` with that `setup` starts. Without `setup`, the path must begin at a start state of the model as declared.
 
 - `search({ starts, key, moves, rules })` runs the same breadth-first search on states that are not a model, such as plain objects or a snapshot of a state machine.
 

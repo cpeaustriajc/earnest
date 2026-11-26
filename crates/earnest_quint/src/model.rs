@@ -1,8 +1,13 @@
-use crate::json::{Compiled, Declaration, Def, Expr as Quint};
+use crate::Runs as Chosen;
+use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
+use crate::runs::scripts;
 use crate::scan::refused;
 use crate::starts::start_states;
-use earnest_ir::{Action, Code, End, Expr, Field, Input, Model, Pick, Rule, Runs, View};
+use crate::temporal::{Step, temporal};
+use earnest_ir::{
+    Action, Code, End, Eventually, Expr, Field, Input, Model, Pick, Rule, Runs, View,
+};
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
 
@@ -29,7 +34,8 @@ pub(crate) fn assigned(path: &Path, fields: &[String], within: &str) -> Read<Vec
                 return Err(refusal(
                     &format!("`{name}'`"),
                     &format!("one path through `{within}` assigns this variable twice"),
-                ));
+                )
+                .within(within));
             }
             Some(slot) => *slot = Some(expr.clone()),
             None => {}
@@ -47,6 +53,7 @@ pub(crate) fn assigned(path: &Path, fields: &[String], within: &str) -> Read<Vec
                          TLC runs stop on"
                     ),
                 )
+                .within(within)
             })
         })
         .collect()
@@ -63,7 +70,7 @@ fn missing(name: &str) -> Vec<Refusal> {
     )]
 }
 
-fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
+pub(crate) fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
     let mut seen: HashMap<String, usize> = HashMap::new();
     paths
         .iter()
@@ -80,12 +87,17 @@ fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
         .collect()
 }
 
-fn picks(position: usize, path: &Path) -> impl Iterator<Item = Pick> + '_ {
+pub(crate) fn picks(
+    script: Option<usize>,
+    position: usize,
+    path: &Path,
+) -> impl Iterator<Item = Pick> + '_ {
     path.choices
         .iter()
         .enumerate()
         .filter_map(move |(input, choice)| {
             Some(Pick {
+                script,
                 action: position,
                 input,
                 from: Code::new(choice.from.clone()?),
@@ -93,7 +105,7 @@ fn picks(position: usize, path: &Path) -> impl Iterator<Item = Pick> + '_ {
         })
 }
 
-fn action(id: String, path: &Path, fields: &[String], slots: usize) -> Read<Action> {
+pub(crate) fn action(id: String, path: &Path, fields: &[String], slots: usize) -> Read<Action> {
     let updates = assigned(path, fields, &id)?;
     let changed: Vec<bool> = updates
         .iter()
@@ -175,13 +187,22 @@ fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<
     Ok(rules)
 }
 
-fn unfolded<'a>(reader: &mut Reader<'a>, root: &'a Def) -> Read<Vec<Path>> {
-    reader.unnamed.push(root.id);
-    if let Quint::Name { name, .. } = &root.expr
+fn aliases<'a>(reader: &Reader<'a>, root: &'a Def) -> Vec<u64> {
+    let mut chain = vec![root.id];
+    let mut def = root;
+    while let Quint::Name { name, .. } = &def.expr
         && let Some(found) = reader.top(name)
+        && !chain.contains(&found.id)
     {
-        reader.unnamed.push(found.id);
+        chain.push(found.id);
+        def = found;
     }
+    chain
+}
+
+fn unfolded<'a>(reader: &mut Reader<'a>, root: &'a Def) -> Read<Vec<Path>> {
+    let chain = aliases(reader, root);
+    reader.unnamed.extend(chain);
     reader.within.clone_from(&root.name);
     reader.paths(&root.expr)
 }
@@ -208,10 +229,17 @@ fn variables(declarations: &[Declaration]) -> Vec<Variable<'_>> {
         .collect()
 }
 
-type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>, Vec<Pick>);
+type Parts = (
+    Vec<Vec<Value>>,
+    Vec<Action>,
+    Vec<Rule>,
+    Vec<Eventually>,
+    Vec<Pick>,
+);
 
 fn parts<'a>(
     reader: &mut Reader<'a>,
+    table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     (init, step): (&'a Def, &'a Def),
     names: &[String],
@@ -231,20 +259,39 @@ fn parts<'a>(
         .zip(&stepping)
         .map(|(id, path)| action(id, path, names, reader.slots))
         .collect::<Read<Vec<Action>>>()?;
+    let mut parts: HashMap<String, Vec<usize>> = HashMap::new();
+    for (position, path) in stepping.iter().enumerate() {
+        if let Some(name) = &path.name {
+            parts.entry(name.clone()).or_default().push(position);
+        }
+    }
+    let step = Step {
+        defs: aliases(reader, step),
+        parts: &parts,
+        fields: names.len(),
+    };
+    let mut rules = rules;
+    let read = temporal(reader, table, defs, &step)?;
+    rules.extend(read.rules);
     let picks = stepping
         .iter()
         .enumerate()
-        .flat_map(|(position, path)| picks(position, path))
+        .flat_map(|(position, path)| picks(None, position, path))
         .collect();
-    Ok((starts, actions, rules, picks))
+    Ok((starts, actions, rules, read.eventually, picks))
 }
 
-pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusal>> {
-    let met = built(path, compiled, Symbols::default())?;
-    built(path, compiled, met.symbols.alphabetical())
+pub(crate) fn model(path: &str, compiled: &Compiled, runs: &Chosen) -> Result<Model, Vec<Refusal>> {
+    let met = built(path, compiled, Symbols::default(), runs)?;
+    built(path, compiled, met.symbols.alphabetical(), runs)
 }
 
-fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec<Refusal>> {
+fn built(
+    path: &str,
+    compiled: &Compiled,
+    symbols: Symbols,
+    runs: &Chosen,
+) -> Result<Model, Vec<Refusal>> {
     if !compiled.errors.is_empty() {
         return Err(vec![refusal(
             "the compiled module",
@@ -285,8 +332,11 @@ fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec
         }));
     };
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
-    let (starts, actions, rules, picks) =
-        parts(&mut reader, &defs, (init, step), &names).map_err(|refusal| vec![refusal])?;
+    let (starts, actions, rules, eventually, picks) =
+        parts(&mut reader, &compiled.table, &defs, (init, step), &names)
+            .map_err(|refusal| vec![refusal])?;
+    let (scripts, script_picks) = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    let picks = picks.into_iter().chain(script_picks).collect();
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
@@ -323,6 +373,8 @@ fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec
         view: View::default(),
         runs: Runs {
             starts: Some(starts),
+            eventually,
+            scripts,
             picks,
             ..Runs::default()
         },

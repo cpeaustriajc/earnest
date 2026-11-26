@@ -71,6 +71,7 @@ export default defineConfig({
 						"reference/output",
 						"reference/typescript",
 						"reference/rust",
+						"reference/quint",
 						"reference/primitives",
 						"reference/tla",
 					],

@@ -9,6 +9,7 @@ const MIXED: &str = include_str!("../../../tasks/quint/models/mixed.json");
 const STARTS: &str = include_str!("../../../tasks/quint/models/starts.json");
 const PARAMS: &str = include_str!("../fixtures/params.json");
 const LATER: &str = include_str!("../fixtures/later.json");
+const GROWS: &str = include_str!("../fixtures/grows.json");
 const TESTED: &str = include_str!("../fixtures/tested.json");
 const TEXT: &str = include_str!("../fixtures/text.json");
 const SET_VARIABLE: &str = include_str!("../fixtures/setvar.json");
@@ -207,16 +208,34 @@ fn every_state_is_an_end_so_none_is_stuck() {
 
 #[test]
 fn a_temporal_property_is_refused_and_named() {
-    refused_with(
-        LATER,
-        "`temporal grows`",
-        "temporal properties are not read yet",
+    refused_with(LATER, "`always`", "`eventually(always(…))` is not read");
+}
+
+#[test]
+fn a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs() {
+    let read = model(GROWS);
+    let ids: Vec<&str> = read
+        .runs
+        .eventually
+        .iter()
+        .map(|rule| rule.id.as_str())
+        .collect();
+    assert_eq!(ids, ["grows"], "`eventually(x > 3)` is one rule about runs");
+    assert_eq!(
+        read.runs
+            .eventually
+            .first()
+            .and_then(|rule| rule.fair.clone()),
+        Some(earnest_ir::Fairness::default()),
+        "without `weakFair` nothing is fair"
     );
 }
 
 #[test]
-fn a_run_is_refused_and_named() {
-    refused_with(TESTED, "`run oneTest`", "runs are not read yet");
+fn a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules() {
+    let tested = model(TESTED);
+    let ids: Vec<&str> = tested.rule_ids().collect();
+    assert_eq!(ids, ["oneTest"], "the run is the model's one check");
 }
 
 #[test]
@@ -475,5 +494,35 @@ fn a_file_that_is_not_compiled_quint_is_one_problem() {
     assert!(
         found[0].message.contains("quint compile --target json"),
         "the problem says what the reader takes: {found:?}"
+    );
+}
+
+#[test]
+fn each_problem_keeps_the_definition_it_is_in_and_the_id_of_a_refused_operator() {
+    let source = include_str!("../../../tasks/quint/models/choose.json");
+    let located = crate::read_located("choose.json", source, &crate::Runs::Tests)
+        .expect_err("`chooseSome` is refused");
+    let found: Vec<(&str, Option<&str>, bool)> = located
+        .iter()
+        .map(|each| {
+            (
+                each.problem.feature.as_str(),
+                each.definition.as_deref(),
+                each.id.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [("`chooseSome`", Some("step"), true)],
+        "the operator by its definition and its id"
+    );
+    assert_eq!(
+        read("choose.json", source).expect_err("`chooseSome` is refused"),
+        located
+            .into_iter()
+            .map(|each| each.problem)
+            .collect::<Vec<_>>(),
+        "the problems are those of `read`"
     );
 }
