@@ -852,3 +852,189 @@ and names the construct and the definition it is in.
 - Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
   general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
   `scan.rs`.
+
+## Slice 2: what is checked
+
+`earnest verify <file>.json` reads a compiled module whose variables, constants and expressions
+hold records, tuples, sets, maps, lists, text (`str`) and variants (issue #56). Every variable
+that is not `bool` has the domain `Domain::Any`, as `int` had in slice 1. The models are in
+`models/` and the one-question modules in `crates/earnest_quint/fixtures`, each `.qnt` beside the
+`.json` compiled from it with Quint 0.33.1:
+
+```sh
+quint compile --target json --main bank --invariant sumMatches,ownersMatch,someRich,noOverdraft bank.qnt > bank.json
+quint compile --target json --main shapes --invariant notBoth shapes.qnt > shapes.json
+quint compile --target json --main record --invariant ok record.qnt > record.json   # unchanged
+# crates/earnest_quint/fixtures
+quint compile --target json --main everything --invariant areas,images,byKey,pairs,flat,subsets,listed,parts,first,replaced,chosen,gotten,updated,text,finite,crossing everything.qnt > everything.json
+quint compile --target json --main missingKey --invariant keyRead faults.qnt > missingkey.json
+quint compile --target json --main pastTheEnd --invariant lastRead faults.qnt > pastend.json
+quint compile --target json --main emptyHead --invariant headRead faults.qnt > emptyhead.json
+quint compile --target json --main refused --invariant ordered,every refused.qnt > refused.json
+quint compile --target json --main table table.qnt > table.json
+```
+
+### How each Quint value is held
+
+| Quint | earnest | Printed |
+|---|---|---|
+| `str` | `Value::Str`, the texts named in code-point order (the file is read twice: once to meet every text, once with the names sorted) | `"alice"` |
+| record `{ a: 1 }` | `Value::Record` | `{a: 1}` |
+| tuple `(0, "x")` | a record with fields `_1`, `_2`, ... | `{_1: 0, _2: "x"}` |
+| unit `()` | the record of no field | `{}` |
+| variant `Ping(0)`, `Red` | the record `{tag, value}`; a `match` is a choice on `tag` | `{tag: "Ping", value: 0}`, `{tag: "Red", value: {}}` |
+| `Set(...)` | `Value::Set`, in earnest's order | `{1, 2}` |
+| `Map(k -> v)` | `Value::Map`, keys in earnest's order | `{"alice" -> 1}` |
+| `List(...)` | `Value::Seq` | `[1, 2]` |
+
+**What prints differently from `quint`**: a set is `{a, b}` where Quint writes `Set(a, b)`, a map
+`{k -> v}` for `Map(k -> v)`, a record `{a: 1}` for `{ a: 1 }`, a tuple its record for
+`(0, "x")`, a variant the record of its tag and value for `Ping(0)` or `Red`, the unit `{}` for
+`()`. Sets and maps keep earnest's order: equal to Quint's for numbers, texts, records and
+tuples, but a set of sets is ordered item by item, so `Set(1, 2).powerset()` prints as
+`{{}, {1}, {1, 2}, {2}}` where Quint prints `Set(Set(), Set(1), Set(2), Set(1, 2))`.
+
+### The operators
+
+Each builtin is one of earnest's existing forms when it has exactly Quint's meaning, or one of the
+new general-path forms (`Expr::Fold`; `Op::Power`, `Op::Interval`, `Op::Ascending`;
+`MapOp::MustGet`, `MapOp::Replace`; `SeqOp::Nth`, `Head`, `Tail`, `Concat`, `Slice`,
+`ReplaceAt`; `Fault::Missing`, `Fault::Undefined`). None has a packed or chain form: `Reads::of`
+in `code/packed.rs` turns a fold away.
+
+| Quint | earnest |
+|---|---|
+| `Rec`, `field`, `with` | `Expr::Record`, `Expr::Get`, `Expr::With` |
+| `Tup`, `item` | a record of `_1`, `_2`, ...; `Expr::Get` of `_n` |
+| `tuples(S1, ..., Sn)` | nested folds that add each record of picked items to a set |
+| `variant`, `matchVariant` | the record `{tag, value}`; a `Bind` of the value and a `Choose` on its tag for each case, `_` the last; no case is `Fault::Missing` |
+| `Set`, `List`, `Map` | `SetOf`, `SeqOf`, `MapOf` of each pair's `_1` and `_2` |
+| `contains`, `in`, `union`, `intersect`, `exclude`, `subseteq`, `size` | `SetOp::Has` (twice), `Union`, `Intersect`, `Subtract`, `IsSubset`, `Size` |
+| `filter`, `exists`, `forall`, `select` | `Sweep` `Filter`/`Some`/`Every` over a set, `Filter` over a list |
+| `map`, `mapBy`, `setToMap`, `flatten` | a fold over the set that adds the image, sets the key, sets `_1` to `_2`, or takes the union |
+| `fold`, `foldl` | `Expr::Fold` over a set (in earnest's order) or a list |
+| `powerset` | worked out when the file is read, of a set that does not change and has at most 19 items (2^19 subsets, under the 1,000,000 values earnest lists) |
+| `isFinite` | `S == S`: every set earnest holds is finite, and `S` is still evaluated |
+| `to` | `Op::Interval`; inside a `nondet`, a listed input domain as before |
+| `get`, `keys`, `put`, `set`, `setBy` | `MapOp::MustGet`, `Keys`, `Set`, `Replace`; `setBy` binds the must-get value and sets the key |
+| `append`, `concat`, `head`, `tail`, `length`, `nth`, `replaceAt`, `slice` | `SeqOp::Push`, `Concat`, `Head`, `Tail`, `Size`, `Nth`, `ReplaceAt`, `Slice` |
+| `indices`, `range` | `Op::Interval` from 0 to the length less 1; `Op::Ascending` |
+| `ipow` | `Op::Power` |
+
+**Faults, not empty values**: `get`, `set` and `setBy` on a missing key, `nth`, `replaceAt` and
+`slice` outside the list, `head` and `tail` of an empty list, and a `match` with no case are
+`Fault::Missing`; a negative power, `0^0` and `range(a, b)` with `a > b` are
+`Fault::Undefined`, and a power past 64 bits `Fault::Overflow`. The existing `MapOp::Get` and
+`SeqOp::Get` still give `null`, for TypeScript and Rust models. Division and remainder keep
+earnest's rule.
+
+A `oneOf` now takes any set that does not change, worked out when the file is read
+(`Names.oneOf()` in the bank, a set of records); a set computed from the state is still
+refused, for slice 3.
+
+### The operator table
+
+`crates/earnest_quint/src/table.rs` evaluates each `val` of `fixtures/table.qnt` (84 cases,
+every builtin above, the error cases included) and compares it with what Quint's own evaluator
+printed, printing earnest's value the way Quint prints it. The expected column was taken with:
+
+```sh
+quint repl -q --backend typescript -r table.qnt::table < names.txt   # one case name per line
+```
+
+(the REPL's default Rust backend needs a download from GitHub, which this machine cannot reach).
+Every value agrees; the 13 Quint runtime errors (`QNT503`, `QNT505`, `QNT506`, `QNT507`,
+`QNT510`) are faults in earnest. One case prints its items in another order (the powerset,
+above). Two answers of the TypeScript evaluator are not followed, and are not in the table:
+
+- `range(5, 1)` gives `[5, 4, 3, 2]` in `quint repl`, against Quint's documentation of `range`
+  as counting up; earnest gives `Fault::Undefined`.
+- `Set(3, 1, 2).fold(0, (a, x) => a * 10 + x)` gives 312 in `quint repl`, which folds a set in
+  the order it was written; earnest folds in its own order and gives 123. A fold whose answer
+  depends on the order is not the same in the two.
+
+### State counts and verdicts by hand
+
+- **bank**: `open(name)` adds an account at balance 0 once, `deposit(name, 10 or 20)` needs the
+  account and `total < 40`, so the last deposit starts at 30 at most and `total` ends at 0 to 50.
+  The state is the order the accounts were opened in (`log`) and each balance, the tags being
+  `{"paid"}` exactly when the balance is above 0 and `total` their sum. No account: **1**. One
+  account (2 names): its balance is 0, 10, 20, 30, 40 or 50, so 2 × 6 = **12**. Both accounts (2
+  orders): every pair of balances with a sum up to 40 is reached (1 + 2 + 3 + 4 + 5 = 15 pairs),
+  and every pair with the sum 50 (6 pairs) is reached by a deposit of 20 from a sum of 30, so
+  2 × 21 = **42**. In all 1 + 12 + 42 = **55**. Every invariant holds: the fold adds up the
+  balances to `total`, each owner is its key, and no balance falls.
+- **shapes**: one action, deterministic. The light cycles Red, Green, Yellow (3); `pair._1`
+  cycles 0, 1, 2 with it; the inbox cycles Quiet, Ping(0), Pong(1), Ping(1), Pong(2), Ping(2),
+  Pong(3) (7). So the run comes back to its start after lcm(3, 7) = **21** states. `notBoth`
+  (`not(light == Yellow and inbox == Quiet)`) first fails at step k with k mod 3 = 2 and
+  k mod 7 = 0: **k = 14**, so the path has 14 changes and TLC, which stops there, has seen **15**
+  states. The spike's "15 states" is that partial count.
+- **everything**: 82 states (TLC's count), every invariant holding; it is there to put each new
+  form through earnest and through the TLA+ export.
+- **missingKey**, **pastTheEnd**, **emptyHead**: the rule faults in the second state, after one
+  step.
+
+| Model | By hand | TLC | earnest | Invariants |
+|---|---|---|---|---|
+| bank | 55 | 55 | 55 | all four hold in each |
+| shapes | 21; broken after 14 steps | 21 (with an invariant that holds); 15 at the violation | 21; broken, 14 steps | `notBoth` broken |
+| everything | | 82 | 82 | all hold |
+
+### TLC, as Quint runs it
+
+```text
+=== quint verify --backend tlc --main bank --invariant sumMatches bank.qnt
+125 states generated, 55 distinct states found, 0 states left on queue.
+[ok] No violation found (1257ms).
+=== (ownersMatch, someRich and noOverdraft: the same two lines, 1176, 1033 and 830 ms)
+=== quint verify --backend tlc --main shapes --invariant notBoth shapes.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2 ... State 15: <change line 93, col 3 to line 118, col 23 of module shapes>
+15 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (1018ms).
+=== quint verify --backend tlc --main shapes --invariant holds shapesall.qnt   # shapes plus `val holds = true`
+22 states generated, 21 distinct states found, 0 states left on queue.
+[ok] No violation found (845ms).
+=== quint verify --backend tlc --main everything --invariant areas,...,crossing everything.qnt
+154 states generated, 82 distinct states found, 0 states left on queue.
+[ok] No violation found (1017ms).
+```
+
+### earnest and its TLA+ export
+
+```text
+$ earnest verify tasks/quint/models/bank.json
+pass        bank  55 states  5 ms
+$ earnest verify tasks/quint/models/shapes.json
+fail        shapes  21 states  1 ms
+  broken  notBoth  "The Quint invariant `notBoth` holds"
+    start  pair = {_1: 0, _2: "x"}, light = {tag: "Red", value: {}}, inbox = {tag: "Quiet", value: {}}
+    1. change  pair: {_1: 0, _2: "x"} -> {_1: 1, _2: "x"}, light: {tag: "Red", value: {}} -> {tag: "Green", value: {}}, inbox: {tag: "Quiet", value: {}} -> {tag: "Ping", value: 0}
+    ...
+    14. change  pair: {_1: 1, _2: "x"} -> {_1: 2, _2: "x"}, light: {tag: "Green", value: {}} -> {tag: "Yellow", value: {}}, inbox: {tag: "Pong", value: 3} -> {tag: "Quiet", value: {}}
+    end    pair = {_1: 2, _2: "x"}, light = {tag: "Yellow", value: {}}, inbox = {tag: "Quiet", value: {}}
+$ earnest verify crates/earnest_quint/fixtures/missingkey.json
+fail        missingKey  2 states  0 ms
+  fault  the rule `keyRead` reads a key, a position or a case that is not there in this state
+    start  balances = {"alice" -> 1}, started = false
+    1. step  started: false -> true
+    end    balances = {"alice" -> 1}, started = true
+$ earnest confirm --tlc apalache.jar everything.json bank.json shapes.json params.json missingkey.json pastend.json emptyhead.json
+same     everything  82 states  pass
+same     params  8 states  pass
+same     bank  55 states  pass
+same     shapes  21 states  fail
+same     emptyHead  2 states  fail
+same     missingKey  2 states  fail
+same     pastTheEnd  3 states  fail
+```
+
+(`apalache.jar` is the one Quint downloads, `~/.quint/apalache-dist-0.62.4/apalache/lib`, which
+holds `tlc2.TLC`.) A rule is `unknown` after a fault, in the JSON output.
+
+The tests: `crates/earnest_ir/tests/folds.rs` (each new form against values worked out by hand,
+the walk and the prepared code agreeing), `crates/earnest_quint/src/table.rs` (the operator
+table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/src/faulting.rs`
+(the TLA+ helpers) and `apps/earnest/tests/behavior/quint_data.rs` (the command line).
