@@ -924,3 +924,166 @@ property is `(fairness) => (property)`, with the model's own fairness (`WF_vars(
 fair action) for a rule that has none. `earnest confirm --tlc` checks each property in its own
 run of TLC as before. A model whose rules have no fairness of their own is written byte for byte
 as before.
+
+### Each property: by hand, TLC, earnest
+
+By hand:
+
+- **fair2** (`t` 0 to 3, `h` either: 4 × 2 = **8** states). `tick` adds 1 to `t` below 3, `hear`
+  sets `h` once.
+  - `hearFairOnly`: after `hear`, only `tick` can change the state and it is not fair, so the run
+    may stop at `t = 0`: **broken**. (TLC's run ticks twice first, then hears and stutters; both
+    are fair to `hear`.)
+  - `tickFairOnly`: `tick` stays possible until `t = 3`, so it happens: **holds**.
+  - `bothFair` (`eventually(t == 3)` and `eventually(h)`): each fair action is possible until
+    taken: both **hold**.
+  - `stepFairH`: the whole step is fair, and every run ends at `t = 3, h`, the one state with no
+    way out: **holds**.
+- **SmallBits** (`time` 0 to 3, `seen` 0 to 3: **16** states) and **LargeBits** (`time` 0 to 8,
+  `seen` 0 to 7: **72**).
+  - `allHeard`: nothing is fair, so a run may stop in the start state, where `seen` is 0:
+    **broken**, with a path of no steps.
+  - `timeAdvances`, `leads`: the step is fair; `time` and `seen` only grow, so every run ends at
+    `time == MaxTime` and all heard: **hold**.
+  - `fairHear`: `tick` is possible until `MaxTime`, `hear` until all are heard, so both happen,
+    and the run then stays at `seen == Nodes`: **holds**.
+  - `inv` (LargeBits): `time` never passes 8: **holds**.
+- **swing** (`n` 0 to 2: **3** states). `a` takes 0 to 1, `b` 1 to 0, `out` 0 or 1 to 2.
+  - `swingFair`: the run `a, b, a, …` is fair to `a` and to `b` and never takes `out`: **broken**,
+    a loop of steps 1 to 2.
+  - `outFair`: `out` is possible in both states of the loop, so it happens: **holds**.
+  - `stepFair`: the same loop is fair to the whole step: **broken**.
+  - `safe` (`always(n <= 2)`, a plain rule): **holds**.
+
+| Module | Property | By hand | `quint verify --backend tlc` | `earnest confirm --tlc` |
+|---|---|---|---|---|
+| fair2 (8) | `hearFairOnly` | broken | violated, 8 states | same |
+| | `tickFairOnly` | holds | ok | same |
+| | `bothFair` (two rules) | holds, holds | ok | same |
+| | `stepFairH` | holds | ok | same |
+| SmallBits (16) | `allHeard` | broken | violated (stutters after 4 steps), 16 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| LargeBits (72) | `allHeard` | broken | violated, 72 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| swing (3) | `swingFair` | broken, loop | violated, "Back to state 1" | same |
+| | `outFair` | holds | ok | same |
+| | `stepFair` | broken, loop | violated, "Back to state 1" | same |
+| | `safe` | holds | ok | same |
+
+The original `clock.qnt` gives TLC the same lines: `Small` 16 states, `allHeard` violated and the
+other three ok; `Large` (`--temporal C::allHeard` and so on) 72 states, the same verdicts.
+
+TLC, as Quint runs it (one command per property; each output cut to the verdict, the state count
+and the counterexample's actions):
+
+```text
+=== quint verify --backend tlc --main fair2 --temporal hearFairOnly probe/fair2.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 3: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 4: <hear line 30, col 9 to line 30, col 35 of module fair2>
+State 5: Stuttering
+11 states generated, 8 distinct states found, 0 states left on queue.
+[violation] Found an issue (684ms).
+=== quint verify --backend tlc --main fair2 --temporal tickFairOnly probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main fair2 --temporal bothFair probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (579ms).
+=== quint verify --backend tlc --main fair2 --temporal stepFairH probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main Small --temporal allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 3: <Small_Clock_hear line 45, col 5 to line 47, col 46 of module Small>
+State 4: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 5: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (628ms).
+=== quint verify --backend tlc --main Small --temporal timeAdvances models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (608ms).
+=== quint verify --backend tlc --main Small --temporal fairHear models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (575ms).
+=== quint verify --backend tlc --main Small --temporal leads models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (646ms).
+=== quint verify --backend tlc --main SmallBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 3: <SmallBits_ClockBits_hear line 46, col 5 to line 50, col 62 of module SmallBits>
+State 4: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 5: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (673ms).
+=== quint verify --backend tlc --main SmallBits --temporal timeAdvances models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (604ms).
+=== quint verify --backend tlc --main SmallBits --temporal fairHear models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (577ms).
+=== quint verify --backend tlc --main SmallBits --temporal leads models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (606ms).
+=== quint verify --backend tlc --main LargeBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, tick, tick, tick, hear, tick, tick, tick, hear, tick
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (650ms).
+=== quint verify --backend tlc --main LargeBits --temporal timeAdvances models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (720ms).
+=== quint verify --backend tlc --main LargeBits --temporal fairHear models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (668ms).
+=== quint verify --backend tlc --main LargeBits --temporal leads models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (672ms).
+=== quint verify --backend tlc --main Large --temporal C::allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, hear, hear, tick × 7
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (660ms).
+=== quint verify --backend tlc --main Large --temporal C::timeAdvances models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (678ms).
+=== quint verify --backend tlc --main Large --temporal C::fairHear models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (645ms).
+=== quint verify --backend tlc --main Large --temporal C::leads models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (671ms).
+=== quint verify --backend tlc --main swing --temporal swingFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (649ms).
+=== quint verify --backend tlc --main swing --temporal outFair swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (657ms).
+=== quint verify --backend tlc --main swing --temporal stepFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (621ms).
+=== quint verify --backend tlc --main swing --temporal safe swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (628ms).
+```
+
+The two LargeBits/Large counterexamples are shortened to their action names; the full traces
+have the same shape as the Small ones.
