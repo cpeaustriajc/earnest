@@ -2521,3 +2521,97 @@ check each with `darkWhenOff`. Release builds, real Quint through a wrapper that
 | nothing cached, all cores | 5.13, 5.10, 4.94 s, 19 Quint starts | 0.97, 1.00, 1.13 s, 3 starts |
 | nothing cached, `--jobs 1` | 9.67 s | 1.21 s |
 | the second run, nothing changed | 0.069 s, no start | 0.011 s, no start |
+
+## Slice 4: report
+
+### Done
+
+- **A. Short names** (`crates/earnest_quint/src/names.rs`, applied at the end of
+  `model::built`): fields, actions, rules, temporal properties and runs get their last segment
+  unless another name of the kind ends the same way; then each keeps the shortest suffix that
+  tells them apart (`allHeard` beside `C::allHeard`). Invariants, temporal properties and runs
+  are one kind, because `--rule` selects among all of them. Inputs take their last segment:
+  Quint qualifies `nondet` names too (`Small::Clock::n`). The `#2` of a repeated id is kept.
+  `--rule`, `--model`, the JSON and the TLA+ export follow the model's ids; a check's `runs` list
+  also matches a run by its short name. Holds for a compiled `.json` named directly and for a
+  check.
+- **B. One typecheck per file** (`crates/earnest_quint/src/setup.rs`, `apps/earnest/src/typecheck.rs`,
+  `places.rs` `may_be_a_setup`, `quint.rs` `filled`): see "How `quint compile` flattens a setup"
+  above. `quint typecheck <file> --out` runs once per file that has a check whose main module
+  has an `import ... .*` of an instance. It is cached in `.earnest/quint/typecheck-<hash>.json`
+  under the version and the fingerprint of the files the parse lists. Each check is then built in
+  Rust and, when the shape is not one it builds, compiled as in slice 7. The parse stays: the
+  typecheck output has no source map and no file list.
+- **C. The spec's runs**: a built setup holds the spec's runs that the check plays (`true`: those
+  ending in `Test`; a list: those named), after Quint's declarations. A compiled setup plays only
+  its own runs; a listed run that only an imported module has is `unreadable` with the reason, at
+  the run's line. Docs: `reference/quint.md` ("What earnest runs", "Runs", "Names", "The cache")
+  and the changelog.
+
+### Shapes
+
+Built from the typecheck: `Low`, `High`, `Setup`, `Four`, `Tight`, `S`, `Three`, `One`, `Small`,
+`SmallBits`, `Dim`, `Bright`, `Blinding`, `S1`..`S17`. Compiled: `Large` and `Aliased`
+(`import ... as C`), `Nested` (an instance of an instance), `ByName` (a second import, a constant
+given a definition), `Exported` (`export`; Quint 0.33.1's compile keeps its `const K`, so it is
+`unreadable` either way), every module that is not a setup, a name Quint would refuse, and a
+file whose typecheck fails.
+
+### Tests
+
+- New: `names.rs` (4), `setup_tests.rs` (5), `quint_setups.rs` (5, a fake `quint` over the
+  committed fixtures), and in `quint_checks.rs`
+  `a_setup_prints_short_names_and_its_rule_is_selected_by_the_printed_name`.
+- Slice 1 to 7 tests changed (none is on `origin/main`):
+  `quint_temporal::a_run_with_no_fairness_may_stop_in_its_start_state` looks for the path under
+  `allHeard` instead of `SmallBits::ClockBits::allHeard`. No other test asserted a qualified
+  name; `places.rs`'s unit test keeps them, because `Located::definition` stays as Quint names
+  it.
+
+### Checks, each with its last line
+
+On the tree before merging the integration head `52cc2ea` (the tenth adversarial pass):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 1958 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the 64 of the 16 conformance files `origin/main` does not have, as in slices
+  2, 5, 6 and 7.
+- `tests_kept.py --base origin/main`: `tests kept: 1580 tests, 4610 assertions (base: 1304, 3798)`.
+
+After merging `52cc2ea`: clippy has no warnings, and `cargo test -p earnest_quint -p earnest-cli`
+gives 462 passed, 0 failed.
+
+`just lint-library`, `just counts` and `just benchmark` were not run: no search or library code
+changed.
+
+### Doubts
+
+- Equality is shown on 13 checks plus the 17 of `many.qnt`, not proved in general. The
+  conservative refusals cover what was not read in Quint's source (`export`, nested instances,
+  overrides that name definitions); anything new in a later Quint version (a flattening change)
+  would silently differ. The version is in every cache key, but the build itself does not check
+  it.
+- A built setup's ids are Quint's parse ids, where `compile` gives fresh ones. Only the places
+  of a refusal use ids: a refusal inside a spec definition now goes to its expression instead of
+  the definition. Runs are ordered by id, so the spec's runs come before the setup's own; with
+  `compile`, the setup's would come first.
+- An input of a shadowing `nondet` is named `x_97`, as Quint's compile names it. It is faithful,
+  but not pleasant.
+- `compiled.qnt` gets a typecheck that builds nothing, because `Nested` has a `.*` instance. It
+  is one Node start for a file of fallback shapes.
+- The `Exported` sample shows Quint 0.33.1 compiling `export B.*` with the constant left in. It
+  was left as a sample of a compiled fallback.
+
+### Unfinished, and the next step
+
+- Slice 3 (`oneOf` over a set from the state) had not reached the integration branch when this
+  report was written. Merge it, then run the Quint tests and the equality test again: the builder
+  copies expressions unchanged, so a new read operator needs nothing here.
+- Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
+  treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
