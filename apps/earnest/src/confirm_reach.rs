@@ -155,8 +155,8 @@ fn played_runs<'a>(found: &BTreeMap<&'a str, &'a Value>, runs: &Runs) -> Vec<&'a
     };
     let wanted = |name: &str| match runs {
         Runs::Tests => name.ends_with(TESTS_END_WITH),
-        Runs::Named(names) => named(names, name),
-        Runs::TestsAnd(names) => name.ends_with(TESTS_END_WITH) || named(names, name),
+        Runs::Named(listed) => named(listed, name),
+        Runs::TestsAnd(listed) => name.ends_with(TESTS_END_WITH) || named(listed, name),
         _ => false,
     };
     found

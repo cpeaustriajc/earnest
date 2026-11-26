@@ -144,15 +144,15 @@ impl Placer<'_> {
     }
 }
 
-fn definition_problems(placer: &Placer<'_>, each: &Marked<'_>, doc: &Doc) -> Vec<Problem> {
+fn definition_problems(locator: &Placer<'_>, each: &Marked<'_>, doc: &Doc) -> Vec<Problem> {
     let feature = format!("`{}`", each.name);
     let mut found: Vec<Problem> = doc
         .wrong
         .iter()
-        .map(|(line, message)| placer.at_definition(each, *line, (&feature, message)))
+        .map(|(line, message)| locator.at_definition(each, *line, (&feature, message)))
         .collect();
     if let Some(second) = doc.marks.get(1) {
-        found.push(placer.at_definition(each, second.line, (&feature, &second_mark())));
+        found.push(locator.at_definition(each, second.line, (&feature, &second_mark())));
     }
     let Some(mark) = doc.marks.first() else {
         return found;
@@ -163,15 +163,15 @@ fn definition_problems(placer: &Placer<'_>, each: &Marked<'_>, doc: &Doc) -> Vec
         Some(unknown_mark(&format!("@check {only}")))
     } else if !mark.names.is_empty() {
         Some(names_off_module(&each.name))
-    } else if let Some(what) = what_is(placer.places, each.id) {
+    } else if let Some(what) = what_is(locator.places, each.id) {
         Some(not_judged(&each.name, what))
-    } else if !fits(placer.places, each.id, mark.kind) {
-        let qualifier = placer.places.qualifier_of(each.id).unwrap_or_default();
+    } else if !fits(locator.places, each.id, mark.kind) {
+        let qualifier = locator.places.qualifier_of(each.id).unwrap_or_default();
         Some(misplaced_mark(mark.kind, &each.name, qualifier))
     } else {
         None
     };
-    found.extend(wrong.map(|message| placer.at_definition(each, mark.line, (&feature, &message))));
+    found.extend(wrong.map(|message| locator.at_definition(each, mark.line, (&feature, &message))));
     found
 }
 
@@ -193,17 +193,17 @@ fn push_new(list: &mut Vec<String>, name: &str) {
 }
 
 fn named_in_module(
-    placer: &Placer<'_>,
+    locator: &Placer<'_>,
     (main, doc_text): (&str, &str),
     mark: &Mark,
     judged: &mut Vec<Judged>,
     problems: &mut Vec<Problem>,
 ) {
-    let places = placer.places;
+    let places = locator.places;
     let visible = places.visible(main);
     for name in &mark.names {
         let Some(found) = visible.iter().find(|each| each.name == *name) else {
-            problems.push(placer.at_module(
+            problems.push(locator.at_module(
                 (main, doc_text),
                 mark.line,
                 &not_seen_named(name, main),
@@ -211,12 +211,12 @@ fn named_in_module(
             continue;
         };
         if let Some(what) = what_is(places, found.id) {
-            problems.push(placer.at_module((main, doc_text), mark.line, &not_judged(name, what)));
+            problems.push(locator.at_module((main, doc_text), mark.line, &not_judged(name, what)));
             continue;
         }
         if !fits(places, found.id, mark.kind) {
             let qualifier = places.qualifier_of(found.id).unwrap_or_default();
-            problems.push(placer.at_module(
+            problems.push(locator.at_module(
                 (main, doc_text),
                 mark.line,
                 &misplaced_mark(mark.kind, name, qualifier),
@@ -233,12 +233,42 @@ fn named_in_module(
     }
 }
 
+fn without_init_or_step(
+    locator: &Placer<'_>,
+    (main, doc_text): (&str, &str),
+    plan: &Plan,
+) -> Vec<Problem> {
+    let places = locator.places;
+    let action = places
+        .own_actions(main)
+        .into_iter()
+        .find(|each| *each != INIT && *each != STEP)
+        .unwrap_or("...");
+    let judged: Vec<String> = plan
+        .invariants
+        .iter()
+        .chain(&plan.temporal)
+        .map(|name| format!("`{name}`"))
+        .collect();
+    [INIT, STEP]
+        .into_iter()
+        .filter(|missing| !places.sees(main, missing))
+        .map(|missing| {
+            locator.at_module(
+                (main, doc_text),
+                0,
+                &no_init_or_step(main, missing, action, &judged.join(", ")),
+            )
+        })
+        .collect()
+}
+
 fn plan_of(
-    placer: &Placer<'_>,
+    locator: &Placer<'_>,
     (main, doc_text, doc): (&str, &str, &Doc),
     seen: &mut BTreeSet<Spot>,
 ) -> Result<Plan, Vec<Problem>> {
-    let places = placer.places;
+    let places = locator.places;
     let mut problems = Vec::new();
     let mut judged: Vec<Judged> = Vec::new();
     let mut ids: Vec<(u64, String)> = Vec::new();
@@ -269,7 +299,7 @@ fn plan_of(
         });
     }
     for mark in &doc.marks {
-        named_in_module(placer, (main, doc_text), mark, &mut judged, &mut problems);
+        named_in_module(locator, (main, doc_text), mark, &mut judged, &mut problems);
     }
     for each in &judged {
         seen.extend(spot_key(places.spot_of(each.id)));
@@ -307,32 +337,12 @@ fn plan_of(
     };
     let searches = !plan.invariants.is_empty() || !plan.temporal.is_empty();
     if searches {
-        for missing in [INIT, STEP] {
-            if !places.sees(main, missing) {
-                let actions = places.own_actions(main);
-                let action = actions
-                    .iter()
-                    .find(|each| **each != INIT && **each != STEP)
-                    .copied()
-                    .unwrap_or("...");
-                let judged: Vec<String> = plan
-                    .invariants
-                    .iter()
-                    .chain(&plan.temporal)
-                    .map(|name| format!("`{name}`"))
-                    .collect();
-                problems.push(placer.at_module(
-                    (main, doc_text),
-                    0,
-                    &no_init_or_step(main, missing, action, &judged.join(", ")),
-                ));
-            }
-        }
+        problems.extend(without_init_or_step(locator, (main, doc_text), &plan));
     } else if plan.runs == Runs::None && problems.is_empty() {
         if faulty {
             return Err(problems);
         }
-        problems.push(placer.at_module((main, doc_text), 0, &nothing_to_judge(main)));
+        problems.push(locator.at_module((main, doc_text), 0, &nothing_to_judge(main)));
     }
     if problems.is_empty() {
         Ok(plan)
@@ -342,7 +352,7 @@ fn plan_of(
 }
 
 pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned {
-    let placer = Placer {
+    let locator = Placer {
         places,
         real: real_file,
         shown,
@@ -354,14 +364,14 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         if !doc.is_marked() {
             continue;
         }
-        let problems = definition_problems(&placer, &each, &doc);
+        let problems = definition_problems(&locator, &each, &doc);
         if problems.is_empty() {
             if let Some(spot) = spot_key(each.spot) {
                 let feature = format!("`{}`", each.name);
                 let mark_line = doc.marks.first().map_or(0, |mark| mark.line);
                 planned.marked.push((
                     spot,
-                    placer.at_definition(&each, mark_line, (&feature, &not_seen(&each.name))),
+                    locator.at_definition(&each, mark_line, (&feature, &not_seen(&each.name))),
                 ));
             }
         } else {
@@ -371,13 +381,13 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         }
     }
     let mut modules = places.modules_in(real_file);
-    modules.sort_by_key(|module| placer.module_line(module.name).unwrap_or(u32::MAX));
+    modules.sort_by_key(|module| locator.module_line(module.name).unwrap_or(u32::MAX));
     for module in modules {
         let Some(text) = module.doc else {
             continue;
         };
         let doc = read_doc(text);
-        let at = |line: usize, message: &str| placer.at_module((module.name, text), line, message);
+        let at = |line: usize, message: &str| locator.at_module((module.name, text), line, message);
         let mut problems: Vec<Problem> = doc
             .wrong
             .iter()
@@ -399,12 +409,12 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
             problems.push(at(0, &constant_unset(module.name)));
         }
         if problems.is_empty() {
-            match plan_of(&placer, (module.name, text, &doc), &mut planned.seen) {
+            match plan_of(&locator, (module.name, text, &doc), &mut planned.seen) {
                 Ok(plan) => planned.plans.push(plan),
                 Err(found) => problems.extend(found),
             }
         } else {
-            let _ = plan_of(&placer, (module.name, text, &doc), &mut planned.seen);
+            let _ = plan_of(&locator, (module.name, text, &doc), &mut planned.seen);
         }
         planned.problems.extend(
             problems

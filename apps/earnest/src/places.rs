@@ -379,7 +379,7 @@ impl Places {
             each.kind != "export" && each.alias.as_deref() == Some(link.proto.as_str())
         });
         let brought = match imported {
-            Some(each) => self.brought(each, origin, depth.saturating_add(1), false),
+            Some(each) => self.brought(each, origin, depth.saturating_add(1)),
             None => self.module(&link.proto).map_or_else(Vec::new, |target| {
                 self.exported(target, origin, depth.saturating_add(1))
             }),
@@ -396,7 +396,7 @@ impl Places {
         }
     }
 
-    fn brought(&self, link: &Link, origin: &[u64], depth: usize, prefixed: bool) -> Vec<Visible> {
+    fn brought(&self, link: &Link, origin: &[u64], depth: usize) -> Vec<Visible> {
         let Some(target) = self.module(&link.proto) else {
             return Vec::new();
         };
@@ -407,13 +407,16 @@ impl Places {
         if link.kind == "instance" {
             deeper.extend(link.id);
         }
-        let found = Self::only(self.exported(target, &deeper, depth), link.only.as_deref());
+        Self::only(self.exported(target, &deeper, depth), link.only.as_deref())
+    }
+
+    fn named_by(link: &Link, found: Vec<Visible>) -> Vec<Visible> {
         let prefix = match (&link.alias, link.only.as_deref(), link.kind.as_str()) {
             (Some(alias), _, _) => Some(alias.clone()),
             (None, None, "import") => Some(link.proto.clone()),
             _ => None,
         };
-        match prefix.filter(|_| prefixed) {
+        match prefix {
             Some(prefix) => found
                 .into_iter()
                 .map(|each| Visible {
@@ -434,7 +437,7 @@ impl Places {
             if link.kind == "export" {
                 found.extend(self.exported_by(module, link, &[], 0));
             } else {
-                found.extend(self.brought(link, &[], 0, true));
+                found.extend(Self::named_by(link, self.brought(link, &[], 0)));
             }
         }
         let mut kept: Vec<Visible> = Vec::with_capacity(found.len());
