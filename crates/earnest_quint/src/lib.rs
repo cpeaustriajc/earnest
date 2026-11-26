@@ -24,6 +24,7 @@ mod reader;
 mod runs;
 mod scan;
 mod setup;
+mod spans;
 mod starts;
 mod temporal;
 mod view;
@@ -230,6 +231,8 @@ mod reads_tests;
 mod run_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod view_tests;
 
 #[cfg(test)]
 mod setup_tests;
