@@ -10,7 +10,8 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **Any first action:** a run may start with a helper (`initWith(2).then(inc)`), an action through a module name (`Before::init`), an `all { ... }` written in place, or a `nondet`, as `quint test` plays it. It was refused unless it started with `init`.
 - **Each run its own variables:** a run is played over the variables it reaches, and the search over those that `init`, `step` and the listed properties reach. A module that imports one spec twice and plays a run on the second copy is no longer refused for leaving its variable unassigned, and a setup with two instances of one spec plays the spec's runs.
 - **Unset variables:** a run that reads a variable its first action gives no value is `unreadable`, naming the run, the action and the variable, where `quint test` stops with `Variable y not set`.
-- **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`.
+- **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`, and may bring in what its runs use through any import.
+- **Helpers that chain steps:** a definition such as `action TwoSteps = init.then(step).then(step)` is played in place where a run calls it, with its arguments.
 
 See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
 

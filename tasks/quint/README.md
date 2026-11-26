@@ -3566,3 +3566,69 @@ the exported `TwoInstances.tla` declares `VARIABLES Fixed__n` alone.
   `Pair`'s runs hold, where the test asserted the refusal.
 - `crates/earnest_check/tests/explore/scripts.rs`: the helpers `plan` and `played` set the new
   fields `starts: None` and `fields: Vec::new()`.
+
+## Real models 1, second part: after the owner's re-run of bb60c5f
+
+Two gaps from the real project, each with its fixtures in `first/`:
+
+**A. A module of runs only on an imported copy** (`RunsOnly.qnt`, the owner's: `import
+CounterSpec as Main` and `Main::init.then(Main::step)`) was `unreadable` on bb60c5f, though
+7f18149 read it with `"init": "Main::init"`. The typecheck build takes only instances and
+modules of definitions, not `import M as A` of a spec with variables. Now, when it can't take
+a module, earnest compiles it as 7f18149 did. It passes `--init` and `--step` from the check
+when the module sees them (`Places::sees`, from `quint parse`), otherwise those of the first
+module it imports that has both (`Places::imported_init_and_step`: `Main::init`, or `init` for
+`import M.*`). That is one compile, cached as any other, and the runs are read with
+`read_runs`. A check is refused only when every compile fails, with Quint's error and the
+names to give.
+
+`Shapes.qnt` (with `Spec.qnt`, imported `from "./Spec"`) has one module of runs only for each
+way: `import Local.*`, `import Local as L`, `import Param(START = 2).* from "./Spec"`, `import
+Param(START = 4) as P`, `import Plain as F from "./Spec"`, several imports, variables of its
+own, and a mix. The real Quint calls, logged:
+
+```text
+typecheck sh/Shapes.qnt --out ...
+compile --target json --main AsImport --init L::init --step L::step sh/Shapes.qnt
+compile --target json --main StarImport --init init --step step sh/Shapes.qnt
+compile --target json --main Several --init F::init --step F::step sh/Shapes.qnt
+compile --target json --main FromFile --init F::init --step F::step sh/Shapes.qnt
+compile --target json --main OwnVariables --init A::init --step A::step sh/Shapes.qnt
+compile --target json --main Mixed --init init --step step sh/Shapes.qnt
+```
+
+`StarInstance` and `AsInstance` are built from the typecheck. All 11 runs pass in `quint test
+--backend typescript --main <M>` and hold in earnest. A runs-only entry that names `init` and
+`step` still searches nothing: an entry of runs only never searches (decided in the first part).
+
+**Nothing 7f18149 read is unreadable now**: 7f18149 built in a worktree and this branch,
+each given every compiled JSON fixture of `tasks/quint` and `crates/earnest_quint/fixtures`
+(100 files): 74 read by both, 6 read only now (`actionargument`, `allasbool`, `wider` of #67,
+and three of `first/`), 20 refused by both, none read before and refused now
+(`kept_tests::every_compiled_fixture_the_reader_took_before_runs_had_their_own_variables_is_still_read`
+holds the 74). With the real Quint, `setups/earnest.quint.json` went from 2 refusals to 1
+(only `compiled.qnt`'s imported run is left), and `first/earnest.quint.json` from 5 to 1
+(`Unset`, on purpose).
+
+**B. A definition that chains steps** (`HelperRun.qnt`, the owner's: `action TwoSteps: bool =
+init.then(step).then(step)` and `run twoStepsTest = TwoSteps.expect(n == 2)`) was refused as
+"a run operator outside a `run`". `runs.rs` now plays any definition whose body is a chain of
+`then`, `reps`, `expect` or `fail` (or a name for one, to 100 deep) in place where a run calls
+it, with its arguments held as the run's own values are. It must be an `action` or a `run`,
+since Quint refuses a `def` that updates variables (`QNT200 ... Use action instead`). An argument
+that reads the state is refused by name. Used as `step` (`StepIsChain`), the chain stays
+refused, now with "a chain of steps where one step is wanted: `then`, `reps`, `expect` and
+`fail` make a run, not one step".
+
+| Run of `Helpers.qnt` | `quint test` | earnest |
+|---|---|---|
+| `twoStepsTest`, `argumentsTest`, `startTest`, `middleTest`, `nestedTest`, `repsTest`, `paramRepsTest`, `runParamTest`, `failTest` | ok | holds |
+| `nondetArgTest` | ok (10000 samples) | holds |
+| `overTest` | failed (QNT511, false) | broken: step 6, `step`, can't happen here |
+| `wrongTest` | failed (QNT508, expect) | broken: what the run expects after step 2 is false here |
+| `HelperRun::twoStepsTest` | ok | holds |
+| `RunsOnly::stepsOnceTest` (both entries) | ok | holds |
+
+Tests: `quint_first::a_module_of_runs_only_on_a_plain_import_is_played_with_or_without_init_and_step_named`,
+`a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows`,
+`a_definition_that_chains_steps_is_played_where_a_run_calls_it`, and `kept_tests`.
