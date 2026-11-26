@@ -370,9 +370,22 @@ fn same_rule_about_runs(old: &Draft, before: &Eventually, after: &Eventually, ne
         && fair_actions(old) == fair_actions(new)
 }
 
-fn action_id<'d>(draft: &'d Draft, step: &Played) -> Option<&'d str> {
-    let action = draft.actions.get(step.action)?;
-    Some(action.id.as_str())
+fn same_step(old: &Draft, was: &Played, new: &Draft, now: &Played) -> bool {
+    let (Some(before), Some(after)) = (old.actions.get(was.action), new.actions.get(now.action))
+    else {
+        return false;
+    };
+    let value_now = |name: &str| {
+        let position = after.inputs.iter().position(|(given, _)| given == name)?;
+        now.input.get(position)
+    };
+    before.id == after.id
+        && was.input.len() == now.input.len()
+        && before
+            .inputs
+            .iter()
+            .zip(&was.input)
+            .all(|((name, _), value)| value_now(name) == Some(value))
 }
 
 fn same_steps(old: &Draft, before: &[Played], new: &Draft, after: &[Played]) -> bool {
@@ -380,7 +393,7 @@ fn same_steps(old: &Draft, before: &[Played], new: &Draft, after: &[Played]) -> 
         && before
             .iter()
             .zip(after)
-            .all(|(was, now)| action_id(old, was) == action_id(new, now) && was.input == now.input)
+            .all(|(was, now)| same_step(old, was, new, now))
 }
 
 fn setup_id(draft: &Draft, position: Option<usize>) -> Option<&str> {
@@ -1947,6 +1960,74 @@ mod tests {
             "the helper `level` gives another answer: every synced state has skew 0, so the \
              plain rule is told apart by no state and is `changed`, and the rule about runs and \
              the witness that call it are `changed`"
+        );
+    }
+
+    const DIAL_TS: &str = "import { m } from \"@earnestjs/model\";\n\
+        export const Dial = m.model(\"Dial\", { n: m.int(0, 3).initial(0) });\n\
+        export const turn = m.action(Dial, \"it turns\", {\n\
+        \tinput: { to: m.int(0, 3), by: m.int(1, 2) },\n\
+        \twhen: (s, { by }) => s.n === 0 && by === 2,\n\
+        \tchanges: (_, { to }) => ({ n: to }),\n\
+        });\n\
+        export const once = m.witness(Dial, \"once\", { steps: [m.step(turn, { to: 1, by: 2 })], expect: (s) => s.n === 1 });\n";
+
+    #[test]
+    fn a_witness_gives_its_values_to_the_same_input_names_whatever_order_they_are_declared_in() {
+        let reordered = DIAL_TS.replace(
+            "{ to: m.int(0, 3), by: m.int(1, 2) }",
+            "{ by: m.int(1, 2), to: m.int(0, 3) }",
+        );
+        assert_eq!(
+            changes_between("dial.model.ts", DIAL_TS, &reordered),
+            [],
+            "`once` still gives `to` 1 and `by` 2"
+        );
+        let other_values = DIAL_TS.replace("{ to: 1, by: 2 }", "{ by: 1, to: 2 }");
+        assert_eq!(
+            changes_between("dial.model.ts", DIAL_TS, &other_values),
+            [("once".to_owned(), Kind::Changed)],
+            "`once` now gives `to` 2 and `by` 1"
+        );
+    }
+
+    const DIAL_RS: &str = "use earnest::model::{Model, model, require};\n\
+        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]\n\
+        pub struct Dial {\n\
+        \x20   #[range(0, 3)]\n\
+        \x20   #[initial(0)]\n\
+        \x20   n: u8,\n\
+        }\n\
+        #[model]\n\
+        impl Dial {\n\
+        \x20   #[action(\"it turns\")]\n\
+        \x20   fn turn(&self, #[range(0, 3)] to: u8, #[range(1, 2)] by: u8) -> Option<Self> {\n\
+        \x20       require!(self.n == 0 && by == 2);\n\
+        \x20       Some(Self { n: to })\n\
+        \x20   }\n\
+        \x20   #[witness(\"once\")]\n\
+        \x20   fn once(&self) -> Option<bool> {\n\
+        \x20       let after = self.turn(1, 2)?;\n\
+        \x20       Some(after.n == 1)\n\
+        \x20   }\n\
+        }\n";
+
+    #[test]
+    fn a_rust_witness_whose_arguments_now_go_to_other_parameters_is_changed() {
+        let swapped = DIAL_RS.replace(
+            "#[range(0, 3)] to: u8, #[range(1, 2)] by: u8",
+            "#[range(1, 2)] by: u8, #[range(0, 3)] to: u8",
+        );
+        assert_eq!(
+            changes_between("dial.rs", DIAL_RS, &swapped),
+            [("once".to_owned(), Kind::Changed)],
+            "`self.turn(1, 2)` gave `to` 1 and `by` 2, and now gives `by` 1 and `to` 2"
+        );
+        let swapped_with_the_call = swapped.replace("self.turn(1, 2)", "self.turn(2, 1)");
+        assert_eq!(
+            changes_between("dial.rs", DIAL_RS, &swapped_with_the_call),
+            [],
+            "`self.turn(2, 1)` gives `by` 2 and `to` 1, the values `once` gave before"
         );
     }
 }

@@ -134,7 +134,11 @@ Refused, each named in the problem: a run that does not start with `init`, a `re
 
 The compiled JSON holds only the runs written in the checked module itself. Runs written in a module it imports, such as the runs of `Clock` in `module Small { import Clock(MaxTime = 3).* }`, are not in it yet.
 
-A module flattened from an instance names its definitions after it: a rule of `import Clock(MaxTime = 3).*` in the module `Small` is `Small::Clock::inRange`.
+## Names
+
+Quint names what it flattens from an instance after the instance: `Small::Clock::time`. Earnest prints each field, action, rule, temporal property and run by its last segment, `time`, when no other name of its kind in the model ends the same way. When two do, each keeps the shortest end that tells them apart: a check of `module Large { import Clock(MaxTime = 8) as C  temporal allHeard = C::allHeard }` that lists both `allHeard` and `C::allHeard` prints them so, where Quint names the second `Large::C::allHeard`. Invariants, temporal properties and runs count as one kind, because `--rule` selects among all of them.
+
+`--rule` takes the printed name, and so does a check's `runs` list. The TLA+ export uses the same names.
 
 ## The cache
 

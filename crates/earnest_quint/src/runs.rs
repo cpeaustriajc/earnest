@@ -1,6 +1,7 @@
 use crate::Runs;
 use crate::json::{Declaration, Def, Expr as Quint};
 use crate::model::{action, ids, picks};
+use crate::names::Short;
 use crate::reader::{Picked, Read, Reader, Refusal, all_of, constant, refusal};
 use earnest_ir::{Action, Code, Expr, Pick, Plan, Script, Stage};
 use earnest_value::Value;
@@ -395,10 +396,14 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
         }
         Runs::Named(names) => {
             let all: Vec<&Def> = every.collect();
+            let short = Short::of(all.iter().map(|def| def.name.as_str()));
             let mut found = Vec::with_capacity(names.len());
             let mut missing = Vec::new();
             for name in names {
-                match all.iter().find(|def| def.name == *name) {
+                match all
+                    .iter()
+                    .find(|def| def.name == *name || short.name(&def.name) == *name)
+                {
                     Some(def) => found.push(*def),
                     None => missing.push(refusal(
                         &format!("`run {name}`"),

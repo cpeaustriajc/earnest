@@ -17,6 +17,7 @@ mod builtins;
 mod data;
 mod json;
 mod model;
+mod names;
 mod reader;
 mod runs;
 mod scan;

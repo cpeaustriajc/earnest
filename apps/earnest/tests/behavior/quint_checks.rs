@@ -851,3 +851,44 @@ fn a_pick_among_every_integer_is_reported_at_its_line_in_the_quint_file() {
         "{run}"
     );
 }
+
+#[test]
+fn a_setup_prints_short_names_and_its_rule_is_selected_by_the_printed_name() {
+    let quint = Quint::new();
+    quint
+        .sandbox
+        .write("fake/compiled/SmallBits.json", &sample("smallbits.json"));
+    quint.with_specs(
+        "models",
+        &["clockbits"],
+        r#"{ "checks": [{ "file": "clockbits.qnt", "main": "SmallBits",
+          "temporal": ["allHeard", "timeAdvances", "fairHear", "leads"] }] }"#,
+    );
+    let run = quint.earnest(&["verify", "--rule", "allHeard"]);
+    run.exits(1);
+    let detail = run.detail("SmallBits");
+    let path = crate::support::path_under(&detail, &["broken", "allHeard"]);
+    assert!(path.actions().is_empty(), "the run stops at once\n{run}");
+    assert!(
+        detail
+            .iter()
+            .any(|line| line.trim() == "start  time = 0, seen = 0"),
+        "the fields by their short names\n{run}"
+    );
+    assert!(
+        !run.to_string().contains("SmallBits::"),
+        "no flattened name is printed\n{run}"
+    );
+    let report = quint.earnest(&["verify", "--json"]).json();
+    let ids: Vec<&str> = model(&report, "SmallBits")["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|rule| rule["id"].as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        ["allHeard", "timeAdvances", "fairHear", "leads"],
+        "{report}"
+    );
+}
