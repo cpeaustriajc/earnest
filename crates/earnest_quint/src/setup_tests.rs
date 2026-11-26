@@ -40,7 +40,7 @@ const BUILT: [Shape; 21] = [
     ),
     shape(("pure", "Four", "step"), &["inside", "notAll"], &[]),
     shape(
-        ("own", "Tight", "stepOrReset"),
+        ("own", "Tight", "step"),
         &["withinCap", "neverFull", "belowHalf"],
         &[],
     ),
@@ -57,25 +57,15 @@ const BUILT: [Shape; 21] = [
         &[],
         &["allHeard", "timeAdvances", "fairHear", "leads"],
     ),
-    shape(("lamp", "Dim", "step"), &["levelOk", "darkWhenOff"], &[]),
+    shape(("lamp", "Dim", "step"), &["L::levelOk", "darkWhenOff"], &[]),
     shape(("lamp", "Bright", "step"), &["levelOk"], &[]),
     shape(("lamp", "Blinding", "step"), &["levelOk"], &[]),
     shape(("clock", "Large", "step"), &["inv"], &[]),
-    Shape {
-        init: "B::init",
-        ..shape(
-            ("more", "Named", "B::step"),
-            &["B::ok", "B::below"],
-            &["B::grows"],
-        )
-    },
+    shape(("more", "Named", "step"), &["ok", "below"], &["grows"]),
     shape(("more", "Reexported", "step"), &["ok", "small"], &[]),
     shape(("more", "ByOwn", "step"), &["ok"], &[]),
     shape(("more", "ByName", "step"), &["ok"], &[]),
-    Shape {
-        init: "both",
-        ..shape(("more", "Two", "either"), &["ok", "fine"], &[])
-    },
+    shape(("more", "Two", "step"), &["ok", "fine"], &[]),
     shape(("more", "Pair", "step"), &["ok", "apart"], &[]),
     shape(("compiled", "Renamed", "step"), &["ok"], &[]),
 ];
@@ -179,7 +169,16 @@ fn the_runs_a_check_plays_are_kept_from_the_spec_module_after_quints_declaration
         .map(|(name, _)| name)
         .filter(|name| name.ends_with("tickTwice") || name.ends_with("hearAny"))
         .collect();
-    assert_eq!(runs, ["Small::Clock::tickTwice", "Small::Clock::hearAny"]);
+    assert_eq!(
+        runs,
+        [
+            "Small::C::tickTwice",
+            "tickTwice",
+            "Small::C::hearAny",
+            "hearAny"
+        ],
+        "the setup's own runs, and the spec's runs they play"
+    );
     let model =
         crate::read_located("ours", &ours, &named).unwrap_or_else(|_| panic!("the runs are read"));
     assert_eq!(
@@ -240,7 +239,7 @@ fn a_setup_of_any_other_shape_is_left_to_quint_compile() {
 #[test]
 fn an_exported_instance_reads_as_the_same_setup_imported_whole() {
     let more = typechecked("more");
-    let (invariants, temporal) = (owned(&["ok", "below"]), owned(&["grows"]));
+    let (invariants, temporal) = (owned(&["okOne", "belowOne"]), owned(&["growsOne"]));
     let read = |main: &str| {
         let built = more
             .setup(&Setup::new(
@@ -267,7 +266,7 @@ fn an_exported_instance_reads_as_the_same_setup_imported_whole() {
     );
     assert_eq!(
         exported.rule_ids().collect::<Vec<_>>(),
-        ["ok", "below", "grows", "upTest", "fullTest"]
+        ["okOne", "belowOne", "growsOne", "upTest", "fullTest"]
     );
     assert_eq!(exported.runs.starts, plain.runs.starts);
 }

@@ -9,6 +9,10 @@ use std::path::Path;
 const QUALIFIED: &str = "::";
 const RUN: &str = "run";
 const TESTS_END_WITH: &str = "Test";
+const EVERY_NAME: &str = "*";
+const CONSTANT: &str = "const";
+const INIT: &str = "init";
+const STEP: &str = "step";
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Names {
@@ -17,6 +21,50 @@ struct Names {
     instances: Vec<(String, String)>,
     has_an_instance: bool,
     run_prefixes: Vec<(String, String)>,
+    seen: Vec<Seen>,
+    constants: bool,
+    file: Option<String>,
+    id: Option<u64>,
+    doc: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Module<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) doc: Option<&'a str>,
+    pub(crate) constants: bool,
+    pub(crate) id: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Marked<'a> {
+    pub(crate) name: String,
+    pub(crate) doc: &'a str,
+    pub(crate) id: u64,
+    pub(crate) spot: Option<(&'a str, u32, u32)>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Seen {
+    proto: String,
+    prefix: String,
+    only: Option<String>,
+    id: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Imported<'a> {
+    pub(crate) proto: &'a str,
+    pub(crate) prefix: &'a str,
+    pub(crate) written: Option<(&'a str, usize, usize)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Documented<'a> {
+    pub(crate) name: String,
+    pub(crate) doc: &'a str,
+    pub(crate) qualifier: Option<&'a str>,
+    pub(crate) id: u64,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,15 +74,40 @@ pub(crate) struct Places {
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
     qualifiers: HashMap<u64, String>,
+    docs: HashMap<u64, String>,
+    spans: HashMap<u64, (usize, usize)>,
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
-fn names_of(module: &Value) -> Option<Names> {
+fn seen_of(kind: &str, declaration: &Value, proto: &str) -> Seen {
+    let alias = text(declaration, "qualifiedName");
+    let all = text(declaration, "defName");
+    let prefix = match (kind, alias, all) {
+        (_, Some(alias), _) => format!("{alias}{QUALIFIED}"),
+        ("instance", None, _) | (_, None, Some(_)) => String::new(),
+        _ => format!("{proto}{QUALIFIED}"),
+    };
+    Seen {
+        proto: proto.to_owned(),
+        prefix,
+        only: all.filter(|name| *name != EVERY_NAME).map(str::to_owned),
+        id: declaration.get("id").and_then(Value::as_u64),
+    }
+}
+
+fn names_of(module: &Value, at: &HashMap<u64, (String, u32, u32)>) -> Option<Names> {
     let mut names = Names {
         name: text(module, "name")?.to_owned(),
+        id: module.get("id").and_then(Value::as_u64),
+        doc: text(module, "doc").map(str::to_owned),
+        file: module
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|id| at.get(&id))
+            .map(|spot| spot.0.clone()),
         ..Names::default()
     };
     for declaration in module.get("declarations")?.as_array()? {
@@ -53,13 +126,44 @@ fn names_of(module: &Value) -> Option<Names> {
                         (_, None) => String::new(),
                     };
                     names.run_prefixes.push((proto.to_owned(), prefix));
+                    names.seen.push(seen_of(kind, declaration, proto));
                 }
+            }
+            (Some("export"), _, _) => {
+                let exported = text(declaration, "protoName").and_then(|alias| {
+                    names
+                        .instances
+                        .iter()
+                        .find(|(each, _)| each == alias)
+                        .map(|(_, proto)| proto.clone())
+                });
+                if let Some(proto) = exported {
+                    names.instances.push((proto.clone(), proto.clone()));
+                    names.seen.push(Seen {
+                        proto,
+                        prefix: String::new(),
+                        only: text(declaration, "defName")
+                            .filter(|name| *name != EVERY_NAME)
+                            .map(str::to_owned),
+                        id: None,
+                    });
+                }
+            }
+            (Some(CONSTANT), Some(name), Some(id)) => {
+                names.constants = true;
+                names.declared.push((name.to_owned(), id));
             }
             (Some(_), Some(name), Some(id)) => names.declared.push((name.to_owned(), id)),
             _ => {}
         }
     }
     Some(names)
+}
+
+fn span(entry: &Value) -> Option<(usize, usize)> {
+    let start = usize::try_from(entry.get(1)?.get("index")?.as_u64()?).ok()?;
+    let end = usize::try_from(entry.get(2)?.get("index")?.as_u64()?).ok()?;
+    Some((start, end))
 }
 
 fn spot(entry: &Value) -> Option<(String, u32, u32)> {
@@ -90,23 +194,39 @@ impl Places {
             .iter()
             .filter_map(|(id, entry)| Some((id.parse().ok()?, spot(entry)?)))
             .collect();
+        let spans = map
+            .get("map")?
+            .as_object()?
+            .iter()
+            .filter_map(|(id, entry)| Some((id.parse().ok()?, span(entry)?)))
+            .collect();
         let listed = parsed.get("modules")?.as_array()?;
-        let modules = listed.iter().filter_map(names_of).collect();
-        let qualifiers = listed
+        let modules = listed
+            .iter()
+            .filter_map(|module| names_of(module, &at))
+            .collect();
+        let declarations: Vec<&Value> = listed
             .iter()
             .filter_map(|module| module.get("declarations")?.as_array())
             .flatten()
-            .filter_map(|declaration| {
-                let id = declaration.get("id").and_then(Value::as_u64)?;
-                Some((id, text(declaration, "qualifier")?.to_owned()))
-            })
             .collect();
+        let kept = |key: &str| -> HashMap<u64, String> {
+            declarations
+                .iter()
+                .filter_map(|declaration| {
+                    let id = declaration.get("id").and_then(Value::as_u64)?;
+                    Some((id, text(declaration, key)?.to_owned()))
+                })
+                .collect()
+        };
         Some(Self {
             read: 0,
             files,
             at,
             modules,
-            qualifiers,
+            qualifiers: kept("qualifier"),
+            docs: kept("doc"),
+            spans,
         })
     }
 
@@ -198,6 +318,237 @@ impl Places {
             .collect()
     }
 
+    fn of_file<'a>(&'a self, file: &Path) -> impl Iterator<Item = &'a Names> + 'a {
+        let wanted = std::fs::canonicalize(file).ok();
+        self.modules.iter().filter(move |module| {
+            module
+                .file
+                .as_ref()
+                .and_then(|index| self.files.get(index))
+                .is_none_or(|path| std::fs::canonicalize(path).ok() == wanted)
+        })
+    }
+
+    pub(crate) fn modules_in(&self, file: &Path) -> Vec<Module<'_>> {
+        self.of_file(file)
+            .map(|module| Module {
+                name: &module.name,
+                doc: module.doc.as_deref(),
+                constants: module.constants,
+                id: module.id,
+            })
+            .collect()
+    }
+
+    pub(crate) fn marks_in(&self, file: &Path) -> Vec<Marked<'_>> {
+        let mut found = Vec::new();
+        for module in self.of_file(file) {
+            for (name, id) in &module.declared {
+                let Some(doc) = self.docs.get(id) else {
+                    continue;
+                };
+                found.push(Marked {
+                    name: name.clone(),
+                    doc,
+                    id: *id,
+                    spot: self.spot_of(*id),
+                });
+            }
+        }
+        found
+    }
+
+    pub(crate) fn spot_of(&self, id: u64) -> Option<(&str, u32, u32)> {
+        let (file, line, column) = self.at.get(&id)?;
+        Some((self.files.get(file)?.as_str(), *line, *column))
+    }
+
+    pub(crate) fn module_id(&self, main: &str) -> Option<u64> {
+        self.module(main)?.id
+    }
+
+    pub(crate) fn owner_of(&self, id: u64) -> Option<(&str, &str)> {
+        self.modules.iter().find_map(|module| {
+            module
+                .declared
+                .iter()
+                .find(|(_, each)| *each == id)
+                .map(|(name, _)| (module.name.as_str(), name.as_str()))
+        })
+    }
+
+    pub(crate) fn test_runs(&self, main: &str) -> Vec<String> {
+        self.runs_played(main, &[])
+    }
+
+    pub(crate) fn runs_played(&self, main: &str, marked: &[String]) -> Vec<String> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let is_a_test = |name: &str, id: &u64| {
+            self.qualifiers.get(id).map(String::as_str) == Some(RUN)
+                && (name.ends_with(TESTS_END_WITH) || marked.iter().any(|each| each == name))
+        };
+        let mut found: Vec<String> = module
+            .declared
+            .iter()
+            .filter(|(name, id)| is_a_test(name, id))
+            .map(|(name, _)| name.clone())
+            .collect();
+        for seen in &module.seen {
+            if let Some(spec) = self.module(&seen.proto) {
+                found.extend(
+                    spec.declared
+                        .iter()
+                        .filter(|(name, id)| is_a_test(&format!("{}{name}", seen.prefix), id))
+                        .filter(|(name, _)| seen.only.as_ref().is_none_or(|only| only == name))
+                        .map(|(name, _)| format!("{}{name}", seen.prefix)),
+                );
+            }
+        }
+        found
+    }
+
+    pub(crate) fn sees_init_and_step(&self, main: &str) -> bool {
+        self.sees(main, INIT) && self.sees(main, STEP)
+    }
+
+    pub(crate) fn imported(&self, main: &str) -> Vec<Imported<'_>> {
+        self.module(main).map_or_else(Vec::new, |module| {
+            module
+                .seen
+                .iter()
+                .map(|seen| Imported {
+                    proto: &seen.proto,
+                    prefix: &seen.prefix,
+                    written: seen.id.and_then(|id| {
+                        let (start, end) = self.spans.get(&id)?;
+                        let file = self.files.get(&self.at.get(&id)?.0)?;
+                        Some((file.as_str(), *start, *end))
+                    }),
+                })
+                .collect()
+        })
+    }
+
+    pub(crate) fn declares_any(&self, main: &str) -> bool {
+        self.module(main)
+            .is_some_and(|module| !module.declared.is_empty())
+    }
+
+    pub(crate) fn defined_in(&self, name: &str, main: &str) -> Option<(&str, &str)> {
+        let id = self.seen_definition(name, main)?;
+        self.modules.iter().find_map(|module| {
+            module
+                .declared
+                .iter()
+                .find(|(_, each)| *each == id)
+                .map(|(declared, _)| (module.name.as_str(), declared.as_str()))
+        })
+    }
+
+    fn seen_definition(&self, name: &str, main: &str) -> Option<u64> {
+        let module = self.module(main)?;
+        if let Some(id) = in_module(module, name) {
+            return Some(id);
+        }
+        module
+            .seen
+            .iter()
+            .filter(|seen| seen.only.as_deref().is_none_or(|only| name.ends_with(only)))
+            .find_map(|seen| {
+                let rest = name.strip_prefix(seen.prefix.as_str())?;
+                in_module(self.module(&seen.proto)?, rest)
+            })
+            .or_else(|| self.definition(name, main))
+    }
+
+    pub(crate) fn line_of(&self, name: &str, main: &str) -> Option<(&str, u32)> {
+        let id = self.seen_definition(name, main)?;
+        let (file, line, _) = self.at.get(&id)?;
+        Some((self.files.get(file)?.as_str(), line.saturating_add(1)))
+    }
+
+    pub(crate) fn documented_names(&self, main: &str) -> Vec<String> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = module
+            .declared
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
+        for seen in &module.seen {
+            let Some(spec) = self.module(&seen.proto) else {
+                continue;
+            };
+            for (name, _) in &spec.declared {
+                if seen.only.as_ref().is_none_or(|only| only == name) {
+                    names.push(format!("{}{name}", seen.prefix));
+                }
+            }
+        }
+        names
+    }
+
+    pub(crate) fn documented(&self, main: &str) -> Vec<Documented<'_>> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let mut found: Vec<Documented<'_>> = Vec::new();
+        let mut add = |name: String, id: u64| {
+            let Some(doc) = self.docs.get(&id) else {
+                return;
+            };
+            if found.iter().any(|each| each.name == name) {
+                return;
+            }
+            found.push(Documented {
+                name,
+                doc,
+                qualifier: self.qualifiers.get(&id).map(String::as_str),
+                id,
+            });
+        };
+        for (name, id) in &module.declared {
+            add(name.clone(), *id);
+        }
+        for seen in &module.seen {
+            let Some(spec) = self.module(&seen.proto) else {
+                continue;
+            };
+            for (name, id) in &spec.declared {
+                if seen.only.as_ref().is_none_or(|only| only == name) {
+                    add(format!("{}{name}", seen.prefix), *id);
+                }
+            }
+        }
+        found.sort_by_key(|each| {
+            self.at
+                .get(&each.id)
+                .map(|(file, line, column)| (file.clone(), *line, *column))
+        });
+        found
+    }
+
+    pub(crate) fn sees_a_test(&self, main: &str) -> bool {
+        let Some(module) = self.module(main) else {
+            return false;
+        };
+        let is_a_test = |names: &Names| {
+            names.declared.iter().any(|(name, id)| {
+                name.ends_with(TESTS_END_WITH)
+                    && self.qualifiers.get(id).map(String::as_str) == Some(RUN)
+            })
+        };
+        is_a_test(module)
+            || module
+                .seen
+                .iter()
+                .filter_map(|seen| self.module(&seen.proto))
+                .any(is_a_test)
+    }
+
     pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {
         self.module(main)
             .is_some_and(|module| module.has_an_instance)
@@ -237,15 +588,6 @@ impl Places {
         named
             .and_then(|module| in_module(module, name))
             .or_else(|| self.only_one(name))
-    }
-
-    pub(crate) fn qualifier(&self, name: &str, main: &str) -> Option<&str> {
-        let id = self.definition(name, main)?;
-        self.qualifiers.get(&id).map(String::as_str)
-    }
-
-    pub(crate) fn reaches(&self, name: &str, main: &str) -> bool {
-        self.definition(name, main).is_some()
     }
 
     fn place(&self, located: &Located, main: &str) -> Option<(&str, u32, u32)> {

@@ -68,7 +68,7 @@ const COMPILED: [(&str, &str); 15] = [
     ("RunsOnly", "RunsOnly"),
     ("HelperRun", "HelperRun"),
     ("Helpers", "Helpers"),
-    ("Helpers", "StepIsChain"),
+    ("Helpers", "StepIsChainOnward"),
     ("Shapes", "AsImport"),
     ("Shapes", "StarImport"),
     ("Shapes", "Several"),
@@ -100,7 +100,7 @@ struct Quint {
 }
 
 impl Quint {
-    fn new(checks: &str) -> Self {
+    fn new() -> Self {
         let sandbox = Sandbox::empty();
         let program = sandbox.path().join("fake/quint");
         sandbox.write("fake/quint", FAKE);
@@ -119,7 +119,6 @@ impl Quint {
                 &first(&format!("fixtures/{file}.{main}.json")),
             );
         }
-        sandbox.write("specs/earnest.quint.json", checks);
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
     }
@@ -169,14 +168,13 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
 
 #[test]
 fn the_owner_s_three_samples_each_print_one_pass_line() {
-    let quint = Quint::new(
-        r#"{ "checks": [
-            { "file": "RunFromHelper.qnt", "main": "RunFromHelper", "invariants": [], "temporal": [], "runs": true },
-            { "file": "TwoInstances.qnt", "main": "TwoInstances", "invariants": [], "temporal": [], "runs": true },
-            { "file": "OnlyRuns.qnt", "main": "OnlyRuns", "runs": ["fixedTest", "listTest", "thirdTest", "mixTest"] }
-        ] }"#,
-    );
-    let run = quint.earnest(&["verify", "specs"]);
+    let quint = Quint::new();
+    let run = quint.earnest(&[
+        "verify",
+        "specs/RunFromHelper.qnt",
+        "specs/TwoInstances.qnt",
+        "specs/OnlyRuns.qnt",
+    ]);
     run.exits(0);
     for main in ["RunFromHelper", "TwoInstances", "OnlyRuns"] {
         assert_eq!(
@@ -199,8 +197,18 @@ fn the_owner_s_three_samples_each_print_one_pass_line() {
 
 #[test]
 fn every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_variables() {
-    let quint = Quint::new(&first("earnest.quint.json"));
-    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let quint = Quint::new();
+    let report = quint
+        .earnest(&[
+            "verify",
+            "--json",
+            "specs/RunFromHelper.qnt",
+            "specs/TwoInstances.qnt",
+            "specs/OnlyRuns.qnt",
+            "specs/FirstSteps.qnt",
+            "specs/Unset.qnt",
+        ])
+        .json();
     let held = |ids: &[&str]| -> Vec<(String, String)> {
         pairs(&ids.iter().map(|id| (*id, "holds")).collect::<Vec<_>>())
     };
@@ -218,7 +226,7 @@ fn every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_v
             ("fixedTest", "holds"),
             ("listTest", "holds"),
             ("thirdTest", "holds"),
-            ("thirdOverTest", "broken"),
+            ("thirdOver", "broken"),
             ("mixTest", "holds"),
         ])
     );
@@ -293,33 +301,30 @@ fn held(ids: &[&str]) -> Vec<(String, String)> {
 
 #[test]
 fn a_module_of_runs_only_on_a_plain_import_is_played_with_or_without_init_and_step_named() {
-    for entry in [
-        r#"{ "file": "RunsOnly.qnt", "main": "RunsOnly", "runs": true }"#,
-        r#"{ "file": "RunsOnly.qnt", "main": "RunsOnly", "runs": true, "init": "Main::init", "step": "Main::step" }"#,
-    ] {
-        let quint = Quint::new(&format!(r#"{{ "checks": [{entry}] }}"#));
-        let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let quint = Quint::new();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/RunsOnly.qnt"])
+        .json();
+    for main in ["RunsOnly", "RunsOnlyNamed"] {
         assert_eq!(
-            verdicts(&report, "RunsOnly"),
+            verdicts(&report, main),
             held(&["stepsOnceTest"]),
-            "{entry}\n{report}"
-        );
-        assert!(
-            quint.compiled().is_empty(),
-            "a plain import is built from the typecheck: {entry} {:?}",
-            quint.compiled()
+            "{main}\n{report}"
         );
     }
+    assert!(
+        quint.compiled().is_empty(),
+        "a plain import is built from the typecheck: {:?}",
+        quint.compiled()
+    );
 }
 
 #[test]
 fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows() {
-    let checks: Vec<String> = SHAPES
-        .iter()
-        .map(|(main, _)| format!(r#"{{ "file": "Shapes.qnt", "main": "{main}", "runs": true }}"#))
-        .collect();
-    let quint = Quint::new(&format!(r#"{{ "checks": [{}] }}"#, checks.join(", ")));
-    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let quint = Quint::new();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/Shapes.qnt"])
+        .json();
     assert_eq!(report["unreadable"], serde_json::json!([]), "{report}");
     for (main, runs) in SHAPES {
         assert_eq!(
@@ -337,14 +342,15 @@ fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows()
 
 #[test]
 fn a_definition_that_chains_steps_is_played_where_a_run_calls_it() {
-    let quint = Quint::new(
-        r#"{ "checks": [
-            { "file": "HelperRun.qnt", "main": "HelperRun", "runs": true },
-            { "file": "Helpers.qnt", "main": "Helpers", "runs": true },
-            { "file": "Helpers.qnt", "main": "StepIsChain", "step": "onward", "invariants": [] }
-        ] }"#,
-    );
-    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let quint = Quint::new();
+    let report = quint
+        .earnest(&[
+            "verify",
+            "--json",
+            "specs/HelperRun.qnt",
+            "specs/Helpers.qnt",
+        ])
+        .json();
     assert_eq!(verdicts(&report, "HelperRun"), held(&["twoStepsTest"]));
     assert_eq!(
         verdicts(&report, "Helpers"),
@@ -378,15 +384,16 @@ fn a_definition_that_chains_steps_is_played_where_a_run_calls_it() {
 
 #[test]
 fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck() {
-    let quint =
-        Quint::new(r#"{ "checks": [{ "file": "OwnRuns.qnt", "main": "OwnRuns", "runs": true }] }"#);
-    let run = quint.earnest(&["verify", "specs"]);
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "specs/OwnRuns.qnt"]);
     run.exits(1);
     assert_eq!(
         run.model_line("OwnRuns")[..3],
         ["fail", "OwnRuns", "0 states"]
     );
-    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/OwnRuns.qnt"])
+        .json();
     assert_eq!(
         verdicts(&report, "OwnRuns"),
         pairs(&[
@@ -415,12 +422,10 @@ fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck()
 
 #[test]
 fn a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly() {
-    let checks: Vec<String> = ["PlainAs", "PlainStar", "PlainFrom", "PlainNested"]
-        .iter()
-        .map(|main| format!(r#"{{ "file": "Plain.qnt", "main": "{main}", "runs": true }}"#))
-        .collect();
-    let quint = Quint::new(&format!(r#"{{ "checks": [{}] }}"#, checks.join(", ")));
-    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let quint = Quint::new();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/Plain.qnt"])
+        .json();
     let spec = [("specTest", "holds"), ("specOverTest", "broken")];
     for main in ["PlainAs", "PlainStar"] {
         assert_eq!(

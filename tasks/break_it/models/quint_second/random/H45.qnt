@@ -48,13 +48,21 @@ module Spec45 {
       last' = last,
     }
   action step = any { enqueue, process, toggle }
+  /// @check
   val inv0 = not((flag or 1 <= pair._1))
+  /// @check
   val inv1 = not(2 == m.keys().size())
+  /// @check
   val inv2 = m.keys().fold(0, (acc, k) => acc + m.get(k)) <= pair._1
+  /// @check
   temporal t0 = eventually(not(flag))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(flag)
+  /// @check
   temporal t2 = weakFair(enqueue, vars) implies always(eventually(q.length() == q.length()))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(m.keys().contains("b") implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(not(flag)))
   run r0Test = init.then(step).expect(n <= pair._1)
   run r1Test = init.then(toggle).then(process).expect(m.keys().contains("a"))
@@ -62,6 +70,7 @@ module Spec45 {
   run repsTest = init.then(3.reps(_ => step)).expect(LIM <= m.keys().size())
 }
 
+/// @check
 module H45 {
   import Spec45(LIM = 3, KEYS = Set("a", "b"), START = (0, "x")).*
 }

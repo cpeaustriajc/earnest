@@ -1,5 +1,6 @@
 // Definitions that chain steps with `then`, `reps`, `expect` and `fail`, played where a run
 // calls them.
+/// @check
 module Helpers {
   var n: int
   var page: str
@@ -33,4 +34,14 @@ module StepIsChain {
   action step = n' = n + 1
   action Twice: bool = step.then(step)
   action onward = Twice
+}
+
+/// @check
+/// `StepIsChain` searched with `onward` as its step, which is a chain of steps.
+module StepIsChainOnward {
+  import StepIsChain as S
+  action init = S::init
+  action step = S::onward
+  /// @check
+  val counted = S::n >= 0
 }

@@ -268,7 +268,7 @@ mod with_quint {
     use std::os::unix::fs::PermissionsExt;
 
     use super::fixture;
-    use crate::support::{Run, Sandbox};
+    use crate::support::{Marks, Run, Sandbox, with_marks};
 
     const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -294,7 +294,7 @@ case "$1" in
 esac
 "##;
 
-    fn with_runplace(checks: &str) -> Sandbox {
+    fn with_runplace(marks: Marks<'_>) -> Sandbox {
         let sandbox = Sandbox::empty();
         sandbox.write("fake/quint", FAKE);
         fs::set_permissions(
@@ -303,10 +303,15 @@ esac
         )
         .expect("the fake can be made a program");
         sandbox.write("fake/compiled.json", &fixture("runplace.json"));
-        sandbox.write("fake/parse.json", &fixture("runplace.parse.json"));
+        sandbox.write(
+            "fake/parse.json",
+            &with_marks(&fixture("runplace.parse.json"), marks),
+        );
         sandbox.write("fake/sourcemap.json", &fixture("runplace.sourcemap.json"));
-        sandbox.write("models/runplace.qnt", &fixture("runplace.qnt"));
-        sandbox.write("models/earnest.quint.json", checks);
+        sandbox.write(
+            "models/runplace.qnt",
+            &format!("{}// marked: runplace\n", fixture("runplace.qnt")),
+        );
         sandbox
     }
 
@@ -340,9 +345,7 @@ esac
 
     #[test]
     fn a_refusal_inside_a_run_is_reported_at_the_refused_expression_in_the_quint_file() {
-        let sandbox = with_runplace(
-            r#"{ "checks": [{ "file": "runplace.qnt", "main": "runplace", "runs": true }] }"#,
-        );
+        let sandbox = with_runplace(&[("runplace", &[])]);
         let run = earnest(&sandbox, &["verify", "--json"]);
         run.exits(1);
         assert_eq!(
@@ -358,28 +361,6 @@ esac
             ],
             "line 9 is `run fromNowhereTest = step.then(step)`, whose first step starts at \
              column 25; line 10's `fail()` is applied to the chain that starts at column 22\n{run}"
-        );
-    }
-
-    #[test]
-    fn one_file_written_two_ways_with_one_main_is_unreadable() {
-        let sandbox = with_runplace(
-            r#"{ "checks": [
-                { "file": "runplace.qnt", "main": "runplace" },
-                { "file": "./sub/../runplace.qnt", "main": "runplace" }
-            ] }"#,
-        );
-        let run = earnest(&sandbox, &["verify", "--json"]);
-        run.exits(1);
-        let report = run.json();
-        assert_eq!(report["summary"]["unreadable"], 1, "{run}");
-        assert_eq!(
-            places(&report)
-                .into_iter()
-                .map(|(_, _, _, feature)| feature)
-                .collect::<Vec<_>>(),
-            ["`checks[1]`"],
-            "{run}"
         );
     }
 }

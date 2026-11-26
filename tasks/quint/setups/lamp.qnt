@@ -12,18 +12,27 @@ module Lamp {
   action off = all { on, level == Max, level' = 0, on' = false }
   action step = any { toggle, brighter, off }
 
+  /// @check
   val levelOk = level <= 6
   val darkWhenOff = not(on) implies level <= Max
 }
 
+/// @check
+/// The dim lamp, which also judges `darkWhenOff`.
 module Dim {
-  import Lamp(Max = 2).*
+  import Lamp(Max = 2) as L
+  action init = L::init
+  action step = L::step
+  /// @check
+  val darkWhenOff = L::darkWhenOff
 }
 
+/// @check
 module Bright {
   import Lamp(Max = 5).*
 }
 
+/// @check
 module Blinding {
   import Lamp(Max = 9).*
 }

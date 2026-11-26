@@ -9,6 +9,8 @@ mod confirm;
 mod confirm_quint;
 mod confirm_reach;
 mod discovery;
+mod marks;
+mod migrate;
 mod places;
 mod print;
 mod quint;

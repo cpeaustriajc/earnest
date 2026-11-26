@@ -18,8 +18,12 @@ module Spec {
     move(twice(x))
   }
 
+  /// @check
+
   val ok = x <= N
+  /// @check
   val notAmberTwice = not(f and l == Amber)
 }
 
+/// @check
 module S { import Spec(N = 3).* }

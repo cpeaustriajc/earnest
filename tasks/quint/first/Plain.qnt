@@ -8,16 +8,19 @@ module Spec {
   run specOverTest = init.then(4.reps(_ => step))
 }
 
+/// @check
 module PlainAs {
   import Spec as Main
   run ownTest = Main::init.then(Main::step).expect(Main::n == 1)
 }
 
+/// @check
 module PlainStar {
   import Spec.*
   run ownTest = init.then(step).expect(n == 1)
 }
 
+/// @check
 module PlainFrom {
   import Other as O from "./Other"
   import Spec as S
@@ -35,6 +38,7 @@ module Helped {
   action step = h' = twice(h) + 1
 }
 
+/// @check
 module PlainNested {
   import Helped as H
   run nestedTest = H::init.then(H::step).expect(H::h == 1)

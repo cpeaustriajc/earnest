@@ -5,6 +5,34 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint checks marked in the model, and no `earnest.quint.json`
+
+`earnest verify specs/` checks the modules marked `/// @check` in the `.qnt` files below `specs/`. No other file says what to check:
+
+```quint title="specs/bank.qnt"
+/// @check
+module bank {
+  var balance: int
+  action init = balance' = 0
+  action deposit = all { balance < 3, balance' = balance + 1 }
+  action withdraw = all { balance > 0, balance' = balance - 1 }
+  action step = any { deposit, withdraw }
+  /// @check
+  /// The balance never goes below zero.
+  val nonNegative = balance >= 0
+  run depositTest = init.then(deposit).expect(balance == 1)
+}
+```
+
+- **Modules:** a module is a check when its own doc comment starts with `@check`, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no `init` or `step` plays its runs and searches nothing.
+- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The lines below a mark are the rule's sentence.
+- **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check`; `/// @check broken` on a run says it must fail.
+- **Unreadable at the mark's line:** a word after `@check` that earnest does not know, a marked module that leaves a constant unset, a marked module with nothing to judge, and a marked definition or run that no check sees.
+- **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
+- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write and the module to add for another `init` or `step` or a second check of one module.
+
+See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
+
 ## November 2026: confirm a Quint check with Quint itself
 
 - **`earnest confirm --quint`:** runs Quint's own `quint verify --backend tlc` and `quint test` on each Quint check and prints `same`, `differs` or `cannot`. Quint reads the `.qnt` file itself, so a fault in earnest's reading of it shows, where `--tlc` checks the model as earnest read it. A check whose properties all hold costs one `quint verify`; a property gets a job of its own only when that job finds a violation.
@@ -32,7 +60,6 @@ See [What earnest runs](/reference/quint/#what-earnest-runs) and [How values pri
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.
 - **`expectCounterexample`:** invariants, temporal properties or runs listed there must break. A broken one prints `broken  P  (expected)` and keeps its path in the JSON with `"expected": "broken"`; one that holds fails the check.
 - **Stopping early:** a check whose only properties are expected invariants stops once it has found each counterexample, so a model with no end passes.
-- **Invariants as expressions:** an item of `invariants` or `expectCounterexample` may be a Quint expression, such as `Guard implies Inv`, named by its text or by `{ "name": ..., "is": ... }`.
 
 See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 

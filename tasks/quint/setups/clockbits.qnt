@@ -19,12 +19,17 @@ module ClockBits {
   val timeBounded = time <= MaxTime
   val skewOk = time <= MaxTime + Skew
 
+  /// @check
   temporal allHeard = eventually(seen == Nodes)
+  /// @check
   temporal timeAdvances = weakFair(step, (time, seen)) implies eventually(time == MaxTime)
+  /// @check
   temporal fairHear = (weakFair(hear, (time, seen)) and weakFair(tick, (time, seen))) implies always(eventually(seen == Nodes))
+  /// @check
   temporal leads = weakFair(step, (time, seen)) implies (time == 0).leadsTo(time == MaxTime)
 }
 
+/// @check
 module SmallBits {
   import ClockBits(MaxTime = 3, Skew = 1, Nodes = 3).*
 }

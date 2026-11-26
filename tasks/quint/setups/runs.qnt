@@ -8,6 +8,8 @@ module Spec {
   action tick = all { t < Steps, t' = t + 1 }
   action step = tick
 
+  /// @check
+
   val bounded = t <= Steps
 
   run twoTest = init.then(tick).then(tick).expect(t == 2)
@@ -15,8 +17,10 @@ module Spec {
   run overTest = init.then((Steps + 1).reps(_ => tick)).fail()
 }
 
+/// @check
 module Three {
   import Spec(Steps = 3).*
   run ownTest = init.then(tick).expect(t == 1)
 }
+/// @check
 module One { import Spec(Steps = 1).* }

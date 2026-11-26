@@ -62,13 +62,21 @@ module Spec63 {
     }
   }
   action step = any { enqueue, process, spend, drop }
+  /// @check
   val inv0 = (q.length() == 1 or (flag and flag))
+  /// @check
   val inv1 = (not(2 == LIM) and q.select(c => isInc(c)).length() <= 1)
+  /// @check
   val inv2 = (m.keys().contains("b") or not(last == Clear))
+  /// @check
   temporal t0 = eventually(flag)
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(flag)
+  /// @check
   temporal t2 = weakFair(step, vars) implies always(eventually(m.keys().contains("b")))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always((n <= LIM implies LIM == n) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(flag))
   run r0Test = init.then(drop).then(enqueue).expect(m.keys().contains("a"))
   run r1Test = init.then(step).then(step).expect((KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 1) or flag))
@@ -76,6 +84,7 @@ module Spec63 {
   run repsTest = init.then(1.reps(_ => step)).expect(q.length() == n)
 }
 
+/// @check
 module H63 {
   import Spec63(LIM = 3, KEYS = Set("a", "b"), START = (1, "x")).*
 }

@@ -130,7 +130,7 @@ pub struct Typechecked {
     next: u64,
 }
 
-/// One check of a setup module, as `earnest.quint.json` lists it.
+/// One check of a setup module: its `init`, `step`, properties and runs, as its marks give them.
 #[derive(Clone, Copy, Debug)]
 pub struct Setup<'c> {
     main: &'c str,

@@ -1,4 +1,5 @@
 // The owner's sample: a run that calls a helper built with `then`.
+/// @check
 module HelperRun {
   var n: int
   action init = n' = 0

@@ -1,3 +1,4 @@
+/// @check
 module RunFromHelper {
   var n: int
   action initWith(start: int): bool = n' = start

@@ -3,7 +3,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::support::{Run, Sandbox, finding, model, repository, rule};
+use crate::support::{Marks, Run, Sandbox, finding, model, repository, rule, with_marks};
 
 const FIXTURES: &str = "crates/earnest_quint/fixtures";
 
@@ -27,16 +27,24 @@ case "$1" in
       if [ "$previous" = "--source-map" ]; then map="$argument"; fi
       previous="$argument"
     done
-    echo '{"modules":[]}' > "$out"
+    cp "$here/parse.json" "$out"
     echo '{"sourceIndex":{},"map":{}}' > "$map"
     ;;
 esac
 "#;
 
-const CHECKS: &str = r#"{ "checks": [
-  { "file": "reads.qnt", "main": "reads",
-    "invariants": ["natural", "booleans", "names", "only", "operators", "folded", "small"] }
-] }"#;
+const MARKS: Marks<'static> = &[(
+    "reads",
+    &[
+        ("natural", "val", "@check"),
+        ("booleans", "val", "@check"),
+        ("names", "val", "@check"),
+        ("only", "val", "@check"),
+        ("operators", "val", "@check"),
+        ("folded", "val", "@check"),
+        ("small", "val", "@check"),
+    ],
+)];
 
 const HOLDING: [&str; 6] = [
     "natural",
@@ -60,8 +68,11 @@ fn checked(arguments: &[&str]) -> Run {
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
         .expect("the fake can be made a program");
     sandbox.write("fake/compiled/reads.json", &fixture("reads.json"));
-    sandbox.write("specs/reads.qnt", &fixture("reads.qnt"));
-    sandbox.write("specs/earnest.quint.json", CHECKS);
+    sandbox.write("fake/parse.json", &with_marks(r#"{"modules":[]}"#, MARKS));
+    sandbox.write(
+        "specs/reads.qnt",
+        &format!("{}// marked: reads\n", fixture("reads.qnt")),
+    );
     let empty = sandbox.path().join("no-programs");
     fs::create_dir_all(&empty).expect("an empty folder can be made");
     Run::of(
