@@ -8,6 +8,8 @@ Earnest's state search for XState v5 machines, in two parts, both built on `sear
   `model.getShortestPaths()`, and gets one shortest path to every reachable state.
 - `checkMachine`, which checks rules and stuck states on a machine, as `earnest verify` does on a
   model, and gives the shortest path of events to each problem.
+- `modelFileOf`, which writes a machine out as a `.model.ts` file, so `earnest verify` and TLC
+  can redo that check without running JavaScript.
 
 The [integration page](https://earnest.cpeaustriajc.dev/integrations/xstate/) on the docs site
 walks through both examples, the schema and the limits.
@@ -259,6 +261,129 @@ nothing is searched from 4 or 5.
   fields, `{}` for none; anything else, a whole `m.record(...)` included, is refused the same
   way.
 
+## Writing a machine out as a model file
+
+`checkMachine` searches in the test's own process. `modelFileOf` writes the machine out as a
+model file, so the `earnest` binary and TLC can confirm that search on their own.
+`test/open-turnstile-model.test.ts` writes the open turnstile with the options its check used,
+and the context declared:
+
+```ts title="test/open-turnstile-model.test.ts"
+import { readFileSync } from "node:fs";
+import { m } from "@earnestjs/model";
+import { modelFileOf } from "@earnestjs/xstate";
+import { expect, test } from "vitest";
+import { openTurnstile } from "./machines/open-turnstile.ts";
+
+test("the open turnstile is written out as a model file", () => {
+  const { text, threw } = modelFileOf(openTurnstile, {
+    name: "OpenTurnstile",
+    events: [{ type: "PAY" }, { type: "PUSH" }, { type: "ENTER" }],
+    context: { paid: m.boolean() },
+    rules: {
+      locked: {
+        says: "The gate is never open unpaid",
+        holds: (snapshot) => snapshot.matches("locked") || snapshot.context.paid,
+      },
+    },
+  });
+  expect(threw).toStrictEqual([]);
+  const committed = new URL("models/open-turnstile.model.ts", import.meta.url);
+  expect(text).toBe(readFileSync(committed, "utf8"));
+});
+```
+
+`text` is the committed file `test/models/open-turnstile.model.ts`:
+
+```ts title="test/models/open-turnstile.model.ts"
+import { m } from "@earnestjs/model";
+
+export const OpenTurnstile = m.model("OpenTurnstile", {
+  state: m.enum(["locked", "open"]).initial("locked"),
+  paid: m.boolean().initial(false),
+});
+
+export const PAY = m.action(OpenTurnstile, "PAY", {
+  when: (s) => s.state === "locked" && !s.paid,
+  changes: () => ({ paid: true }),
+});
+
+export const PUSH = m.action(OpenTurnstile, "PUSH", {
+  when: (s) => s.state === "locked",
+  changes: () => ({ state: "open" }),
+});
+
+export const ENTER = m.action(OpenTurnstile, "ENTER", {
+  when: (s) => s.state === "open",
+  changes: () => ({ state: "locked", paid: false }),
+});
+
+export const locked = m.rule(
+  OpenTurnstile,
+  "The gate is never open unpaid",
+  (s) => !(s.state === "open" && !s.paid),
+);
+
+export type State = m.Infer<typeof OpenTurnstile>;
+```
+
+`earnest verify test/models/open-turnstile.model.ts` gives what `checkMachine` gave: `fail`, 4
+states, and `locked` broken after the one action `PUSH`. `earnest confirm --tlc
+tla2tools.jar test/models/open-turnstile.model.ts` prints `same     OpenTurnstile  4 states
+fail`: TLC finds the same.
+
+- No guard or `assign` is read as source. `modelFileOf` runs the machine's own `transition`
+  with every listed event and declared payload, on every state value the machine can take, with
+  every combination of declared context values, and writes the results as tables. A guard may
+  call a helper, read a constant or look up a `Map`. The combinations include contexts
+  `checkMachine` never reaches, so `earnest verify` searches the whole table from the start.
+- The model has the field `state`, a label for the state value, such as `locked` or
+  `on.lid.shut, on.water.cold`, and one field per declared context field, with the declaration
+  given. Where two states differ only in what a history state remembers, the label says it, as
+  in `off (on.last: on.high)`. Each field starts where the initial snapshot, made with `input`,
+  starts.
+- Each event type is an action whose sentence is the event type, with the payload fields as its
+  `input`. Each rule keeps its id and sentence. A top-level final state is an `m.end`. An id
+  that is not a name, such as `user.click`, becomes one, such as `user_click`. `actions` and
+  `rules` in the result map each exported id back to the event type or rule id.
+- A transition that leaves a declaration, such as `visitors` going to 4 past `m.int(0, 3)`, is
+  written as it is, so `earnest verify` reports the state out of range, as `checkMachine` does.
+- A guard, `assign` or rule that throws at a point of the table is listed in `threw`. The file
+  makes reaching that point visible: the event sets the extra field `threw` to 1, outside
+  `m.int(0, 0)`, so the state is out of range, and the rule is broken there. Expect `threw` to
+  be empty, as the test above does.
+- An optional field's `null` is given to the machine as a missing field when the initial context
+  lacks the field, and as `null` otherwise. A missing field and `undefined` read back as `null`,
+  so a machine that tells `null` from a missing field can count differently.
+- Each event and each rule gets a snapshot rebuilt from the state value, the context and what
+  history remembers, so an `assign` that changes the context in place changes nothing else. The
+  snapshot has no `output` and no child actors: a rule must not read them.
+- The file typechecks as long as every value it writes is of its field's type. A transition that
+  writes text outside an `m.enum`, or a number outside an `m.oneOf`, gives a file `earnest
+  verify` reads but `tsc` refuses.
+- The same machine and options give the same text. `maxStates` is not written: pass
+  `--max-states` to `earnest verify`.
+
+`modelFileOf` refuses, with an error that names the field or the event:
+
+- a context field without a declaration in `context`, before any event is tried:
+  ``modelFileOf can't write the context field `paid` of the initial snapshot: it has no
+  declaration in context``;
+- `events` given as a function, and a listed event with a payload, such as
+  `{ type: "ENTER", group: 1 }`: write those as a record of event types;
+- a table of more than `MOST_TABLE_ROWS` (100,000) rows. A row is one state value with one
+  combination of context values and one event with one payload, or one rule. The count for one
+  state value is checked from the declarations before any event is tried, and the count for the
+  state values found as they are found;
+- a next context that the declaration's type can't hold, such as text in a field declared
+  `m.boolean()`, or a field with no declaration, naming the event that wrote it;
+- an initial context outside its declarations, a model name or field name that is not an
+  identifier, and the declarations `checkMachine` refuses.
+
+The confirmation shows that the search over the machine's own transitions, on the declared
+values, gives the same states and verdicts in `earnest verify` and TLC. It does not check the
+machine against the app: test the app against the machine with `earnestPaths`.
+
 ## Limits
 
 - The paths come in the order the search reached their states: breadth first, events in the
@@ -282,8 +407,9 @@ nothing is searched from 4 or 5.
 - All events are sent in one actor system, so a child actor with a `systemId` that starts a
   second time, as when its state is entered again, makes `checkMachine` throw that the id
   already exists.
-- The search runs in the test's process, on the machine's `transition`, not in the `earnest`
-  binary.
+- `checkMachine` runs in the test's process, on the machine's `transition`, not in the `earnest`
+  binary. `modelFileOf` writes a file the binary can check.
+- `modelFileOf` takes the same limits: no timer, child actor or `onDone`.
 
 ## Development
 
@@ -302,6 +428,10 @@ bun run test        # vitest run
 - The tests of the schema compare a counter out of range with the same model checked by
   `explore`, try each kind of declaration as a context field and as a payload, and check the
   refusal of each kind that is not plain.
+- The tests of `modelFileOf` compare each file in `test/models/` with what it writes, byte for
+  byte, and compare `earnest verify --json` on it with `checkMachine` on the machine. They build
+  the `earnest` binary with `cargo build --release`, as the tests of `@earnestjs/cli` do, and are
+  skipped when `cargo` is not on the `PATH`.
 - `tsconfig.json` sets `skipLibCheck`: the declarations `xstate` ships do not compile under
   `exactOptionalPropertyTypes`, which this package keeps on for its own code.
 - `bun run build` and `prepack` work as in `@earnestjs/model`.

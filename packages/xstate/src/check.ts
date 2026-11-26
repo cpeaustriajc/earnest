@@ -184,7 +184,8 @@ type Reached = Arrival<AnyMachineSnapshot, EventObject>;
 const STUCK =
   "none of the listed events can happen here, and the machine is not in a top-level final state";
 
-const isPlain = (value: object): boolean => {
+/** Whether `value` is a plain object: made by `{}`, `Object.create(null)` or JSON. */
+export const isPlain = (value: object): boolean => {
   const prototype: unknown = Object.getPrototypeOf(value);
   return prototype === null || Object.getPrototypeOf(prototype) === null;
 };
@@ -194,7 +195,11 @@ const kindOf = (value: unknown): string =>
     ? value.constructor?.name || Object.prototype.toString.call(value).slice(8, -1)
     : typeof value;
 
-const keyOf = (value: unknown): string => {
+/**
+ * A text that is equal for two values exactly when `checkMachine` takes them for the same part
+ * of a state. Throws a `TypeError` for a value that is not plain data.
+ */
+export const keyOf = (value: unknown): string => {
   if (typeof value === "number") {
     return value === 0 ? "0" : String(value);
   }
@@ -231,7 +236,10 @@ const keyOf = (value: unknown): string => {
   );
 };
 
-const historyOf = ({ historyValue }: AnyMachineSnapshot): Readonly<Record<string, string[]>> =>
+/** What each history state of the snapshot remembers, by node id, sorted. */
+export const historyOf = ({
+  historyValue,
+}: AnyMachineSnapshot): Readonly<Record<string, string[]>> =>
   Object.fromEntries(
     Object.entries(historyValue).map(([historyNode, remembered]) => [
       historyNode,
@@ -247,9 +255,11 @@ const stateKey = (snapshot: AnyMachineSnapshot): string => {
   return keyOf({ value, context, status, history: historyOf(snapshot) });
 };
 
-type Declared = Declaration<unknown, never>;
+/** A declaration of plain values, as the options take it. */
+export type Declared = Declaration<unknown, never>;
 
-type Fields = readonly (readonly [string, Declared])[];
+/** The declarations of a record of fields, in the record's order. */
+export type Fields = readonly (readonly [string, Declared])[];
 
 const article = (word: string): string =>
   /^[aeio]/i.test(word) || word.startsWith("u") ? `an ${word}` : `a ${word}`;
@@ -262,9 +272,10 @@ const isDeclaration = (value: unknown): value is Declared =>
   typeof Reflect.get(value, "has") === "function" &&
   typeof Reflect.get(value, "values") === "function";
 
-const described = (value: unknown): string => {
-  if (value === null) {
-    return "null";
+/** What `value` is, in words, for an error that refuses it: `the number 1`, `a function`. */
+export const described = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return String(value);
   }
   if (isDeclaration(value)) {
     return `${article(value.kind)} declaration`;
@@ -281,37 +292,50 @@ const described = (value: unknown): string => {
   return typeof value === "function" ? "a function" : `the ${typeof value} ${String(value)}`;
 };
 
-const EACH_FIELD = "give a declaration written with m from @earnestjs/model for each field";
+/** The advice that ends a refusal of a record of fields. */
+export const EACH_FIELD = "give a declaration written with m from @earnestjs/model for each field";
 
-const fieldRecord = (option: string, value: unknown, expected: string): object => {
+/**
+ * `value` when it is a plain record that is not a declaration; otherwise a `TypeError` in the
+ * words of `caller`, saying what `value` is and that `expected` was.
+ */
+export const fieldRecord = (
+  caller: string,
+  option: string,
+  value: unknown,
+  expected: string,
+): object => {
   if (typeof value === "object" && value !== null && isPlain(value) && !isDeclaration(value)) {
     return value;
   }
-  throw new TypeError(
-    `checkMachine can't take ${option}: it is ${described(value)}, not ${expected}`,
-  );
+  throw new TypeError(`${caller} can't take ${option}: it is ${described(value)}, not ${expected}`);
 };
 
-const plainFields = (option: string, schema: object): Fields =>
+/**
+ * The declarations of `schema`, the option named `option`, without its `undefined` entries.
+ * Throws a `TypeError` in the words of `caller` for an entry that is not a declaration of plain
+ * values.
+ */
+export const plainFields = (caller: string, option: string, schema: object): Fields =>
   Object.entries(schema).flatMap(([name, declared]: readonly [string, unknown]) => {
     if (declared === undefined) {
       return [];
     }
     if (!isDeclaration(declared)) {
       throw new TypeError(
-        `checkMachine can't take ${option}.${name}: it is ${described(declared)}, not a declaration; write one with m from @earnestjs/model, such as m.int(0, 3), or m.record({ ... }) for an object`,
+        `${caller} can't take ${option}.${name}: it is ${described(declared)}, not a declaration; write one with m from @earnestjs/model, such as m.int(0, 3), or m.record({ ... }) for an object`,
       );
     }
     const held: string | null | undefined = declared.libraryKind;
     if (held === undefined) {
       throw new TypeError(
-        `checkMachine can't take ${option}.${name}: it was made with an @earnestjs/model older than the one @earnestjs/xstate uses; install the version it depends on`,
+        `${caller} can't take ${option}.${name}: it was made with an @earnestjs/model older than the one @earnestjs/xstate uses; install the version it depends on`,
       );
     }
     if (held !== null) {
       const holding = held === declared.kind ? "" : ` that holds ${article(held)}`;
       throw new TypeError(
-        `checkMachine can't take ${option}.${name}, ${article(declared.kind)} declaration${holding}: its values are objects of @earnestjs/model, not plain data an XState context or event holds; declare booleans, numbers, texts, optionals and records of those`,
+        `${caller} can't take ${option}.${name}, ${article(declared.kind)} declaration${holding}: its values are objects of @earnestjs/model, not plain data an XState context or event holds; declare booleans, numbers, texts, optionals and records of those`,
       );
     }
     return [[name, declared] as const];
@@ -319,23 +343,32 @@ const plainFields = (option: string, schema: object): Fields =>
 
 type EventList = (snapshot: AnyMachineSnapshot) => readonly EventObject[];
 
-const payloadsOf = (events: object): readonly (readonly [string, Fields])[] =>
+/**
+ * Each event type of an event schema with the declarations of its payload fields, in the
+ * schema's order. Throws a `TypeError` in the words of `caller` for an entry that is not a plain
+ * record of declarations, or that declares `type`.
+ */
+export const payloadsOf = (
+  caller: string,
+  events: object,
+): readonly (readonly [string, Fields])[] =>
   Object.entries(events).flatMap(([type, payload]: readonly [string, unknown]) => {
     if (payload === undefined) {
       return [];
     }
     const option = `events.${type}`;
     const fields = fieldRecord(
+      caller,
       option,
       payload,
       `a record of payload fields; ${EACH_FIELD}, such as { group: m.int(1, 2) }, or {} for none`,
     );
     if (Object.hasOwn(fields, "type")) {
       throw new TypeError(
-        `checkMachine can't take ${option}.type: an event's type is its key in events`,
+        `${caller} can't take ${option}.type: an event's type is its key in events`,
       );
     }
-    return [[type, plainFields(option, fields)] as const];
+    return [[type, plainFields(caller, option, fields)] as const];
   });
 
 const eventListOf = (events: MachineEvents<AnyStateMachine>): EventList => {
@@ -346,11 +379,12 @@ const eventListOf = (events: MachineEvents<AnyStateMachine>): EventList => {
     return () => events;
   }
   const schema = fieldRecord(
+    "checkMachine",
     "events",
     events,
     "a list of events, a function that gives one, or a record of event types, such as { ENTER: { group: m.int(1, 2) } }",
   );
-  const listed = payloadsOf(schema).flatMap(([type, fields]) => {
+  const listed = payloadsOf("checkMachine", schema).flatMap(([type, fields]) => {
     try {
       return combinationsOf(Object.fromEntries(fields)).map((row) => ({ type, ...row }));
     } catch (error) {
@@ -438,8 +472,10 @@ const check = (
     options.context === undefined
       ? null
       : plainFields(
+          "checkMachine",
           "context",
           fieldRecord(
+            "checkMachine",
             "context",
             options.context,
             `a record of context fields; ${EACH_FIELD}, such as { visitors: m.int(0, 3) }`,
