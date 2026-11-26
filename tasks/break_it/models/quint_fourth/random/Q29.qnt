@@ -54,12 +54,15 @@ module Q29spec {
   run r2Test = init.then(buy(1)).expect(got.forall(p => p._1 == 2))
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(cnt.get(1) == cnt.get(1)) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q29A {
   import Q29spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q29B {
   import Q29spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q29C {
   import Q29spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 1).*
 }

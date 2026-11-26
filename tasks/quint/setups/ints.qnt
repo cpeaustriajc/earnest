@@ -16,5 +16,7 @@ module Spec {
   temporal reaches = weakFair(step, n) implies eventually(n == Max + Start)
 }
 
+/// @check below, small, reaches
 module Low { import Spec(Start = 0, Max = 3).* }
+/// @check below, small, reaches
 module High { import Spec(Start = 2, Max = 5).* }

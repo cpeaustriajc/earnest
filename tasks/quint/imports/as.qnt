@@ -17,6 +17,7 @@ module SpecAs {
   run downTest = init.then(down).expect(last == T::Down(1))
 }
 
+/// @check ok, noDownAtTop, small
 module As {
   import Kinds.* from "./star"
   import Helpers.* from "./star"

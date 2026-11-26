@@ -29,6 +29,7 @@ module Spec {
   val known = Names.contains(who)
 }
 
+/// @check inRange, paired, known
 module Setup {
   import Spec(
     On = true,

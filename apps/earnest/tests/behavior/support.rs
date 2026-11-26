@@ -366,3 +366,9 @@ pub(crate) fn without(value: &Value, keys: &[&str]) -> Value {
 pub(crate) fn without_timings(report: &Value) -> Value {
     without(report, &["milliseconds", "cached"])
 }
+
+pub(crate) fn checks(name: &str) -> String {
+    let path = repository().join("tasks/quint/checks").join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+}

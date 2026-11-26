@@ -7,6 +7,7 @@ module Counter {
   action InitOn(v: int): bool = n' = v
 }
 
+/// @check
 module OnlyRuns {
   import Counter(START = 0) as Fixed from "./OnlyRuns"
   import Counter(START = 5) as List from "./OnlyRuns"

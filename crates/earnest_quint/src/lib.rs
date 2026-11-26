@@ -40,8 +40,8 @@ pub fn is_compiled_quint(source: &str) -> bool {
     serde_json::from_str::<json::Probe>(source).is_ok_and(|probe| probe.stage == "compiling")
 }
 
-/// Which `run` definitions of the main module are played, as a check lists them in
-/// `earnest.quint.json`. The runs it does not choose are not read at all.
+/// Which `run` definitions of the main module are played: the ones whose name ends in `Test`,
+/// or a list that the marks of the module give. The runs it does not choose are not read at all.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Runs {
@@ -53,6 +53,41 @@ pub enum Runs {
     /// The runs with these names, in this order. A name the module has no run of makes the
     /// file unreadable.
     Named(Vec<String>),
+    /// The runs whose name ends in `Test`, as [`Runs::Tests`] plays them, and the runs with
+    /// these names besides. A name the module has no run of makes the file unreadable.
+    TestsAnd(Vec<String>),
+}
+
+const TESTS_END_WITH: &str = "Test";
+
+impl Runs {
+    /// Whether the run of this name, as the module or one of its instances writes it, is played.
+    /// `alias` is the name of the instance the run is written in, when it has one.
+    #[must_use]
+    pub fn plays(&self, name: &str, alias: Option<&str>) -> bool {
+        let listed = |names: &[String]| {
+            names.iter().any(|listed| {
+                listed == name
+                    || alias.is_some_and(|alias| *listed == format!("{alias}::{name}"))
+                    || name.ends_with(&format!("::{listed}"))
+            })
+        };
+        match self {
+            Self::None => false,
+            Self::Tests => name.ends_with(TESTS_END_WITH),
+            Self::Named(names) => listed(names),
+            Self::TestsAnd(names) => name.ends_with(TESTS_END_WITH) || listed(names),
+        }
+    }
+
+    /// The names listed beside the runs whose name ends in `Test`, or in place of them.
+    #[must_use]
+    pub fn listed(&self) -> &[String] {
+        match self {
+            Self::Named(names) | Self::TestsAnd(names) => names,
+            Self::None | Self::Tests => &[],
+        }
+    }
 }
 
 /// A problem with what is known of where it comes from, so a caller that has the `.qnt` file's

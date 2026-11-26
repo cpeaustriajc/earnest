@@ -4,6 +4,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use crate::support::{Run, Sandbox, find_model, model, repository};
 
 const FAKE: &str = r##"#!/bin/sh
@@ -50,8 +52,8 @@ case "$1" in
       sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" \
         "$here/parsed/$name.sourcemap.json" > "$map"
     else
-      echo '{"modules":[]}' > "$out"
-      echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+      echo "error: no parse of $name.qnt is recorded" >&2
+      exit 1
     fi
     ;;
 esac
@@ -67,9 +69,11 @@ const FAILED_COMPILE: &str = "
 error: parsing failed
 ";
 
-const COUNTER_CHECKS: &str = r#"{ "checks": [
-  { "file": "counter.qnt", "main": "counter", "invariants": ["inRange", "tooBig"] }
-] }"#;
+fn checks(name: &str) -> String {
+    let path = repository().join("tasks/quint/checks").join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+}
 
 fn sample(name: &str) -> String {
     let path = repository().join("tasks/quint/models").join(name);
@@ -95,9 +99,6 @@ impl Quint {
                 &sample(&format!("{module}.json")),
             );
         }
-        for name in ["choose.parse.json", "choose.sourcemap.json"] {
-            sandbox.write(&format!("fake/parsed/{name}"), &sample(name));
-        }
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
     }
@@ -109,15 +110,17 @@ impl Quint {
             .expect("the fake can be made a program");
     }
 
-    fn with_specs(&self, folder: &str, modules: &[&str], checks: &str) {
-        for module in modules {
+    fn with_check(&self, folder: &str, variant: &str, file: &str) {
+        self.sandbox.write(
+            &format!("{folder}/{file}.qnt"),
+            &checks(&format!("{variant}/{file}.qnt")),
+        );
+        for kind in ["parse", "sourcemap"] {
             self.sandbox.write(
-                &format!("{folder}/{module}.qnt"),
-                &sample(&format!("{module}.qnt")),
+                &format!("fake/parsed/{file}.{kind}.json"),
+                &checks(&format!("fixtures/{variant}/{file}.{kind}.json")),
             );
         }
-        self.sandbox
-            .write(&format!("{folder}/earnest.quint.json"), checks);
     }
 
     fn earnest(&self, arguments: &[&str]) -> Run {
@@ -188,16 +191,10 @@ fn message_of(report: &serde_json::Value) -> String {
 }
 
 #[test]
-fn a_listed_check_is_compiled_with_its_module_init_step_and_properties_and_checked() {
+fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_checked() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter", "dead"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter", "invariants": ["inRange", "tooBig"] },
-          { "file": "dead.qnt", "main": "dead", "init": "begin", "step": "next", "invariants": ["ok"], "temporal": ["later", "sooner"], "runs": true }
-        ] }"#,
-    );
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "temporal", "dead");
     let run = quint.earnest(&["verify"]);
     run.exits(1);
     let calls = quint.calls();
@@ -213,7 +210,7 @@ fn a_listed_check_is_compiled_with_its_module_init_step_and_properties_and_check
         [
             "compile --target json --main counter --init init --step step --invariant \
              inRange,tooBig models/counter.qnt",
-            "compile --target json --main dead --init begin --step next --invariant ok \
+            "compile --target json --main dead --init init --step step --invariant ok \
              --temporal later,sooner models/dead.qnt",
         ],
         "one compile per check side by side, the properties joined by commas\n{run}"
@@ -250,16 +247,15 @@ fn a_listed_check_is_compiled_with_its_module_init_step_and_properties_and_check
 fn compiles_run_side_by_side_but_never_more_than_jobs_at_once() {
     let quint = Quint::new();
     quint.sandbox.write("fake/pause", "");
-    let specs = ["counter", "dead", "starts", "mixed"];
-    let listed: Vec<String> = specs
-        .iter()
-        .map(|module| format!(r#"{{ "file": "{module}.qnt", "main": "{module}" }}"#))
-        .collect();
-    quint.with_specs(
-        "models",
-        &specs,
-        &format!(r#"{{ "checks": [{}] }}"#, listed.join(", ")),
-    );
+    let specs = [
+        ("inrange", "counter"),
+        ("dead", "dead"),
+        ("starts", "starts"),
+        ("inbounds", "mixed"),
+    ];
+    for (variant, file) in specs {
+        quint.with_check("models", variant, file);
+    }
     let peaks = |jobs: &str| -> Vec<u64> {
         quint.sandbox.write("fake/peaks", "");
         let run = quint.earnest(&["verify", "--no-cache", "--jobs", jobs]);
@@ -292,12 +288,8 @@ fn compiles_run_side_by_side_but_never_more_than_jobs_at_once() {
 #[test]
 fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again() {
     let quint = Quint::new();
-    quint.with_specs("first", &["counter"], COUNTER_CHECKS);
-    quint.with_specs(
-        "second",
-        &["dead"],
-        r#"{ "checks": [{ "file": "dead.qnt", "main": "dead", "invariants": ["ok"] }] }"#,
-    );
+    quint.with_check("first", "counter", "counter");
+    quint.with_check("second", "dead", "dead");
     let first = quint.earnest(&["verify"]);
     first.exits(1);
     assert_eq!(
@@ -317,10 +309,10 @@ fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again
         again.model_line("counter").contains(&"(cached)".to_owned()),
         "the result cache serves the unchanged JSON: {again}"
     );
-    quint.sandbox.write(
-        "second/dead.qnt",
-        &format!("{}\n// edited\n", sample("dead.qnt")),
-    );
+    let marked = quint.sandbox.read("second/dead.qnt");
+    quint
+        .sandbox
+        .write("second/dead.qnt", &format!("{marked}// edited\n"));
     let edited = quint.earnest(&["verify"]);
     edited.exits(1);
     assert_eq!(
@@ -351,14 +343,8 @@ fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again
 #[test]
 fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter", "dead"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter", "invariants": ["inRange"] },
-          { "file": "dead.qnt", "main": "dead", "invariants": ["ok"] }
-        ] }"#,
-    );
+    quint.with_check("models", "inrange", "counter");
+    quint.with_check("models", "dead", "dead");
     let dead = quint.sandbox.path().join("models/dead.qnt");
     quint.sandbox.write(
         "fake/fails/dead",
@@ -395,16 +381,10 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
 }
 
 #[test]
-fn without_quint_each_check_is_unreadable_and_nothing_is_guessed() {
+fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter", "dead"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter" },
-          { "file": "dead.qnt", "main": "dead" }
-        ] }"#,
-    );
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "dead", "dead");
     let run = quint.without_quint(&["verify", "--json"]);
     run.exits(1);
     let report = run.json();
@@ -439,7 +419,7 @@ fn without_quint_each_check_is_unreadable_and_nothing_is_guessed() {
 #[test]
 fn quint_in_node_modules_above_the_checks_is_used() {
     let quint = Quint::new();
-    quint.with_specs("app/specs", &["counter"], COUNTER_CHECKS);
+    quint.with_check("app/specs", "counter", "counter");
     fs::create_dir_all(quint.sandbox.path().join("app/node_modules/.bin"))
         .expect("the folder can be made");
     std::os::unix::fs::symlink(
@@ -454,47 +434,41 @@ fn quint_in_node_modules_above_the_checks_is_used() {
 }
 
 #[test]
-fn each_way_the_checks_file_can_be_wrong_makes_it_unreadable_with_the_key_named() {
-    let cases = [
-        (
-            r#"{ "checks": [{ "file": "counter.qnt" }] }"#,
-            "`checks[0]`",
-        ),
-        (
-            r#"{ "checks": [{ "file": "counter.qnt", "main": "counter", "invariant": [] }] }"#,
-            "`checks[0].invariant`",
-        ),
-        (
-            r#"{ "checks": [{ "file": "counter.qnt", "main": "counter", "runs": 3 }] }"#,
-            "`checks[0].runs`",
-        ),
-        (
-            r#"{ "checks": [{ "file": "counter.qnt", "main": "counter" }, { "file": "counter.qnt", "main": "counter" }] }"#,
-            "`checks[1]`",
-        ),
-        (r#"{ "checks": [ "#, "the JSON"),
-    ];
-    for (checks, feature) in cases {
+fn a_checks_file_right_or_wrong_is_unreadable_at_itself_and_judges_nothing() {
+    for checks in [
+        r#"{ "checks": [{ "file": "counter.qnt", "main": "counter", "invariants": ["inRange"] }] }"#,
+        r#"{ "checks": [{ "file": "counter.qnt", "main": "counter", "runs": 3 }] }"#,
+        r#"{ "checks": [ "#,
+    ] {
         let quint = Quint::new();
-        quint.with_specs("models", &["counter"], checks);
+        quint.with_check("models", "plain", "counter");
+        quint.sandbox.write("models/earnest.quint.json", checks);
         let run = quint.earnest(&["verify", "--json"]);
         run.exits(1);
         let report = run.json();
-        let found = problems(&report);
-        assert_eq!(found.len(), 1, "{checks}: {report}");
         assert_eq!(
-            (found[0].0.as_str(), found[0].3.as_str()),
-            ("models/earnest.quint.json", feature),
-            "{checks}"
+            problems(&report),
+            [(
+                "models/earnest.quint.json".to_owned(),
+                1,
+                1,
+                "`earnest.quint.json`".to_owned()
+            )],
+            "{checks}: {report}"
+        );
+        assert!(
+            message_of(&report).starts_with("earnest no longer reads `earnest.quint.json`"),
+            "{checks}: {report}"
         );
         assert_eq!(quint.compiles().len(), 0, "nothing is compiled: {checks}");
     }
 }
 
 #[test]
-fn a_quint_file_named_without_an_entry_says_how_to_list_it() {
+fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
     let quint = Quint::new();
-    quint.with_specs("models", &["counter", "dead"], COUNTER_CHECKS);
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "plain", "dead");
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(1);
     let report = run.json();
@@ -504,26 +478,21 @@ fn a_quint_file_named_without_an_entry_says_how_to_list_it() {
         "{report}"
     );
     let message = message_of(&report);
-    assert!(
-        message.contains("earnest.quint.json")
-            && message.ends_with(
-                "{ \"checks\": [\n  { \"file\": \"dead.qnt\", \"main\": \"dead\", \
-                 \"invariants\": [\"inv\"] }\n] }"
-            ),
-        "{message}"
-    );
+    assert!(message.contains("`/// @check`"), "{message}");
     assert!(models_of(&report).is_empty(), "nothing else is checked");
-    assert_eq!(quint.calls(), Vec::<String>::new(), "no `quint` is started");
+    assert!(
+        quint.compiles().is_empty(),
+        "the file is parsed, and nothing is compiled: {:?}",
+        quint.calls()
+    );
     let lonely = Quint::new();
-    lonely
-        .sandbox
-        .write("alone/counter.qnt", &sample("counter.qnt"));
+    lonely.with_check("alone", "plain", "counter");
     let alone = lonely.earnest(&["verify", "alone/counter.qnt", "--json"]);
     alone.exits(1);
     assert_eq!(
         problems(&alone.json())[0].3,
         "`counter.qnt`",
-        "no checks file beside it: {alone}"
+        "a file alone: {alone}"
     );
 }
 
@@ -537,16 +506,10 @@ fn models_of(report: &serde_json::Value) -> Vec<String> {
 }
 
 #[test]
-fn a_quint_file_named_on_the_command_line_checks_only_its_entries() {
+fn a_quint_file_named_on_the_command_line_checks_only_its_marked_modules() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter", "dead"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter", "invariants": ["inRange"] },
-          { "file": "dead.qnt", "main": "dead", "invariants": ["ok"] }
-        ] }"#,
-    );
+    quint.with_check("models", "inrange", "counter");
+    quint.with_check("models", "dead", "dead");
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(0);
     assert_eq!(models_of(&run.json()), ["dead"], "{run}");
@@ -556,14 +519,8 @@ fn a_quint_file_named_on_the_command_line_checks_only_its_entries() {
 #[test]
 fn model_and_rule_select_across_checks() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter", "mixed"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter", "invariants": ["inRange", "tooBig"] },
-          { "file": "mixed.qnt", "main": "mixed", "invariants": ["inBounds", "downAtZero", "agree", "neverFourDown"] }
-        ] }"#,
-    );
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "mixed", "mixed");
     let one = quint.earnest(&["verify", "--model", "mixed", "--json"]);
     one.exits(1);
     assert_eq!(models_of(&one.json()), ["mixed"], "{one}");
@@ -579,11 +536,7 @@ fn model_and_rule_select_across_checks() {
 #[test]
 fn a_refused_construct_is_reported_at_its_line_in_the_quint_file() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["choose"],
-        r#"{ "checks": [{ "file": "choose.qnt", "main": "choose", "invariants": ["ok"] }] }"#,
-    );
+    quint.with_check("models", "choose", "choose");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     let expected = [(
@@ -634,14 +587,7 @@ fn a_compiled_json_named_on_the_command_line_needs_no_quint() {
 #[test]
 fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        &["counter"],
-        r#"{ "checks": [
-          { "file": "counter.qnt", "main": "counter" },
-          { "file": "counter.qnt", "main": "wide" }
-        ] }"#,
-    );
+    quint.with_check("models", "wide", "counter");
     for main in ["counter", "wide"] {
         quint.sandbox.write(
             &format!("fake/fails/{main}"),
@@ -668,25 +614,17 @@ fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
 #[test]
 fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
     let quint = Quint::new();
-    quint.with_specs("app/specs", &["counter"], COUNTER_CHECKS);
-    quint.sandbox.write(
-        "app/shared/lib.qnt",
-        "module lib {\n  pure val Limit = 5\n}\n",
-    );
+    quint.with_check("app/specs", "imported/specs", "counter");
+    quint.with_check("app/shared", "imported/shared", "lib");
     let root = quint
         .sandbox
         .path()
         .canonicalize()
         .expect("the sandbox has a real path");
-    quint
-        .sandbox
-        .write("fake/parsed/counter.parse.json", r#"{"modules":[]}"#);
+    let map = quint.sandbox.read("fake/parsed/counter.sourcemap.json");
     quint.sandbox.write(
         "fake/parsed/counter.sourcemap.json",
-        &format!(
-            r#"{{"sourceIndex":{{"0":"counter.qnt","1":"{}"}},"map":{{}}}}"#,
-            root.join("app/shared/lib.qnt").display()
-        ),
+        &map.replace("ROOT", &root.join("app").to_string_lossy()),
     );
     quint.earnest(&["verify"]).exits(1);
     assert_eq!(quint.compiles().len(), 1, "the first run compiles");
@@ -706,20 +644,12 @@ fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
     );
 }
 
-fn with_stuck(runs: &str) -> Quint {
+fn with_stuck(variant: &str) -> Quint {
     let quint = Quint::new();
     quint
         .sandbox
         .write("fake/compiled/stuck.json", &sample("stuck.json"));
-    quint.with_specs(
-        "models",
-        &["stuck"],
-        &format!(
-            r#"{{ "checks": [
-          {{ "file": "stuck.qnt", "main": "stuck", "invariants": ["ok"]{runs} }}
-        ] }}"#
-        ),
-    );
+    quint.with_check("models", variant, "stuck");
     quint
 }
 
@@ -745,8 +675,8 @@ fn pairs(all: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 #[test]
-fn a_check_with_runs_true_plays_the_runs_whose_names_end_in_test() {
-    let quint = with_stuck(r#", "runs": true"#);
+fn a_check_plays_the_runs_whose_names_end_in_test() {
+    let quint = with_stuck("stuck");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     assert_eq!(
@@ -764,47 +694,21 @@ fn a_check_with_runs_true_plays_the_runs_whose_names_end_in_test() {
 }
 
 #[test]
-fn a_check_with_a_list_of_runs_plays_exactly_those() {
-    let quint = with_stuck(r#", "runs": ["wrongExpectTest", "toTwoTest"]"#);
-    let run = quint.earnest(&["verify", "--json"]);
-    run.exits(1);
-    assert_eq!(
-        verdicts(&run.json()),
-        pairs(&[
-            ("ok", "holds"),
-            ("wrongExpectTest", "broken"),
-            ("toTwoTest", "holds"),
-        ]),
-        "the listed runs, in the list's order\n{run}"
-    );
-}
-
-#[test]
-fn a_listed_run_the_module_lacks_makes_the_check_unreadable_and_is_named() {
-    let quint = with_stuck(r#", "runs": ["toTwoTest", "missingTest"]"#);
-    let run = quint.earnest(&["verify", "--json"]);
-    run.exits(1);
-    let report = run.json();
-    let features: Vec<String> = problems(&report)
-        .into_iter()
-        .map(|(_, _, _, feature)| feature)
-        .collect();
-    assert_eq!(features, ["`run missingTest`"], "{run}");
-    assert!(
-        message_of(&report).contains("has no run of this name"),
-        "{run}"
-    );
-}
-
-#[test]
-fn a_check_that_asks_for_no_runs_ignores_the_runs_of_its_module() {
-    let quint = with_stuck("");
+fn a_marked_run_is_played_and_one_marked_broken_is_met_when_it_breaks() {
+    let quint = with_stuck("broken");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(0);
     assert_eq!(
         verdicts(&run.json()),
-        pairs(&[("ok", "holds")]),
-        "the runs are neither played nor refused\n{run}"
+        pairs(&[
+            ("ok", "holds"),
+            ("toTwoTest", "holds"),
+            ("thirdTest", "broken"),
+            ("withNondetTest", "holds"),
+            ("assertedTest", "holds"),
+            ("wrongExpectTest", "broken"),
+        ]),
+        "every run is played, and the two marked broken pass by breaking\n{run}"
     );
 }
 
@@ -814,12 +718,7 @@ fn a_setup_prints_short_names_and_its_rule_is_selected_by_the_printed_name() {
     quint
         .sandbox
         .write("fake/compiled/SmallBits.json", &sample("smallbits.json"));
-    quint.with_specs(
-        "models",
-        &["clockbits"],
-        r#"{ "checks": [{ "file": "clockbits.qnt", "main": "SmallBits",
-          "temporal": ["allHeard", "timeAdvances", "fairHear", "leads"] }] }"#,
-    );
+    quint.with_check("models", "smallbits", "clockbits");
     let run = quint.earnest(&["verify", "--rule", "allHeard"]);
     run.exits(1);
     let detail = run.detail("SmallBits");
@@ -870,10 +769,21 @@ fn a_pick_among_every_integer_is_reported_at_its_line_in_the_quint_file() {
     quint
         .sandbox
         .write("models/allnumbers.qnt", &fixture("allnumbers.qnt"));
-    quint.sandbox.write(
-        "models/earnest.quint.json",
-        r#"{ "checks": [{ "file": "allnumbers.qnt", "main": "allNumbers" }] }"#,
-    );
+    let mut parsed: Value =
+        serde_json::from_str(&fixture("allnumbers.parse.json")).expect("the parse fixture is JSON");
+    for module in parsed["modules"].as_array_mut().into_iter().flatten() {
+        if module["name"] == "allNumbers" {
+            module["doc"] = Value::from("@check");
+            if let Some(declarations) = module["declarations"].as_array_mut() {
+                declarations.push(serde_json::json!({
+                    "id": 999_999, "kind": "def", "name": "ok", "qualifier": "val", "doc": "@check"
+                }));
+            }
+        }
+    }
+    quint
+        .sandbox
+        .write("fake/parsed/allnumbers.parse.json", &parsed.to_string());
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     assert_eq!(

@@ -7,6 +7,7 @@ module two {
   import lock(NODES = Set("a", "b"), MAX_SENT = 2, CAPACITY = 3).* from "./lock"
 }
 
+/// @check bothMutex, fewGrants
 module pair {
   import types.* from "./types"
   import lock(NODES = Set("a"), MAX_SENT = 1, CAPACITY = 2) as L from "./lock"
@@ -20,6 +21,7 @@ module pair {
   run bothTest = init.then(all { L::requestBy("a"), keepR }).then(all { R::requestBy("b"), keepL }).expect(L::net.length() + R::net.length() == 2)
 }
 
+/// @check
 module witness {
   import types.* from "./types"
   import lock(NODES = Set("a", "b"), MAX_SENT = 2, CAPACITY = 3) as W from "./lock"
@@ -32,4 +34,35 @@ module witness {
   run wrongHolderTest = serveFrom("a").expect(W::holder == Held("b"))
   run cannotTest = W::startWith("a").then(W::releaseBy("a")).fail()
   run tooManyTest = W::init.then(3.reps(_ => W::requestBy("a")))
+}
+
+/// @check V::mutex, V::holderKnown, V::bounded, V::everyoneRequests, V::everyoneHolds, V::eachDrains
+/// @check broken V::GuardedBreak
+module threeChecked {
+  import lock(NODES = Set("a", "b", "c"), MAX_SENT = 1, CAPACITY = 3) as V from "./lock"
+  run oneEachTest = V::init.then(3.reps(_ => V::request)).expect(V::net.length() == 3)
+  action init = V::init
+  action step = V::stepEach
+}
+
+/// @check broken V::GuardedBreak
+module threeKnown {
+  import lock(NODES = Set("a", "b", "c"), MAX_SENT = 1, CAPACITY = 3) as V from "./lock"
+  run oneEachTest = V::init.then(3.reps(_ => V::request)).expect(V::net.length() == 3)
+  action init = V::init
+  action step = V::step
+}
+
+/// @check V::mutex, V::holderKnown, V::bounded, V::grantsBounded, V::everyoneRequests, V::everyoneHolds, V::eachDrains
+module twoChecked {
+  import lock(NODES = Set("a", "b"), MAX_SENT = 2, CAPACITY = 3) as V from "./lock"
+  action init = V::init
+  action step = V::stepEach
+}
+
+/// @check broken V::GuardedBreak
+module twoGuard {
+  import lock(NODES = Set("a", "b"), MAX_SENT = 2, CAPACITY = 3) as V from "./lock"
+  action init = V::init
+  action step = V::stepEach
 }

@@ -96,15 +96,15 @@ def model(seed, plain=False):
     names = ["enqueue", "process"] + rnd.sample(["spend", "lower", "toggle", "drop"], rnd.randint(1, 3))
     acts = "\n".join(f"  action {a} = {pool[a]}" for a in names)
     step = "any { " + ", ".join(names) + " }"
-    invs = [f"  val inv{i} = {be()}" for i in range(3)]
+    invs = [f"  /// @check\n  val inv{i} = {be()}" for i in range(3)]
     fair_target = rnd.choice(["step"] + names)
     goals = [plain_be(1) if plain else be(1) for _ in range(4)]
     temps = [
-        f"  temporal t0 = eventually({goals[0]})",
-        f"  temporal t1 = weakFair(step, vars) implies eventually({goals[1]})",
-        f"  temporal t2 = weakFair({fair_target}, vars) implies always(eventually({goals[2]}))",
-        f"  temporal t3 = weakFair(step, vars) implies always({goals[3]} implies eventually(q.length() == 0))",
-        f"  temporal t4 = not(eventually({goals[0]}))",
+        f"  /// @check\n  temporal t0 = eventually({goals[0]})",
+        f"  /// @check\n  temporal t1 = weakFair(step, vars) implies eventually({goals[1]})",
+        f"  /// @check\n  temporal t2 = weakFair({fair_target}, vars) implies always(eventually({goals[2]}))",
+        f"  /// @check\n  temporal t3 = weakFair(step, vars) implies always({goals[3]} implies eventually(q.length() == 0))",
+        f"  /// @check\n  temporal t4 = not(eventually({goals[0]}))",
     ]
     runs = []
     for i in range(3):
@@ -143,13 +143,15 @@ def model(seed, plain=False):
 """
     start = f'({rnd.randint(0, 2)}, "{rnd.choice(["x", "y"])}")'
     if whole:
-        setup = f"""module {name} {{
+        setup = f"""/// @check
+module {name} {{
   import Spec{seed}(LIM = {lim}, KEYS = {keys}, START = {start}).*
 }}
 """
         prefix = ""
     else:
-        setup = f"""module {name} {{
+        setup = f"""/// @check
+module {name} {{
   pure val Lim = {lim}
   import Spec{seed}(LIM = Lim, KEYS = {keys}, START = {start}) as C
 }}

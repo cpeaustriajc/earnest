@@ -25,6 +25,7 @@ module ClockBits {
   temporal leads = weakFair(step, (time, seen)) implies (time == 0).leadsTo(time == MaxTime)
 }
 
+/// @check allHeard, timeAdvances, fairHear, leads
 module SmallBits {
   import ClockBits(MaxTime = 3, Skew = 1, Nodes = 3).*
 }

@@ -54,12 +54,15 @@ module Q14spec {
   run r2Test = startWith(1).then(buyAndReact(1)).then(react).expect(BUYERS.fold(0, (s, b) => s + cnt.get(b)) == LIMIT)
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(got.forall(p => p._1 == 1)) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q14A {
   import Q14spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q14B {
   import Q14spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q14C {
   import Q14spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 1).*
 }

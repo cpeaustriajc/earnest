@@ -62,13 +62,21 @@ module Spec1010 {
     }
   }
   action step = any { enqueue, process, lower, drop }
+  /// @check
   val inv0 = KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 2)
+  /// @check
   val inv1 = pair._2 == "x"
+  /// @check
   val inv2 = flag
+  /// @check
   temporal t0 = eventually(not(m.keys().contains("b")))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(2 == 2)
+  /// @check
   temporal t2 = weakFair(drop, vars) implies always(eventually(flag))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(last == Clear implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(not(m.keys().contains("b"))))
   run r0Test = init.then(enqueue).then(enqueue).expect((flag or LIM <= n))
   run r1Test = init.then(enqueue).expect(last == Clear)
@@ -76,6 +84,7 @@ module Spec1010 {
   run repsTest = init.then(1.reps(_ => step)).expect((last == Clear and KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 2)))
 }
 
+/// @check
 module H1010 {
   import Spec1010(LIM = 2, KEYS = Set("a"), START = (0, "x")).*
 }

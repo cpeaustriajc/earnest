@@ -9,7 +9,7 @@ use tempfile::TempDir;
 
 use crate::support::binary;
 
-const FAILING_COMPILE: &str = r#"#!/bin/sh
+const FAILING_COMPILE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 previous=""
@@ -24,8 +24,8 @@ case "$1" in
     ;;
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
-    cp "$here/typecheck.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$(basename "$2")\"},\"map\":{}}" > "$map"
+    cp "$here/parse.json" "$out"
+    sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
     cp "$here/typecheck.json" "$out"
@@ -37,7 +37,7 @@ case "$1" in
     exit 1
     ;;
 esac
-"#;
+"##;
 
 #[test]
 fn a_compile_quint_fails_on_is_reported_in_the_qnt_file_and_not_in_quint_s_own_code() {
@@ -48,21 +48,24 @@ fn a_compile_quint_fails_on_is_reported_in_the_qnt_file_and_not_in_quint_s_own_c
     fs::write(&program, FAILING_COMPILE).expect("the fake program can be written");
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
         .expect("the fake program can be made a program");
-    fs::write(
-        fake.join("typecheck.json"),
-        include_str!("../../models/quint_fourth/named_helpers/typecheck.json"),
-    )
-    .expect("a fixture can be written");
+    for (name, fixture) in [
+        (
+            "parse.json",
+            include_str!("../../models/quint_fourth/named_helpers/parse.json"),
+        ),
+        (
+            "sourcemap.json",
+            include_str!("../../models/quint_fourth/named_helpers/named_helpers.sourcemap.json"),
+        ),
+        ("typecheck.json", ""),
+    ] {
+        fs::write(fake.join(name), fixture).expect("a fixture can be written");
+    }
     fs::write(
         folder.path().join("named_helpers.qnt"),
         include_str!("../../models/quint_fourth/named_helpers/named_helpers.qnt"),
     )
     .expect("the spec can be written");
-    fs::write(
-        folder.path().join("earnest.quint.json"),
-        r#"{ "checks": [ { "file": "named_helpers.qnt", "main": "spec", "invariants": ["inRange"] } ] }"#,
-    )
-    .expect("the checks file can be written");
     let output = Command::new(binary())
         .args(["verify", "--json", "--no-cache", "."])
         .env("EARNEST_QUINT", &program)

@@ -63,13 +63,21 @@ module Spec14 {
     }
   }
   action step = any { enqueue, process, spend, lower }
+  /// @check
   val inv0 = last == Clear
+  /// @check
   val inv1 = m.keys().contains("b")
+  /// @check
   val inv2 = (isInc(last) implies m.keys().contains("a"))
+  /// @check
   temporal t0 = eventually(pair._2 == "y")
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(n == useOp(v => v + 1, n))
+  /// @check
   temporal t2 = weakFair(enqueue, vars) implies always(eventually(n <= LIM))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(m.keys().contains("a") implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(pair._2 == "y"))
   run r0Test = init.then(spend).expect(q.select(c => isInc(c)).length() <= 1)
   run r1Test = init.then(enqueue).then(enqueue).then(step).expect((last == Clear or isInc(last)))
@@ -77,6 +85,7 @@ module Spec14 {
   run repsTest = init.then(2.reps(_ => step)).expect(isInc(last))
 }
 
+/// @check
 module H14 {
   import Spec14(LIM = 2, KEYS = Set("a"), START = (0, "x")).*
 }

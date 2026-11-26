@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 const SEPARATOR: &str = "::";
 const WILDCARD: &str = "_";
-const TESTS_END_WITH: &str = "Test";
 const MOST_ALIASES: usize = 64;
 const FIELD_NAMES: &str = "fieldNames";
 const MOST_IMPORTS: usize = 64;
@@ -132,7 +131,7 @@ pub struct Typechecked {
     next: u64,
 }
 
-/// One check of a setup module, as `earnest.quint.json` lists it.
+/// One check of a setup module: its `init`, `step`, properties and runs, as its marks give them.
 #[derive(Clone, Copy, Debug)]
 pub struct Setup<'c> {
     main: &'c str,
@@ -480,7 +479,7 @@ fn indexed<'t>(
 
 impl<'t> Filler<'t> {
     fn new(typechecked: &'t Typechecked, check: &Setup<'_>) -> Fill<Self> {
-        let (main_name, runs_only) = (check.main, check.runs_only());
+        let main_name = check.main;
         let main = typechecked.module(main_name)?;
         let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();
@@ -496,15 +495,12 @@ impl<'t> Filler<'t> {
                     instances.push(instance(typechecked, main_name, declaration)?);
                 }
                 "import" => {
-                    if runs_only {
-                        let proto = text(declaration, "protoName")?;
-                        *protos.entry(proto).or_insert(0) += 1;
-                        if protos.get(proto).copied().unwrap_or(0) > 1 {
-                            return None;
-                        }
+                    let proto = text(declaration, "protoName")?;
+                    *protos.entry(proto).or_insert(0) += 1;
+                    if protos.get(proto).copied().unwrap_or(0) > 1 {
+                        return None;
                     }
-                    let kept: &[&str] = if runs_only { &["def", "var"] } else { &["def"] };
-                    let found = plain_import(typechecked, declaration, kept)?;
+                    let found = plain_import(typechecked, declaration, &["def", "var"])?;
                     let space = text(declaration, "qualifiedName");
                     for module in &found.modules {
                         *copies.entry(module).or_insert(0) += 1;
@@ -528,18 +524,12 @@ impl<'t> Filler<'t> {
                     }
                 }
                 "export" => exports.push(declaration),
-                "def" => {
-                    own.insert(number(declaration, "id")?, declaration);
-                }
-                "var" if runs_only => {
+                "def" | "var" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
                 "typedef" | "assume" => {}
                 _ => return None,
             }
-        }
-        if !runs_only && instances.iter().all(|each| each.declared.is_none()) {
-            return None;
         }
         for export in exports {
             let alias = text(export, "protoName")?;
@@ -935,16 +925,7 @@ impl<'t> Filler<'t> {
                 .filter(|(id, _)| !each.imported.contains(id))
                 .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
                 .filter_map(|(id, declaration)| Some((*id, text(declaration, "name")?)))
-                .filter(|(_, name)| match runs {
-                    Runs::None => false,
-                    Runs::Tests => name.ends_with(TESTS_END_WITH),
-                    Runs::Named(names) => names.iter().any(|listed| {
-                        listed == name
-                            || each
-                                .alias
-                                .is_some_and(|alias| *listed == format!("{alias}{SEPARATOR}{name}"))
-                    }),
-                })
+                .filter(|(_, name)| runs.plays(name, each.alias))
                 .collect();
             runs_here.sort_unstable();
             found.extend(runs_here.into_iter().map(|(id, _)| (position, id)));
@@ -1042,13 +1023,9 @@ impl<'t> Filler<'t> {
             .iter()
             .filter(|(id, _)| !self.hidden.contains(id))
             .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
-            .filter(
-                |(_, declaration)| match (check.runs, text(declaration, "name")) {
-                    (Runs::Tests, Some(name)) => name.ends_with(TESTS_END_WITH),
-                    (Runs::Named(names), Some(name)) => names.iter().any(|listed| listed == name),
-                    _ => false,
-                },
-            )
+            .filter(|(_, declaration)| {
+                text(declaration, "name").is_some_and(|name| check.runs.plays(name, None))
+            })
             .map(|(id, _)| *id)
             .collect();
         imported_runs.sort_unstable();

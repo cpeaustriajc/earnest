@@ -63,6 +63,7 @@ pub(crate) struct Discovered {
 pub(crate) struct Listed {
     pub(crate) checks: PathBuf,
     pub(crate) only: Option<PathBuf>,
+    pub(crate) named: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -268,7 +269,7 @@ fn not_a_known_language(path: &Path) -> Found {
             TOP_OF_FILE,
             &in_backticks(path),
             "the file was named on the command line, but it is not TypeScript (`.ts`, `.mts`, \
-             `.tsx`), Rust (`.rs`), Quint (`.qnt`, listed in `earnest.quint.json`) or a Quint \
+             `.tsx`), Rust (`.rs`), Quint (`.qnt`) or a Quint \
              module compiled to JSON (`quint compile --target json`), so the checker does not \
              know how to read it",
         ),
@@ -296,13 +297,15 @@ fn quint_checks(path: &Path, origin: Origin) -> Option<Searched> {
         return Some(Searched::Listed(Listed {
             checks: path.to_path_buf(),
             only: None,
+            named: origin == Origin::Named,
         }));
     }
     let is_quint = Path::new(name).extension().and_then(OsStr::to_str) == Some(QUINT_EXTENSION);
-    (origin == Origin::Named && is_quint).then(|| {
+    is_quint.then(|| {
         Searched::Listed(Listed {
             checks: path.with_file_name(CHECKS_FILE),
             only: Some(path.to_path_buf()),
+            named: origin == Origin::Named,
         })
     })
 }

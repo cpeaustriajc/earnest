@@ -1,0 +1,111 @@
+{
+  "as": {
+    "accepted": [
+      "A::bOk",
+      "A::bTwo"
+    ],
+    "compiles": true
+  },
+  "bare": {
+    "accepted": [
+      "Base::bOk",
+      "Base::bTwo"
+    ],
+    "compiles": true
+  },
+  "export": {
+    "accepted": [
+      "bOk",
+      "bTwo",
+      "midOwn"
+    ],
+    "compiles": true
+  },
+  "exportas": {
+    "accepted": [
+      "M::bOk",
+      "M::bTwo",
+      "M::midOwn"
+    ],
+    "compiles": true
+  },
+  "exportone": {
+    "accepted": [
+      "bOk"
+    ],
+    "compiles": true
+  },
+  "exporttwice": {
+    "accepted": [
+      "bOk",
+      "bTwo",
+      "midOwn"
+    ],
+    "compiles": true
+  },
+  "from": {
+    "accepted": [
+      "farOk"
+    ],
+    "compiles": true
+  },
+  "fromas": {
+    "accepted": [
+      "F::farOk"
+    ],
+    "compiles": true
+  },
+  "hidden": {
+    "accepted": [
+      "midOwn"
+    ],
+    "compiles": true
+  },
+  "instance": {
+    "accepted": [
+      "pOk"
+    ],
+    "compiles": true
+  },
+  "instanceas": {
+    "accepted": [
+      "P::pOk"
+    ],
+    "compiles": true
+  },
+  "instanceexport": {
+    "accepted": [
+      "pOk"
+    ],
+    "compiles": true
+  },
+  "instanceexporttwice": {
+    "accepted": [
+      "pOk"
+    ],
+    "compiles": true
+  },
+  "instanceofinstance": {
+    "accepted": [
+      "Q::mOk"
+    ],
+    "compiles": true
+  },
+  "instanceofinstanceexport": {
+    "accepted": [],
+    "compiles": false
+  },
+  "one": {
+    "accepted": [
+      "bOk"
+    ],
+    "compiles": true
+  },
+  "star": {
+    "accepted": [
+      "bOk",
+      "bTwo"
+    ],
+    "compiles": true
+  }
+}

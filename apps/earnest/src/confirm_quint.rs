@@ -2,6 +2,7 @@ use crate::checks::is_a_name;
 use crate::confirm::read_tlc;
 use crate::confirm_reach::where_backends_differ;
 use crate::quint::{QuintCheck, segments_end_alike};
+use crate::run::not_played_reason;
 use crate::run::{Checked, RuleResult, whole_of};
 use earnest_quint::Runs;
 use std::env;
@@ -346,11 +347,14 @@ impl Runner<'_> {
 
     fn test(&self) -> Result<Vec<Tested>, String> {
         let pattern = match &self.quint.runs {
-            Runs::Named(names) => {
-                let last: Vec<&str> = names
+            Runs::Named(names) | Runs::TestsAnd(names) => {
+                let mut last: Vec<String> = names
                     .iter()
-                    .map(|name| name.rsplit("::").next().unwrap_or(name))
+                    .map(|name| name.rsplit("::").next().unwrap_or(name).to_owned())
                     .collect();
+                if matches!(self.quint.runs, Runs::TestsAnd(_)) {
+                    last.insert(0, ".*Test".to_owned());
+                }
                 format!("^(.*::)?({})$", last.join("|"))
             }
             _ => RUNS_THAT_END_IN_TEST.to_owned(),
@@ -590,7 +594,7 @@ fn left_over(
 }
 
 fn quint_check_plays_by_ending(quint: &QuintCheck) -> bool {
-    quint.runs == Runs::Tests
+    matches!(quint.runs, Runs::Tests | Runs::TestsAnd(_))
 }
 
 #[derive(Debug)]
@@ -608,7 +612,12 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
     let Some(quint) = asked.quint else {
         return vec![cannot("not compared".to_owned(), NOT_QUINT)];
     };
-    if let Some(reason) = &checked.result.reason {
+    if let Some(reason) = checked
+        .result
+        .reason
+        .as_ref()
+        .filter(|reason| **reason != not_played_reason(&checked.result.runs_not_played))
+    {
         return vec![cannot(
             "not compared".to_owned(),
             &format!("the checker stopped early ({reason}), so there is no full result to compare"),

@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 use crate::support::{Report, Sandbox, binary, rule};
 
-const FAKE_QUINT: &str = r#"#!/bin/sh
+const FAKE_QUINT: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 previous=""
@@ -25,8 +25,12 @@ case "$1" in
     ;;
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
-    cp "$here/typecheck.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$(basename "$2")\"},\"map\":{}}" > "$map"
+    if [ -f "$here/parse.json" ]; then
+      cp "$here/parse.json" "$out"
+    else
+      cp "$here/typecheck.json" "$out"
+    fi
+    sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
     cp "$here/typecheck.json" "$out"
@@ -35,7 +39,7 @@ case "$1" in
     cat "$here/compiled.json"
     ;;
 esac
-"#;
+"##;
 
 const FAKE_JAVA: &str = r#"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -159,8 +163,8 @@ struct QuintFixtures<'a> {
     file: &'a str,
     source: &'a str,
     typecheck: &'a str,
+    sourcemap: &'a str,
     compiled: &'a str,
-    checks: &'a str,
 }
 
 struct RecordedQuint {
@@ -176,6 +180,7 @@ impl RecordedQuint {
         program(&fake, "quint", FAKE_QUINT);
         for (name, text) in [
             ("typecheck.json", fixtures.typecheck),
+            ("sourcemap.json", fixtures.sourcemap),
             ("compiled.json", fixtures.compiled),
         ] {
             fs::write(fake.join(name), text).expect("a fixture can be written");
@@ -185,7 +190,6 @@ impl RecordedQuint {
             quint: fake.join("quint"),
         };
         recorded.write(fixtures.file, fixtures.source);
-        recorded.write("earnest.quint.json", fixtures.checks);
         recorded
     }
 
@@ -223,36 +227,68 @@ fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them(
         file: "named_runs.qnt",
         source: include_str!("../../models/quint_second/named_runs/named_runs.qnt"),
         typecheck: include_str!("../../models/quint_second/named_runs/typecheck.json"),
+        sourcemap: include_str!("../../models/quint_second/named_runs/named_runs.sourcemap.json"),
         compiled: include_str!("../../models/quint_second/named_runs/Named.json"),
-        checks: r#"{ "checks": [ { "file": "named_runs.qnt", "main": "Named", "init": "C::init", "step": "C::step", "runs": true } ] }"#,
     });
     assert_eq!(
         rule(model_named(&report, "Named"), "upTest")["verdict"],
         "holds",
         "`quint test --main Named` plays `Named::C::upTest` and prints `ok Named::C::upTest \
-         passed 1 test(s)`; the docs say `\"runs\": true` plays the spec's runs whose name ends \
+         passed 1 test(s)`; a check plays the spec's runs whose name ends \
          in `Test`, `C::name` under a name, and the same check beside a second check of the \
          file plays it\n{report:#}"
     );
 }
 
 #[test]
-fn runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play() {
-    let recorded = RecordedQuint::new(&QuintFixtures {
+fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
+    let fixtures = |typecheck| QuintFixtures {
         file: "runs_not_played.qnt",
         source: include_str!("../../models/quint_second/runs_not_played/runs_not_played.qnt"),
-        typecheck: include_str!("../../models/quint_second/runs_not_played/parse.json"),
+        typecheck,
+        sourcemap: include_str!(
+            "../../models/quint_second/runs_not_played/runs_not_played.sourcemap.json"
+        ),
         compiled: include_str!("../../models/quint_second/runs_not_played/Plays.json"),
-        checks: r#"{ "checks": [ { "file": "runs_not_played.qnt", "main": "Plays", "runs": true } ] }"#,
-    });
+    };
+    let built = RecordedQuint::new(&fixtures(include_str!(
+        "../../models/quint_second/runs_not_played/typecheck.json"
+    )))
+    .verify(&["--no-cache"]);
+    let plays = model_named(&built, "Plays");
+    assert_eq!(
+        (plays["status"].as_str(), run_ids(plays)),
+        (
+            Some("pass"),
+            vec![
+                ("upTest".to_owned(), "holds".to_owned()),
+                ("ownTest".to_owned(), "holds".to_owned())
+            ]
+        ),
+        "`quint test --main Plays` plays `S::upTest` and `ownTest`, and the check, built from \
+         the typecheck, plays both\n{built:#}"
+    );
+    let recorded = RecordedQuint::new(&fixtures(""));
+    fs::write(
+        recorded.folder.path().join("fake/parse.json"),
+        include_str!("../../models/quint_second/runs_not_played/parse.json"),
+    )
+    .expect("the parse can be written");
     let report = recorded.verify(&["--no-cache"]);
     let model = model_named(&report, "Plays");
     assert_eq!(
-        (model["status"].as_str(), &model["runsNotPlayed"]),
-        (Some("pass"), &serde_json::json!(["S::upTest"])),
-        "`quint test --main Plays` plays `S::upTest` and `ownTest`; `quint compile` drops \
-         `S::upTest`, so the check plays `ownTest` and says it did not play `S::upTest`\n\
-         {report:#}"
+        (
+            model["status"].as_str(),
+            &model["runsNotPlayed"],
+            model["reason"].as_str()
+        ),
+        (
+            Some("unfinished"),
+            &serde_json::json!(["S::upTest"]),
+            Some("runs not played: S::upTest")
+        ),
+        "with no typecheck, `quint compile` drops `S::upTest`, so the check plays `ownTest` and \
+         does not pass: it says which run it did not play\n{report:#}"
     );
     assert_eq!(
         run_ids(model),
@@ -298,82 +334,6 @@ fn run_ids(model: &Value) -> Vec<(String, String)> {
             )
         })
         .collect()
-}
-
-#[test]
-fn a_cached_result_is_not_served_for_a_check_whose_runs_changed() {
-    let recorded = RecordedQuint::new(&QuintFixtures {
-        file: "cached_runs.qnt",
-        source: include_str!("../../models/quint_second/cached_runs/cached_runs.qnt"),
-        typecheck: include_str!("../../models/quint_second/cached_runs/parse.json"),
-        compiled: include_str!("../../models/quint_second/cached_runs/cached_runs.json"),
-        checks: r#"{ "checks": [ { "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"] } ] }"#,
-    });
-    let first = recorded.verify(&[]);
-    recorded.write(
-        "earnest.quint.json",
-        r#"{ "checks": [ { "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["downTest"] } ] }"#,
-    );
-    let second = recorded.verify(&[]);
-    let fresh = recorded.verify(&["--no-cache"]);
-    let expected = vec![("downTest".to_owned(), "broken".to_owned())];
-    assert_eq!(
-        run_ids(model_named(&fresh, "cached_runs")),
-        expected,
-        "a full run plays the one run listed, `downTest`, which `quint test` fails\n{fresh:#}"
-    );
-    assert_eq!(
-        run_ids(model_named(&second, "cached_runs")),
-        expected,
-        "the docs key a compiled module by the check's `runs` among the rest; the second run \
-         lists `downTest` and nothing else, as the full run does, not the first run's \
-         `upTest`\nfirst: {first:#}\nsecond: {second:#}"
-    );
-}
-
-fn cached_after_the_entry_became(entry: &str) -> (bool, bool) {
-    let first = r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"] }"#;
-    let recorded = RecordedQuint::new(&QuintFixtures {
-        file: "cached_runs.qnt",
-        source: include_str!("../../models/quint_second/cached_runs/cached_runs.qnt"),
-        typecheck: include_str!("../../models/quint_second/cached_runs/parse.json"),
-        compiled: include_str!("../../models/quint_second/cached_runs/cached_runs.json"),
-        checks: &format!(r#"{{ "checks": [ {first} ] }}"#),
-    });
-    recorded.verify(&[]);
-    let again = recorded.verify(&[]);
-    recorded.write(
-        "earnest.quint.json",
-        &format!(r#"{{ "checks": [ {entry} ] }}"#),
-    );
-    let changed = recorded.verify(&[]);
-    let cached = |report: &Value| {
-        report["models"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|model| model["cached"] == true)
-    };
-    (cached(&again), cached(&changed))
-}
-
-#[test]
-fn a_cached_result_is_not_served_for_a_check_whose_entry_changed() {
-    for entry in [
-        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "invariants": ["upTest"] }"#,
-        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "temporal": ["upTest"] }"#,
-        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "init": "step" }"#,
-        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "step": "init" }"#,
-        r#"{ "file": "cached_runs.qnt", "main": "other", "runs": ["upTest"] }"#,
-        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": true }"#,
-    ] {
-        assert_eq!(
-            cached_after_the_entry_became(entry),
-            (true, false),
-            "a second run of the same entry is served from the cache, and a run after the \
-             entry became {entry} is not, though `quint` hands back the same JSON"
-        );
-    }
 }
 
 fn confirmed_with_tlc_as_it_prints_today(
@@ -460,56 +420,66 @@ fn confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken() {
     );
 }
 
-const SEEDED: [(&str, &str, &str); 10] = [
+const SEEDED: [(&str, &str, &str, &str); 10] = [
     (
         "H14",
         include_str!("../../models/quint_second/random/H14.qnt"),
         include_str!("../../models/quint_second/random/H14.typecheck.json"),
+        include_str!("../../models/quint_second/random/H14.sourcemap.json"),
     ),
     (
         "H25",
         include_str!("../../models/quint_second/random/H25.qnt"),
         include_str!("../../models/quint_second/random/H25.typecheck.json"),
+        include_str!("../../models/quint_second/random/H25.sourcemap.json"),
     ),
     (
         "H37",
         include_str!("../../models/quint_second/random/H37.qnt"),
         include_str!("../../models/quint_second/random/H37.typecheck.json"),
+        include_str!("../../models/quint_second/random/H37.sourcemap.json"),
     ),
     (
         "H45",
         include_str!("../../models/quint_second/random/H45.qnt"),
         include_str!("../../models/quint_second/random/H45.typecheck.json"),
+        include_str!("../../models/quint_second/random/H45.sourcemap.json"),
     ),
     (
         "H54",
         include_str!("../../models/quint_second/random/H54.qnt"),
         include_str!("../../models/quint_second/random/H54.typecheck.json"),
+        include_str!("../../models/quint_second/random/H54.sourcemap.json"),
     ),
     (
         "H63",
         include_str!("../../models/quint_second/random/H63.qnt"),
         include_str!("../../models/quint_second/random/H63.typecheck.json"),
+        include_str!("../../models/quint_second/random/H63.sourcemap.json"),
     ),
     (
         "H1002",
         include_str!("../../models/quint_second/random/H1002.qnt"),
         include_str!("../../models/quint_second/random/H1002.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1002.sourcemap.json"),
     ),
     (
         "H1006",
         include_str!("../../models/quint_second/random/H1006.qnt"),
         include_str!("../../models/quint_second/random/H1006.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1006.sourcemap.json"),
     ),
     (
         "H1010",
         include_str!("../../models/quint_second/random/H1010.qnt"),
         include_str!("../../models/quint_second/random/H1010.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1010.sourcemap.json"),
     ),
     (
         "H1013",
         include_str!("../../models/quint_second/random/H1013.qnt"),
         include_str!("../../models/quint_second/random/H1013.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1013.sourcemap.json"),
     ),
 ];
 
@@ -520,23 +490,15 @@ fn every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_t
     let expected: Value =
         serde_json::from_str(SEEDED_EXPECTED).expect("the expected answers are JSON");
     let mut wrong = Vec::new();
-    for (name, source, typecheck) in SEEDED {
+    for (name, source, typecheck, sourcemap) in SEEDED {
         let answers = &expected[name];
-        let checks = serde_json::json!({ "checks": [ {
-            "file": format!("{name}.qnt"),
-            "main": name,
-            "invariants": ["inv0", "inv1", "inv2"],
-            "temporal": ["t0", "t1", "t2", "t3", "t4"],
-            "runs": true,
-        } ] })
-        .to_string();
         let file = format!("{name}.qnt");
         let report = verified_with_recorded_quint(&QuintFixtures {
             file: &file,
             source,
             typecheck,
+            sourcemap,
             compiled: "",
-            checks: &checks,
         });
         let model = model_named(&report, name);
         if model["states"] != answers["states"] {

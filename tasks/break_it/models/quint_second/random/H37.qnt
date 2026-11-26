@@ -51,13 +51,21 @@ module Spec37 {
     }
   }
   action step = any { enqueue, process, spend }
+  /// @check
   val inv0 = pair._1 <= 2
+  /// @check
   val inv1 = isInc(last)
+  /// @check
   val inv2 = m.keys().contains("b")
+  /// @check
   temporal t0 = eventually((flag or pair._2 == "x"))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(pair._2 == "y")
+  /// @check
   temporal t2 = weakFair(process, vars) implies always(eventually(n <= n))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always((pair._2 == "y" or useOp(v => v + 1, n) <= LIM) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually((flag or pair._2 == "x")))
   run r0Test = init.then(enqueue).expect(m.keys().contains("b"))
   run r1Test = init.then(spend).expect(not(last == Clear))
@@ -65,6 +73,7 @@ module Spec37 {
   run repsTest = init.then(2.reps(_ => step)).expect(KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 0))
 }
 
+/// @check
 module H37 {
   import Spec37(LIM = 2, KEYS = Set("a"), START = (2, "x")).*
 }

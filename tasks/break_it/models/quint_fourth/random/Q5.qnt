@@ -54,12 +54,15 @@ module Q5spec {
   run r2Test = startWith(0).then(buyAndReact(1)).then(react).expect(flag)
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(got.forall(p => p._1 == 1)) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q5A {
   import Q5spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q5B {
   import Q5spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q5C {
   import Q5spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 2).*
 }

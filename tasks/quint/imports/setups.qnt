@@ -1,4 +1,5 @@
 // Three setups of the spec and a module of runs only, all checked from one typecheck.
+/// @check bounded, counted, neverAllOpen, drains
 module two {
   import types.* from "./types"
   import doors(NODES = Set("a", "b"), LIMIT = 2).* from "./doors"
@@ -7,10 +8,12 @@ module two {
   }).then(deliver).then(deliver).expect(doors.get("b") == { open: true, count: 1 })
 }
 
+/// @check bounded, counted, drains
 module three {
   import doors(NODES = Set("a", "b", "c"), LIMIT = 3).* from "./doors"
 }
 
+/// @check fresh, D::bounded, D::drains
 module named {
   import types.* from "./types"
   import lib.* from "./lib"
@@ -22,6 +25,7 @@ module named {
   run pingTest = init.then(D::ping).then(D::ping).expect(D::sent == 2)
 }
 
+/// @check
 module scenarios {
   import types.* from "./types"
   import doors(NODES = Set("x"), LIMIT = 1) as S from "./doors"

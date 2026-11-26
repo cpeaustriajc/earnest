@@ -164,15 +164,26 @@ fn a_run_that_reads_a_variable_its_first_action_leaves_unset_is_refused_and_name
 fn a_module_of_runs_only_is_built_from_the_typecheck_and_searches_nothing() {
     let typechecked = Typechecked::read(&fixture(FIRST, "OnlyRuns.typecheck.json"))
         .expect("the typecheck is read");
+    let played = Runs::Named(
+        [
+            "fixedTest",
+            "listTest",
+            "thirdTest",
+            "thirdOverTest",
+            "mixTest",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+    );
     let built = typechecked
         .setup(&Setup::new(
             "OnlyRuns",
             ("init", "step"),
             (&[], &[]),
-            &Runs::Tests,
+            &played,
         ))
         .expect("a check of runs only needs no `init` or `step`");
-    let model = read_runs("OnlyRuns", &built, &Runs::Tests)
+    let model = read_runs("OnlyRuns", &built, &played)
         .unwrap_or_else(|problems| panic!("OnlyRuns is read: {problems:?}"));
     assert!(model.fields.is_empty() && model.actions.is_empty());
     assert_eq!(

@@ -9,6 +9,41 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 A temporal property under `weakFair(step, vars)` together with `weakFair(A, vars)` was judged broken where Quint's TLC run says it holds, when a run could stop in a state where the step can do nothing more and `A` alone could still happen. Such a run is not fair to `A`, so it no longer counts. Fairness of the step alone, and of an action alone, are judged as before.
 
+## November 2026: Quint checks marked in the model, and no `earnest.quint.json`
+
+`earnest verify specs/` checks the modules marked `/// @check` in the `.qnt` files below `specs/`. No other file says what to check:
+
+```quint title="specs/bank.qnt"
+/// @check
+module bank {
+  var balance: int
+  action init = balance' = 0
+  action deposit = all { balance < 3, balance' = balance + 1 }
+  action withdraw = all { balance > 0, balance' = balance - 1 }
+  action step = any { deposit, withdraw }
+  /// @check
+  /// The balance never goes below zero.
+  val nonNegative = balance >= 0
+  run depositTest = init.then(deposit).expect(balance == 1)
+}
+```
+
+- **Modules:** a module is a check when its own doc comment holds a `/// @check` mark, on any line, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no property to judge plays its runs and searches nothing.
+- **Names in a module's doc:** `/// @check levelOk, darkWhenOff`, `/// @check broken neverFull` or `/// @check reachable atTop` above a module judges those names, as the module sees them, in that check only.
+- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The other lines of the doc comment are the rule's sentence. A definition's doc comment holds one mark.
+- **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check` or named in its doc comment; `/// @check broken` on a run says it must fail.
+- **What a check sees** is what `quint compile --main` resolves: own definitions, `import M.*`, `import M as A` (`A::name`), `import M` (`M::name`), `import M.name`, imports `from` another file, instances, and exports through any number of modules. Each property is judged once, even when an import under a name and its export both bring it.
+- **Unreadable at the mark's line:** a word after `@check` that earnest does not know, `///@check` with no space, a second mark, names after a mark on a definition, a mark on an `action`, `var`, `const`, `import` or a definition with parameters, `@check reachable` on anything but a value, a name in a module's doc that the module does not see, a marked module that leaves a constant unset, one with a property and no `init` or `step` (the message shows the `action step = ...` to write), one with nothing to judge, and a marked definition or run that no check sees.
+- **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
+- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write above the module with the names each judges, a `val` for each property written as an expression, the module to add for another `init` or `step` or a second check of one module, and the runs ending in `Test` that are played from now on although the entry left them out.
+
+- **A list of names goes on over the next line** when its line ends with a comma; a doc line of a check made only of names it sees, after a line with no comma, is `unreadable` at that line.
+- **`///@check small`** above a module or a definition is `unreadable` at that line, read from the source.
+- **One name after two marks** of a module's doc is `unreadable`. A mark on a definition that a check's doc names under another word is not: the check's doc wins.
+- **A spec imported whole with a property:** a check that plays a run declared in a module it imports, `import Spec.*` with a property among them, is built from `quint typecheck`, so the run is played. A compiled check that sees a run it can't play is `unfinished` with `(runs not played: …)`, not `pass`, and a marked run it can't play no longer makes it `unreadable`: its properties are judged.
+
+See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
+
 ## November 2026: fairness of a Quint action judged by the action alone
 
 - **Fixed, a wrong verdict:** `weakFair(pay, vars)` where the step puts a condition around the call, as in `any { all { open, pay }, toggle }`, `all { open or paid, any { pay, toggle } }` or `if (open) …`, was judged as if `pay` could happen only where the step lets it, so a property that `quint verify --backend tlc` finds holds came out broken, and `earnest confirm --tlc` agreed with it. Fairness of an action is now judged from the action's own definition, as TLC reads `WF_vars(pay)`, and the TLA+ export states the fairness of the action alone.
@@ -21,7 +56,7 @@ See [What is read today](/reference/quint/#what-is-read-today).
 
 - **Fairness given a part of a pick:** `weakFair(buy(p._1), vars)` where the step picks `nondet p = tuples(BUYERS, ITEMS).oneOf()` and calls `buy(p._1)` is read, as are a record field (`buy(r.who)`) and any expression over one `nondet` (`act(b + 1)`): a step counts when its pick gives the value. It was refused.
 - **A condition before `implies`:** `(x == 0).implies(eventually(x == 3))` is judged in the start states, as TLC and Apalache judge it. It was refused.
-- **An empty `forall`:** a temporal property that is a `forall` over an empty set is a rule that holds, which `--rule` and `expectCounterexample` find. It was left out of the result.
+- **An empty `forall`:** a temporal property that is a `forall` over an empty set is a rule that holds, which `--rule` and `/// @check broken` find. It was left out of the result.
 - **Runs played and not played:** a compiled module plays only the runs `quint test --main` plays, so `export Spec.specTest` no longer plays `Spec`'s other runs, and the note names only runs `quint test` plays: for `import Spec.specTest`, only `specTest`; runs reached through `export` are named too.
 - **`--rule` of a run:** plays the run from the start states with no search, so a model without end gives the run's verdict.
 - **Output and messages:** a step of an action called with a value prints it, `buy  buyer = 1`, not `buy` and `buy#2`; a played `M::aTest` keeps its prefix when the module has its own `aTest`; a refusal shows `t._2` and `r.who` as written and names the definition that wrote an action given as an argument; a module whose `quint compile` writes one variable twice under one id is refused naming Quint's compile.
@@ -55,7 +90,6 @@ See [What earnest runs](/reference/quint/#what-earnest-runs) and [How values pri
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.
 - **`expectCounterexample`:** invariants, temporal properties or runs listed there must break. A broken one prints `broken  P  (expected)` and keeps its path in the JSON with `"expected": "broken"`; one that holds fails the check.
 - **Stopping early:** a check whose only properties are expected invariants stops once it has found each counterexample, so a model with no end passes.
-- **Invariants as expressions:** an item of `invariants` or `expectCounterexample` may be a Quint expression, such as `Guard implies Inv`, named by its text or by `{ "name": ..., "is": ... }`.
 
 See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 

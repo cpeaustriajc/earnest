@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 use crate::support::{Report, Sandbox, binary};
 
-const FAKE_QUINT: &str = r#"#!/bin/sh
+const FAKE_QUINT: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 previous=""
@@ -26,7 +26,7 @@ case "$1" in
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
     cp "$here/typecheck.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$(basename "$2")\"},\"map\":{}}" > "$map"
+    sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
     cp "$here/typecheck.json" "$out"
@@ -35,7 +35,7 @@ case "$1" in
     cat "$here/compiled.json"
     ;;
 esac
-"#;
+"##;
 
 fn compiled(name: &str, json: &str) -> Report {
     let file = format!("{name}.json");
@@ -53,8 +53,8 @@ struct QuintFixtures<'a> {
     file: &'a str,
     source: &'a str,
     typecheck: &'a str,
+    sourcemap: &'a str,
     compiled: &'a str,
-    checks: &'a str,
 }
 
 struct RecordedQuint {
@@ -70,6 +70,7 @@ impl RecordedQuint {
         program(&fake, "quint", FAKE_QUINT);
         for (name, text) in [
             ("typecheck.json", fixtures.typecheck),
+            ("sourcemap.json", fixtures.sourcemap),
             ("compiled.json", fixtures.compiled),
         ] {
             fs::write(fake.join(name), text).expect("a fixture can be written");
@@ -79,7 +80,6 @@ impl RecordedQuint {
             quint: fake.join("quint"),
         };
         recorded.write(fixtures.file, fixtures.source);
-        recorded.write("earnest.quint.json", fixtures.checks);
         recorded
     }
 
@@ -139,8 +139,8 @@ fn the_note_of_runs_not_played_names_only_runs_quint_test_plays() {
         file: "one_name.qnt",
         source: include_str!("../../models/quint_third/one_name/one_name.qnt"),
         typecheck: include_str!("../../models/quint_third/one_name/typecheck.json"),
+        sourcemap: include_str!("../../models/quint_third/one_name/sourcemap.json"),
         compiled: include_str!("../../models/quint_third/one_name/compiled.json"),
-        checks: r#"{ "checks": [ { "file": "one_name.qnt", "main": "OneName", "runs": true } ] }"#,
     });
     let report = recorded.verify(&["--no-cache"]);
     let model = model_named(&report, "OneName");
@@ -376,11 +376,8 @@ fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_pl
         file: "output.qnt",
         source: include_str!("../../models/quint_third/output/output.qnt"),
         typecheck: include_str!("../../models/quint_third/output/typecheck.json"),
+        sourcemap: include_str!("../../models/quint_third/output/sourcemap.json"),
         compiled: "{}",
-        checks: r#"{ "checks": [
-            { "file": "output.qnt", "main": "Own", "runs": ["M::aTest"] },
-            { "file": "output.qnt", "main": "Own", "name": "endless",
-              "invariants": ["small"], "runs": true } ] }"#,
     });
     let report = recorded.verify(&["--no-cache", "--max-states", "1000", "--model", "Own"]);
     let rules = model_named(&report, "Own")["rules"].clone();
@@ -398,8 +395,8 @@ fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_pl
         .collect();
     assert_eq!(
         (ids, steps),
-        (vec!["M::aTest"], vec!["add  k = 2"]),
-        "`Own` has its own `aTest` beside the listed `M::aTest`, so the played run keeps the \
+        (vec!["M::aTest", "aTest"], vec!["add  k = 2"]),
+        "`Own` has its own `aTest` beside the named `M::aTest`, so the played run keeps the \
          prefix that tells them apart, and its step `add(N)` with `N = 2` shows the value\n\
          {report:#}"
     );
@@ -450,8 +447,8 @@ fn a_compiled_module_plays_only_the_runs_quint_test_plays() {
         file: "exporter.qnt",
         source: include_str!("../../models/quint_third/exporter/exporter.qnt"),
         typecheck: include_str!("../../models/quint_third/exporter/typecheck.json"),
+        sourcemap: include_str!("../../models/quint_third/exporter/sourcemap.json"),
         compiled: include_str!("../../models/quint_third/exporter/compiled.json"),
-        checks: r#"{ "checks": [ { "file": "exporter.qnt", "main": "Exporter", "runs": true } ] }"#,
     });
     let report = recorded.verify(&["--no-cache"]);
     let model = model_named(&report, "Exporter");

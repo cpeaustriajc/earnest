@@ -3,11 +3,11 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::support::{Run, Sandbox, finding, model, repository, rule};
+use crate::support::{Run, Sandbox, checks, finding, model, repository, rule};
 
 const FIXTURES: &str = "crates/earnest_quint/fixtures";
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 case "$1" in
@@ -27,16 +27,12 @@ case "$1" in
       if [ "$previous" = "--source-map" ]; then map="$argument"; fi
       previous="$argument"
     done
-    echo '{"modules":[]}' > "$out"
-    echo '{"sourceIndex":{},"map":{}}' > "$map"
+    folder="$(cd "$(dirname "$2")" && pwd)"
+    cp "$here/parse.json" "$out"
+    sed "s#\"0\":\"reads.qnt\"#\"0\":\"$folder/reads.qnt\"#" "$here/sourcemap.json" > "$map"
     ;;
 esac
-"#;
-
-const CHECKS: &str = r#"{ "checks": [
-  { "file": "reads.qnt", "main": "reads",
-    "invariants": ["natural", "booleans", "names", "only", "operators", "folded", "small"] }
-] }"#;
+"##;
 
 const HOLDING: [&str; 6] = [
     "natural",
@@ -60,8 +56,15 @@ fn checked(arguments: &[&str]) -> Run {
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
         .expect("the fake can be made a program");
     sandbox.write("fake/compiled/reads.json", &fixture("reads.json"));
-    sandbox.write("specs/reads.qnt", &fixture("reads.qnt"));
-    sandbox.write("specs/earnest.quint.json", CHECKS);
+    sandbox.write(
+        "fake/parse.json",
+        &checks("fixtures/reads/reads.parse.json"),
+    );
+    sandbox.write(
+        "fake/sourcemap.json",
+        &checks("fixtures/reads/reads.sourcemap.json"),
+    );
+    sandbox.write("specs/reads.qnt", &checks("reads/reads.qnt"));
     let empty = sandbox.path().join("no-programs");
     fs::create_dir_all(&empty).expect("an empty folder can be made");
     Run::of(

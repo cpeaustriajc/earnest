@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 use crate::support::{Report, Sandbox, binary, rule};
 
-const FAKE_QUINT: &str = r#"#!/bin/sh
+const FAKE_QUINT: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 previous=""
@@ -26,7 +26,7 @@ case "$1" in
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
     cp "$here/typecheck.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$(basename "$2")\"},\"map\":{}}" > "$map"
+    sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
     cp "$here/typecheck.json" "$out"
@@ -36,7 +36,7 @@ case "$1" in
     exit 1
     ;;
 esac
-"#;
+"##;
 
 fn compiled(name: &str, json: &str) -> Report {
     let file = format!("{name}.json");
@@ -49,7 +49,7 @@ struct Typechecked {
 }
 
 impl Typechecked {
-    fn new(file: &str, source: &str, typecheck: &str, checks: &str) -> Self {
+    fn new(file: &str, source: &str, (typecheck, sourcemap): (&str, &str)) -> Self {
         let folder = TempDir::new().expect("a temporary folder can be made");
         let fake = folder.path().join("fake");
         fs::create_dir_all(&fake).expect("the fake's folder can be made");
@@ -58,9 +58,8 @@ impl Typechecked {
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
             .expect("the fake program can be made a program");
         fs::write(fake.join("typecheck.json"), typecheck).expect("a fixture can be written");
+        fs::write(fake.join("sourcemap.json"), sourcemap).expect("a fixture can be written");
         fs::write(folder.path().join(file), source).expect("the spec can be written");
-        fs::write(folder.path().join("earnest.quint.json"), checks)
-            .expect("the checks file can be written");
         Self {
             folder,
             quint: program,
@@ -134,9 +133,10 @@ fn a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_f
     let checked = Typechecked::new(
         "named_helpers.qnt",
         include_str!("../../models/quint_fourth/named_helpers/named_helpers.qnt"),
-        include_str!("../../models/quint_fourth/named_helpers/typecheck.json"),
-        r#"{ "checks": [ { "file": "named_helpers.qnt", "main": "small",
-            "invariants": ["inRange"], "runs": true } ] }"#,
+        (
+            include_str!("../../models/quint_fourth/named_helpers/typecheck.json"),
+            include_str!("../../models/quint_fourth/named_helpers/named_helpers.sourcemap.json"),
+        ),
     );
     let report = checked.verify(&[]);
     let model = model_named(&report, "small");
@@ -155,72 +155,90 @@ fn a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_f
     );
 }
 
-const SEEDED: [(&str, &str, &str); 10] = [
+const SEEDED: [(&str, &str, (&str, &str)); 10] = [
     (
         "Q2",
         include_str!("../../models/quint_fourth/random/Q2.qnt"),
-        include_str!("../../models/quint_fourth/random/Q2.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q2.json"),
+            include_str!("../../models/quint_fourth/random/Q2.sourcemap.json"),
+        ),
     ),
     (
         "Q5",
         include_str!("../../models/quint_fourth/random/Q5.qnt"),
-        include_str!("../../models/quint_fourth/random/Q5.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q5.json"),
+            include_str!("../../models/quint_fourth/random/Q5.sourcemap.json"),
+        ),
     ),
     (
         "Q9",
         include_str!("../../models/quint_fourth/random/Q9.qnt"),
-        include_str!("../../models/quint_fourth/random/Q9.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q9.json"),
+            include_str!("../../models/quint_fourth/random/Q9.sourcemap.json"),
+        ),
     ),
     (
         "Q14",
         include_str!("../../models/quint_fourth/random/Q14.qnt"),
-        include_str!("../../models/quint_fourth/random/Q14.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q14.json"),
+            include_str!("../../models/quint_fourth/random/Q14.sourcemap.json"),
+        ),
     ),
     (
         "Q20",
         include_str!("../../models/quint_fourth/random/Q20.qnt"),
-        include_str!("../../models/quint_fourth/random/Q20.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q20.json"),
+            include_str!("../../models/quint_fourth/random/Q20.sourcemap.json"),
+        ),
     ),
     (
         "Q26",
         include_str!("../../models/quint_fourth/random/Q26.qnt"),
-        include_str!("../../models/quint_fourth/random/Q26.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q26.json"),
+            include_str!("../../models/quint_fourth/random/Q26.sourcemap.json"),
+        ),
     ),
     (
         "Q29",
         include_str!("../../models/quint_fourth/random/Q29.qnt"),
-        include_str!("../../models/quint_fourth/random/Q29.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q29.json"),
+            include_str!("../../models/quint_fourth/random/Q29.sourcemap.json"),
+        ),
     ),
     (
         "Q32",
         include_str!("../../models/quint_fourth/random/Q32.qnt"),
-        include_str!("../../models/quint_fourth/random/Q32.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q32.json"),
+            include_str!("../../models/quint_fourth/random/Q32.sourcemap.json"),
+        ),
     ),
     (
         "Q34",
         include_str!("../../models/quint_fourth/random/Q34.qnt"),
-        include_str!("../../models/quint_fourth/random/Q34.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q34.json"),
+            include_str!("../../models/quint_fourth/random/Q34.sourcemap.json"),
+        ),
     ),
     (
         "Q38",
         include_str!("../../models/quint_fourth/random/Q38.qnt"),
-        include_str!("../../models/quint_fourth/random/Q38.json"),
+        (
+            include_str!("../../models/quint_fourth/random/Q38.json"),
+            include_str!("../../models/quint_fourth/random/Q38.sourcemap.json"),
+        ),
     ),
 ];
 
 const SEEDED_SETUPS: [&str; 3] = ["A", "B", "C"];
-
-fn seeded_checks(seed: &str) -> String {
-    let checks: Vec<String> = SEEDED_SETUPS
-        .iter()
-        .map(|setup| {
-            format!(
-                r#"{{ "file": "{seed}.qnt", "main": "{seed}{setup}", "invariants": ["inv0", "inv1", "inv2"], "temporal": ["t0", "t1", "t2", "t3", "t4", "t5"], "runs": true }}"#
-            )
-        })
-        .collect();
-    format!(r#"{{ "checks": [ {} ] }}"#, checks.join(", "))
-}
 
 fn verdict_of(model: &Value, name: &str) -> Option<String> {
     let verdicts: Vec<&str> = model["rules"]
@@ -253,12 +271,7 @@ fn every_seeded_setup_over_types_and_helpers_has_the_answers_of_quint_s_tlc_run_
     let mut differences = Vec::new();
     let mut compared = 0_usize;
     for (seed, source, typecheck) in SEEDED {
-        let checked = Typechecked::new(
-            &format!("{seed}.qnt"),
-            source,
-            typecheck,
-            &seeded_checks(seed),
-        );
+        let checked = Typechecked::new(&format!("{seed}.qnt"), source, typecheck);
         for jobs in ["1", "4"] {
             let report = checked.verify(&["--jobs", jobs]);
             for setup in SEEDED_SETUPS {

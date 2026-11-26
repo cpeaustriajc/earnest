@@ -87,7 +87,7 @@ def model(seed):
     runs.append(f"  run pickTest = {{ nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect({be(1)}) }}")
     setups = [("A", "Set(1, 2)", 'Set("a")', "Set(1, 2)"), ("B", "Set(1)", 'Set("a", "b c")', "Set(1)"), ("C", "Set(1, 2)", 'Set("a")', "Set()")]
     setup_text = "\n".join(
-        f'module {name}{s} {{\n  import {name}spec(BUYERS = {b}, ITEMS = {it}, WATCH = {w}, CAP = {cap}).*\n}}' for s, b, it, w in setups)
+        f'/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5\nmodule {name}{s} {{\n  import {name}spec(BUYERS = {b}, ITEMS = {it}, WATCH = {w}, CAP = {cap}).*\n}}' for s, b, it, w in setups)
     return f"""module {name}types {{
   type Ev = Buy(int) | Back(int) | Idle
 }}

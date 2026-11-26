@@ -30,10 +30,12 @@ module Clock {
   run hearAny = init.then(hear).expect(seen.size() == 1)
 }
 
+/// @check timeBounded, skewOk, allHeard, timeAdvances, fairHear, leads, tickTwice, tickMany, overTick, hearAny
 module Small {
   import Clock(MaxTime = 3, Skew = 1, Nodes = Set("a", "b")).*
 }
 
+/// @check inv
 module Large {
   import Clock(MaxTime = 8, Skew = 10, Nodes = Set("a", "b", "c")) as C
   action init = C::init
