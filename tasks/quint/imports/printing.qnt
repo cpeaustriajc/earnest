@@ -1,5 +1,6 @@
 // What a path prints: a step that changes one key of a large map, a run whose first action
 // can't happen, and a fault while working out a run's first action.
+/// @check
 module Printing {
   var balances: str -> int
   var seen: Set[int]
@@ -22,8 +23,19 @@ module Printing {
 
   action seed(d: int): bool = all { balances' = Map("ann" -> 10 / d), seen' = Set(), queue' = [] }
 
+  /// @check
   val annBelowFive = balances.get("ann") < 5
 
   run noStartTest = all { 1 > 2, balances' = Map(), seen' = Set(), queue' = [] }.then(step)
-  run faultTest = seed(0).then(step)
+}
+
+/// @check
+/// `Printing` with the run whose first action faults, apart from the other checks.
+module fault {
+  import Printing as P
+  action init = P::init
+  action step = P::step
+  /// @check
+  val annBelowFive = P::annBelowFive
+  run faultTest = P::seed(0).then(P::step)
 }
