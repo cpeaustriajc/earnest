@@ -1087,3 +1087,146 @@ Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
 
 The two LargeBits/Large counterexamples are shortened to their action names; the full traces
 have the same shape as the Small ones.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+fail        LargeBits  72 states  1 ms
+  broken  allHeard  "The Quint temporal property `allHeard` holds"
+    start  LargeBits::C::time = 0, LargeBits::C::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        SmallBits  16 states  0 ms
+  broken  SmallBits::ClockBits::allHeard  "The Quint temporal property `SmallBits::ClockBits::allHeard` holds"
+    start  SmallBits::ClockBits::time = 0, SmallBits::ClockBits::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        swing  3 states  0 ms
+  broken  swingFair  "The Quint temporal property `swingFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+  broken  stepFair  "The Quint temporal property `stepFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+fail        fair2  8 states  0 ms
+  broken  hearFairOnly  "The Quint temporal property `hearFairOnly` holds"
+    start  t = 0, h = false
+    1. hear  h: false -> true
+    end    t = 0, h = true
+    why    the run may stop here, because no step it must take can change the state from here
+4 models: 0 pass, 4 fail, 0 unfinished
+$ earnest confirm --tlc target/tools/tla2tools.jar tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+same     LargeBits  72 states  fail
+same     SmallBits  16 states  fail
+same     swing  3 states  fail
+same     fair2  8 states  fail
+```
+
+In JSON each property is a rule with `"kind": "eventually"`, its path, and `repeatsFrom` for a
+loop or the stop sentence as `reason`; `safe` (`always(n <= 2)`) is a plain rule.
+
+The tests:
+
+- `crates/earnest_check/tests/explore/fairness.rs`: a state without ways out (nothing fair, the
+  step fair), a stop where an unfair action could go on, the model's fairness kept for a rule
+  without its own, a loop that needs each fair action's turn (and `WF(out \/ a)` weaker than
+  `WF(out) /\ WF(a)`), and a fair action that is not always possible. Every model is searched with
+  1 and 4 workers, which must agree.
+- `crates/earnest_quint/src/temporal/tests.rs` on `fixtures/properties.qnt`: each shape that is
+  read and each refusal, one property at a time.
+- `apps/earnest/tests/behavior/quint_temporal.rs`: the CLI on fair2, SmallBits and swing, and
+  `--rule` on one property.
+- `tasks/break_it/tests/tlc/stutters.rs`: 40 seeds of small generated Quint JSON (one to three
+  `int` variables, one to five actions, one to four properties, each with no fairness, the step,
+  one action, two actions, or the step and one action, and each of `eventually`, `leadsTo`,
+  `always(eventually)` and the spelled-out leads-to), each through `earnest confirm --tlc`, which
+  must say `same`. It asserts at least one broken and one holding property for every kind of
+  fairness. Generating the JSON was less code than building `earnest_ir::Model`s and driving
+  TLC by hand, and it covers the reader too. A deliberate break (the step fair for every rule)
+  fails it at seed 7: `rule p1: the checker says holds, TLC says broken`.
+
+## Slice 5: report
+
+### Done
+
+- `earnest_ir::Fairness { step, actions: Vec<Vec<usize>> }` and `Eventually::fair:
+  Option<Fairness>`. `None` keeps the model's fairness, and the TypeScript and Rust readers give
+  `None`. A fair part is a list of actions, not one action, because a Quint action unfolds into
+  several (`weakFair(hear)` is one disjunction). No field of `Model`, `Field` or `Action` changed.
+- `earnest_check::eventually`: fair parts in place of fair actions, and `Stops` (where nothing
+  changes the state, or where nothing fair does) for each rule; a rule with its own fairness
+  gets its own `possible` flags. Case 1 above is reported as a stop with the new sentence when
+  the state has ways out.
+- `earnest_tla`: `Spec` without fairness and `(fairness) => (property)` for every property, when
+  any rule has its own fairness; otherwise unchanged.
+- `earnest_quint::temporal` (new): reads `q::temporalProps`, unfolds names of temporal
+  definitions, and gives rules about runs and plain rules. `scan.rs` no longer refuses temporal
+  definitions; `model.rs` passes the step's actions by top-level name, and follows the whole
+  chain of aliases from `q::step` (`LargeBits::step = C::step`), so that actions are named after
+  `tick` and `hear` and not all after `C::step`.
+- Samples: `models/clockbits.qnt` (with `smallbits.json`, `largebits.json`), `models/swing.qnt`
+  (with `swing.json`), `probe/fair2.json`.
+
+### Slice 1 tests changed
+
+`crates/earnest_quint/src/tests.rs`: `a_temporal_property_is_refused_and_named` asserted the
+refusal "temporal properties are not read yet" for `fixtures/later.qnt`
+(`eventually(x > 3)`), which this slice lifts. With the orchestrator's agreement, `later.qnt`
+is now `eventually(always(x > 3))` and the test asserts `` `always` `` with "`eventually(always(…))`
+is not read"; the new test `a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs`
+reads the old property from `fixtures/grows.qnt`. No line of a test on `origin/main` changed;
+two existing test files got one line each (`fair: None,` in an `Eventually` literal) and two
+`mod` lines were added.
+
+### Refused
+
+In a temporal property, naming the operator and the property: `strongFair`, `next`, `orKeep`,
+`mustChange`, `enabled`, `eventually(always(…))`, a temporal operator under `not`, `or`, `iff`
+or any other operator, an `implies` inside `G` (`F implies (P implies eventually(Q))`), a
+state condition outside `always`/`eventually` (TLC judges it in the start states only),
+fairness over only some variables or over something that is not a tuple of variables, fairness
+of an action given arguments (`weakFair(move(1), vars)`) or of an action with parameters, and
+fairness of anything but the step (or a name it aliases) and its top-level actions. A temporal
+definition that `--temporal` does not list is ignored, as an unused `val` is.
+
+### Doubts
+
+- Names stay qualified as slice 1 has them: a property of `SmallBits` is
+  `SmallBits::ClockBits::allHeard`, while `LargeBits`, which defines its own, gets `allHeard`.
+  Slice 3 or 4 (setups) should decide what a user sees.
+- A rule about runs whose `G` has several conjuncts gives `name`, `name#2`, …, as repeated
+  actions do. The TLA+ export spells `#` as `_` (`Eventually_bothFair_2`).
+- The step's fallback name for paths that reach no named action (an inline `any { all {…} }`)
+  is the step's name; `weakFair(step)` is the whole step, so such a path is never a fair part of
+  its own. That is right, but untested by TLC.
+- `quint verify` checks all listed properties as one conjunction; earnest and `confirm` judge
+  each alone, which gives the same verdict per property and finer output.
+
+### Checks, each with its last line
+
+- `cargo test --locked` (after `bun install --frozen-lockfile`), whole workspace before the
+  approved change to the `later` test: 70 suites, 1821 passed, 1 failed (that test); after it,
+  `earnest_quint` 40 passed, 0 failed.
+- `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,639,543 | +0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores, load 2.9): last line `wide, search time with all cores (0.095 s)
+  over search time with 1 worker (0.265 s): 0.36x, budget at most 0.75x: met`; every line `met`,
+  `grid_10m` with 4 workers 0.766 s.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps `0
+  differences`. The 64 are 4 runs each of the 16 conformance files `origin/main` does not have
+  (`tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,stove,ticket,worker}.model.ts`,
+  `runs/gate.rs`, `runs/kettle.rs`, `setups/clock.model.ts`, `setups/clock.rs`).
+  `just same-answers fdbd03a` (this branch's base): `every model file: 392 runs, 0 differences`,
+  every sweep 0.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `tests_kept.py --base origin/main`: `tests kept: 1490 tests, 4372 assertions (base: 1304, 3798)`.
