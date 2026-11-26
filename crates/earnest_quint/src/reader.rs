@@ -1,6 +1,7 @@
 use crate::builtins::{Builtin, builtin, not_read};
 use crate::data::{ANY_OTHER_TAG, TAG, VALUE, data_builtin};
-use crate::json::{Compiled, Def, Entry, Expr as Quint, Param, Scheme};
+use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint, Param, Scheme};
+use crate::names::shortest;
 use crate::reach::variables_reached;
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
@@ -61,6 +62,8 @@ pub(crate) struct Path {
     pub(crate) guards: Vec<Expr>,
     pub(crate) assigns: Vec<(usize, Expr)>,
     pub(crate) given: Vec<Option<Expr>>,
+    pub(crate) branch: Vec<String>,
+    named_branches: usize,
 }
 
 impl Path {
@@ -88,6 +91,8 @@ impl Path {
         both.name = self.name.clone().or_else(|| other.name.clone());
         if self.name.is_none() {
             both.given.clone_from(&other.given);
+            both.branch.clone_from(&other.branch);
+            both.named_branches = other.named_branches;
         }
         let mut later = other.clone();
         if !self.guards.is_empty() {
@@ -151,6 +156,9 @@ pub(crate) fn endless(name: &str) -> Option<&'static str> {
 }
 
 fn written_out(value: &serde_json::Number) -> String {
+    if value.is_u64() {
+        return value.to_string();
+    }
     value
         .as_f64()
         .filter(|number| number.is_finite())
@@ -170,6 +178,7 @@ pub(crate) struct Reader<'a> {
     pub(crate) within: String,
     trail: Vec<String>,
     types: &'a HashMap<String, Scheme>,
+    declared: Vec<&'a str>,
 }
 
 fn base_name(parameter: &str) -> &str {
@@ -291,11 +300,27 @@ impl<'a> Reader<'a> {
             within: String::new(),
             trail: Vec::new(),
             types: &compiled.types,
+            declared: compiled
+                .modules
+                .iter()
+                .flat_map(|module| &module.declarations)
+                .filter_map(|declaration| match declaration {
+                    Declaration::Var { name, .. } | Declaration::Assume { name, .. } => {
+                        Some(name.as_str())
+                    }
+                    Declaration::Def(def) => Some(def.name.as_str()),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
     pub(crate) fn top(&self, name: &str) -> Option<&'a Def> {
         self.defs.values().find(|def| def.name == name).copied()
+    }
+
+    pub(crate) fn short(&self, name: &str) -> String {
+        shortest(name, &self.declared)
     }
 
     pub(crate) fn refuse<T>(&self, feature: &str, why: &str) -> Read<T> {
@@ -305,7 +330,7 @@ impl<'a> Reader<'a> {
             .filter(|name| {
                 !name.is_empty() && !name.starts_with(GENERATED) && **name != self.within
             })
-            .map(|name| format!("`{name}`"))
+            .map(|name| format!("`{}`", self.short(name)))
             .collect();
         let reached = match shown.split_first() {
             None => String::new(),
@@ -316,7 +341,10 @@ impl<'a> Reader<'a> {
         };
         Err(refusal(
             feature,
-            &format!("{why}, in the definition `{}`{reached}", self.within),
+            &format!(
+                "{why}, in the definition `{}`{reached}",
+                self.short(&self.within)
+            ),
         )
         .within(&self.within))
     }
@@ -890,6 +918,11 @@ impl<'a> Reader<'a> {
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;
         if !self.unnamed.contains(&def.id) {
             for path in &mut paths {
+                if path.name.is_some() {
+                    let outer = path.branch.len().saturating_sub(path.named_branches);
+                    path.branch.truncate(outer);
+                }
+                path.named_branches = path.branch.len();
                 path.name = Some(def.name.clone());
                 path.given.clone_from(&given);
             }
@@ -989,6 +1022,7 @@ impl<'a> Reader<'a> {
             for mut path in paths {
                 path.behind(&holds);
                 path.guards.insert(0, holds.clone());
+                path.branch.insert(0, name.clone());
                 all.push(path);
             }
             if all.len() > MOST_ACTIONS {

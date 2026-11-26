@@ -43,7 +43,7 @@ pub(crate) fn refused(declarations: &[Declaration]) -> Vec<Refusal> {
                 )
                 .within(name),
             ),
-            Declaration::Typedef {} => None,
+            Declaration::Typedef {} | Declaration::Assume { .. } => None,
             Declaration::Def(def) => definition(def),
             Declaration::Other => Some(refusal(
                 "a declaration",

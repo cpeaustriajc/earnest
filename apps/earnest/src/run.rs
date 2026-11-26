@@ -1,6 +1,6 @@
 use crate::reading::Readable;
 use crate::workers::run_each;
-use earnest_chart::{chart_outline, chart_with_limit, detail_lines, one_line, path_lines};
+use earnest_chart::{chart_outline, chart_with_limit, detail_lines_in, one_line, path_lines_in};
 use earnest_check::{EVERY_EXPECTED_FOUND, Limits, Outcome, Status as Judged, Verdict, explore};
 use earnest_ir::Model;
 use serde::{Deserialize, Serialize};
@@ -396,7 +396,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
         },
-        detail: detail_of(&ran.outcome, &readable.expected, &readable.reachable),
+        detail: detail_of(&ran.outcome, (&readable.expected, &readable.reachable), model),
         position: readable.position,
     })
 }
@@ -405,7 +405,7 @@ pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool
     expected.iter().any(|name| name == whole_of(&rule.id))
 }
 
-fn reached_lines(name: &str, outcome: &Outcome) -> Vec<String> {
+fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
     let mut lines = vec![format!("reached  {}", one_line(name))];
     let path = outcome
         .rules
@@ -414,7 +414,7 @@ fn reached_lines(name: &str, outcome: &Outcome) -> Vec<String> {
         .find_map(|rule| rule.path.as_ref());
     if let Some(path) = path {
         lines.extend(
-            path_lines(path)
+            path_lines_in(path, model.symbols.notation())
                 .into_iter()
                 .map(|line| format!("{NESTED}{line}")),
         );
@@ -422,15 +422,22 @@ fn reached_lines(name: &str, outcome: &Outcome) -> Vec<String> {
     lines
 }
 
-fn detail_of(outcome: &Outcome, expected: &[String], reachable: &[String]) -> Vec<String> {
+fn detail_of(
+    outcome: &Outcome,
+    (expected, reachable): (&[String], &[String]),
+    model: &Model,
+) -> Vec<String> {
+    let notation = model.symbols.notation();
     if expected.is_empty() {
-        return detail_lines(outcome);
+        return detail_lines_in(outcome, notation);
     }
     let mut lines: Vec<String> = Vec::new();
     for name in expected {
         let is_reachable = reachable.contains(name);
         match group_verdict(name, outcome) {
-            Some(Verdict::Broken) if is_reachable => lines.extend(reached_lines(name, outcome)),
+            Some(Verdict::Broken) if is_reachable => {
+                lines.extend(reached_lines(name, outcome, model));
+            }
             Some(Verdict::Broken) => lines.push(format!("broken  {}  (expected)", one_line(name))),
             Some(Verdict::Holds) if is_reachable => {
                 lines.push(format!("never reached  {}", one_line(name)));
@@ -449,7 +456,7 @@ fn detail_of(outcome: &Outcome, expected: &[String], reachable: &[String]) -> Ve
             rule.path = None;
         }
     }
-    lines.extend(detail_lines(&rest));
+    lines.extend(detail_lines_in(&rest, notation));
     lines
 }
 

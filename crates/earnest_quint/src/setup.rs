@@ -337,6 +337,7 @@ fn instance<'t>(
             "typedef" => {
                 typedefs.insert(text(each, "name")?.to_owned(), each);
             }
+            "assume" => {}
             "import" if whole(each) => {
                 let proto = text(each, "protoName")?;
                 imports.modules.push(proto);
@@ -529,7 +530,7 @@ impl<'t> Filler<'t> {
                 "var" if runs_only => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
-                "typedef" => {}
+                "typedef" | "assume" => {}
                 _ => return None,
             }
         }
@@ -967,8 +968,38 @@ impl<'t> Filler<'t> {
         Some(())
     }
 
+    fn assumptions(&mut self) -> Fill<()> {
+        let mut found: Vec<(Option<usize>, &'t Value)> = Vec::new();
+        for (position, each) in self.instances.iter().enumerate() {
+            if let Some((_, proto)) = each.declared {
+                let spec = self.typechecked.module(proto)?;
+                found.extend(
+                    list(spec, "declarations")
+                        .iter()
+                        .filter(|declaration| text(declaration, "kind") == Some("assume"))
+                        .map(|declaration| (Some(position), declaration)),
+                );
+            }
+        }
+        found.extend(
+            list(self.main, "declarations")
+                .iter()
+                .filter(|declaration| text(declaration, "kind") == Some("assume"))
+                .map(|declaration| (None, declaration)),
+        );
+        for (within, declaration) in found {
+            let mut copy = declaration.clone();
+            copy["name"] = Value::String(self.renamed_name(text(declaration, "name")?, within));
+            copy["id"] = json!(self.id_in(within, number(declaration, "id")?));
+            copy["assumption"] = self.expr(declaration.get("assumption")?, within)?;
+            self.pushed.push(copy);
+        }
+        Some(())
+    }
+
     fn filled(mut self, check: &Setup<'_>) -> Fill<String> {
         self.roots()?;
+        self.assumptions()?;
         let actions = ["action"];
         let runs_only = check.runs_only();
         let searched = match (

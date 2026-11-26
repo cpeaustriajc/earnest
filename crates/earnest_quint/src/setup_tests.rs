@@ -350,3 +350,52 @@ fn a_definition_imported_into_a_spec_is_named_in_the_instance_with_its_alias() {
         "the names `quint compile --main Star` gives"
     );
 }
+
+#[test]
+fn a_refusal_in_a_setup_names_the_definition_by_its_short_name() {
+    let typechecked = typechecked_import("short");
+    let invariants = owned(&["C::picked"]);
+    let built = typechecked
+        .setup(&Setup::new(
+            "Few",
+            ("init", "step"),
+            (&invariants, &[]),
+            &Runs::None,
+        ))
+        .unwrap_or_else(|| panic!("`Few` is built"));
+    let Err(refused) = crate::read_located("short", &built, &Runs::None) else {
+        panic!("`chooseSome` is refused");
+    };
+    let messages: Vec<String> = refused
+        .iter()
+        .map(|each| each.problem.message.clone())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("in the definition `picked`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().all(|message| !message.contains("Few::C::")),
+        "{messages:?}"
+    );
+}
+
+#[test]
+fn a_literal_past_two_to_the_63_is_shown_in_its_refusal_as_written() {
+    let path = format!(
+        "{}/../../tasks/quint/imports/fixtures/big.Big.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+    let Err(refused) = crate::read_located("big", &source, &Runs::None) else {
+        panic!("a literal beyond 64 bits is refused");
+    };
+    assert!(
+        refused
+            .iter()
+            .any(|each| each.problem.feature == "`18446744073709551615`"),
+        "{refused:?}"
+    );
+}
