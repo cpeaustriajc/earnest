@@ -452,6 +452,26 @@ fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
     found
 }
 
+fn defs_of(declarations: &[Declaration]) -> HashMap<u64, &Def> {
+    declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) => Some((def.id, def)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn runs_declared(declarations: &[Declaration]) -> Vec<&str> {
+    declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) if def.qualifier == "run" => Some(def.name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn shorten(
     actions: &mut [Action],
     rules: &mut [Rule],
@@ -621,14 +641,7 @@ fn built(
     if !refusals.is_empty() {
         return Err(refusals);
     }
-    let defs: HashMap<u64, &Def> = module
-        .declarations
-        .iter()
-        .filter_map(|declaration| match declaration {
-            Declaration::Def(def) => Some((def.id, def)),
-            _ => None,
-        })
-        .collect();
+    let defs = defs_of(&module.declarations);
     let (every, variables) = layout(compiled, &defs, &module.declarations, wanted);
     let searched: Vec<u64> = variables.iter().map(|(each, _)| each.id).collect();
     let names: Vec<String> = variables.iter().map(|(_, name)| name.clone()).collect();
@@ -659,20 +672,12 @@ fn built(
         (mut scripts, script_picks),
     ) = both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
-    let runs: Vec<&str> = module
-        .declarations
-        .iter()
-        .filter_map(|declaration| match declaration {
-            Declaration::Def(def) if def.qualifier == "run" => Some(def.name.as_str()),
-            _ => None,
-        })
-        .collect();
     shorten(
         &mut actions,
         &mut rules,
         &mut eventually,
         &mut scripts,
-        &runs,
+        &runs_declared(&module.declarations),
     );
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables

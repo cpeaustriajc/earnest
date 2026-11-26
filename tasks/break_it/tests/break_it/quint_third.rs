@@ -403,7 +403,7 @@ fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_pl
          prefix that tells them apart, and its step `add(N)` with `N = 2` shows the value\n\
          {report:#}"
     );
-    let ruled = recorded.verify(&[
+    let alone = recorded.verify(&[
         "--no-cache",
         "--max-states",
         "1000",
@@ -412,11 +412,11 @@ fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_pl
         "--rule",
         "aTest",
     ]);
-    let endless = model_named(&ruled, "endless");
+    let endless = model_named(&alone, "endless");
     assert_eq!(
         (&endless["status"], &endless["states"]),
         (&Value::from("pass"), &Value::from(1)),
         "`--rule aTest` judges a run alone, so the model, which has no end, is not searched: \
-         only its start state is counted, and the run passes as `quint test` says\n{ruled:#}"
+         only its start state is counted, and the run passes as `quint test` says\n{alone:#}"
     );
 }
