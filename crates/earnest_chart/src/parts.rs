@@ -1,4 +1,5 @@
 const MOST_PARTS: usize = 3;
+const EMPTY: [&str; 4] = ["Map()", "Set()", "[]", "{}"];
 
 enum Shape<'t> {
     Map(Vec<(&'t str, &'t str)>),
@@ -195,8 +196,12 @@ fn parts(path: &str, before: &str, after: &str, out: &mut Vec<String>) {
 
 /// A change of `field` from `before` to `after`, both as Quint prints them, as the parts that
 /// changed: `peers.get("a").sent: 0 -> 1`, `seen: + 2`, `queue: + Ping at the end`. `None` when
-/// more than a few parts changed or the parts are no shorter than the whole change.
+/// more than a few parts changed, the value before or after is empty, or the parts are no
+/// shorter than the whole change.
 pub(crate) fn changed_parts(field: &str, before: &str, after: &str) -> Option<String> {
+    if [before, after].iter().any(|value| EMPTY.contains(value)) {
+        return None;
+    }
     let mut out = Vec::new();
     parts(field, before, after, &mut out);
     let shown = out.join(", ");
@@ -252,6 +257,7 @@ mod tests {
     fn a_small_value_or_a_change_of_many_parts_prints_whole() {
         assert_eq!(changed_parts("queue", "[]", r#"[Open("a")]"#), None);
         assert_eq!(changed_parts("n", "1", "2"), None);
+        assert_eq!(changed_parts("seen", "Map()", "Map((0, 0) -> Empty)"), None);
         assert_eq!(
             changed_parts(
                 "m",
