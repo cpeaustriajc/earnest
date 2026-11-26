@@ -20,6 +20,13 @@ construct it refuses. `is_compiled_quint` tells the CLI whether a `.json` file i
   constants is an input that lists the values. An input passed to an action's parameter takes
   the parameter's name.
 - Each invariant named in `q::inv` is a rule with that name as its id.
+- Each temporal property named in `q::temporalProps` (`--temporal`) is read as `F implies G` or
+  as `G` alone. `F` is a conjunction of `weakFair(A, vars)` over every state variable, where `A`
+  is the step or one of its top-level actions; it becomes the rule's own `Fairness`, and no `F`
+  means nothing is fair, so a run may stop in any state. Each conjunct of `G` is one rule,
+  named after the property, then `#2`, `#3`: `eventually(P)` and leads-to (`P.leadsTo(Q)` or
+  `always(P implies eventually(Q))`) are rules about runs, `always(eventually(P))` is a leads-to
+  from every state, and `always(P)` over a state is a plain rule.
 - One end whose condition is `true`, so a state with no next action is not stuck: Quint runs TLC
   without its deadlock check.
 - Operators, `val` and `def` are inlined where they are used.
@@ -30,7 +37,11 @@ construct it refuses. `is_compiled_quint` tells the CLI whether a `.json` file i
 
 Every construct it does not read makes the file unreadable, with a problem that names the
 construct and the definition it is in: records, tuples, sets as values, maps, lists, text,
-variants and `match`, integer powers, temporal properties, runs, constants without a value, a
+variants and `match`, integer powers, runs, constants without a value, a
 `oneOf` over a set computed from the state, a step or an `init` that leaves a variable
-unassigned or assigns one twice, and a step that unfolds into more than 1000 actions. The
+unassigned or assigns one twice, a step that unfolds into more than 1000 actions, and in a
+temporal property: `strongFair`, `next`, `orKeep`, `mustChange`, `enabled`,
+`eventually(always(…))`, a temporal operator under `not`, `or` or `iff`, an `implies` inside
+`G`, fairness over only some variables, and fairness of an action given arguments or of
+anything but the step and its top-level actions. The
 compiled JSON holds no line numbers, so every problem is placed at line 1, column 1.

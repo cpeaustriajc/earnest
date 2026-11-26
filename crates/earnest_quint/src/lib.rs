@@ -4,7 +4,8 @@
 //! that [`read`] takes. [`read`] gives an [`earnest_ir::Model`] ready to search, or a
 //! [`Problem`] for each construct the reader refuses. It reads `int` and `bool` variables, the
 //! integer and boolean operators, `if`, `let`, `nondet` over a set written out or a range, and
-//! the module's `init`, `step` and listed invariants. Everything else makes the file
+//! the module's `init`, `step`, listed invariants and listed temporal properties, each with
+//! the weak fairness it names. Everything else makes the file
 //! unreadable; nothing is skipped.
 //!
 //! The compiled JSON holds no line numbers, so every problem is placed at line 1, column 1,

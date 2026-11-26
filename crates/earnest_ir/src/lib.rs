@@ -309,7 +309,8 @@ pub struct End {
 /// One rule about whole runs: a state every run reaches.
 ///
 /// A run never stops while an action can still change the state, and it does not put off
-/// forever an action listed in [`Runs::fair`] that stays possible. Every such run from a state
+/// forever an action listed in [`Runs::fair`] that stays possible, unless `fair` gives the
+/// rule's own [`Fairness`]. Every such run from a state
 /// the rule starts from must come to a state where `reaches` is true, which may be that state.
 #[derive(Clone, Debug)]
 pub struct Eventually {

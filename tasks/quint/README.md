@@ -852,3 +852,75 @@ and names the construct and the definition it is in.
 - Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
   general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
   `scan.rs`.
+
+## Slice 5: what is checked
+
+`earnest verify <file>.json` reads the temporal properties a module was compiled with
+(`quint compile --target json --main M --temporal p,q …`, issue #57) and checks each with the
+liveness pass of `earnest_check`; `earnest confirm --tlc` compares every verdict with TLC.
+
+Compiled with Quint 0.33.1:
+
+```sh
+cd tasks/quint/probe
+quint compile --target json --main fair2 --temporal hearFairOnly,tickFairOnly,bothFair,stepFairH fair2.qnt > fair2.json
+cd ../models
+quint compile --target json --main SmallBits --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > smallbits.json
+quint compile --target json --main LargeBits --invariant inv --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > largebits.json
+quint compile --target json --main swing --temporal swingFair,outFair,stepFair,safe swing.qnt > swing.json
+```
+
+`models/clock.qnt` keeps `seen: Set[str]` and `Nodes: Set[str]`, which slice 1 does not read
+(sets and text are slice 2), so `models/clockbits.qnt` is the same `Clock` with each node one
+bit of an `int` (`Nodes` is 3 in `SmallBits` and 7 in `LargeBits`). TLC gives the two files the
+same counts and the same verdicts, below. `LargeBits` names the four properties of its instance
+`C` as its own, because `--temporal` takes names of the main module. `swing.qnt` is new: its
+broken runs are loops.
+
+### Fairness when the step is not fair
+
+TLA+ meaning, which TLC checks: `WF_vars(A)` is `<>[]ENABLED <A>_vars => []<><A>_vars`, where
+`<A>_vars` is an `A` step that changes `vars`. With `vars` every state variable, an `A` step that
+leaves the state as it is does not count, which is why the liveness pass drops such edges. A
+behaviour that stays in one state forever takes only stuttering steps.
+
+A rule is broken when some fair behaviour from a state where it starts never reaches what it
+wants. In a finite graph such a behaviour, from some point on, either
+
+1. **stays in one state `s` forever.** `WF_vars(A)` then holds exactly when `<A>_vars` is not
+   enabled at `s`: it is enabled forever otherwise, and never taken. `WF_vars(Next)` holds
+   exactly when `s` has no edge to another state. So `s` is a place to stay when no fair part
+   (and, if the step is fair, no action at all) can change the state there; or
+2. **moves forever inside one group** (strongly connected set of states that do not reach the
+   goal), visiting a set `S` of at least two states and taking a set of edges infinitely often.
+   `WF_vars(A)` then holds exactly when `A` is disabled at some state of `S` (it is then not
+   enabled from some point on forever) or an `A` edge inside `S` is taken infinitely often.
+   Taking `S` as the whole group is never worse: it adds states where `A` may be disabled and
+   edges that take `A`, and a tour of a strongly connected group can visit all its states and
+   take all its edges. Stuttering steps in between change nothing: `A` stays enabled across
+   them. `WF_vars(Next)` holds in this case too, so whole-step fairness adds nothing here.
+
+So a state is "doomed" (a run can stay there or around it forever) when case 1 holds for it or
+case 2 holds for its group, which is `doomed` in `eventually.rs` with one more check for case 1
+(`Hunt::stays`). Two remarks:
+
+- For a group of two states or more, case 1 at a state `s` implies case 2: every fair part is
+  disabled at `s`, which is in the group. So the groups `doomed` picks are the ones it picked
+  before, as the spike said; what is new is case 1 for states that have ways out, singletons and
+  states in groups alike. Where case 1 holds the run is reported as a stop, not as a loop.
+- With the whole step fair, case 1 is "no way out", which is the old test: earnest's own models
+  give the same verdicts, paths and sentences, and pay one match per state.
+
+A fair part is a set of actions: `weakFair(hear, vars)` is fair to every action the step unfolds
+from `hear` (`hear`, `hear#2`, …), as one disjunction, which is weaker than each alone. The model's
+`Runs::fair` stays one action per part.
+
+The new sentence for case 1 at a state with ways out is "the run may stop here, because no step
+it must take can change the state from here". A state with no way out keeps "nothing changes the
+state from here, so the run can stay in it forever".
+
+The TLA+ export: when a rule has its own fairness, `Spec` is `Init /\ [][Next]_vars` and each
+property is `(fairness) => (property)`, with the model's own fairness (`WF_vars(Next)` and each
+fair action) for a rule that has none. `earnest confirm --tlc` checks each property in its own
+run of TLC as before. A model whose rules have no fairness of their own is written byte for byte
+as before.
