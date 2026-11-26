@@ -718,7 +718,6 @@ fn on_seq(op: SeqOp, first: Value, second: Option<Value>, third: Option<Value>) 
         SeqOp::Size => size_of(items.len()),
         SeqOp::First => Ok(items.first().cloned().unwrap_or(Value::Null)),
         SeqOp::Last => Ok(items.last().cloned().unwrap_or(Value::Null)),
-        SeqOp::Shift => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
         SeqOp::Pop => {
             let mut items = as_seq(first)?;
             items.pop();
@@ -744,7 +743,7 @@ fn on_seq(op: SeqOp, first: Value, second: Option<Value>, third: Option<Value>) 
         }
         SeqOp::Head => items.first().cloned().ok_or(Fault::Missing),
         SeqOp::Tail if items.is_empty() => Err(Fault::Missing),
-        SeqOp::Tail => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
+        SeqOp::Shift | SeqOp::Tail => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
         SeqOp::Concat => {
             let other = needed(second)?;
             let mut items = as_seq(first)?;

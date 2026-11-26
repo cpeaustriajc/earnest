@@ -58,3 +58,6 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod table;

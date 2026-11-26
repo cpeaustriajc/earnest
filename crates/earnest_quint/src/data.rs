@@ -220,6 +220,10 @@ impl<'a> Reader<'a> {
     }
 
     pub(crate) fn data(&mut self, data: Data, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.built(data, opcode, args)
+    }
+
+    fn built(&mut self, data: Data, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
         match data {
             Data::Apply(op, wanted) => {
                 self.given(opcode, args, wanted)?;
@@ -279,7 +283,13 @@ impl<'a> Reader<'a> {
                 both.reverse();
                 Ok(apply(Op::Set(SetOp::Has), both))
             }
-            Data::Sweep(sweep, shelf) => {
+            computed => self.computed(computed, opcode, args),
+        }
+    }
+
+    fn computed(&mut self, data: Data, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        match data {
+            Data::Sweep(sweep, kept_as) => {
                 self.given(opcode, args, 2)?;
                 let source = self.pure(&args[0])?;
                 let lambda = self.lambda(&args[1], 1, opcode)?;
@@ -287,7 +297,7 @@ impl<'a> Reader<'a> {
                 let body = self.under(lambda, vec![Expr::Local(slot)])?;
                 Ok(Expr::Sweep {
                     sweep,
-                    shelf,
+                    shelf: kept_as,
                     slot,
                     source: boxed(source),
                     body: boxed(body),
@@ -339,57 +349,64 @@ impl<'a> Reader<'a> {
                 );
                 Ok(Self::folded(&carried, source, empty_map(), body))
             }
-            Data::Powerset => {
-                self.given(opcode, args, 1)?;
-                let source = self.pure(&args[0])?;
-                match constant(&source, self.slots)? {
-                    Some(Value::Set(items))
-                        if u32::try_from(items.len())
-                            .is_ok_and(|count| count <= MOST_POWERSET_ITEMS) =>
-                    {
-                        Ok(Expr::Const(Value::set(powerset(&items))))
-                    }
-                    Some(Value::Set(_)) => self.refuse(
-                        "`powerset`",
-                        &format!("the powerset of a set of more than {MOST_POWERSET_ITEMS} items"),
-                    ),
-                    _ => self.refuse(
-                        "`powerset`",
-                        "`powerset` is read only of a set that does not change, worked out when \
-                         the file is read",
-                    ),
-                }
-            }
+            Data::Powerset => self.powerset(opcode, args),
             Data::IsFinite => {
                 self.given(opcode, args, 1)?;
                 let source = self.pure(&args[0])?;
                 Ok(apply(Op::Equal, vec![source.clone(), source]))
             }
-            Data::SetBy => {
-                self.given(opcode, args, 3)?;
-                let map = self.pure(&args[0])?;
-                let key = self.pure(&args[1])?;
-                let lambda = self.lambda(&args[2], 1, opcode)?;
-                let slot = self.fresh();
-                let changed = self.under(lambda, vec![Expr::Local(slot)])?;
-                let old = apply(Op::Map(MapOp::MustGet), vec![map.clone(), key.clone()]);
-                Ok(Expr::Bind {
-                    slot,
-                    value: boxed(old),
-                    body: boxed(apply(Op::Map(MapOp::Set), vec![map, key, changed])),
-                })
-            }
+            Data::SetBy => self.set_by(opcode, args),
             Data::Indices => {
                 self.given(opcode, args, 1)?;
                 let list = self.pure(&args[0])?;
                 let size = apply(Op::Seq(SeqOp::Size), vec![list]);
-                let last = apply(
+                let highest = apply(
                     Op::Math(Math::Subtract),
                     vec![size, Expr::Const(Value::Int(1))],
                 );
-                Ok(apply(Op::Interval, vec![Expr::Const(Value::Int(0)), last]))
+                Ok(apply(
+                    Op::Interval,
+                    vec![Expr::Const(Value::Int(0)), highest],
+                ))
             }
+            _ => self.built(data, opcode, args),
         }
+    }
+
+    fn powerset(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.given(opcode, args, 1)?;
+        let source = self.pure(&args[0])?;
+        match constant(&source, self.slots)? {
+            Some(Value::Set(items))
+                if u32::try_from(items.len()).is_ok_and(|count| count <= MOST_POWERSET_ITEMS) =>
+            {
+                Ok(Expr::Const(Value::set(powerset(&items))))
+            }
+            Some(Value::Set(_)) => self.refuse(
+                "`powerset`",
+                &format!("the powerset of a set of more than {MOST_POWERSET_ITEMS} items"),
+            ),
+            _ => self.refuse(
+                "`powerset`",
+                "`powerset` is read only of a set that does not change, worked out when \
+                         the file is read",
+            ),
+        }
+    }
+
+    fn set_by(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.given(opcode, args, 3)?;
+        let map = self.pure(&args[0])?;
+        let key = self.pure(&args[1])?;
+        let lambda = self.lambda(&args[2], 1, opcode)?;
+        let slot = self.fresh();
+        let changed = self.under(lambda, vec![Expr::Local(slot)])?;
+        let old = apply(Op::Map(MapOp::MustGet), vec![map.clone(), key.clone()]);
+        Ok(Expr::Bind {
+            slot,
+            value: boxed(old),
+            body: boxed(apply(Op::Map(MapOp::Set), vec![map, key, changed])),
+        })
     }
 
     fn each(&mut self, args: &'a [Quint]) -> Read<Vec<Expr>> {

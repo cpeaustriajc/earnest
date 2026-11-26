@@ -9,13 +9,19 @@ const SLOTS: usize = 4;
 const TOTAL: usize = 0;
 const ITEM: usize = 1;
 
-fn both(expr: &Expr) -> Result<Value, Fault> {
+struct Agreed(Result<Value, Fault>);
+
+fn agreed(expr: &Expr) -> Agreed {
     let mut walked = Frame::new(&[], SLOTS);
     let reference = eval(expr, &mut walked);
     let mut prepared = Frame::new(&[], SLOTS);
     let code = Code::new(expr.clone()).eval(&mut prepared);
     assert_eq!(reference, code, "the walk and the code agree on {expr:?}");
-    reference
+    Agreed(reference)
+}
+
+fn both(expr: &Expr) -> Result<Value, Fault> {
+    agreed(expr).0
 }
 
 fn int(number: i64) -> Expr {
