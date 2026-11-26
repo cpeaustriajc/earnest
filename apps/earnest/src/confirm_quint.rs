@@ -1,5 +1,6 @@
 use crate::checks::is_a_name;
 use crate::confirm::read_tlc;
+use crate::confirm_reach::where_backends_differ;
 use crate::quint::{QuintCheck, segments_end_alike};
 use crate::run::{Checked, RuleResult, whole_of};
 use earnest_quint::Runs;
@@ -36,26 +37,6 @@ const NO_JAVA: &str = "Java was not found on PATH, and `quint verify --backend t
 const SAMPLED: &str = "`quint test` tries random choices of a run, and the checker tries every \
                        choice";
 const UNSURE_WHICH: &str = "the checker can't tell which of its results is this property";
-
-const BACKENDS_DIFFER: [(&str, &str); 4] = [
-    (
-        "range",
-        "the model uses `range`, which Quint's TLC run and `quint test` answer differently when \
-         it starts above its end",
-    ),
-    (
-        "fold",
-        "the model uses `fold`, whose order over texts differs between TLC and the checker",
-    ),
-    (
-        "foldl",
-        "the model uses `foldl`, whose order over texts differs between TLC and the checker",
-    ),
-    (
-        "foldr",
-        "the model uses `foldr`, whose order over texts differs between TLC and the checker",
-    ),
-];
 
 #[cfg(windows)]
 const JAVA: [&str; 2] = ["java.exe", "java"];
@@ -158,14 +139,6 @@ fn tested(line: &str) -> Option<Tested> {
 
 pub(crate) fn read_test(stdout: &str) -> Vec<Tested> {
     stdout.lines().filter_map(tested).collect()
-}
-
-pub(crate) fn where_backends_differ(compiled: &str) -> Vec<String> {
-    BACKENDS_DIFFER
-        .iter()
-        .filter(|(opcode, _)| compiled.contains(&format!("\"opcode\":\"{opcode}\"")))
-        .map(|(_, why)| (*why).to_owned())
-        .collect()
 }
 
 fn java_on_path() -> bool {
@@ -435,7 +408,7 @@ fn searched(
         properties.iter().partition(|property| property.expected);
     let together = runner.verify(&rest);
     let mut runs: Vec<(Vec<&Property>, Verified)> = Vec::new();
-    if together == Verified::Violated && rest.len() > 1 {
+    if matches!(together, Verified::Violated | Verified::Stopped(_)) && rest.len() > 1 {
         for property in &rest {
             runs.push((vec![property], runner.verify(&[property])));
         }
@@ -559,36 +532,59 @@ fn played(checked: &Checked, runner: &Runner<'_>, reasons: &[String]) -> Vec<Dif
             unless(said, reasons)
         });
     }
-    if quint_check_plays_by_ending(runner.quint) {
-        for run in &theirs {
-            let not_played = checked
-                .result
-                .runs_not_played
-                .iter()
-                .any(|name| segments_end_alike(name, &run.name));
-            if claimed.contains(&run.name.as_str()) || not_played {
-                continue;
-            }
-            let said = format!(
-                "run {}: `quint test` played it, and the checker did not",
-                run.name
-            );
-            let second_name = ours
-                .iter()
-                .find(|rule| run.name.ends_with(&format!("::{}", rule.id)));
-            found.push(match second_name {
-                Some(rule) => cannot(
-                    said,
-                    &format!(
-                        "Quint also names a run that the checker played as `{}`, which an \
-                         `export` makes visible under two names, and the checker can't tell \
-                         whether it is that run",
-                        rule.id
-                    ),
-                ),
-                None => differs(said),
-            });
+    found.extend(left_over(checked, runner, &ours, &theirs, &claimed));
+    found
+}
+
+fn left_over(
+    checked: &Checked,
+    runner: &Runner<'_>,
+    ours: &[&RuleResult],
+    theirs: &[Tested],
+    claimed: &[&str],
+) -> Vec<Difference> {
+    let mut found = Vec::new();
+    for run in theirs {
+        if claimed.contains(&run.name.as_str()) {
+            continue;
         }
+        if checked.result.runs_not_played.contains(&run.name) {
+            found.push(if run.passed {
+                cannot(
+                    format!("run {}: not compared", run.name),
+                    "the checker did not play it (runs not played), and `quint test` passes it",
+                )
+            } else {
+                differs(format!(
+                    "run {}: `quint test` says broken after {} sample(s), and the checker did \
+                     not play it, so it passes a check whose run Quint breaks",
+                    run.name, run.samples
+                ))
+            });
+            continue;
+        }
+        if !quint_check_plays_by_ending(runner.quint) {
+            continue;
+        }
+        let said = format!(
+            "run {}: `quint test` played it, and the checker did not",
+            run.name
+        );
+        let second_name = ours
+            .iter()
+            .find(|rule| run.name.ends_with(&format!("::{}", rule.id)));
+        found.push(match second_name {
+            Some(rule) => cannot(
+                said,
+                &format!(
+                    "Quint also names a run that the checker played as `{}`, which an \
+                     `export` makes visible under two names, and the checker can't tell \
+                     whether it is that run",
+                    rule.id
+                ),
+            ),
+            None => differs(said),
+        });
     }
     found
 }
@@ -603,7 +599,7 @@ pub(crate) struct Asked<'a> {
     pub(crate) quint: Option<&'a QuintCheck>,
     pub(crate) expected: &'a [String],
     pub(crate) beyond_tlc: Vec<String>,
-    pub(crate) backends_differ: Vec<String>,
+    pub(crate) compiled: &'a str,
     pub(crate) folder: &'a Path,
 }
 
@@ -622,10 +618,11 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
         quint,
         folder: asked.folder.to_path_buf(),
     };
+    let differ = where_backends_differ(asked.compiled, quint);
     let mut reasons = asked.beyond_tlc.clone();
-    reasons.extend(asked.backends_differ.iter().cloned());
+    reasons.extend(differ.search);
     reasons.extend(ours_cut_short(checked));
-    let mut run_reasons = asked.backends_differ.clone();
+    let mut run_reasons = differ.runs;
     run_reasons.extend(ours_cut_short(checked));
     let mut found = Vec::new();
     if quint.searches {

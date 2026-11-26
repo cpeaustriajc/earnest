@@ -8,7 +8,7 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 ## November 2026: confirm a Quint check with Quint itself
 
 - **`earnest confirm --quint`:** runs Quint's own `quint verify --backend tlc` and `quint test` on each Quint check and prints `same`, `differs` or `cannot`. Quint reads the `.qnt` file itself, so a fault in earnest's reading of it shows, where `--tlc` checks the model as earnest read it. A check whose properties all hold costs one `quint verify`; a property gets a job of its own only when that job finds a violation.
-- **`cannot`, never `differs`,** where Quint's backends are known to answer otherwise: numbers outside 32 bits, a fault such as `/` of a negative number, a run `quint test` passes on random samples, `range` and folds. Without Java, the line says so.
+- **`cannot`, never `differs`,** where Quint's backends are known to answer otherwise: numbers outside 32 bits, a fault such as `/` of a negative number, a run `quint test` passes on random samples, a `range` a run reaches, and a fold over texts the check reaches. A run the checker did not play is never `same`. Without Java, the line says so.
 
 See [Confirming a check with Quint](/reference/quint/#confirming-a-check-with-quint).
 
