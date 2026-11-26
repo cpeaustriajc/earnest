@@ -1978,24 +1978,26 @@ refuses inside a step is still refused, by name.
 
 ### Checks, each with its last line
 
+On the tree merged with the integration head `ae5da5f` (slices 2, 5 and 7):
+
 - `cargo fmt --check`: exit 0.
 - `cargo clippy --all-targets --locked -- -D warnings`: `Finished`, no warnings.
 - `just lint-library`: both passes `Finished`.
 - `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
 - `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
-- `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1820 passed, 0 failed.
+- `just typescript`: exit 0. `just docs`: `18 page(s) built`, `Complete!`.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 81 suites, 1927 passed, 0 failed.
 - `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
-- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,905,954,026 | -0.04% | 1.00% | met |`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,906,689,970 | 0.00% | 1.00% | met |`.
   Not re-recorded.
 - `just benchmark` (4 cores): every budget `met`; the last line is `wide, search time with all
-  cores (0.089 s) over search time with 1 worker (0.292 s): 0.30x, budget at most 0.75x: met`.
+  cores (0.120 s) over search time with 1 worker (0.336 s): 0.36x, budget at most 0.75x: met`.
 - `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
-  64 differences`, all in `tasks/conformance/runs/`, which is not on `origin/main` (it came with
-  the integration branch).
-  Against this branch's base, `just same-answers fdbd03a` gives `every model file: 392 runs, 0
-  differences`, with every sweep at 0, so the 64 come from the integration branch, not from
-  this slice.
-- `tests_kept.py --base origin/main`: `tests kept: 1493 tests, 4378 assertions (base: 1304, 3798)`.
+  64 differences`, all in `tasks/conformance/runs/` (`cart`, `cart_broken`, `clock` and the
+  others the integration branch brought), which is not on `origin/main`. `just same-answers
+  origin/claude/lucid-brown-f5xvr8` (the head merged): every sweep and `every model file: 392
+  runs, 0 differences`.
+- `tests_kept.py --base origin/main`: `tests kept: 1563 tests, 4567 assertions (base: 1304, 3798)`.
 
 ### Unfinished, and the next step
 
