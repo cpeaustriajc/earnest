@@ -145,6 +145,7 @@ pub(crate) struct Scribe<'a> {
     variables: Vec<Variable>,
     labels: BTreeMap<Sym, String>,
     label_names: Names,
+    in_tlc_order: bool,
 }
 
 impl<'a> Scribe<'a> {
@@ -154,6 +155,7 @@ impl<'a> Scribe<'a> {
             variables,
             labels: BTreeMap::new(),
             label_names: labels,
+            in_tlc_order: false,
         }
     }
 
@@ -552,6 +554,12 @@ impl<'a> Scribe<'a> {
         body: &Expr,
         scope: &mut Scope,
     ) -> Written {
+        let (declared, source, in_tlc_order) = match source {
+            Expr::Apply(Op::InTlcOrder, inner) if declared == Shelf::Seq && inner.len() == 1 => {
+                (Shelf::Set, &inner[0], true)
+            }
+            _ => (declared, source, false),
+        };
         let over = self.expr(source, scope);
         let first = self.expr(start, scope);
         let operator = scope.claim("Fold");
@@ -575,7 +583,10 @@ impl<'a> Scribe<'a> {
             Kind::Set(inner) => {
                 let other = scope.claim("other");
                 let pick = scope.claim("pick");
-                let least = self.before(inner, &pick, &other, scope).map_or_else(
+                self.in_tlc_order = in_tlc_order;
+                let before = self.before(inner, &pick, &other, scope);
+                self.in_tlc_order = false;
+                let least = before.map_or_else(
                     || "TRUE".to_owned(),
                     |before| format!("\\A {other} \\in ({rest} \\ {{{pick}}}) : {before}"),
                 );
@@ -627,6 +638,25 @@ impl<'a> Scribe<'a> {
                 )
             }
             Kind::Record(fields) => self.before_fields(fields, left, right, scope)?,
+            Kind::Seq(item) if self.in_tlc_order => {
+                let items = self.before_seqs(item, left, right, scope)?;
+                format!(
+                    "((Len({left}) < Len({right})) \\/ ((Len({left}) = Len({right})) /\\ {items}))"
+                )
+            }
+            Kind::Set(item) if self.in_tlc_order => {
+                let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
+                    scribe.before(item, first, second, scope)
+                };
+                let items = self.before_sets(&member, left, right, scope)?;
+                format!(
+                    "((Cardinality({left}) < Cardinality({right})) \\/ \
+                     ((Cardinality({left}) = Cardinality({right})) /\\ {items}))"
+                )
+            }
+            Kind::Map(key, value) if self.in_tlc_order => {
+                self.before_maps_in_tlc_order((key, value), left, right, scope)?
+            }
             Kind::Seq(item) => self.before_seqs(item, left, right, scope)?,
             Kind::Set(item) => {
                 let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
@@ -702,6 +732,35 @@ impl<'a> Scribe<'a> {
              (\\A {lead} \\in 1..({at} - 1) : {left}[{lead}] = {right}[{lead}]) /\\ {here})) \\/ \
              ((Len({left}) < Len({right})) /\\ \
              (\\A {lead} \\in 1..Len({left}) : {left}[{lead}] = {right}[{lead}])))"
+        ))
+    }
+
+    fn before_maps_in_tlc_order(
+        &mut self,
+        (key, value): (&Kind, &Kind),
+        left: &str,
+        right: &str,
+        scope: &mut Scope,
+    ) -> Option<String> {
+        let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
+            scribe.before(key, first, second, scope)
+        };
+        let (left_keys, right_keys) = (format!("(DOMAIN {left})"), format!("(DOMAIN {right})"));
+        let keys = self.before_sets(&member, &left_keys, &right_keys, scope)?;
+        let [at, lead] = [scope.claim("at"), scope.claim("lead")];
+        let earlier = self.before(key, &lead, &at, scope)?;
+        let values = self.before(
+            value,
+            &format!("{left}[{at}]"),
+            &format!("{right}[{at}]"),
+            scope,
+        )?;
+        Some(format!(
+            "((Cardinality({left_keys}) < Cardinality({right_keys})) \\/ \
+             ((Cardinality({left_keys}) = Cardinality({right_keys})) /\\ \
+             ((({left_keys} # {right_keys}) /\\ {keys}) \\/ (({left_keys} = {right_keys}) /\\ \
+             (\\E {at} \\in {left_keys} : (({left}[{at}] # {right}[{at}]) /\\ {values} /\\ \
+             (\\A {lead} \\in {left_keys} : ({earlier} => ({left}[{lead}] = {right}[{lead}])))))))))"
         ))
     }
 
@@ -882,6 +941,25 @@ fn on_map(op: MapOp, first: &Written, second: &Written, third: Option<&Written>)
             )
         }
         (MapOp::Set, None) => unknown("a map set without a value"),
+        (MapOp::Once, Some(value)) => {
+            let set = Kind::map(second.kind.clone(), value.kind.clone());
+            let written = call(
+                Helper::MapSet,
+                &[map, key, &value.text],
+                first.kind.join(&set),
+            );
+            let twice = quoted("setToMap given two pairs with one key");
+            Written::new(
+                format!(
+                    "(IF ({key} \\in DOMAIN {map}) /\\ ({map}[{key}] # {}) THEN {}({twice}) ELSE \
+                     {})",
+                    value.text,
+                    Helper::Fault.name(),
+                    written.text
+                ),
+                written.kind,
+            )
+        }
         (MapOp::MustGet, _) => call(Helper::MapMustGet, &[map, key], first.kind.value()),
         (MapOp::Replace, Some(value)) => call(
             Helper::MapReplace,

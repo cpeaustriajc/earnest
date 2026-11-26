@@ -9,6 +9,10 @@ const NO_ROUND: u64 = 0;
 const FIRST_ROUND: u64 = 1;
 pub(crate) const NO_UNIT: u64 = 0;
 
+/// The most numbers [`Op::Interval`] and [`Op::Ascending`] build. A wider range is
+/// [`Fault::TooWide`] instead of taking the machine's memory.
+pub const MOST_RANGE_VALUES: u64 = 1_000_000;
+
 /// Why an expression has no value in a state.
 ///
 /// The search reports a fault as a finding with the path to the state. All but the last can
@@ -39,6 +43,12 @@ pub enum Fault {
     /// An operation got a value of a kind it has no meaning for, too few arguments, or a field
     /// or slot that does not exist.
     WrongKind,
+    /// `setToMap` of a Quint model met two pairs with one key and different values, which
+    /// Quint's backends turn into different maps.
+    KeyTwice,
+    /// A range of whole numbers, `a.to(b)` or `range(a, b)` in a Quint model, holds more than
+    /// [`MOST_RANGE_VALUES`] numbers.
+    TooWide,
     /// The time limit passed while the expression was being evaluated. It says nothing about
     /// the model: the search drops the state it was evaluating.
     Stopped,
@@ -64,6 +74,14 @@ impl Fault {
                 "computes a power or a run of numbers that is not defined".to_owned()
             }
             Self::WrongKind => "uses a value of the wrong kind".to_owned(),
+            Self::KeyTwice => "gives `setToMap` two pairs with one key, which Quint's backends \
+                               keep differently (TLC the first in its order, the evaluator the \
+                               last written)"
+                .to_owned(),
+            Self::TooWide => format!(
+                "builds a range (`a.to(b)` or `range(a, b)`) of more than the \
+                 {MOST_RANGE_VALUES} numbers a range may hold"
+            ),
             Self::Stopped => "was stopped by the time limit".to_owned(),
         }
     }
@@ -499,6 +517,7 @@ pub(crate) fn applied<T>(
         }
         Op::Interval => {
             let (lo, hi) = int_pair(&first, second.as_ref())?;
+            narrow(lo, hi.saturating_add(1))?;
             Ok(Value::set((lo..=hi).map(Value::Int).collect()))
         }
         Op::Ascending => {
@@ -506,9 +525,18 @@ pub(crate) fn applied<T>(
             if lo > hi {
                 return Err(Fault::Undefined);
             }
+            narrow(lo, hi)?;
             Ok(Value::seq((lo..hi).map(Value::Int).collect()))
         }
+        Op::InTlcOrder => Ok(Value::seq(crate::tlc_order::listed(set_in(&first)?))),
     }
+}
+
+fn narrow(lo: i64, end: i64) -> Result<(), Fault> {
+    if lo < end && end.abs_diff(lo) > MOST_RANGE_VALUES {
+        return Err(Fault::TooWide);
+    }
+    Ok(())
 }
 
 fn raised(base: i64, power: i64) -> Result<i64, Fault> {
@@ -690,6 +718,16 @@ fn on_map(op: MapOp, first: Value, second: Option<Value>, third: Option<Value>) 
         MapOp::Set => {
             let key = needed(second)?;
             let value = needed(third)?;
+            let mut entries = as_map(first)?;
+            entries.insert(key, value);
+            Ok(Value::map(entries))
+        }
+        MapOp::Once => {
+            let key = needed(second)?;
+            let value = needed(third)?;
+            if entries.get(&key).is_some_and(|kept| *kept != value) {
+                return Err(Fault::KeyTwice);
+            }
             let mut entries = as_map(first)?;
             entries.insert(key, value);
             Ok(Value::map(entries))

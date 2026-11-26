@@ -24,6 +24,8 @@ pub(crate) enum Data {
     List,
     Map,
     In,
+    Contains,
+    Subset,
     Sweep(Sweep, Shelf),
     SetMap,
     Fold(Shelf),
@@ -34,6 +36,7 @@ pub(crate) enum Data {
     MapBy,
     SetToMap,
     Indices,
+    UpTo,
     Only,
     FieldNames,
     FoldRight,
@@ -53,12 +56,12 @@ pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
         "Set" => Data::Set,
         "List" => Data::List,
         "Map" => Data::Map,
-        "contains" => set(SetOp::Has),
+        "contains" => Data::Contains,
         "in" => Data::In,
         "union" => set(SetOp::Union),
         "intersect" => set(SetOp::Intersect),
         "exclude" => set(SetOp::Subtract),
-        "subseteq" => set(SetOp::IsSubset),
+        "subseteq" => Data::Subset,
         "size" => Data::Apply(Op::Set(SetOp::Size), 1),
         "filter" => Data::Sweep(Sweep::Filter, Shelf::Set),
         "exists" => Data::Sweep(Sweep::Some, Shelf::Set),
@@ -90,7 +93,7 @@ pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
         "foldr" => Data::FoldRight,
         "replaceAt" => Data::Apply(Op::Seq(SeqOp::ReplaceAt), 3),
         "slice" => Data::Apply(Op::Seq(SeqOp::Slice), 3),
-        "range" => Data::Apply(Op::Ascending, 2),
+        "range" => Data::UpTo,
         "ipow" => Data::Apply(Op::Power, 2),
         _ => return None,
     };
@@ -356,9 +359,19 @@ impl<'a> Reader<'a> {
             Data::Map => self.map_of(args),
             Data::In => {
                 self.given(opcode, args, 2)?;
-                let mut both = self.each(args)?;
-                both.reverse();
-                Ok(apply(Op::Set(SetOp::Has), both))
+                self.member(&args[0], &args[1])
+            }
+            Data::Contains => {
+                self.given(opcode, args, 2)?;
+                self.member(&args[1], &args[0])
+            }
+            Data::Subset => {
+                self.given(opcode, args, 2)?;
+                self.subset(&args[0], &args[1])
+            }
+            Data::UpTo => {
+                self.given(opcode, args, 2)?;
+                self.up_to(&args[0], &args[1])
             }
             computed => self.computed(computed, opcode, args),
         }
@@ -402,7 +415,11 @@ impl<'a> Reader<'a> {
                 let lambda = self.lambda(&args[2], 2, opcode)?;
                 let carried = self.carried();
                 let body = self.under(lambda, vec![carried.total(), carried.item()])?;
-                Ok(Self::folded_as(kept_as, &carried, source, start, body))
+                let (walked_as, items) = match kept_as {
+                    Shelf::Set => (Shelf::Seq, apply(Op::InTlcOrder, vec![source])),
+                    _ => (kept_as, source),
+                };
+                Ok(Self::folded_as(walked_as, &carried, items, start, body))
             }
             Data::Flatten => {
                 self.given(opcode, args, 1)?;
@@ -417,7 +434,7 @@ impl<'a> Reader<'a> {
                 let carried = self.carried();
                 let (key, value) = (self.position(1), self.position(2));
                 let body = apply(
-                    Op::Map(MapOp::Set),
+                    Op::Map(MapOp::Once),
                     vec![
                         carried.total(),
                         Expr::Get(boxed(carried.item()), key),
@@ -451,6 +468,82 @@ impl<'a> Reader<'a> {
             }
             _ => self.built(data, opcode, args),
         }
+    }
+
+    fn bound_ends(&mut self, range: &'a Quint) -> Read<Option<([usize; 2], Vec<Expr>)>> {
+        let Quint::App { opcode, args, .. } = range else {
+            return Ok(None);
+        };
+        if opcode != "to" || args.len() != 2 {
+            return Ok(None);
+        }
+        let ends = self.each(args)?;
+        Ok(Some(([self.fresh(), self.fresh()], ends)))
+    }
+
+    fn within(ends: [usize; 2], item: Expr) -> Expr {
+        let [lo, hi] = ends;
+        let order = |order, left, right| apply(Op::Order(order), vec![left, right]);
+        Expr::And(
+            boxed(order(Order::LessOrEqual, Expr::Local(lo), item.clone())),
+            boxed(order(Order::LessOrEqual, item, Expr::Local(hi))),
+        )
+    }
+
+    fn bound(ends: [usize; 2], values: Vec<Expr>, body: Expr) -> Expr {
+        ends.into_iter()
+            .zip(values)
+            .rev()
+            .fold(body, |body, (slot, value)| Expr::Bind {
+                slot,
+                value: boxed(value),
+                body: boxed(body),
+            })
+    }
+
+    fn member(&mut self, item: &'a Quint, set: &'a Quint) -> Read<Expr> {
+        let item = self.pure(item)?;
+        let Some((ends, values)) = self.bound_ends(set)? else {
+            let set = self.pure(set)?;
+            return Ok(apply(Op::Set(SetOp::Has), vec![set, item]));
+        };
+        let slot = self.fresh();
+        let test = Self::within(ends, Expr::Local(slot));
+        Ok(Expr::Bind {
+            slot,
+            value: boxed(item),
+            body: boxed(Self::bound(ends, values, test)),
+        })
+    }
+
+    fn subset(&mut self, items: &'a Quint, set: &'a Quint) -> Read<Expr> {
+        let items = self.pure(items)?;
+        let Some((ends, values)) = self.bound_ends(set)? else {
+            let set = self.pure(set)?;
+            return Ok(apply(Op::Set(SetOp::IsSubset), vec![items, set]));
+        };
+        let slot = self.fresh();
+        let every = Expr::Sweep {
+            sweep: Sweep::Every,
+            shelf: Shelf::Set,
+            slot,
+            source: boxed(items),
+            body: boxed(Self::within(ends, Expr::Local(slot))),
+        };
+        Ok(Self::bound(ends, values, every))
+    }
+
+    fn up_to(&mut self, start: &'a Quint, end: &'a Quint) -> Read<Expr> {
+        let values = vec![self.pure(start)?, self.pure(end)?];
+        let ends = [self.fresh(), self.fresh()];
+        let [lo, hi] = ends.map(Expr::Local);
+        let counts_up = apply(Op::Order(Order::Less), vec![lo.clone(), hi.clone()]);
+        let chosen = Expr::Choose(
+            boxed(counts_up),
+            boxed(apply(Op::Ascending, vec![lo, hi])),
+            boxed(Expr::SeqOf(Vec::new())),
+        );
+        Ok(Self::bound(ends, values, chosen))
     }
 
     fn powerset(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {

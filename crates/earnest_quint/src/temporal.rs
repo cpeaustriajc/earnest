@@ -170,10 +170,11 @@ impl<'a> Properties<'_, 'a> {
             let [action, vars] = args.as_slice() else {
                 return self.reader.refuse("`weakFair`", ONLY_WEAK_FAIRNESS);
             };
-            self.over_every_variable(vars, step.fields)?;
+            let listed = self.over_every_variable(vars, step.fields)?;
             match self.fair_part(action, step)? {
                 None => fairness.step = true,
                 Some(part) => {
+                    self.assigns_every_variable(action, &listed)?;
                     if !fairness.actions.contains(&part) {
                         fairness.actions.push(part);
                     }
@@ -183,18 +184,23 @@ impl<'a> Properties<'_, 'a> {
         Ok(fairness)
     }
 
-    fn over_every_variable(&mut self, vars: &'a Quint, fields: usize) -> Read<()> {
+    fn over_every_variable(
+        &mut self,
+        vars: &'a Quint,
+        fields: usize,
+    ) -> Read<Vec<(usize, &'a str)>> {
         let listed: &[Quint] = match vars {
             Quint::App { opcode, args, .. } if opcode == "Tup" => args,
             other => std::slice::from_ref(other),
         };
         let mut seen = vec![false; fields];
+        let mut named = Vec::with_capacity(listed.len());
         for each in listed {
             let read = match each {
-                Quint::Name { .. } => self.reader.pure(each).ok(),
+                Quint::Name { name, .. } => self.reader.pure(each).ok().zip(Some(name.as_str())),
                 _ => None,
             };
-            let Some(Expr::Field(position)) = read else {
+            let Some((Expr::Field(position), name)) = read else {
                 return self.reader.refuse(
                     "`weakFair`",
                     "fairness over something that is not a tuple of the state variables",
@@ -203,14 +209,40 @@ impl<'a> Properties<'_, 'a> {
             if let Some(flag) = seen.get_mut(position) {
                 *flag = true;
             }
+            named.push((position, name));
         }
         if seen.iter().all(|flag| *flag) {
-            return Ok(());
+            return Ok(named);
         }
         self.reader.refuse(
             "`weakFair`",
             "fairness over only some of the state variables is not read: list them all",
         )
+    }
+
+    fn assigns_every_variable(&mut self, action: &'a Quint, listed: &[(usize, &str)]) -> Read<()> {
+        let Quint::Name { id, name } = action else {
+            return Ok(());
+        };
+        let Some(def) = self.def_of(*id) else {
+            return Ok(());
+        };
+        for path in self.reader.paths(&def.expr)? {
+            let open = listed
+                .iter()
+                .find(|(position, _)| path.assigns.iter().all(|(given, _)| given != position));
+            if let Some((_, variable)) = open {
+                return self.reader.refuse(
+                    "`weakFair`",
+                    &format!(
+                        "`weakFair({name}, …)`, where `{name}` alone does not give `{variable}'`, \
+                         is not read: Quint's TLC runs stop on such a formula. Make `{name}` \
+                         assign every variable, or make the whole step fair"
+                    ),
+                );
+            }
+        }
+        Ok(())
     }
 
     fn fair_part(&mut self, action: &'a Quint, step: &Step<'_>) -> Read<Option<Vec<usize>>> {

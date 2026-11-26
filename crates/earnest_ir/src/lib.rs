@@ -8,10 +8,11 @@
 mod code;
 mod eval;
 mod parts;
+mod tlc_order;
 mod told;
 
 pub use code::{Code, Coding, PackedTest, PackedUpdate, Scalar, Slot};
-pub use eval::{Fault, Frame, eval, truth};
+pub use eval::{Fault, Frame, MOST_RANGE_VALUES, eval, truth};
 
 use earnest_value::{Domain, IntType, Sym, Symbols, Value};
 
@@ -91,6 +92,9 @@ pub enum MapOp {
     /// The map with the key's value replaced by the third argument. A key without a value is
     /// [`Fault::Missing`].
     Replace,
+    /// The map with the key set to the third argument. A key that already has another value is
+    /// [`Fault::KeyTwice`].
+    Once,
 }
 
 /// A primitive on a sequence or a queue. The sequence is the first argument.
@@ -170,11 +174,19 @@ pub enum Op {
     /// zero are [`Fault::Undefined`].
     Power,
     /// The set of whole numbers from the first to the second, both included. Empty when the
-    /// first is above the second.
+    /// first is above the second. More than [`MOST_RANGE_VALUES`] numbers is
+    /// [`Fault::TooWide`].
     Interval,
     /// The sequence of whole numbers from the first up to, not including, the second. A first
-    /// number above the second is [`Fault::Undefined`].
+    /// number above the second is [`Fault::Undefined`]. More than [`MOST_RANGE_VALUES`]
+    /// numbers is [`Fault::TooWide`].
     Ascending,
+    /// The items of a set as a sequence, in the order TLC's `CHOOSE` takes them. A set, a
+    /// sequence, a map or a record with fewer items comes first; two of one size compare item
+    /// by item, a set in this same order, a map its keys and then their values, a record its
+    /// field names and then its values. Numbers, booleans and texts keep their own order, so
+    /// texts are alphabetical, where TLC takes them in the order it first met them.
+    InTlcOrder,
 }
 
 /// What an [`Expr::Sweep`] does with the test's answers.

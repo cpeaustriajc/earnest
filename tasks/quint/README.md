@@ -950,8 +950,8 @@ in `code/packed.rs` turns a fold away.
 
 **Faults, not empty values**: `get`, `set` and `setBy` on a missing key, `nth`, `replaceAt` and
 `slice` outside the list, `head` and `tail` of an empty list, and a `match` with no case are
-`Fault::Missing`; a negative power, `0^0` and `range(a, b)` with `a > b` are
-`Fault::Undefined`, and a power past 64 bits `Fault::Overflow`. The existing `MapOp::Get` and
+`Fault::Missing`; a negative power and `0^0` are `Fault::Undefined` (`range(a, b)` with
+`a >= b` is `[]` since the first Quint pass), and a power past 64 bits `Fault::Overflow`. The existing `MapOp::Get` and
 `SeqOp::Get` still give `null`, for TypeScript and Rust models. Division and remainder keep
 earnest's rule.
 
@@ -975,10 +975,11 @@ Every value agrees; the 13 Quint runtime errors (`QNT503`, `QNT505`, `QNT506`, `
 above). Two answers of the TypeScript evaluator are not followed, and are not in the table:
 
 - `range(5, 1)` gives `[5, 4, 3, 2]` in `quint repl`, against Quint's documentation of `range`
-  as counting up; earnest gives `Fault::Undefined`.
+  as counting up; earnest gives `[]`, as Quint's TLC run does (settled after the first Quint
+  pass, `tasks/break_it/README.md`).
 - `Set(3, 1, 2).fold(0, (a, x) => a * 10 + x)` gives 312 in `quint repl`, which folds a set in
-  the order it was written; earnest folds in its own order and gives 123. A fold whose answer
-  depends on the order is not the same in the two.
+  the order it was written; earnest folds in the order Quint's TLC run takes and gives 123. A
+  fold whose answer depends on the order is not the same in the two.
 
 ### State counts and verdicts by hand
 

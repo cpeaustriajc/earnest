@@ -5,6 +5,16 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint answers as its TLC run gives them
+
+Five Quint expressions gave a verdict that neither Quint's TLC run nor its TypeScript evaluator gives. See [Where Quint's backends differ](/reference/quint/#where-quints-backends-differ).
+
+- **`range`:** `range(3, 1)` is `[]`, as the TLC run gives, where it was a fault.
+- **`setToMap`:** a set with two pairs for one key is a fault that names `setToMap`, because the backends keep different pairs. With each key once the map is unchanged.
+- **`fold`:** a fold over a set of sets, lists, maps, tuples or records takes TLC's order: fewer items first, then item by item. Texts stay alphabetical.
+- **Fairness:** `weakFair(A, vars)`, where `A` alone leaves a variable of `vars` without its next value, is refused with that variable, where it was judged on `A` joined with the rest of the step.
+- **Ranges:** `x.in(a.to(b))`, `contains` and `subseteq` of a range compare with its ends instead of building it, and any other range of more than 1,000,000 numbers is a fault instead of taking the machine's memory.
+
 ## November 2026: Quint reads `Bool`, `Nat`, `foldr` and operators given as arguments
 
 The Quint reader reads more of ordinary Quint, and a helper no check reaches no longer refuses the check.

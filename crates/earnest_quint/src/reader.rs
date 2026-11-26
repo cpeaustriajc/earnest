@@ -888,7 +888,14 @@ impl<'a> Reader<'a> {
                         ),
                     );
                 }
-                let values: Vec<Value> = items.iter().cloned().collect();
+                let listed = Expr::Apply(
+                    Op::InTlcOrder,
+                    vec![Expr::Const(Value::Set(std::sync::Arc::clone(&items)))],
+                );
+                let values = match constant(&listed, self.slots)? {
+                    Some(Value::Seq(values)) => values.to_vec(),
+                    _ => items.iter().cloned().collect(),
+                };
                 Ok(Picked::Listed(Domain::OneOf(values.clone()), values))
             }
             Some(_) => self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set"),
