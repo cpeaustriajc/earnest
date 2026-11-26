@@ -305,7 +305,7 @@ rule changes since origin/main
   | No box of `reaches` after the start | ``` `settles` starts in `busy`.``` |
   | Eventually rule without `after` | ``What `grows` must reach first holds in `v = 3`.`` |
 
-  `beyond what is shown` takes the place of `in` and the box when the path did not fit. These sentences say where conditions hold, not whether the rule holds: a broken eventually rule gets the same sentence. A label longer than 80 characters is cut to 80 with `…` in this line; the chart keeps it whole. A chart of a model with no premise has no such line.
+  `beyond what is shown` takes the place of `in` and the box when the path did not fit. A box drawn in a group is named with its group first, as in ``in `server up` / `an order paid` ``, since the same label can stand in two groups. These sentences say where conditions hold, not whether the rule holds: a broken eventually rule gets the same sentence. A box stands for every state with its label and group, so each sentence is about some state of the box it names, not all of them; a part of a label that could not be worked out is drawn, and named, as `?`. A label or group longer than 80 characters is cut to 80 with `…` in this line, each on its own; the chart keeps both whole. A chart of a model with no premise has no such line.
 
 ### `earnest report`
 

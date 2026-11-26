@@ -336,7 +336,13 @@ impl<'a, P: Plot> Drawing<'a, P> {
 
     fn place(&self, found: Found) -> String {
         match found {
-            Found::Drawn(at) => format!("in {}", code_span(&note_label(self.plot.label(at)))),
+            Found::Drawn(at) => {
+                let label = code_span(&note_label(self.plot.label(at)));
+                match self.plot.group(at) {
+                    Some(group) => format!("in {} / {label}", code_span(&note_label(group))),
+                    None => format!("in {label}"),
+                }
+            }
             Found::Beyond => BEYOND.to_owned(),
         }
     }
@@ -444,7 +450,8 @@ impl<'a, P: Plot> Drawing<'a, P> {
 /// ``The premise of `paid` first holds in `Paid`.`` or
 /// ``` `settles` starts in `Busy`; what it must reach holds in `Idle`.```, with
 /// `beyond what is shown` in place of a box whose route did not fit. That line never says that
-/// a rule holds, and cuts a label past 80 characters. A graph with no premise gets the chart it
+/// a rule holds, names a box in a group as `` `group` / `label` ``, and cuts each past 80
+/// characters. A graph with no premise gets the chart it
 /// got before premises.
 #[must_use]
 pub fn chart(graph: &Graph) -> String {
