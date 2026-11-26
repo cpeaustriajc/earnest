@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 16] = [
+const SETS: [&str; 18] = [
     "samename",
     "exported",
     "nospace",
@@ -72,6 +72,8 @@ const SETS: [&str; 16] = [
     "spechelper",
     "twosetups",
     "commasentence",
+    "sumtype",
+    "typesmodule",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -413,4 +415,16 @@ fn a_name_list_whose_comma_is_followed_by_a_sentence_is_not_called_an_unknown_ma
              not to the trailing comma: {message}"
         );
     }
+}
+
+#[test]
+fn a_failing_run_of_a_spec_whose_state_holds_a_sum_type_is_played_in_the_check_that_imports_it() {
+    let report = Quint::new().report("sumtype");
+    played_and_broken(&report, "Setup", "twiceTest");
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_imports_its_types_from_a_types_file_is_played_in_the_setup_file() {
+    let report = Quint::new().report("typesmodule");
+    played_and_broken(&report, "Setup", "twiceTest");
 }
