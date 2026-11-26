@@ -84,6 +84,33 @@ fn is_unspaced(line: &str) -> bool {
         || (rest.contains(',') && words_after(rest).is_some())
 }
 
+pub(crate) fn starts_a_mark(text: &str) -> bool {
+    let word = text
+        .split(|each: char| each.is_whitespace() || each == ',')
+        .next();
+    word.is_some_and(|word| word.eq_ignore_ascii_case(MARK))
+}
+
+fn is_miscased(line: &str) -> bool {
+    starts_a_mark(line) && !line.starts_with(MARK)
+}
+
+fn miscased_mark(written: &str) -> String {
+    let word = written.split(char::is_whitespace).next().unwrap_or(written);
+    format!(
+        "the doc comment holds `{word}`, but a mark is written `{MARK}`, in lower case: it is read \
+         as a sentence and nothing is checked"
+    )
+}
+
+pub(crate) fn commented_mark(written: &str, below: &str) -> String {
+    format!(
+        "the comment holds `{written}`, but a mark is a doc comment, `/// {MARK}`, and a plain \
+         comment above {below} is not read: nothing is checked. A mark is removed by deleting it, \
+         not by commenting it out"
+    )
+}
+
 pub(crate) fn read_doc(doc: &str) -> Doc {
     let mut read = Doc::default();
     let mut lines = doc.lines().map(str::trim).enumerate();
@@ -115,6 +142,8 @@ pub(crate) fn read_doc(doc: &str) -> Doc {
                 };
                 read.wrong.push((line, message));
             }
+        } else if is_miscased(trimmed) {
+            read.wrong.push((line, miscased_mark(trimmed)));
         } else if is_unspaced(trimmed) {
             read.wrong.push((line, unspaced_mark(trimmed)));
         } else if !trimmed.is_empty() {
@@ -329,6 +358,23 @@ mod tests {
         assert_eq!(
             marks("@invariant"),
             (vec![], Some("@invariant".to_owned()), vec![])
+        );
+    }
+
+    #[test]
+    fn a_mark_in_another_case_is_wrong_at_its_line_and_is_no_mark() {
+        let read = read_doc("The counter.\n@Check broken\nsee @check here");
+        assert_eq!(read.marks, vec![], "no mark");
+        assert_eq!(read.wrong.len(), 1, "one wrong line");
+        assert_eq!(
+            read.wrong.first().map(|(line, _)| *line),
+            Some(1),
+            "its line"
+        );
+        assert_eq!(
+            read.sentence.len(),
+            2,
+            "a `@check` in the middle of a line is a sentence"
         );
     }
 

@@ -74,7 +74,7 @@ fn each_run_of_the_sample_gets_the_verdict_quint_test_gives_listed_as_a_witness(
     let plain = rule(runs, "plainTest");
     assert_eq!(plain["kind"], "witness", "a run is a witness\n{run}");
     assert_eq!(
-        plain["says"], "The Quint run `plainTest` passes",
+        plain["says"], "Quint run `plainTest`",
         "the sentence\n{run}"
     );
 }
