@@ -7,6 +7,7 @@ mod findings;
 mod graphs;
 mod lending;
 mod limits;
+mod picks;
 mod rules;
 mod storage;
 mod turnstile;
