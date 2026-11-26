@@ -16,6 +16,7 @@ mod model;
 mod reader;
 mod scan;
 mod starts;
+mod temporal;
 
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::Model;

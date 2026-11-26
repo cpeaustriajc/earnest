@@ -1,8 +1,9 @@
-use crate::json::{Compiled, Declaration, Def, Expr as Quint};
+use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
 use crate::scan::refused;
 use crate::starts::start_states;
-use earnest_ir::{Action, Code, End, Expr, Field, Input, Model, Rule, Runs, View};
+use crate::temporal::{Step, temporal};
+use earnest_ir::{Action, Code, End, Eventually, Expr, Field, Input, Model, Rule, Runs, View};
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
 
@@ -160,13 +161,22 @@ fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<
     Ok(rules)
 }
 
-fn unfolded<'a>(reader: &mut Reader<'a>, root: &'a Def) -> Read<Vec<Path>> {
-    reader.unnamed.push(root.id);
-    if let Quint::Name { name, .. } = &root.expr
+fn aliases<'a>(reader: &Reader<'a>, root: &'a Def) -> Vec<u64> {
+    let mut chain = vec![root.id];
+    let mut def = root;
+    while let Quint::Name { name, .. } = &def.expr
         && let Some(found) = reader.top(name)
+        && !chain.contains(&found.id)
     {
-        reader.unnamed.push(found.id);
+        chain.push(found.id);
+        def = found;
     }
+    chain
+}
+
+fn unfolded<'a>(reader: &mut Reader<'a>, root: &'a Def) -> Read<Vec<Path>> {
+    let chain = aliases(reader, root);
+    reader.unnamed.extend(chain);
     reader.within.clone_from(&root.name);
     reader.paths(&root.expr)
 }
@@ -193,10 +203,11 @@ fn variables(declarations: &[Declaration]) -> Vec<Variable<'_>> {
         .collect()
 }
 
-type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>);
+type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>, Vec<Eventually>);
 
 fn parts<'a>(
     reader: &mut Reader<'a>,
+    table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     (init, step): (&'a Def, &'a Def),
     names: &[String],
@@ -216,7 +227,21 @@ fn parts<'a>(
         .zip(&stepping)
         .map(|(id, path)| action(id, path, names))
         .collect::<Read<Vec<Action>>>()?;
-    Ok((starts, actions, rules))
+    let mut parts: HashMap<String, Vec<usize>> = HashMap::new();
+    for (position, path) in stepping.iter().enumerate() {
+        if let Some(name) = &path.name {
+            parts.entry(name.clone()).or_default().push(position);
+        }
+    }
+    let step = Step {
+        defs: aliases(reader, step),
+        parts: &parts,
+        fields: names.len(),
+    };
+    let mut rules = rules;
+    let read = temporal(reader, table, defs, &step)?;
+    rules.extend(read.rules);
+    Ok((starts, actions, rules, read.eventually))
 }
 
 pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusal>> {
@@ -260,8 +285,9 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
         }));
     };
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions);
-    let (starts, actions, rules) =
-        parts(&mut reader, &defs, (init, step), &names).map_err(|refusal| vec![refusal])?;
+    let (starts, actions, rules, eventually) =
+        parts(&mut reader, &compiled.table, &defs, (init, step), &names)
+            .map_err(|refusal| vec![refusal])?;
     let mut symbols = Symbols::default();
     let fields = variables
         .into_iter()
@@ -298,6 +324,7 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
         view: View::default(),
         runs: Runs {
             starts: Some(starts),
+            eventually,
             ..Runs::default()
         },
     })

@@ -613,6 +613,7 @@ impl Lowerer<'_> {
             after,
             reaches,
             slots: scope.slots,
+            fair: None,
         })
     }
 

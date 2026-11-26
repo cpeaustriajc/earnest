@@ -1,11 +1,13 @@
 use crate::explore::Search;
 use crate::outcome::{Path, RuleKind, RuleOutcome, Step, Verdict};
-use earnest_ir::{Eventually, Fault, Frame};
+use earnest_ir::{Eventually, Fairness, Fault, Frame};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 
 const NOWHERE: u32 = u32::MAX;
 const STAYS: &str = "nothing changes the state from here, so the run can stay in it forever";
+const STOPS: &str =
+    "the run may stop here, because no step it must take can change the state from here";
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Edge {
@@ -165,6 +167,7 @@ struct Lasso {
     states: Vec<u32>,
     actions: Vec<Option<u32>>,
     repeats_from: Option<usize>,
+    stops_with_ways_out: bool,
 }
 
 enum Hunted {
@@ -175,13 +178,25 @@ enum Hunted {
 
 struct Hunt<'h> {
     edges: &'h Edges,
-    fair: &'h [u32],
+    fair: &'h [Vec<u32>],
     possible: &'h [Vec<bool>],
+    stutters: bool,
     depth: &'h [u32],
     parents: &'h [u32],
 }
 
+fn part_of(part: &[u32], action: u32) -> bool {
+    part.contains(&action)
+}
+
 impl Hunt<'_> {
+    fn stays(&self, state: u32) -> bool {
+        if self.stutters {
+            return !self.possible.iter().any(|flags| at(flags, state));
+        }
+        self.edges.out(state).is_empty()
+    }
+
     fn doomed(&self, inside: &[bool], groups: &Groups) -> Vec<bool> {
         let count = groups.sizes.len();
         let mut put_off = vec![vec![false; count]; self.fair.len()];
@@ -192,7 +207,7 @@ impl Hunt<'_> {
             if group == NOWHERE {
                 continue;
             }
-            for (number, action) in self.fair.iter().enumerate() {
+            for (number, part) in self.fair.iter().enumerate() {
                 let can = self
                     .possible
                     .get(number)
@@ -200,11 +215,10 @@ impl Hunt<'_> {
                 if !can && let Some(flags) = put_off.get_mut(number) {
                     put(flags, group, true);
                 }
-                let inside_the_group = self
-                    .edges
-                    .out(state)
-                    .iter()
-                    .any(|edge| edge.action == *action && read(&groups.of, edge.to) == group);
+                let inside_the_group =
+                    self.edges.out(state).iter().any(|edge| {
+                        part_of(part, edge.action) && read(&groups.of, edge.to) == group
+                    });
                 if inside_the_group && let Some(flags) = taken.get_mut(number) {
                     put(flags, group, true);
                 }
@@ -216,9 +230,11 @@ impl Hunt<'_> {
                 if group == NOWHERE {
                     return false;
                 }
-                let size = read(&groups.sizes, group);
-                if size < 2 {
-                    return self.edges.out(state).is_empty();
+                if self.stays(state) {
+                    return true;
+                }
+                if read(&groups.sizes, group) < 2 {
+                    return false;
                 }
                 (0..self.fair.len()).all(|number| {
                     let unfair_to_wait = put_off.get(number).is_some_and(|flags| at(flags, group));
@@ -333,7 +349,7 @@ impl Hunt<'_> {
         let home = *lasso.states.last()?;
         let group = read(&groups.of, home);
         let begin = lasso.states.len().saturating_sub(1);
-        for (number, action) in self.fair.iter().enumerate() {
+        for (number, part) in self.fair.iter().enumerate() {
             let can = |state: u32| {
                 self.possible
                     .get(number)
@@ -345,7 +361,7 @@ impl Hunt<'_> {
                 .actions
                 .iter()
                 .skip(begin.saturating_add(1))
-                .any(|taken| *taken == Some(*action));
+                .any(|taken| taken.is_some_and(|action| part_of(part, action)));
             if waited || happened {
                 continue;
             }
@@ -361,7 +377,7 @@ impl Hunt<'_> {
                 self.edges
                     .out(state)
                     .iter()
-                    .find(|edge| edge.action == *action && read(&groups.of, edge.to) == group)
+                    .find(|edge| part_of(part, edge.action) && read(&groups.of, edge.to) == group)
                     .copied()
             };
             if takes(here).is_none() {
@@ -394,6 +410,7 @@ impl Hunt<'_> {
             actions: vec![None; before.len()],
             states: before,
             repeats_from: None,
+            stops_with_ways_out: false,
         };
         self.extend(&mut lasso, chain);
         Some(lasso)
@@ -410,8 +427,11 @@ impl Hunt<'_> {
             return Hunted::Lost;
         };
         let last = lasso.states.last().copied().unwrap_or(NOWHERE);
-        let loops = read(&groups.sizes, read(&groups.of, last)) >= 2;
-        if loops && self.turn(&mut lasso, &groups).is_none() {
+        if self.stays(last) {
+            lasso.stops_with_ways_out = !self.edges.out(last).is_empty();
+            return Hunted::Run(lasso);
+        }
+        if self.turn(&mut lasso, &groups).is_none() {
             return Hunted::Lost;
         }
         Hunted::Run(lasso)
@@ -422,8 +442,52 @@ struct Kept {
     edges: Edges,
     parents: Vec<u32>,
     depth: Vec<u32>,
-    fair: Vec<u32>,
+    fair: Vec<Vec<u32>>,
     possible: Vec<Vec<bool>>,
+}
+
+impl Kept {
+    fn possible(&self, fair: &[Vec<u32>]) -> Vec<Vec<bool>> {
+        fair.iter()
+            .map(|part| {
+                let mut flags = vec![false; self.parents.len()];
+                for edge in &self.edges.all {
+                    if part_of(part, edge.action) {
+                        put(&mut flags, edge.from, true);
+                    }
+                }
+                flags
+            })
+            .collect()
+    }
+
+    fn hunt<'k>(
+        &'k self,
+        fair: &'k [Vec<u32>],
+        possible: &'k [Vec<bool>],
+        stutters: bool,
+    ) -> Hunt<'k> {
+        Hunt {
+            edges: &self.edges,
+            fair,
+            possible,
+            stutters,
+            depth: &self.depth,
+            parents: &self.parents,
+        }
+    }
+}
+
+fn parts(fairness: &Fairness) -> Vec<Vec<u32>> {
+    fairness
+        .actions
+        .iter()
+        .map(|part| {
+            part.iter()
+                .filter_map(|action| u32::try_from(*action).ok())
+                .collect()
+        })
+        .collect()
 }
 
 pub(crate) struct Eventual {
@@ -537,32 +601,23 @@ impl Search<'_> {
                 }
             }
         }
-        let fair: Vec<u32> = self
+        let fair: Vec<Vec<u32>> = self
             .model
             .runs
             .fair
             .iter()
             .filter_map(|action| u32::try_from(*action).ok())
+            .map(|action| vec![action])
             .collect();
-        let possible: Vec<Vec<bool>> = fair
-            .iter()
-            .map(|action| {
-                let mut flags = vec![false; states];
-                for edge in &edges.all {
-                    if edge.action == *action {
-                        put(&mut flags, edge.from, true);
-                    }
-                }
-                flags
-            })
-            .collect();
-        Some(Kept {
+        let mut kept = Kept {
             edges,
             parents,
             depth,
             fair,
-            possible,
-        })
+            possible: Vec::new(),
+        };
+        kept.possible = kept.possible(&kept.fair);
+        Some(kept)
     }
 
     fn broken(&self, rule: &Eventually, lasso: &Lasso) -> RuleOutcome {
@@ -572,6 +627,7 @@ impl Search<'_> {
                 begin.saturating_add(1),
                 lasso.states.len().saturating_sub(1)
             ),
+            None if lasso.stops_with_ways_out => STOPS.to_owned(),
             None => STAYS.to_owned(),
         };
         RuleOutcome {
@@ -592,13 +648,7 @@ impl Search<'_> {
                 trouble: None,
             };
         };
-        let hunt = Hunt {
-            edges: &kept.edges,
-            fair: &kept.fair,
-            possible: &kept.possible,
-            depth: &kept.depth,
-            parents: &kept.parents,
-        };
+        let hunt = kept.hunt(&kept.fair, &kept.possible, false);
         let mut trouble = None;
         let outcomes = rules
             .iter()
@@ -611,7 +661,15 @@ impl Search<'_> {
                     });
                     return Self::unknown(rule);
                 }
-                match hunt.lasso(&judged) {
+                let hunted = match &rule.fair {
+                    None => hunt.lasso(&judged),
+                    Some(fairness) => {
+                        let fair = parts(fairness);
+                        let possible = kept.possible(&fair);
+                        kept.hunt(&fair, &possible, !fairness.step).lasso(&judged)
+                    }
+                };
+                match hunted {
                     Hunted::Run(lasso) => self.broken(rule, &lasso),
                     Hunted::Lost => Self::unknown(rule),
                     Hunted::Nothing => RuleOutcome {

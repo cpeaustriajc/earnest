@@ -2,10 +2,8 @@ use crate::builtins::{builtin, kind_of_builtin};
 use crate::json::{Declaration, Def, Expr};
 use crate::reader::{Refusal, refusal};
 
-const LEFT_FOR_LATER: [(&str, &str); 2] = [
-    ("q::temporalProps", "temporal properties are not read yet"),
-    ("q::inductiveInv", "inductive invariants are not read yet"),
-];
+const LEFT_FOR_LATER: [(&str, &str); 1] =
+    [("q::inductiveInv", "inductive invariants are not read yet")];
 
 fn in_definition(feature: &str, why: &str, name: &str) -> Refusal {
     refusal(feature, &format!("{why}, in the definition `{name}`"))
@@ -66,11 +64,7 @@ fn definition(def: &Def) -> Option<Refusal> {
         return Some(refusal(&format!("`{}`", def.name), why));
     }
     match def.qualifier.as_str() {
-        "temporal" => Some(in_definition(
-            &format!("`temporal {}`", def.name),
-            "temporal properties are not read yet",
-            &def.name,
-        )),
+        "temporal" => None,
         "run" => Some(in_definition(
             &format!("`run {}`", def.name),
             "runs are not read yet",
