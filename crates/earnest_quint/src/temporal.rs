@@ -1,6 +1,6 @@
 use crate::json::{Def, Entry, Expr as Quint, Param};
-use crate::reader::{Path, Read, Reader, Refusal, constant};
-use earnest_ir::{Code, Eventually, Expr, FairStep, Fairness, Op, Rule};
+use crate::reader::{Choice, Path, Read, Reader, Refusal, constant, reads_state};
+use earnest_ir::{Code, Eventually, Expr, FairStep, Fairness, Frame, Op, Rule, truth};
 use earnest_value::Value;
 use std::collections::HashMap;
 
@@ -18,13 +18,22 @@ const TEMPORAL: [&str; 9] = [
     "enabled",
 ];
 const MOST_ITEMS: usize = 1000;
-const INFIX: [(&str, &str); 6] = [
+const INFIX: [(&str, &str); 15] = [
     ("iadd", "+"),
     ("isub", "-"),
     ("imul", "*"),
     ("idiv", "/"),
     ("imod", "%"),
     ("ipow", "^"),
+    ("eq", "=="),
+    ("neq", "!="),
+    ("ilt", "<"),
+    ("ilte", "<="),
+    ("igt", ">"),
+    ("igte", ">="),
+    ("and", "and"),
+    ("or", "or"),
+    ("implies", "implies"),
 ];
 const ONLY_WEAK_FAIRNESS: &str = "only `weakFair(A, vars)` is read as fairness";
 
@@ -50,6 +59,7 @@ pub(crate) struct Step<'s> {
     pub(crate) parts: &'s HashMap<String, Vec<usize>>,
     pub(crate) fields: &'s [String],
     pub(crate) paths: &'s [Path],
+    pub(crate) starts: &'s [Vec<Value>],
 }
 
 enum Goal {
@@ -79,14 +89,39 @@ fn written(expr: &Quint) -> String {
         Quint::Bool { value } => value.to_string(),
         Quint::Str { value } => format!("\"{value}\""),
         Quint::App { opcode, args, .. } => {
-            let each: Vec<String> = args.iter().map(written).collect();
+            let each: Vec<String> = args
+                .iter()
+                .map(|arg| match arg {
+                    Quint::App { opcode, args, .. }
+                        if args.len() == 2 && INFIX.iter().any(|(name, _)| name == opcode) =>
+                    {
+                        format!("({})", written(arg))
+                    }
+                    _ => written(arg),
+                })
+                .collect();
             let sign = INFIX
                 .iter()
                 .find(|(name, _)| name == opcode)
                 .map(|(_, sign)| *sign);
-            match (sign, each.as_slice()) {
-                (Some(sign), [left, right]) => format!("{left} {sign} {right}"),
-                (None, [first, rest @ ..]) if opcode.starts_with(char::is_lowercase) => {
+            match (opcode.as_str(), sign, args.as_slice(), each.as_slice()) {
+                (_, Some(sign), [_, _], [left, right]) => format!("{left} {sign} {right}"),
+                ("item", _, [_, Quint::Int { value }], [tuple, _]) => format!("{tuple}._{value}"),
+                ("field", _, [_, Quint::Str { value }], [record, _]) => format!("{record}.{value}"),
+                ("Tup", _, _, _) => format!("({})", each.join(", ")),
+                ("Rec", _, _, _) => {
+                    let fields: Vec<String> = each
+                        .chunks(2)
+                        .map(|pair| match pair {
+                            [key, value] => format!("{}: {value}", key.trim_matches('"')),
+                            _ => pair.join(""),
+                        })
+                        .collect();
+                    format!("{{ {} }}", fields.join(", "))
+                }
+                ("iuminus", _, _, [inner]) => format!("-{inner}"),
+                ("not", _, _, [inner]) => format!("not({inner})"),
+                (_, _, _, [first, rest @ ..]) if opcode.starts_with(char::is_lowercase) => {
                     format!("{first}.{opcode}({})", rest.join(", "))
                 }
                 _ => format!("{opcode}({})", each.join(", ")),
@@ -204,6 +239,15 @@ impl<'a> Properties<'_, 'a> {
                     self.fairness(given, step, &mut fairness)?;
                     return self.property(goals, step, Some(&fairness), parts);
                 }
+                ("implies", [given, goals])
+                    if self.first_temporal(given, 0).is_none()
+                        && self.first_temporal(goals, 0).is_some() =>
+                {
+                    if self.holds_at_the_start(given, step)? {
+                        return self.property(goals, step, fair, parts);
+                    }
+                    return Ok(());
+                }
                 ("forall", [set, Quint::Lambda { params, expr: body }])
                     if self.first_temporal(body, 0).is_some() =>
                 {
@@ -223,6 +267,43 @@ impl<'a> Properties<'_, 'a> {
         let goal = self.goal(expr)?;
         parts.push((fair.cloned().unwrap_or_default(), goal));
         Ok(())
+    }
+
+    fn holds_at_the_start(&mut self, given: &'a Quint, step: &Step<'_>) -> Read<bool> {
+        let condition = self.reader.pure(given)?;
+        let mut found = Vec::with_capacity(step.starts.len());
+        for state in step.starts {
+            let mut frame = Frame::new(state, self.reader.slots);
+            match truth(&condition, &mut frame) {
+                Ok(holds) => found.push(holds),
+                Err(fault) => {
+                    return self.reader.refuse(
+                        "`implies`",
+                        &format!(
+                            "the condition before `implies`, judged in the start states as TLC \
+                             judges it, {}",
+                            fault.describe()
+                        ),
+                    );
+                }
+            }
+        }
+        if found.iter().all(|holds| *holds) {
+            return Ok(true);
+        }
+        if found.iter().all(|holds| !*holds) {
+            return Ok(false);
+        }
+        let what = written(given);
+        self.reader.refuse(
+            "`implies`",
+            &format!(
+                "`{what}` before `implies` is judged in the start states only, as TLC judges it, \
+                 and it holds in some start states and not in others, which the checker does not \
+                 read: write `always(({what}) implies eventually(…))` to judge it in every \
+                 state, or give `init` the start states it is about"
+            ),
+        )
     }
 
     fn items_of(&mut self, set: &'a Quint, params: &[Param]) -> Read<Option<Vec<(u64, Value)>>> {
@@ -529,7 +610,7 @@ impl<'a> Properties<'_, 'a> {
             let Some(path) = step.paths.get(*position) else {
                 continue;
             };
-            if let Some(inputs) = self.inputs_of(path, &given, name)? {
+            for inputs in self.inputs_of(path, &given, name)? {
                 part.push((*position, inputs));
             }
         }
@@ -550,58 +631,122 @@ impl<'a> Properties<'_, 'a> {
         path: &Path,
         given: &[Value],
         name: &str,
-    ) -> Read<Option<Vec<(usize, Value)>>> {
-        let mut inputs = Vec::new();
+    ) -> Read<Vec<Vec<(usize, Value)>>> {
+        let mut allowed: Vec<(usize, Vec<Value>)> = Vec::new();
         for (at, value) in given.iter().enumerate() {
             let passed = path.given.get(at).cloned().flatten();
-            if let Some(Expr::Local(slot)) = passed
-                && let Some((input, choice)) = path
-                    .choices
+            let picked = passed.as_ref().and_then(|expr| {
+                path.choices
                     .iter()
                     .enumerate()
-                    .find(|(_, choice)| choice.slot == slot)
-            {
-                if choice.from.is_some() {
-                    return self.reader.refuse(
-                        &format!("`{name}`"),
-                        &format!(
-                            "fairness of `{name}` given an argument the step picks from a set \
-                             that changes with the state is not read: pick `{}` from a set \
-                             that does not change",
-                            choice.name
-                        ),
-                    );
+                    .find(|(_, choice)| !reads_state(expr, &[choice.slot]))
+                    .filter(|_| reads_state(expr, &[]))
+            });
+            if let (Some(expr), Some((input, choice))) = (&passed, picked) {
+                let values = self.picked_giving(expr, choice, value, name)?;
+                match allowed.iter_mut().find(|(each, _)| *each == input) {
+                    Some((_, known)) => known.retain(|each| values.contains(each)),
+                    None => allowed.push((input, values)),
                 }
-                if !choice.values.contains(value) {
-                    return self.reader.refuse(
-                        &format!("`{name}`"),
-                        &format!(
-                            "fairness of `{name}` given a value the step never picks for `{}` \
-                             is not read: TLC holds such a step possible where the step never \
-                             takes it",
-                            choice.name
-                        ),
-                    );
-                }
-                inputs.push((input, value.clone()));
                 continue;
             }
             match passed.map(|expr| constant(&expr, self.reader.slots)) {
                 Some(Ok(Some(fixed))) if fixed == *value => {}
-                Some(Ok(Some(_))) => return Ok(None),
+                Some(Ok(Some(_))) => return Ok(Vec::new()),
                 _ => {
                     return self.reader.refuse(
                         &format!("`{name}`"),
                         &format!(
                             "fairness of `{name}` given arguments is read only where the step \
-                             calls `{name}` with a `nondet` it picks or a value that does not \
+                             calls `{name}` with a `nondet` it picks from a set that does not \
+                             change, a part of one (`p._1`, `p.who`) or a value that does not \
                              change, so that its steps can be told apart"
                         ),
                     );
                 }
             }
         }
-        Ok(Some(inputs))
+        allowed.sort_by_key(|(input, _)| *input);
+        let mut combinations: Vec<Vec<(usize, Value)>> = vec![Vec::new()];
+        for (input, values) in allowed {
+            let grown = combinations.len().saturating_mul(values.len());
+            if grown > MOST_ITEMS {
+                return self.reader.refuse(
+                    &format!("`{name}`"),
+                    &format!(
+                        "fairness of `{name}` that more than {MOST_ITEMS} picks of the step \
+                         give is not read"
+                    ),
+                );
+            }
+            let mut next = Vec::with_capacity(grown);
+            for known in &combinations {
+                for value in &values {
+                    let mut one = known.clone();
+                    one.push((input, value.clone()));
+                    next.push(one);
+                }
+            }
+            combinations = next;
+        }
+        Ok(combinations)
+    }
+
+    fn picked_giving(
+        &mut self,
+        passed: &Expr,
+        choice: &Choice,
+        value: &Value,
+        name: &str,
+    ) -> Read<Vec<Value>> {
+        if choice.from.is_some() {
+            return self.reader.refuse(
+                &format!("`{name}`"),
+                &format!(
+                    "fairness of `{name}` given an argument the step picks from a set that \
+                     changes with the state is not read: pick `{}` from a set that does not \
+                     change",
+                    choice.name
+                ),
+            );
+        }
+        if *passed == Expr::Local(choice.slot) {
+            if !choice.values.contains(value) {
+                return self.reader.refuse(
+                    &format!("`{name}`"),
+                    &format!(
+                        "fairness of `{name}` given a value the step never picks for `{}` is \
+                         not read: TLC holds such a step possible where the step never takes it",
+                        choice.name
+                    ),
+                );
+            }
+            return Ok(vec![value.clone()]);
+        }
+        let mut giving = Vec::new();
+        for each in &choice.values {
+            let bound = Expr::Bind {
+                slot: choice.slot,
+                value: Box::new(Expr::Const(each.clone())),
+                body: Box::new(passed.clone()),
+            };
+            match constant(&bound, self.reader.slots) {
+                Ok(Some(gives)) if gives == *value => giving.push(each.clone()),
+                Ok(Some(_)) => {}
+                _ => {
+                    return self.reader.refuse(
+                        &format!("`{name}`"),
+                        &format!(
+                            "fairness of `{name}` given an argument computed from `{}`, which the \
+                             step picks, is read only where it is `{}` or a part of it (`{}._1`, \
+                             `{}.field`)",
+                            choice.name, choice.name, choice.name, choice.name
+                        ),
+                    );
+                }
+            }
+        }
+        Ok(giving)
     }
 
     fn goal(&mut self, each: &'a Quint) -> Read<Goal> {
@@ -741,6 +886,12 @@ pub(crate) fn temporal<'a>(
         if let Err(refusal) = properties.property(&def.expr, step, None, &mut parts) {
             refused.push(refusal);
             continue;
+        }
+        if parts.is_empty() {
+            parts.push((
+                Fairness::default(),
+                Goal::Always(Expr::Const(Value::Bool(true))),
+            ));
         }
         let slots = properties.reader.slots;
         let count = parts.len();

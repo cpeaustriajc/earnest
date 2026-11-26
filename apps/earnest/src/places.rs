@@ -9,6 +9,15 @@ use std::path::Path;
 const QUALIFIED: &str = "::";
 const RUN: &str = "run";
 const TESTS_END_WITH: &str = "Test";
+const EVERY_NAME: &str = "*";
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Imported {
+    proto: String,
+    prefix: String,
+    only: Option<String>,
+    exported: bool,
+}
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Names {
@@ -16,7 +25,7 @@ struct Names {
     declared: Vec<(String, u64)>,
     instances: Vec<(String, String)>,
     has_an_instance: bool,
-    run_prefixes: Vec<(String, String)>,
+    imports: Vec<Imported>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,19 +49,29 @@ fn names_of(module: &Value) -> Option<Names> {
     for declaration in module.get("declarations")?.as_array()? {
         let id = declaration.get("id").and_then(Value::as_u64);
         match (text(declaration, "kind"), text(declaration, "name"), id) {
-            (Some(kind @ ("instance" | "import")), _, _) => {
+            (Some(kind @ ("instance" | "import" | "export")), _, _) => {
                 if kind == "instance" {
                     names.has_an_instance = true;
                 }
                 if let Some(proto) = text(declaration, "protoName") {
                     let alias = text(declaration, "qualifiedName").unwrap_or(proto);
-                    names.instances.push((alias.to_owned(), proto.to_owned()));
+                    if kind != "export" {
+                        names.instances.push((alias.to_owned(), proto.to_owned()));
+                    }
                     let prefix = match (kind, text(declaration, "qualifiedName")) {
                         ("instance", _) => format!("{}{QUALIFIED}{alias}{QUALIFIED}", names.name),
                         (_, Some(alias)) => format!("{alias}{QUALIFIED}"),
                         (_, None) => String::new(),
                     };
-                    names.run_prefixes.push((proto.to_owned(), prefix));
+                    let only = text(declaration, "defName")
+                        .filter(|name| *name != EVERY_NAME)
+                        .map(str::to_owned);
+                    names.imports.push(Imported {
+                        proto: proto.to_owned(),
+                        prefix,
+                        only,
+                        exported: kind == "export",
+                    });
                 }
             }
             (Some(_), Some(name), Some(id)) => names.declared.push((name.to_owned(), id)),
@@ -121,29 +140,70 @@ impl Places {
         let Ok(compiled) = serde_json::from_str::<Value>(compiled) else {
             return Vec::new();
         };
-        let runs: Vec<&str> = compiled
-            .get("table")
-            .and_then(Value::as_object)
+        let played: Vec<&str> = compiled
+            .get("modules")
+            .and_then(Value::as_array)
             .into_iter()
-            .flat_map(|table| table.values())
-            .filter(|entry| text(entry, "qualifier") == Some(RUN))
-            .filter_map(|entry| text(entry, "name"))
-            .filter(|name| name.ends_with(TESTS_END_WITH))
+            .flatten()
+            .filter(|each| text(each, "name") == Some(main))
+            .filter_map(|each| each.get("declarations")?.as_array())
+            .flatten()
+            .filter(|declaration| text(declaration, "qualifier") == Some(RUN))
+            .filter_map(|declaration| text(declaration, "name"))
             .collect();
-        let mut found: Vec<String> = module
-            .run_prefixes
-            .iter()
-            .filter_map(|(proto, prefix)| Some((self.module(proto)?, prefix)))
-            .flat_map(|(spec, prefix)| {
-                spec.declared
-                    .iter()
-                    .filter(|(name, _)| runs.contains(&name.as_str()))
-                    .map(move |(name, _)| format!("{prefix}{name}"))
-            })
-            .collect();
+        let mut found: Vec<String> = Vec::new();
+        for imported in &module.imports {
+            for name in self.runs_through(module, imported, self.modules.len()) {
+                if !played.contains(&name.as_str()) {
+                    found.push(name);
+                }
+            }
+        }
         found.sort_unstable();
         found.dedup();
         found
+    }
+
+    fn runs_through(&self, module: &Names, imported: &Imported, depth: usize) -> Vec<String> {
+        let proto = if imported.exported {
+            module
+                .instances
+                .iter()
+                .find(|(alias, _)| *alias == imported.proto)
+                .map_or(imported.proto.as_str(), |(_, proto)| proto.as_str())
+        } else {
+            imported.proto.as_str()
+        };
+        let Some(spec) = self.module(proto) else {
+            return Vec::new();
+        };
+        let prefix = imported.prefix.as_str();
+        self.runs_seen_in(spec, depth)
+            .into_iter()
+            .filter(|name| imported.only.as_ref().is_none_or(|only| only == name))
+            .map(|name| format!("{prefix}{name}"))
+            .collect()
+    }
+
+    fn runs_seen_in(&self, spec: &Names, depth: usize) -> Vec<String> {
+        let mut seen: Vec<String> = spec
+            .declared
+            .iter()
+            .filter(|(name, id)| {
+                name.ends_with(TESTS_END_WITH)
+                    && self
+                        .qualifiers
+                        .get(id)
+                        .is_some_and(|qualifier| qualifier == RUN)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        if let Some(deeper) = depth.checked_sub(1) {
+            for exported in spec.imports.iter().filter(|each| each.exported) {
+                seen.extend(self.runs_through(spec, exported, deeper));
+            }
+        }
+        seen
     }
 
     pub(crate) fn declares(&self, main: &str, name: &str) -> bool {
@@ -350,5 +410,57 @@ mod tests {
                 each.definition
             );
         }
+    }
+
+    const SHAPES: &str = r#"{"modules": [
+        {"name": "Spec", "declarations": [
+            {"kind": "def", "qualifier": "run", "name": "specTest", "id": 1},
+            {"kind": "def", "qualifier": "run", "name": "specOverTest", "id": 2},
+            {"kind": "def", "qualifier": "action", "name": "stepTest", "id": 3}]},
+        {"name": "OneName", "declarations": [
+            {"kind": "import", "defName": "specTest", "protoName": "Spec", "id": 10}]},
+        {"name": "TwiceAs", "declarations": [
+            {"kind": "import", "defName": "specTest", "protoName": "Spec", "id": 20},
+            {"kind": "import", "qualifiedName": "A", "protoName": "Spec", "id": 21}]},
+        {"name": "Exporter", "declarations": [
+            {"kind": "import", "qualifiedName": "S", "protoName": "Spec", "id": 30},
+            {"kind": "export", "defName": "specTest", "protoName": "S", "id": 31}]},
+        {"name": "ViaExport", "declarations": [
+            {"kind": "import", "defName": "*", "protoName": "Exporter", "id": 40}]},
+        {"name": "Deep", "declarations": [
+            {"kind": "import", "defName": "*", "protoName": "OneName", "id": 50}]}]}"#;
+
+    #[test]
+    fn the_runs_not_played_are_those_quint_test_plays_through_each_import() {
+        let places = Places::from_quint(SHAPES, r#"{"sourceIndex": {}, "map": {}}"#)
+            .expect("the parse and the map are read");
+        let compiled =
+            |main: &str| format!(r#"{{"modules": [{{"name": "{main}", "declarations": []}}]}}"#);
+        let cases = [
+            ("OneName", vec!["specTest"]),
+            (
+                "TwiceAs",
+                vec!["A::specOverTest", "A::specTest", "specTest"],
+            ),
+            (
+                "Exporter",
+                vec!["S::specOverTest", "S::specTest", "specTest"],
+            ),
+            ("ViaExport", vec!["specTest"]),
+            ("Deep", vec![]),
+        ];
+        for (main, expected) in cases {
+            assert_eq!(
+                places.runs_not_played(main, &compiled(main)),
+                expected,
+                "{main}"
+            );
+        }
+        let played = r#"{"modules": [{"name": "OneName", "declarations": [
+            {"kind": "def", "qualifier": "run", "name": "specTest", "id": 1}]}]}"#;
+        assert_eq!(
+            places.runs_not_played("OneName", played),
+            Vec::<String>::new()
+        );
     }
 }

@@ -111,7 +111,13 @@ fn an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_
     assert_eq!(
         ids(&read),
         [
-            "outer", "either", "either#2", "caller", "outer#2", "each", "step"
+            "outer",
+            "either",
+            "either#2",
+            "caller  k = 2",
+            "outer#2",
+            "each",
+            "step"
         ],
         "`either` uses its parameter in both branches of an `if`"
     );

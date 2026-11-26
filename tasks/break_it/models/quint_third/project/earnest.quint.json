@@ -1,0 +1,10 @@
+{
+  "checks": [
+    { "file": "setups.qnt", "main": "three", "step": "stepEach", "invariants": ["mutex", "holderKnown", "bounded"], "temporal": ["everyoneRequests", "everyoneHolds", "eachDrains"], "runs": true, "expectCounterexample": ["GuardedBreak"] },
+    { "file": "setups.qnt", "main": "three", "name": "threeKnown", "expectCounterexample": ["GuardedBreak"] },
+    { "file": "setups.qnt", "main": "two", "step": "stepEach", "invariants": ["mutex", "holderKnown", "bounded", "grantsBounded"], "temporal": ["everyoneRequests", "everyoneHolds", "eachDrains"] },
+    { "file": "setups.qnt", "main": "two", "name": "twoGuard", "step": "stepEach", "expectCounterexample": ["GuardedBreak"] },
+    { "file": "setups.qnt", "main": "pair", "invariants": ["bothMutex", "fewGrants"], "runs": true },
+    { "file": "setups.qnt", "main": "witness", "runs": true }
+  ]
+}

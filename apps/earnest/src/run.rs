@@ -121,6 +121,26 @@ fn stop_once_broken(search: &Search<'_>, expected: &[String]) -> Vec<String> {
     always
 }
 
+fn only_a_run(search: &Search<'_>) -> Option<Model> {
+    let only = search.only_rule?;
+    let model = search.model;
+    let named = |id: &str| id == only || whole_of(id) == only;
+    let searched = model.rules.iter().any(|rule| named(&rule.id))
+        || model.runs.eventually.iter().any(|rule| named(&rule.id))
+        || model
+            .runs
+            .witnesses
+            .iter()
+            .any(|witness| named(&witness.id));
+    let played = model.runs.scripts.iter().any(|script| script.id == only);
+    if searched || !played || model.runs.starts.is_none() {
+        return None;
+    }
+    let mut played = model.clone();
+    played.actions.clear();
+    Some(played)
+}
+
 fn group_verdict(expected: &str, outcome: &Outcome) -> Option<Verdict> {
     let parts: Vec<Verdict> = outcome
         .rules
@@ -194,7 +214,10 @@ pub(crate) fn explore_expecting(
             },
         };
         let began = Instant::now();
-        let mut outcome = explore(search.model, &limits);
+        let mut outcome = match only_a_run(search) {
+            Some(played) => explore(&played, &limits),
+            None => explore(search.model, &limits),
+        };
         let elapsed = began.elapsed();
         judge(&mut outcome, expecting.expected);
         let chart = match graphs {

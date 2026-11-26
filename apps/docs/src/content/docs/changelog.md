@@ -5,6 +5,17 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint fairness given a part of a pick, and fixes from the third Quint pass
+
+- **Fairness given a part of a pick:** `weakFair(buy(p._1), vars)` where the step picks `nondet p = tuples(BUYERS, ITEMS).oneOf()` and calls `buy(p._1)` is read, as are a record field (`buy(r.who)`) and any expression over one `nondet` (`act(b + 1)`): a step counts when its pick gives the value. It was refused.
+- **A condition before `implies`:** `(x == 0).implies(eventually(x == 3))` is judged in the start states, as TLC and Apalache judge it. It was refused.
+- **An empty `forall`:** a temporal property that is a `forall` over an empty set is a rule that holds, which `--rule` and `expectCounterexample` find. It was left out of the result.
+- **Runs not played:** the note names only the runs `quint test --main` plays: for `import Spec.specTest`, only `specTest`; runs reached through `export` are named too.
+- **`--rule` of a run:** plays the run from the start states with no search, so a model without end gives the run's verdict.
+- **Output and messages:** a step of an action called with a value prints it, `buy  buyer = 1`, not `buy` and `buy#2`; a played `M::aTest` keeps its prefix when the module has its own `aTest`; a refusal shows `t._2` and `r.who` as written and names the definition that wrote an action given as an argument; a module whose `quint compile` writes one variable twice under one id is refused naming Quint's compile.
+
+See [What is read today](/reference/quint/#what-is-read-today) and [Runs](/reference/quint/#runs).
+
 ## November 2026: a kept Quint parse is read again by another build
 
 - **Fixed:** `.earnest/quint/` kept what earnest read from `quint parse` by the version of Quint and the file alone, so a newer build reused what an older build had read. After an update, a check that lists a `val` in `expectCounterexample` was `unreadable` with `which is not an invariant, a temporal property or a run`, and `--no-cache` did not clear it. The entry is now kept for one build, as [cached results](/reference/cli/#caching) are. On an older build, delete `.earnest/quint/` after updating.
