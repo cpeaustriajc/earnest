@@ -105,6 +105,24 @@ fn a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches() {
 }
 
 #[test]
+fn a_nondet_behind_a_guard_or_an_if_is_picked_only_where_the_guard_holds() {
+    let report = compiled(
+        "guarded_nondet",
+        include_str!("../../models/quint_second/guarded_nondet.json"),
+    );
+    let model = report.model("guarded_nondet");
+    assert!(
+        faults(&report, "guarded_nondet").is_empty()
+            && model["states"] == 3
+            && rule(model, "small")["verdict"] == "holds",
+        "`all {{ i < q.length(), nondet w = q[i].oneOf() ... }}` and `if (i < q.length()) \
+         {{ nondet w = q[i].oneOf() ... }}` pick from `q[i]` only where `i` is in range: \
+         `quint verify --backend tlc` finds 3 distinct states and `[ok]` for `small`, and \
+         `quint run --backend typescript` finds no violation\n{report}"
+    );
+}
+
+#[test]
 fn a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them() {
     let report = compiled(
         "fold_tuple10",
