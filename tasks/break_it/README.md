@@ -2539,22 +2539,22 @@ the start, so it holds), and
 `arguments_tests::an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_lambda`
 (`caller  k = 2`).
 
-Checks, each with its last line, on the tree merged with the integration head 6362d76:
+Checks, each with its last line, on the tree merged with the integration head 7080544 (#73,
+`confirm --quint`, merged after item 7):
 
 - `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
   `just lint-library`: no warnings.
-- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2153 passed, 0
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2181 passed, 0
   failed.
 - `cargo test -p earnest_break_it --features tlc --test tlc`: 14 passed.
 - `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
-- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
-- `just counts`: every row `met` (largest `+0.42%`, `mixed/shelf`; `grid_1m` `+0.27%` and
-  `+0.31%`, as on the integration head).
-- `just benchmark`: every budget `met` (grid_10m 4 workers 0.809 s, 1 worker 2.304 s).
-- `just same-answers 6362d76`: the three sweeps and `every model file: 392 runs, 0 differences`.
-  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
-  `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
-- `tests_kept.py --base origin/main`: `tests kept: 1709 tests, 4941 assertions (base: 1304, 3798)`.
+- `just docs`: `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%` and
+  `+0.25%`).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.724 s, 1 worker 1.960 s).
+- `just same-answers 7080544` and `just same-answers origin/main`: still running when this list was written.
+- `tests_kept.py --base origin/main`: `tests kept: 1731 tests, 4977 assertions (base: 1304, 3798)`.
 - `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
-  model, on `fair_parts`' four, on `start_implies`, on `act(b + 1)`, and on #68's `buyers`,
-  `FairArgs`, `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`.
+  model, on `fair_parts`' three compiles and `start_implies`, and on #68's `buyers`, `FairArgs`,
+  `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`; earlier in the slice also on the
+  `tup`, `imp`, `args` and `act(b + 1)` samples.
