@@ -24,8 +24,8 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 | `main` | required | The module to check, as `quint compile --main` takes it |
 | `init` | `"init"` | The action that makes the start states |
 | `step` | `"step"` | The action that makes each next state |
-| `invariants` | none | Values that must hold in every reachable state |
-| `temporal` | none | Temporal properties |
+| `invariants` | none | Values that must hold in every reachable state: names, or expressions. See [Invariants written as expressions](#invariants-written-as-expressions) |
+| `temporal` | none | Temporal properties, by name |
 | `runs` | `false` | `true` for the runs whose name ends in `Test` (as `quint test` picks them), or a list of run names |
 | `name` | `main` | The check's name, so one module can be checked several times |
 | `expectCounterexample` | none | Invariants, temporal properties or runs that must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
@@ -102,6 +102,46 @@ A temporal property that earnest checks in parts, `P`, `P#2`, …, is met when a
 
 A met expectation prints one line, `broken  nonNegative  (expected)`, with no path under it. The path is in the JSON and in `earnest report`. One that is not met prints `holds  nonNegative  a counterexample was expected`. In the JSON both keep their verdict and add `"expected": "broken"`; see [the JSON output](/reference/output/#json-output).
 
+### Invariants written as expressions
+
+An item of `invariants` or of `expectCounterexample` may be a Quint expression, as `quint verify --invariant` takes one. A known bug that shows only where a guard holds is the expression `Guard implies Inv`: its counterexample ends in a state where `Guard` is true and `Inv` is false.
+
+```quint title="specs/guard.qnt"
+module guard {
+  var n: int
+
+  action init = n' = 0
+  action step = any {
+    all { n < 4, n' = n + 1 },
+    all { n >= 4, n' = n },
+  }
+
+  val Small = n < 2
+  val Late = n >= 3
+}
+```
+
+```json title="specs/earnest.quint.json"
+{
+  "checks": [
+    { "file": "guard.qnt", "main": "guard", "invariants": ["n >= 0"], "expectCounterexample": [{ "name": "LateBreak", "is": "Late implies Small" }] }
+  ]
+}
+```
+
+`Small` alone first breaks at `n = 2`, where `Late` is false. `LateBreak` breaks at `n = 3`, as `quint verify --backend tlc --invariant 'Late implies Small'` finds:
+
+```text
+pass        guard  5 states  0 ms
+  broken  LateBreak  (expected)
+```
+
+- The rule's id, on the result line, in the JSON and for `--rule`, is the text as written, trimmed: `--rule 'n >= 0'`. The object form `{ "name": "LateBreak", "is": "Late implies Small" }` gives it a short id instead. Two properties of a check with one id make the file `unreadable`.
+- Earnest passes the expressions to `quint compile --invariant`, joined by commas as for names. Quint reads the list as `and(...)` of its items, so a comma inside brackets is part of an item. An item with a comma outside brackets would be two, and makes the file `unreadable`.
+- A check with an expression is always compiled, never built from `quint typecheck`, and is cached as any compile.
+- An expression Quint refuses makes the check `unreadable` with Quint's own error, such as ``Name 'Smal' not found``, at the item in `earnest.quint.json`. An expression that plainly gives no boolean, as `n + 1` or `Set(1)`, is refused by earnest; one whose type shows only when it is evaluated is a fault, as for a named invariant.
+- `temporal` takes names only: define a temporal property in the module and list its name.
+
 ### Stopping once every counterexample is found
 
 When every property the check judges is in `expectCounterexample` and is an invariant, or a temporal property that earnest reads as one (`always(P)`, or such parts of an `and`), the search stops at the end of the level in which it finds the last of them broken. A property in parts stops the search only once every part is broken. The model is `pass`, its count is the states found so far, and the result line ends with `(every expected counterexample was found)`. The search goes breadth first and stops only at the end of a level, so each counterexample is a shortest one, as in a full search. Runs need no search and are played as usual.
@@ -172,9 +212,9 @@ For such a check, earnest builds from what `quint typecheck` wrote the module th
 | A module of definitions | `import Lib.*` or `import Lib as L` | `twice`, `L::twice` |
 | Definitions of its own | `val neverLate = time < MaxTime` | `neverLate` |
 
-The spec itself must import, instantiate and export nothing, and declare only constants, variables, definitions and types. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
+The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one `quint parse` and one `quint typecheck` per file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A check of runs only whose module is of another shape, such as a plain import of a spec that itself imports a module of helpers, is compiled, and the imported module's runs, which `quint compile` drops, are not played. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
+A setup whose spec imports one name alone (`import Lib.twice`) or a module with variables, an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name, are compiled, and the imported modules' runs, which `quint compile` drops, are not played. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -229,12 +269,21 @@ The reader also takes:
 
 - `Bool`, the set of both booleans, wherever a set is read: `nondet b = Bool.oneOf()` in a step, in `init` and in a run, `b.in(Bool)`, `Bool.size()`, `Bool.map(...)`, `Bool.powerset()` and `tuples(Bool, S)`.
 - `x.in(Nat)` as `x >= 0`, `x.in(Int)` as true, the same through `Nat.contains(x)`, and `S.subseteq(Nat)` as `S.forall(x => x >= 0)`.
-- `S.getOnlyElement()`, the item of a set of one. On any other set it is a fault with a path, as Quint's TypeScript evaluator stops with `QNT505`. The fault says the step or rule reads something that is not there; it does not name `getOnlyElement`.
+- `S.getOnlyElement()`, the item of a set of one. On any other set it is a fault with a path, as Quint's TypeScript evaluator stops with `QNT505`. The fault says the step or rule reads something that is not there; it does not name `getOnlyElement` yet.
 - `r.fieldNames()`, the field names of a record as texts, worked out when the file is read from the record's type.
 - `l.foldr(z, (item, total) => ...)`, which folds from the last item, with the item first, as Quint's `builtin.qnt` writes it.
 - A definition that takes an operator, such as `pure def app(f: int => int, v: int): int = f(v)`, called with a lambda (`app(v => v + 1, x)`), with a named operator (`app(inc, x)`), with a lambda of two parameters, or passing the operator on to another definition. The reader puts the operator in at the call, as it does for a value.
 - An action given as an argument, such as `action between(changes: bool): bool = all { b' = b + 1, changes }` called as `between(all { a' = true })`. The argument (an `all { … }`, an assignment, a named action, an action call, a `nondet` block) is put in wherever the parameter stands as an action, also when it is passed on to another action, in a run step, or as a lambda `f: int => bool` called with `v => all { flag' = v > 2 }`.
 - `q::debug(message, value)`, read as `value`.
+
+An `assume Positive = N > 0`, in a module checked directly or in the spec of a setup, is worked out from the constants when the file is read. A true one changes nothing. A false one makes the check `unreadable`, at the assumption, as Quint's TLC run (`quint verify --backend tlc`) stops on a false assumption of the module it checks:
+
+```text
+unreadable  specs/lock.qnt  Bad
+  specs/lock.qnt:14:3  `assume Positive`  the assumption `Positive` is false, so no state is checked. ...
+```
+
+Quint itself reads it unevenly: `quint test` and `quint run` never check it, and `quint compile` drops the spec's assumptions from a setup, so `quint verify --main Bad` passes there. Earnest checks it in both places. A setup that earnest leaves to `quint compile` loses its spec's assumptions in the same way.
 
 The searched state holds only the variables that `init`, `step`, the listed invariants and the listed temporal properties reach. A variable that only a run reaches is no field of the search: `init` need not give it a value, the TLA+ export leaves it out, and the run plays it (see [Runs](#runs)). A variable that `step` or a listed property reads and `init` does not give a value makes the check `unreadable`, as Quint's TLC run stops there.
 
@@ -246,7 +295,7 @@ Still refused, each named in the problem with what to write instead:
 - Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled`, `eventually(always(P))`, `weakFair` of an action inside another, of an action given an argument read from the state or picked from a set that changes, and fairness under `exists`, `not` over anything but `eventually(P)` or `always(P)` of a state condition, and the nestings the temporal report lists.
 - An action where Quint wants a value, which Quint's own effect checker allows only in a temporal property: the problem names what was written, an `` `all { … }` `` or `` `any { … }` `` with an assignment in it, an assignment `` `x' = …` ``, or a named action, and says to write the condition without the assignment or to move the assignment into an action.
 - Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
-- Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written, such as `` `100000000000000000000` ``.
+- Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written up to 2^64 (`` `18446744073709551615` ``). Past 2^64 the compiled JSON's number is read rounded, so the problem shows it as a whole number near the one written, such as `` `100000000000000000000` ``.
 
 Quint's typechecker refuses an operator kept as a value (`pure val f = inc`, an `if` that gives an operator, a set of operators), so the reader meets operators only as arguments.
 
@@ -345,6 +394,18 @@ A Quint check prints its values as Quint's REPL writes them, in a path, a `why` 
 | list | `[1, 2]` | `[1, 2]` |
 | text, integer, boolean | `"a"`, `-3`, `true` | `"a"`, `-3`, `true` |
 
+A step of a path prints each field it changes as `field: before -> after`. When a field is a map, a record, a set or a list and at most three of its parts changed, the step prints only those parts, in forms that read like Quint, when that is shorter:
+
+| Changed | Printed |
+|---|---|
+| a key's value, a field of it | `balances.get("ann"): 3 -> 4`, `peers.get("a").status: "idle" -> "waiting"` |
+| a key added, a key removed | `balances: + "cy" -> 0`, `balances: - "cy"` |
+| a field of a record | `door.open: false -> true` |
+| an item added to or removed from a set | `seen: + 4`, `seen: - 4` |
+| a list appended to, a list's head taken off, an item replaced | `queue: + 3 at the end`, `net: - Request("a") at the head`, `queue[2]: 5 -> 6` |
+
+The `start` and `end` lines keep every value whole, and so does the JSON. A step that changes more parts prints the whole values. A run whose first action can't happen prints `start  no state: the first action gives none`.
+
 The JSON of a tuple and a variant is the one Quint's ITF traces use (`quint run --out-itf`); sets, maps and lists keep earnest's JSON. The items of a set and the keys of a map are in earnest's order: Quint's for numbers, texts, records and tuples, item by item for a set of sets.
 
 A module that itself writes a record whose fields are exactly `tag` and `value`, or only `_1`, `_2`, ..., would print that record as a variant or a tuple. Earnest looks for such a record in the compiled module, and when it finds one, prints every value of that kind as a record instead, as `{ tag: "Plain", value: () }`.
@@ -355,16 +416,20 @@ Quint names what it flattens from an instance after the instance: `Small::Clock:
 
 `--rule` takes the printed name, and so does a check's `runs` list. The TLA+ export uses the same names.
 
+A setup's own definition and one of its spec's with the same name are told apart the same way: in `module named { import doors(...) as D  run pingTest = ... }`, the setup's run prints `pingTest` and the spec's `D::pingTest`, which `quint test` names `named::D::pingTest`. Two specs' runs of one name print `A::upTest` and `B::upTest`. A message that names a definition uses the same short name: ``in the definition `picked` ``, where Quint's name is `Few::C::picked`.
+
+Each branch of a `match` in an action is an action named after the action and the branch's variant: `deliver Request`, `deliver Grant`, and `deliver _` for a `_` branch, in a path step and in the JSON's `action`; `weakFair(deliver, vars)` still covers every branch. Two paths of one branch, from an `if` or a `nondet` inside it, keep the number of the repeat: `deliver Request#2`. The TLA+ export writes `Action_deliver_Request`.
+
 ## The cache
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
 - A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants` and `temporal` (with the names of `expectCounterexample` that are invariants or temporal properties), and every `.qnt` file the module reads are the same. Two checks that compile alike start one compile, and a `name`, `runs` or `expectCounterexample` that changes nothing Quint is given compiles nothing again. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
-- What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
+- What `quint parse` gave is reused while `quint --version` and every file it lists are the same, and only by a build compiled from the same sources as the build that kept it: the entry holds what earnest read from the parse, not Quint's own output. The compiled and typechecked JSON are Quint's output as written, so any build reads them.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` (its `name`, `expectCounterexample` and expressions among them) are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 

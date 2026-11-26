@@ -27,10 +27,16 @@ fn each_branch_of_a_match_of_actions_is_an_action_and_each_branch_in_init_a_star
     assert_eq!(
         ids(&matches),
         [
-            "follow", "follow#2", "follow#3", "turn", "turn#2", "turn#3", "turn#4"
+            "follow Move",
+            "follow Jump",
+            "follow _",
+            "turn",
+            "turn#2",
+            "turn Idle",
+            "turn _"
         ],
-        "follow's three branches, then turn's: the `if`'s two, and the `match`'s `Idle` and `_`, \
-         whose `false` keeps it from happening"
+        "follow's three branches, named by their variants, then turn's: the `if`'s two, and the \
+         `match`'s `Idle` and `_`, whose `false` keeps it from happening"
     );
     assert_eq!(
         matches.runs.starts.as_ref().map(Vec::len),

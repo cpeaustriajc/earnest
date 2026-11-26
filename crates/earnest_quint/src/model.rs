@@ -9,8 +9,8 @@ use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, FairStep, Field, Input, Model, Pick, Rule, Runs, Script,
-    View,
+    Action, Code, End, Eventually, Expr, FairStep, Field, Frame, Input, Model, Pick, Rule, Runs,
+    Script, View, eval,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::{HashMap, HashSet};
@@ -19,6 +19,31 @@ const INIT: &str = "q::init";
 const STEP: &str = "q::step";
 const INVARIANTS: &str = "q::inv";
 const PROPERTIES: &str = "q::temporalProps";
+const WRITTEN_INVARIANT: &str = "invariant";
+const NOT_BOOLEAN: [&str; 22] = [
+    "iadd",
+    "isub",
+    "imul",
+    "idiv",
+    "imod",
+    "ipow",
+    "iuminus",
+    "Set",
+    "List",
+    "Map",
+    "Rec",
+    "Tup",
+    "to",
+    "range",
+    "size",
+    "length",
+    "keys",
+    "map",
+    "filter",
+    "union",
+    "intersect",
+    "exclude",
+];
 const STOPS_ANYWHERE: &str = "stops_anywhere";
 const STOPS_ANYWHERE_SAYS: &str =
     "A run may stop in any state, as in Quint's TLC runs, which do not check deadlock";
@@ -92,7 +117,11 @@ pub(crate) fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
     paths
         .iter()
         .map(|path| {
-            let name = path.name.clone().unwrap_or_else(|| fallback.to_owned());
+            let mut name = path.name.clone().unwrap_or_else(|| fallback.to_owned());
+            for tag in &path.branch {
+                name.push(' ');
+                name.push_str(tag);
+            }
             let count = seen.entry(name.clone()).or_insert(0);
             *count += 1;
             if *count == 1 {
@@ -177,6 +206,15 @@ fn kept<T>(read: Read<T>, refused: &mut Vec<Refusal>) -> Option<T> {
     read.map_err(|refusal| refused.push(refusal)).ok()
 }
 
+fn gives_no_boolean(expr: &Quint) -> bool {
+    match expr {
+        Quint::Int { .. } | Quint::Str { .. } | Quint::Lambda { .. } => true,
+        Quint::App { opcode, .. } => NOT_BOOLEAN.contains(&opcode.as_str()),
+        Quint::Let { expr, .. } => gives_no_boolean(expr),
+        Quint::Bool { .. } | Quint::Name { .. } => false,
+    }
+}
+
 fn rules<'a>(
     reader: &mut Reader<'a>,
     defs: &HashMap<u64, &'a Def>,
@@ -190,17 +228,22 @@ fn rules<'a>(
         other => std::slice::from_ref(other),
     };
     let mut rules = Vec::with_capacity(conjuncts.len());
-    for conjunct in conjuncts {
+    for (position, conjunct) in conjuncts.iter().enumerate() {
         INVARIANTS.clone_into(&mut reader.within);
-        let Quint::Name { name, .. } = conjunct else {
-            kept(
-                reader.refuse::<()>(
-                    "an invariant",
-                    "an invariant that is not the name of a definition",
-                ),
-                refused,
-            );
-            continue;
+        let name = match conjunct {
+            Quint::Name { name, .. } => name.clone(),
+            other if gives_no_boolean(other) => {
+                kept(
+                    reader.refuse::<()>(
+                        "an invariant",
+                        "an invariant that gives a value that is not a boolean, which Quint's \
+                         TLC runs refuse",
+                    ),
+                    refused,
+                );
+                continue;
+            }
+            _ => format!("{WRITTEN_INVARIANT} {}", position.saturating_add(1)),
         };
         let Some(holds) = kept(reader.pure(conjunct), refused) else {
             continue;
@@ -210,7 +253,7 @@ fn rules<'a>(
             id: name.clone(),
             says: format!("The Quint invariant `{name}` holds"),
             line: DECLARED_ON,
-            text: name.clone(),
+            text: name,
             holds: Code::new(holds),
             slots,
         });
@@ -307,8 +350,12 @@ fn parts<'a>(
     reader.in_init = true;
     let starting = kept(unfolded(reader, init), &mut refused);
     reader.in_init = false;
-    let starts = starting
-        .and_then(|starting| kept(start_states(&starting, names, reader.slots), &mut refused));
+    let starts = starting.and_then(|starting| {
+        kept(
+            start_states((&starting, "`init`"), names, reader.slots),
+            &mut refused,
+        )
+    });
     let (stepping, unread) = stepped(reader, step, &mut refused);
     let fallback = match &step.expr {
         Quint::Name { name, .. } => name.clone(),
@@ -508,6 +555,45 @@ fn search_of<'a>(
     }
 }
 
+fn assumed<'a>(reader: &mut Reader<'a>, declarations: &'a [Declaration]) -> Read<()> {
+    for declaration in declarations {
+        let Declaration::Assume { name, assumption } = declaration else {
+            continue;
+        };
+        name.clone_into(&mut reader.within);
+        let code = reader.pure(assumption)?;
+        let short = name.rsplit("::").next().unwrap_or(name);
+        let feature = format!("`assume {short}`");
+        let mut frame = Frame::new(&[], reader.slots);
+        match eval(&code, &mut frame) {
+            Ok(Value::Bool(true)) => {}
+            Ok(_) => {
+                return Err(refusal(
+                    &feature,
+                    &format!(
+                        "the assumption `{short}` is false, so no state is checked. Quint's TLC run \
+                         (`quint verify --backend tlc`) stops on a false assumption of the \
+                         module it checks; `quint test` and `quint run` do not check it. Make \
+                         it true, in a setup by giving the constants other values"
+                    ),
+                )
+                .within(name));
+            }
+            Err(fault) => {
+                return Err(refusal(
+                    &feature,
+                    &format!(
+                        "the assumption `{short}` has no value: {}",
+                        fault.describe()
+                    ),
+                )
+                .within(name));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn built(
     path: &str,
     compiled: &Compiled,
@@ -549,6 +635,7 @@ fn built(
         .collect();
     let search = search_of(&defs, (runs, wanted))?;
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
+    assumed(&mut reader, &module.declarations).map_err(|refusal| vec![refusal])?;
     let read = match search {
         Some(search) => parts(&mut reader, &compiled.table, &defs, search, &names),
         None => Ok(Default::default()),
