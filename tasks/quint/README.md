@@ -4080,3 +4080,11 @@ The checks-file slice (#69), on its tree merged with the integration head `05838
   and `clock.model.ts`, which `origin/main` reports `unreadable` (`m.eventually`, `m.setup`).
 - `tests_kept.py --base origin/main`: `tests kept: 1693 tests, 4897 assertions (base: 1304,
   3798)`.
+
+## Checks marked in the model (#72): how other checkers declare a check
+
+- Alloy: a check is a command in the model, `check Name for 4 expect 0`; `expect 1` says a counterexample (for `check`) or an instance (for `run`) must be found, and the Analyzer says "as expected" or "contrary to expectation" ([Practical Alloy](https://practicalalloy.github.io/chapters/structural-topics/topics/commands/index.html), [forum](https://alloytools.discourse.group/t/what-does-expect-1-mean/308)).
+- TLC: the module says nothing; a `.cfg` beside it names `INIT`, `NEXT` (or `SPECIFICATION`), `CONSTANT`s, `INVARIANT`s and `PROPERTY`s. No expected failure exists in TLC itself [from memory].
+- tlaplus/Examples: each folder's `manifest.json` lists models by `.cfg` with `"result": "success"`, `"safety failure"`, `"liveness failure"` or `"deadlock failure"` (read in `specifications/DieHard/manifest.json`): the expected failure lives beside the model, per check.
+- Apalache: `--init`, `--next`, `--cinit`, `--inv`, `--temporal` on the command line, or a TLC `.cfg` via `--config`; no expected violation. Its type annotations live in comments, `\* @type: Int;` (docs `running.md`, `howto-write-type-annotations.md`): a precedent for a marker in a comment.
+- So: Alloy alone puts the check and its expected failure in the model; `@check` / `@check broken` is Alloy's `expect 0` / `expect 1` per property, written Apalache's way. `@check reachable` is Alloy's `run … expect 1`. The proposed spelling stands.
