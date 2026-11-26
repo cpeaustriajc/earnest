@@ -2944,3 +2944,72 @@ changed.
   copies expressions unchanged, so a new read operator needs nothing here.
 - Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
   treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
+
+## Slice 4, second part: report
+
+Asked by the orchestrator after the first report: the shapes a real project is likely to write
+must not end `unreadable`. Built on the integration head `ea7e3fb`.
+
+### Done
+
+- `setup.rs` builds a setup module made of: instances whole (`.*`) or under a name (`as C`),
+  any number of them, two of one spec among them (fresh ids); whole imports of modules of
+  definitions (`import Lib.*`, `import Lib as Li`); `export C.*` of its own instances; and its
+  own definitions. Overrides may name definitions (`K = Own`, `K = twice(L)`, `K = Li::L`).
+  The checks file's names resolve as the setup sees them (own, whole instance, `C::name`,
+  exported). See "Second part" under "How `quint compile` flattens a setup".
+- Order of the four asked: 1 `as C` built (`Large`, `Named`, `Reexported`); 2 constants by name
+  built (`ByOwn`, `ByName` playing `upTest`, `Renamed`); 3 `export` built (`Exported`, compared
+  with `Plain` since Quint's own compile is wrong there); 4 several instances built (`Two`,
+  `Pair`). None needed the hour.
+- Still compiled: an instance of an instance (`Nested`), one name imported alone (`Single`), and
+  what Quint would refuse.
+- With real Quint 0.33.1, `tasks/quint/setups` (28 checks, 11 files) runs 11 typechecks and 2
+  compiles; 2 checks are `unreadable` on purpose: `Pair` with `runs: true` (a run from part of
+  the state) and `Single` naming a run of the module it imports.
+
+### `quint test` on the new shapes (`--backend typescript --match 'Test$'`)
+
+```text
+Pair:       ok Pair::P::upTest, Pair::P::fullTest, Pair::R::upTest, Pair::R::fullTest
+Named:      ok Named::B::upTest, Named::B::fullTest
+Reexported: ok Reexported::B::upTest, Reexported::B::fullTest, ownTest
+ByName:     ok ByName::Base::upTest, ByName::Base::fullTest
+Exported:   ok Exported::B::upTest, Exported::B::fullTest, upTest, fullTest
+```
+
+earnest: every one of these `holds`, except `Pair`'s, which earnest refuses (above). Quint plays
+`Exported`'s runs twice, once under each name; earnest plays each once.
+
+### Tests
+
+`setup_tests.rs` (7: 21 shapes built against Quint's declarations and reading, the compiled
+shapes, the export), `quint_setups.rs` (5, now over 28 checks). Only tests of this slice
+changed; none is on `origin/main`.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo test --locked`: 1993 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,847,189 | +0.26% | 1.00% | met |`. Not re-recorded.
+- `just benchmark`: every budget `met`; the last line is `wide, search time with all cores
+  (0.119 s) over search time with 1 worker (0.316 s): 0.38x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the same 64 in the 16 conformance files `origin/main` does not have.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`. `cargo machete`: `... Good job!`
+- `tests_kept.py --base origin/main`: `tests kept: 1609 tests, 4686 assertions (base: 1304, 3798)`.
+
+### Doubts
+
+- A run of one of two instances of a spec can't be played (it starts from part of the state);
+  the check is `unreadable` with slice 6's reason. Playing it would need partial states.
+- `export` has no reference output from Quint 0.33.1; its equality is with an equivalent setup.
+- A refusal inside a copy with fresh ids (`Pair`) has no source place: it stays at 1:1, as a
+  compiled instance's does.
+
+### Next
+
+`import Lib.name` and instances of instances, if a project has them.
