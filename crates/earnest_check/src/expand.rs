@@ -1,3 +1,4 @@
+use crate::picks::{Cursor, Next, sets_of};
 use crate::store::{Decoder, RangeSlot, RowLayout, Store, hash_words};
 use earnest_ir::{
     Action, Code, Fault, Frame, Input, Model, PackedTest, PackedUpdate, Scalar, Slot,
@@ -209,6 +210,7 @@ enum FromRow {
     Once(Packed),
     Each(Box<[Option<Packed>]>),
     Not,
+    Picked(Box<[Option<Code>]>),
 }
 
 #[derive(Debug)]
@@ -322,11 +324,21 @@ impl<'a> Move<'a> {
         model
             .actions
             .iter()
-            .map(|action| Self::of(action, model.fields.len(), layout, slots))
+            .enumerate()
+            .map(|(position, action)| {
+                let picked = sets_of(model, position);
+                Self::of(action, model.fields.len(), layout, slots, picked)
+            })
             .collect()
     }
 
-    fn of(action: &'a Action, fields: usize, layout: &RowLayout, slots: &[Option<Slot>]) -> Self {
+    fn of(
+        action: &'a Action,
+        fields: usize,
+        layout: &RowLayout,
+        slots: &[Option<Slot>],
+        picked: Option<Box<[Option<Code>]>>,
+    ) -> Self {
         let combinations = input_count(action);
         let tried = if combinations <= 1 {
             Tried::Once
@@ -345,7 +357,7 @@ impl<'a> Move<'a> {
             .enumerate()
             .filter_map(|(position, update)| Some((position, update.as_ref()?)))
             .collect::<Vec<_>>();
-        let refill = if action.inputs_may_be_overwritten() {
+        let refill = if picked.is_some() || action.inputs_may_be_overwritten() {
             Refill::Every
         } else {
             Refill::Turned
@@ -396,7 +408,9 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
-        let from_row = if action.inputs.is_empty() {
+        let from_row = if let Some(sets) = picked {
+            FromRow::Picked(sets)
+        } else if action.inputs.is_empty() {
             Packed::of(action, &updates, slots, &[]).map_or(FromRow::Not, FromRow::Once)
         } else {
             Packed::each_combination(action, &updates, slots, &tried)
@@ -841,6 +855,22 @@ impl<S: Successors> Expansion<'_, '_, S> {
                     self.general(position, planned);
                 }
             }
+            (FromRow::Picked(_), _) => {
+                self.values.frame();
+                let origin = Origin {
+                    position,
+                    base: self.values.base(),
+                };
+                self.tally = every_pick(
+                    planned,
+                    origin,
+                    self.values.frame(),
+                    self.scratch,
+                    self.found,
+                    self.sink,
+                    self.tally,
+                );
+            }
             (FromRow::Once(_) | FromRow::Each(_) | FromRow::Not, _) => {
                 self.general(position, planned);
             }
@@ -1034,6 +1064,23 @@ fn every_input_told_apart(
     trying.tally
 }
 
+#[inline(never)]
+fn every_pick(
+    planned: &Move<'_>,
+    origin: Origin<'_>,
+    frame: &mut Frame<'_>,
+    work: &mut Work,
+    found: &mut Mark,
+    sink: &mut dyn Successors,
+    tally: Tally,
+) -> Tally {
+    let mut trying = Trying::of(planned, origin, frame, work, found, sink, tally);
+    if let FromRow::Picked(sets) = &planned.from_row {
+        trying.every_pick(sets);
+    }
+    trying.tally
+}
+
 struct Trying<'t, 'v, S: ?Sized> {
     planned: &'t Move<'t>,
     origin: Origin<'t>,
@@ -1110,6 +1157,29 @@ impl<'t, 'v, S: Successors + ?Sized> Trying<'t, 'v, S> {
             self.try_input::<true>(input);
         }
         self.work.digits = digits;
+    }
+
+    fn every_pick(&mut self, sets: &[Option<Code>]) {
+        self.work.seen.forget();
+        let mut cursor = Cursor::new(&self.planned.action.inputs, sets);
+        let mut number = 0_usize;
+        while self.may_go_on_noting_a_time_stop() {
+            match cursor.next(self.frame) {
+                Next::Ready => {
+                    self.try_input::<true>(number);
+                    number = number.saturating_add(1);
+                }
+                Next::Faulted(fault) => {
+                    let stopped = fault == Fault::Stopped;
+                    self.found.note(Whence::Guard(self.origin.position), fault);
+                    self.tally.moving.unsure = true;
+                    if stopped {
+                        break;
+                    }
+                }
+                Next::Done => break,
+            }
+        }
     }
 
     #[inline]

@@ -418,6 +418,21 @@ pub struct Setup {
     pub starts: Vec<(usize, Value)>,
 }
 
+/// An input of an action whose values are worked out in each state: the items of a set.
+///
+/// The input's own [`Input::values`] are not used. The search tries every item of `from` in
+/// each state, and none when the set is empty, so the action cannot happen there.
+#[derive(Clone, Debug)]
+pub struct Pick {
+    /// The position of the action in [`Model::actions`].
+    pub action: usize,
+    /// The position of the input in [`Action::inputs`].
+    pub input: usize,
+    /// The set whose items the input takes. It reads the state and the action's earlier
+    /// inputs, in the action's slots, and must give a set.
+    pub from: Code,
+}
+
 /// What a model says about whole runs instead of single states.
 #[derive(Clone, Debug, Default)]
 pub struct Runs {
@@ -429,6 +444,8 @@ pub struct Runs {
     pub witnesses: Vec<Witness>,
     /// The setups the model is also checked in.
     pub setups: Vec<Setup>,
+    /// The inputs whose values are worked out in each state.
+    pub picks: Vec<Pick>,
     /// The position in `setups` of the setup this model starts in: [`Model::in_setup`] gave
     /// it. `None` for the model as its file declares it.
     pub chosen: Option<usize>,

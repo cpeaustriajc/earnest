@@ -6,6 +6,7 @@ use crate::outcome::{
     Verdict,
 };
 use crate::outline::Outline;
+use crate::picks::{combinations, sets_of};
 use earnest_value::Value;
 
 const STUCK: &str = "no action can happen here, and the model does not mark it as an end";
@@ -39,10 +40,23 @@ impl Search<'_> {
         let before = self.store.state(from);
         let after = self.store.state(to);
         let action = self.model.actions.get(position)?;
+        let picked = match sets_of(self.model, position) {
+            Some(_) => Some(
+                combinations(self.model, position, &before)
+                    .0
+                    .into_iter()
+                    .nth(input)?,
+            ),
+            None => None,
+        };
+        let values: Vec<Option<&Value>> = match &picked {
+            Some(found) => found.iter().map(Some).collect(),
+            None => chosen(action, input).collect(),
+        };
         let input = action
             .inputs
             .iter()
-            .zip(chosen(action, input))
+            .zip(values)
             .map(|(each, value)| {
                 Some(Named {
                     name: each.name.clone(),

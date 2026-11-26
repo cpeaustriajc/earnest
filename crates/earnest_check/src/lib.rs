@@ -14,6 +14,7 @@ mod helpers;
 mod limits;
 mod outcome;
 mod outline;
+mod picks;
 mod report;
 mod store;
 mod witness;

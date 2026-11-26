@@ -265,8 +265,8 @@ pub fn write_apart_from(model: &Model, modules: &[&str]) -> Files {
         filler,
     };
     let mut blocks = vec![writer.in_range(), writer.starts()];
-    for (action, defined) in model.actions.iter().zip(&actions) {
-        blocks.push(writer.action(action, defined));
+    for (position, (action, defined)) in model.actions.iter().zip(&actions).enumerate() {
+        blocks.push(writer.action(position, action, defined));
     }
     for (end, defined) in model.ends.iter().zip(&ends) {
         let when = writer.condition(end.when.expr());
@@ -486,16 +486,34 @@ impl Writer<'_> {
         self.scribe.expr(expr, &mut scope)
     }
 
-    fn action(&mut self, action: &Action, defined: &str) -> String {
+    fn action(&mut self, position: usize, action: &Action, defined: &str) -> String {
         let mut scope = Scope::new(&self.names);
         let mut choices = Vec::with_capacity(action.inputs.len());
-        for input in &action.inputs {
-            let kind = Kind::of_domain(&input.domain);
-            let values = self.scribe.values(input.values.iter(), &kind);
-            let name = scope.bind(input.slot, &input.name, kind);
-            choices.push(format!("{name} \\in {}", set_of(&values)));
-        }
         let mut needed = vec![IN_RANGE.to_owned()];
+        let picks: Vec<_> = self
+            .model
+            .runs
+            .picks
+            .iter()
+            .filter(|pick| pick.action == position)
+            .collect();
+        for (at, input) in action.inputs.iter().enumerate() {
+            let (set, kind) = match picks.iter().find(|pick| pick.input == at) {
+                Some(pick) => {
+                    let written = self.scribe.expr(pick.from.expr(), &mut scope);
+                    needed.extend(written.sound);
+                    (written.text, written.kind.item())
+                }
+                None => {
+                    let kind = Kind::of_domain(&input.domain);
+                    let values = self.scribe.values(input.values.iter(), &kind);
+                    (set_of(&values), kind)
+                }
+            };
+            let name = scope.bind(input.slot, &input.name, kind);
+            choices.push(format!("{name} \\in {set}"));
+        }
+        let joined = if picks.is_empty() { ", " } else { " : \\E " };
         if !matches!(action.guard.expr(), Expr::Const(Value::Bool(true))) {
             let allowed = self.scribe.expr(action.guard.expr(), &mut scope);
             needed.extend(allowed.sound);
@@ -525,7 +543,7 @@ impl Writer<'_> {
         if choices.is_empty() {
             return definition(defined, &lines);
         }
-        let mut chosen = vec![format!("\\E {} :", choices.join(", "))];
+        let mut chosen = vec![format!("\\E {} :", choices.join(joined))];
         chosen.extend(lines.iter().map(|line| format!("{INDENT}{line}")));
         definition(defined, &chosen)
     }

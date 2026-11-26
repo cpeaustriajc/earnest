@@ -13,6 +13,7 @@ const TESTED: &str = include_str!("../fixtures/tested.json");
 const TEXT: &str = include_str!("../fixtures/text.json");
 const SET_VARIABLE: &str = include_str!("../fixtures/setvar.json");
 const FROM_STATE: &str = include_str!("../fixtures/fromstate.json");
+const INIT_PICK: &str = include_str!("../fixtures/initpick.json");
 const PARTIAL: &str = include_str!("../fixtures/partial.json");
 const POWER: &str = include_str!("../fixtures/power.json");
 const WIDE: &str = include_str!("../fixtures/wide.json");
@@ -370,11 +371,35 @@ fn a_powerset_of_a_set_from_the_state_is_refused() {
 }
 
 #[test]
-fn a_nondet_over_a_set_computed_from_the_state_is_refused() {
+fn a_nondet_over_a_set_computed_from_the_state_is_an_input_worked_out_in_each_state() {
+    let found = model(FROM_STATE);
+    let picks = &found.runs.picks;
+    assert_eq!(
+        picks.len(),
+        1,
+        "one input is picked in each state: {picks:?}"
+    );
+    assert_eq!((picks[0].action, picks[0].input), (0, 0), "the step's `y`");
+    assert_eq!(
+        picks[0].from.expr(),
+        &Expr::Apply(
+            Op::Interval,
+            vec![Expr::Const(Value::Int(0)), Expr::Field(0)]
+        ),
+        "0.to(x)"
+    );
+    assert!(
+        found.actions[0].inputs[0].values.is_empty(),
+        "a picked input lists no values of its own"
+    );
+}
+
+#[test]
+fn a_nondet_in_init_over_a_set_computed_from_another_nondet_is_refused() {
     refused_with(
-        FROM_STATE,
-        "`nondet y`",
-        "`oneOf` over a set computed from the state",
+        INIT_PICK,
+        "`nondet b`",
+        "`init` picks with `oneOf` over a set computed from another `nondet`",
     );
 }
 

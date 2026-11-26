@@ -2,7 +2,7 @@ use crate::json::{Compiled, Declaration, Def, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
 use crate::scan::refused;
 use crate::starts::start_states;
-use earnest_ir::{Action, Code, End, Expr, Field, Input, Model, Rule, Runs, View};
+use earnest_ir::{Action, Code, End, Expr, Field, Input, Model, Pick, Rule, Runs, View};
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
 
@@ -78,6 +78,19 @@ fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+fn picks(position: usize, path: &Path) -> impl Iterator<Item = Pick> + '_ {
+    path.choices
+        .iter()
+        .enumerate()
+        .filter_map(move |(input, choice)| {
+            Some(Pick {
+                action: position,
+                input,
+                from: Code::new(choice.from.clone()?),
+            })
+        })
 }
 
 fn action(id: String, path: &Path, fields: &[String], slots: usize) -> Read<Action> {
@@ -195,7 +208,7 @@ fn variables(declarations: &[Declaration]) -> Vec<Variable<'_>> {
         .collect()
 }
 
-type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>);
+type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>, Vec<Pick>);
 
 fn parts<'a>(
     reader: &mut Reader<'a>,
@@ -218,7 +231,12 @@ fn parts<'a>(
         .zip(&stepping)
         .map(|(id, path)| action(id, path, names, reader.slots))
         .collect::<Read<Vec<Action>>>()?;
-    Ok((starts, actions, rules))
+    let picks = stepping
+        .iter()
+        .enumerate()
+        .flat_map(|(position, path)| picks(position, path))
+        .collect();
+    Ok((starts, actions, rules, picks))
 }
 
 pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusal>> {
@@ -267,7 +285,7 @@ fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec
         }));
     };
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
-    let (starts, actions, rules) =
+    let (starts, actions, rules, picks) =
         parts(&mut reader, &defs, (init, step), &names).map_err(|refusal| vec![refusal])?;
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
@@ -305,6 +323,7 @@ fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec
         view: View::default(),
         runs: Runs {
             starts: Some(starts),
+            picks,
             ..Runs::default()
         },
     })
