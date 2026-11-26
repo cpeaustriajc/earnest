@@ -1,0 +1,20 @@
+{ "checks": [
+  { "file": "ints.qnt", "main": "Low", "invariants": ["below", "small"], "temporal": ["reaches"] },
+  { "file": "ints.qnt", "main": "High", "invariants": ["below", "small"], "temporal": ["reaches"] },
+  { "file": "kinds.qnt", "main": "Setup", "invariants": ["inRange", "paired", "known"] },
+  { "file": "pure.qnt", "main": "Four", "invariants": ["inside", "notAll"] },
+  { "file": "own.qnt", "main": "Tight", "step": "stepOrReset", "invariants": ["withinCap", "neverFull", "belowHalf"] },
+  { "file": "shadow.qnt", "main": "S", "invariants": ["ok", "notAmberTwice"] },
+  { "file": "runs.qnt", "main": "Three", "invariants": ["bounded"], "runs": true },
+  { "file": "runs.qnt", "main": "One", "invariants": ["bounded"], "runs": ["twoTest", "allTest", "overTest"] },
+  { "file": "clock.qnt", "main": "Small", "invariants": ["timeBounded", "skewOk"], "temporal": ["allHeard", "timeAdvances", "fairHear", "leads"], "runs": ["tickTwice", "tickMany", "overTick", "hearAny"] },
+  { "file": "clock.qnt", "main": "Large", "invariants": ["inv"], "runs": true },
+  { "file": "clockbits.qnt", "main": "SmallBits", "temporal": ["allHeard", "timeAdvances", "fairHear", "leads"] },
+  { "file": "lamp.qnt", "main": "Dim", "invariants": ["levelOk", "darkWhenOff"] },
+  { "file": "lamp.qnt", "main": "Bright", "invariants": ["levelOk"] },
+  { "file": "lamp.qnt", "main": "Blinding", "invariants": ["levelOk"] },
+  { "file": "compiled.qnt", "main": "Nested", "invariants": ["ok"], "runs": true },
+  { "file": "compiled.qnt", "main": "Aliased", "invariants": ["ok"] },
+  { "file": "compiled.qnt", "main": "ByName", "invariants": ["ok"], "runs": ["upTest"] },
+  { "file": "compiled.qnt", "main": "Exported", "invariants": ["ok"] }
+] }

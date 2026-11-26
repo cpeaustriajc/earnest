@@ -13,6 +13,8 @@ struct Names {
     name: String,
     declared: Vec<(String, u64)>,
     instances: Vec<(String, String)>,
+    #[serde(default)]
+    imports_all_of_an_instance: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,7 +37,10 @@ fn names_of(module: &Value) -> Option<Names> {
     for declaration in module.get("declarations")?.as_array()? {
         let id = declaration.get("id").and_then(Value::as_u64);
         match (text(declaration, "kind"), text(declaration, "name"), id) {
-            (Some("instance" | "import"), _, _) => {
+            (Some(kind @ ("instance" | "import")), _, _) => {
+                if kind == "instance" && declaration.get("qualifiedName").is_none() {
+                    names.imports_all_of_an_instance = true;
+                }
                 if let Some(proto) = text(declaration, "protoName") {
                     let alias = text(declaration, "qualifiedName").unwrap_or(proto);
                     names.instances.push((alias.to_owned(), proto.to_owned()));
@@ -92,6 +97,11 @@ impl Places {
 
     pub(crate) fn files_read(&self) -> Vec<&str> {
         self.files.values().map(String::as_str).collect()
+    }
+
+    pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {
+        self.module(main)
+            .is_some_and(|module| module.imports_all_of_an_instance)
     }
 
     fn module(&self, name: &str) -> Option<&Names> {

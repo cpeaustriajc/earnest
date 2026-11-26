@@ -378,7 +378,21 @@ fn script<'a>(
     Ok((script, picked))
 }
 
-fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a Def>, Vec<Refusal>> {
+fn not_found(name: &str, imported: &[String]) -> Refusal {
+    let why = if imported.iter().any(|each| each == name) {
+        "the check names this run, which is written in a module this one imports: `quint \
+         compile` drops the runs of imported modules, so the checker plays them only for a \
+         setup it builds itself from one `import Spec(...).*`"
+    } else {
+        "the check names this run, and the compiled module has no run of this name"
+    };
+    refusal(&format!("`run {name}`"), why).within(name)
+}
+
+fn chosen<'a>(
+    (declarations, imported): (&'a [Declaration], &[String]),
+    runs: &Runs,
+) -> Result<Vec<&'a Def>, Vec<Refusal>> {
     let every = declarations
         .iter()
         .filter_map(|declaration| match declaration {
@@ -405,10 +419,7 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
                     .find(|def| def.name == *name || short.name(&def.name) == *name)
                 {
                     Some(def) => found.push(*def),
-                    None => missing.push(refusal(
-                        &format!("`run {name}`"),
-                        "the check names this run, and the compiled module has no run of this name",
-                    )),
+                    None => missing.push(not_found(name, imported)),
                 }
             }
             if missing.is_empty() {
@@ -422,7 +433,7 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
 
 pub(crate) fn scripts<'a>(
     reader: &mut Reader<'a>,
-    declarations: &'a [Declaration],
+    declarations: (&'a [Declaration], &[String]),
     (init, runs): (&'a Def, &Runs),
     fields: &[String],
 ) -> Result<(Vec<Script>, Vec<Pick>), Vec<Refusal>> {
