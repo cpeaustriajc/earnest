@@ -11,6 +11,7 @@
 mod changes;
 mod markdown;
 mod mermaid;
+mod parts;
 mod plot;
 mod report;
 mod select;
@@ -23,4 +24,4 @@ pub use report::{
     Charted, Section, Unreadable, report, report_with_charts, report_with_limit, skipped_section,
 };
 pub use select::ARROW_LIMIT;
-pub use text::{detail_lines, path_lines};
+pub use text::{detail_lines, detail_lines_in, path_lines, path_lines_in};

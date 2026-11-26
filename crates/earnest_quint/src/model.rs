@@ -311,8 +311,12 @@ fn parts<'a>(
     reader.in_init = true;
     let starting = kept(unfolded(reader, init), &mut refused);
     reader.in_init = false;
-    let starts = starting
-        .and_then(|starting| kept(start_states(&starting, names, reader.slots), &mut refused));
+    let starts = starting.and_then(|starting| {
+        kept(
+            start_states((&starting, "`init`"), names, reader.slots),
+            &mut refused,
+        )
+    });
     let (stepping, unread) = stepped(reader, step, &mut refused);
     let fallback = match &step.expr {
         Quint::Name { name, .. } => name.clone(),

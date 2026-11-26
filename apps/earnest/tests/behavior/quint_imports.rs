@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::support::{Sandbox, model, repository, rule};
+use crate::support::{Run, Sandbox, model, repository, rule};
 
 const FAKE: &str = r#"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -108,17 +108,20 @@ impl Quint {
         Self { sandbox, program }
     }
 
-    fn verify(&self) -> Value {
+    fn earnest(&self, arguments: &[&str]) -> Run {
         let empty = self.sandbox.path().join("no-programs");
         fs::create_dir_all(&empty).expect("an empty folder can be made");
-        crate::support::Run::of(
+        Run::of(
             self.sandbox
                 .command()
                 .env("EARNEST_QUINT", &self.program)
                 .env("PATH", &empty)
-                .args(["verify", "--json", "specs"]),
+                .args(arguments),
         )
-        .json()
+    }
+
+    fn verify(&self) -> Value {
+        self.earnest(&["verify", "--json", "specs"]).json()
     }
 
     fn of_kind(&self, kind: &str) -> Vec<String> {
@@ -377,5 +380,54 @@ fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
         verdicts(&report, "Good"),
         pairs(&[("upTest", "holds")]),
         "{report}"
+    );
+}
+
+#[test]
+fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
+    let quint = Quint::new(
+        r#"{ "checks": [
+          { "file": "printing.qnt", "main": "Printing", "invariants": ["annBelowFive"], "runs": ["noStartTest"] },
+          { "file": "printing.qnt", "main": "Printing", "name": "fault", "invariants": ["annBelowFive"], "runs": ["faultTest"] }
+        ] }"#,
+    );
+    quint
+        .sandbox
+        .write("specs/printing.qnt", &imports("printing.qnt"));
+    quint.sandbox.write(
+        "fake/compiled/Printing.json",
+        &imports("fixtures/printing.Printing.json"),
+    );
+    let run = quint.earnest(&["verify", "specs"]);
+    assert_eq!(
+        run.detail("Printing"),
+        [
+            "broken  annBelowFive  \"The Quint invariant `annBelowFive` holds\"",
+            "start  queue = [1, 2, 3, 4, 5], balances = Map(\"ann\" -> 3, \"bob\" -> 5, \"cy\" -> 0, \
+             \"dee\" -> 7, \"eve\" -> 1), seen = Set(1, 3, 5, 7)",
+            "1. step  queue: + 3 at the end, balances.get(\"ann\"): 3 -> 4",
+            "2. step  queue: + 4 at the end, balances.get(\"ann\"): 4 -> 5, seen: + 4",
+            "end    queue = [1, 2, 3, 4, 5, 3, 4], balances = Map(\"ann\" -> 5, \"bob\" -> 5, \
+             \"cy\" -> 0, \"dee\" -> 7, \"eve\" -> 1), seen = Set(1, 3, 4, 5, 7)",
+            "broken  noStartTest  \"The Quint run `noStartTest` passes\"",
+            "start  no state: the first action gives none",
+            "why    the run's first action can't happen: it gives no state to start from",
+        ],
+        "the whole values on the `start` and `end` lines, the change alone on a step's\n{run}"
+    );
+    let report = quint.verify();
+    let step = &model(&report, "Printing")["rules"][0]["path"]["steps"][0]["changes"][1];
+    assert_eq!(step["field"], "balances", "{report}");
+    assert_eq!(
+        step["after"],
+        serde_json::json!([["ann", 4], ["bob", 5], ["cy", 0], ["dee", 7], ["eve", 1]]),
+        "the JSON keeps the whole value\n{report}"
+    );
+    let problem = report["unreadable"][0]["message"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        problem.starts_with("a value `seed` gives takes a division"),
+        "a fault in a run's first action names that action, not `init`\n{report}"
     );
 }
