@@ -19,6 +19,7 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **Results:** each check is one model, named after its module, with the `.qnt` file as its file. A failed compile is `unreadable` at the line Quint gives, and a construct the reader refuses is reported at its line in the `.qnt` file.
 - **Cache:** the compiled JSON is kept in `.earnest/quint/` by `quint --version`, the check and the content of the `.qnt` files, so a second run with nothing changed starts no Node.
 - **Runs:** a check with `"runs": true` or a list of run names plays the module's `run` definitions, trying every choice where `quint test` samples. See [Runs](/reference/quint/#runs).
+- **Names:** a field, action, rule or run flattened from an instance is printed by its last segment (`time`, not `Small::Clock::time`) unless another name of its kind ends the same way, and `--rule` takes that name. See [Names](/reference/quint/#names).
 - **Reads:** what the Quint reader reads from compiled JSON, now also from a listed `.qnt` file. A module compiled beforehand with `quint compile --target json` is still read with no Node.
 
 See [Quint models](/reference/quint/).
