@@ -1,0 +1,8 @@
+{
+  "checks": [
+    { "file": "setups.qnt", "main": "three", "step": "stepEach", "invariants": ["mutex", "holderKnown", "bounded"], "temporal": ["everyoneRequests", "everyoneHolds", "eachDrains"], "runs": true, "expectCounterexample": ["GuardedBreak"] },
+    { "file": "setups.qnt", "main": "three", "name": "threePick", "step": "stepPick", "invariants": ["mutex", "holderKnown", "bounded"], "temporal": ["pickRequests", "pickHolds", "pickSettles"] },
+    { "file": "setups.qnt", "main": "two", "name": "twoPick", "step": "stepPick", "invariants": ["mutex", "holderKnown", "bounded", "grantsBounded"], "temporal": ["pickRequests", "pickHolds", "pickSettles"] },
+    { "file": "setups.qnt", "main": "witness", "runs": true }
+  ]
+}

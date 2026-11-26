@@ -1,0 +1,542 @@
+{
+ "Q2": {
+  "Q2A": {
+   "states": 58,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q2B": {
+   "states": 21,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q2C": {
+   "states": 58,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t3": "broken",
+    "t4": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q5": {
+  "Q5A": {
+   "states": 240,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "broken"
+   }
+  },
+  "Q5B": {
+   "states": 58,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "holds"
+   }
+  },
+  "Q5C": {
+   "states": 240,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t3": "holds",
+    "t4": "broken",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q9": {
+  "Q9A": {
+   "states": 230,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q9B": {
+   "states": 56,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q9C": {
+   "states": 230,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t3": "broken",
+    "t4": "broken",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q14": {
+  "Q14A": {
+   "states": 96,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q14B": {
+   "states": 36,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "holds",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "holds",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "holds"
+   }
+  },
+  "Q14C": {
+   "states": 96,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t3": "broken",
+    "t4": "broken",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q20": {
+  "Q20A": {
+   "states": 71,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "holds",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q20B": {
+   "states": 25,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "holds",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q20C": {
+   "states": 71,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t3": "holds",
+    "t4": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q26": {
+  "Q26A": {
+   "states": 96,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "holds",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q26B": {
+   "states": 36,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "holds",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q26C": {
+   "states": 96,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "holds",
+    "t3": "broken",
+    "t4": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q29": {
+  "Q29A": {
+   "states": 93,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "holds"
+   }
+  },
+  "Q29B": {
+   "states": 33,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "holds",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "holds"
+   }
+  },
+  "Q29C": {
+   "states": 93,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t3": "holds",
+    "t4": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "holds"
+   }
+  }
+ },
+ "Q32": {
+  "Q32A": {
+   "states": 40,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q32B": {
+   "states": 14,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "holds",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "holds",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q32C": {
+   "states": 40,
+   "rules": {
+    "inv0": "holds",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "broken",
+    "t1": "broken",
+    "t3": "broken",
+    "t4": "broken",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ },
+ "Q34": {
+  "Q34A": {
+   "states": 105,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "holds"
+   }
+  },
+  "Q34B": {
+   "states": 24,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "broken",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "holds"
+   }
+  },
+  "Q34C": {
+   "states": 105,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "broken",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t3": "broken",
+    "t4": "broken",
+    "r0Test": "broken",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "holds"
+   }
+  }
+ },
+ "Q38": {
+  "Q38A": {
+   "states": 230,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "holds",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "holds",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  },
+  "Q38B": {
+   "states": 50,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "holds",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t2": "holds",
+    "t3": "holds",
+    "t4": "broken",
+    "t5": "holds",
+    "r0Test": "holds",
+    "r1Test": "broken",
+    "r2Test": "holds",
+    "pickTest": "holds"
+   }
+  },
+  "Q38C": {
+   "states": 230,
+   "rules": {
+    "inv0": "broken",
+    "inv1": "holds",
+    "inv2": "broken",
+    "t0": "holds",
+    "t1": "broken",
+    "t3": "holds",
+    "t4": "broken",
+    "r0Test": "holds",
+    "r1Test": "broken",
+    "r2Test": "broken",
+    "pickTest": "broken"
+   }
+  }
+ }
+}
