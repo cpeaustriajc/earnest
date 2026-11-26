@@ -135,6 +135,7 @@ mod tests {
 
     fn checked(name: &str, states: usize) -> Checked {
         Checked {
+            position: 0,
             result: ModelResult {
                 name: name.to_owned(),
                 setup: None,

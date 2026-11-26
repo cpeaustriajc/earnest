@@ -1,3 +1,4 @@
+use crate::reading::Readable;
 use crate::workers::run_each;
 use earnest_chart::{chart_outline, chart_with_limit, detail_lines};
 use earnest_check::{Limits, Outcome, explore};
@@ -191,6 +192,8 @@ pub(crate) struct ModelResult {
 pub(crate) struct Checked {
     pub(crate) result: ModelResult,
     pub(crate) detail: Vec<String>,
+    #[serde(default)]
+    pub(crate) position: usize,
 }
 
 impl ModelResult {
@@ -200,17 +203,24 @@ impl ModelResult {
             None => self.name.clone(),
         }
     }
+}
 
-    pub(crate) fn is_of(&self, model: &Model) -> bool {
-        let setup = self.setup.as_ref().map(|setup| setup.id.as_str());
-        self.name == model.name
-            && self.line == model.line
+impl Checked {
+    pub(crate) fn is_of(&self, readable: &Readable) -> bool {
+        let model = &readable.model;
+        let setup = self.result.setup.as_ref().map(|setup| setup.id.as_str());
+        self.position == readable.position
+            && self.result.name == model.name
+            && self.result.line == model.line
             && setup == model.setup().map(|setup| setup.id.as_str())
     }
 
     pub(crate) fn is_the_run_of(&self, other: &Self) -> bool {
-        let id = |result: &Self| result.setup.as_ref().map(|setup| setup.id.clone());
-        self.name == other.name && self.line == other.line && id(self) == id(other)
+        let id = |checked: &Self| checked.result.setup.as_ref().map(|setup| setup.id.clone());
+        self.position == other.position
+            && self.result.name == other.result.name
+            && self.result.line == other.result.line
+            && id(self) == id(other)
     }
 }
 
@@ -218,7 +228,8 @@ pub(crate) fn milliseconds(elapsed: Duration) -> u64 {
     u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
 }
 
-pub(crate) fn checked(model: &Model, ran: &Ran) -> Result<Checked, String> {
+pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String> {
+    let model = &readable.model;
     let searched: Searched = serde_json::to_value(&ran.outcome)
         .and_then(serde_json::from_value)
         .map_err(|error| {
@@ -245,5 +256,6 @@ pub(crate) fn checked(model: &Model, ran: &Ran) -> Result<Checked, String> {
             findings: searched.findings,
         },
         detail: detail_lines(&ran.outcome),
+        position: readable.position,
     })
 }

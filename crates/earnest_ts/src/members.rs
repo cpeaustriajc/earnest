@@ -453,6 +453,7 @@ impl Reader<'_> {
             says,
             place: self.place(start),
             starts,
+            text: condition_text(self.text(written.span()), Quoting::TypeScript),
         })
     }
 
@@ -512,6 +513,10 @@ impl Reader<'_> {
         };
         let setup = pick(&entries, "setup").and_then(|written| self.setup_named(written, draft));
         let condition = self.state_function(expected)?;
+        let written = call
+            .arguments
+            .get(WITNESS_OBJECT)
+            .and_then(Argument::as_expression)?;
         Some(WitnessDraft {
             id,
             says,
@@ -520,6 +525,7 @@ impl Reader<'_> {
             steps,
             state_name: condition.state_name,
             expect: condition.term,
+            text: condition_text(self.text(written.span()), Quoting::TypeScript),
         })
     }
 

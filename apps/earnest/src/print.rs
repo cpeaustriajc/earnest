@@ -293,6 +293,7 @@ mod tests {
     fn checked() -> Vec<Checked> {
         vec![
             Checked {
+                position: 0,
                 result: result("A", "src/a.model.ts", Status::Fail),
                 detail: vec![
                     "stuck  nothing can happen".to_owned(),
@@ -300,6 +301,7 @@ mod tests {
                 ],
             },
             Checked {
+                position: 0,
                 result: ModelResult {
                     states: 1000,
                     milliseconds: 3,
@@ -462,6 +464,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
     #[test]
     fn a_model_or_file_name_with_a_line_break_stays_on_one_line() {
         let named = Checked {
+            position: 0,
             result: result(
                 "First\nSecond\u{b}Third",
                 "first\nsecond.model.ts",

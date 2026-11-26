@@ -155,10 +155,14 @@ impl Names {
     }
 
     pub(crate) fn claim(&mut self, wanted: &str) -> String {
+        self.claim_apart_from(wanted, &[])
+    }
+
+    pub(crate) fn claim_apart_from(&mut self, wanted: &str, others: &[&str]) -> String {
         let plain = spelled(wanted);
         let mut name = plain.clone();
         let mut copy = 2_u64;
-        while self.taken.contains(&name) {
+        while self.taken.contains(&name) || others.contains(&name.as_str()) {
             name = format!("{plain}_{copy}");
             copy = copy.saturating_add(1);
         }

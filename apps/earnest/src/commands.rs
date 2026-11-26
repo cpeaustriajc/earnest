@@ -13,7 +13,7 @@ use earnest_chart::{
     skipped_section,
 };
 use earnest_check::Status;
-use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write};
+use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write, write_apart_from};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -323,21 +323,25 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
 }
 
 fn exported(targets: &[Target<'_>]) -> Result<Vec<Files>, String> {
-    let all: Vec<Files> = targets
-        .iter()
-        .map(|target| write(&target.readable.model))
-        .collect();
-    for (position, files) in all.iter().enumerate() {
-        if all
-            .iter()
-            .take(position)
-            .any(|earlier| earlier.name == files.name)
-        {
+    let mut all: Vec<Files> = Vec::with_capacity(targets.len());
+    for target in targets {
+        let files = write(&target.readable.model);
+        let Some(clash) = all.iter().position(|earlier| earlier.name == files.name) else {
+            all.push(files);
+            continue;
+        };
+        let is_one_model = targets
+            .get(clash)
+            .is_some_and(|earlier| earlier.is_run_of_one_model_with(target));
+        if !is_one_model {
             return Err(format!(
                 "two models export as the module `{}`: name one file, or one model with `--model`",
                 files.name
             ));
         }
+        let taken: Vec<&str> = all.iter().map(|earlier| earlier.name.as_str()).collect();
+        let apart = write_apart_from(&target.readable.model, &taken);
+        all.push(apart);
     }
     Ok(all)
 }
@@ -426,7 +430,7 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
     let mut everything_agrees = true;
     for ((target, ran), exported) in targets.iter().zip(&ran).zip(&all) {
         let model = &target.readable.model;
-        let ours = match checked(model, ran) {
+        let ours = match checked(target.readable, ran) {
             Ok(ours) => ours,
             Err(error) => {
                 to_stderr(&format!("error: {error}"));

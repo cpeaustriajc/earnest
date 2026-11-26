@@ -10,8 +10,28 @@ fn has_rule(target: &Target<'_>, id: &str) -> bool {
     target.readable.model.rule_ids().any(|rule| rule == id)
 }
 
-fn listed(targets: &[Target<'_>]) -> String {
+impl Target<'_> {
+    pub(crate) fn is_run_of_one_model_with(&self, other: &Self) -> bool {
+        self.file.path == other.file.path && self.readable.is_run_of_one_model_with(other.readable)
+    }
+}
+
+pub(crate) fn one_run_of_each_model<'a, 't>(targets: &'t [Target<'a>]) -> Vec<&'t Target<'a>> {
     targets
+        .iter()
+        .enumerate()
+        .filter(|(position, target)| {
+            !targets
+                .iter()
+                .take(*position)
+                .any(|earlier| earlier.is_run_of_one_model_with(target))
+        })
+        .map(|(_, target)| target)
+        .collect()
+}
+
+fn listed(models: &[&Target<'_>]) -> String {
+    models
         .iter()
         .map(|target| format!("`{}`", target.readable.model.name))
         .collect::<Vec<_>>()
@@ -129,7 +149,8 @@ pub(crate) fn select<'a>(
         .into_iter()
         .filter(|target| has_rule(target, id))
         .collect();
-    match (with_rule.len(), model) {
+    let models = one_run_of_each_model(&with_rule);
+    match (models.len(), model) {
         (0, Some(name)) => Err(format!("the model `{name}` has no rule `{id}`")),
         (0, None)
             if files
@@ -142,7 +163,7 @@ pub(crate) fn select<'a>(
         (1, _) | (_, Some(_)) => Ok(with_rule),
         (_, None) => Err(format!(
             "the rule `{id}` is in the models {}: name one with `--model`",
-            listed(&with_rule)
+            listed(&models)
         )),
     }
 }

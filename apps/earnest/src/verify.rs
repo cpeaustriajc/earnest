@@ -19,7 +19,7 @@ struct Entry<'a> {
 }
 
 fn is_result_of(stored: &Checked, target: &Target<'_>) -> bool {
-    stored.result.is_of(&target.readable.model)
+    stored.is_of(target.readable)
 }
 
 fn served(stored: &Checked) -> Checked {
@@ -66,12 +66,7 @@ fn keep(entry: &Entry<'_>, cache: &Cache) {
                 .as_deref()
                 .is_some_and(stopped_by_time_limit))
     };
-    let still_current = |old: &&Checked| {
-        !entry
-            .fresh
-            .iter()
-            .any(|new| new.result.is_the_run_of(&old.result))
-    };
+    let still_current = |old: &&Checked| !entry.fresh.iter().any(|new| new.is_the_run_of(old));
     let models: Vec<Checked> = entry
         .stored
         .iter()
@@ -124,16 +119,15 @@ fn check_all(
         })
         .collect();
     let ran = explore_each(&searches, bounds, Graphs::Dropped);
-    for ((position, search), ran) in missing.iter().zip(&searches).zip(&ran) {
-        let fresh = checked(search.model, ran)?;
-        if let Some(entry) = targets
-            .get(*position)
-            .and_then(|target| entry_of(&entries, target))
-            .and_then(|at| entries.get_mut(at))
-        {
+    let checked_targets = missing
+        .iter()
+        .filter_map(|position| Some((*position, targets.get(*position)?)));
+    for ((position, target), ran) in checked_targets.zip(&ran) {
+        let fresh = checked(target.readable, ran)?;
+        if let Some(entry) = entry_of(&entries, target).and_then(|at| entries.get_mut(at)) {
             entry.fresh.push(fresh.clone());
         }
-        if let Some(slot) = results.get_mut(*position) {
+        if let Some(slot) = results.get_mut(position) {
             *slot = Some(fresh);
         }
     }
