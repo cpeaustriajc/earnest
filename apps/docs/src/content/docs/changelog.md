@@ -5,6 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `--base` compares parts by what they mean
+
+`earnest verify --base <ref>` and `earnest report --base <ref>` now tell whether a rule about runs, a witness or a setup changed by what it means instead of by its text. The base version is read against the working tree's fields with the base commit's constants and helpers, as plain rules already were.
+
+- **No longer listed:** an edit that only reformats, such as what Prettier or rustfmt writes for an unchanged file (quote style, parentheses around one parameter, trailing commas, line breaks), is no longer listed `changed`, for a plain rule either.
+- **Now listed:** an edit of a constant or a helper that a rule about runs, a witness or a setup uses is `changed`, and so is a second space inside a text, which was folded before. A rule about runs is also `changed` when the set of fair actions changed.
+
+See [Rule changes](/reference/output/#rule-changes---base).
+
 ## November 2026: `--base` lists rules about runs, witnesses and setups
 
 `earnest verify --base <ref>` and `earnest report --base <ref>` list each rule about runs, witness and setup that was added, removed, changed or reworded since the base, after the plain rules:

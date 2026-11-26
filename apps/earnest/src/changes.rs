@@ -377,9 +377,10 @@ fn action_id<'d>(draft: &'d Draft, step: &Played) -> Option<&'d str> {
 
 fn same_steps(old: &Draft, before: &[Played], new: &Draft, after: &[Played]) -> bool {
     before.len() == after.len()
-        && before.iter().zip(after).all(|(was, now)| {
-            action_id(old, was) == action_id(new, now) && was.input == now.input
-        })
+        && before
+            .iter()
+            .zip(after)
+            .all(|(was, now)| action_id(old, was) == action_id(new, now) && was.input == now.input)
 }
 
 fn setup_id(draft: &Draft, position: Option<usize>) -> Option<&str> {
@@ -395,7 +396,10 @@ fn same_witness(old: &Draft, before: &Witness, after: &Witness, new: &Draft) -> 
 
 fn same_starts(before: &Setup, after: &Setup) -> bool {
     before.starts.len() == after.starts.len()
-        && before.starts.iter().all(|start| after.starts.contains(start))
+        && before
+            .starts
+            .iter()
+            .all(|start| after.starts.contains(start))
 }
 
 fn earlier_part<'p, T>(
@@ -1585,6 +1589,356 @@ mod tests {
             changes_since_the_base(root, None),
             [change("Jar", "lowB", Kind::Removed)],
             "the second `Jar` is gone, and the first is as it was"
+        );
+    }
+
+    fn tank_after(top: &str, runs: &str) -> Draft {
+        tank_and(&format!("{top}{runs}"))
+    }
+
+    fn listed_across(
+        old_top: &str,
+        new_top: &str,
+        runs: &str,
+    ) -> Vec<(String, Kind, Option<super::Part>)> {
+        model_changes(
+            Some(&tank_after(old_top, runs)),
+            &tank_after(new_top, runs),
+            bounds(),
+        )
+        .into_iter()
+        .map(|change| (change.id, change.change, change.part))
+        .collect()
+    }
+
+    const AIMED_AT_GOAL: &str = "export const aims = m.eventually(Tank, \"it reaches the goal\", { reaches: (s) => s.level === GOAL });\n\
+        export const hits = m.witness(Tank, \"two fills hit the goal\", { steps: [fill, fill], expect: (s) => s.level === GOAL });\n\
+        export const starts = m.setup(Tank, \"it starts at the goal\", { level: GOAL });\n";
+
+    #[test]
+    fn a_changed_constant_makes_a_rule_about_runs_a_witness_and_a_setup_changed() {
+        use super::Part::{Eventually, Setup, Witness};
+        assert_eq!(
+            listed_across("const GOAL = 2;\n", "const GOAL = 1;\n", AIMED_AT_GOAL),
+            [
+                ("aims".to_owned(), Kind::Changed, Some(Eventually)),
+                ("hits".to_owned(), Kind::Changed, Some(Witness)),
+                ("starts".to_owned(), Kind::Changed, Some(Setup)),
+            ],
+            "the text of each part is the same, and `GOAL` is 1 now"
+        );
+        assert_eq!(
+            listed_across("const GOAL = 2;\n", "const GOAL = 2;\n", AIMED_AT_GOAL),
+            [],
+            "nothing changed"
+        );
+    }
+
+    #[test]
+    fn a_changed_helper_makes_a_rule_about_runs_and_a_witness_changed() {
+        use super::Part::{Eventually, Witness};
+        let helper = |sign: &str| format!("const aimed = (level: number) => level {sign} 2;\n");
+        let runs = "export const aims = m.eventually(Tank, \"it reaches the goal\", { after: (s) => aimed(s.level), reaches: (s) => s.level === 3 });\n\
+            export const hits = m.witness(Tank, \"two fills hit the goal\", { steps: [fill, fill], expect: (s) => aimed(s.level) });\n";
+        assert_eq!(
+            listed_across(&helper("==="), &helper("<="), runs),
+            [
+                ("aims".to_owned(), Kind::Changed, Some(Eventually)),
+                ("hits".to_owned(), Kind::Changed, Some(Witness)),
+            ],
+            "the helper `aimed` gives another answer; a setup's values are written out or \
+             constants, so no setup calls a helper"
+        );
+    }
+
+    #[test]
+    fn an_action_that_became_fair_makes_a_rule_about_runs_changed() {
+        let fair = tank_and(FILLS).actions.iter().any(|action| action.fair);
+        assert!(!fair, "no action of the tank is fair");
+        let mut made_fair = tank_and(FILLS);
+        made_fair.actions[0].fair = true;
+        let found: Vec<(String, Kind)> =
+            model_changes(Some(&tank_and(FILLS)), &made_fair, bounds())
+                .into_iter()
+                .map(|change| (change.id, change.change))
+                .collect();
+        assert_eq!(
+            found,
+            [("fills".to_owned(), Kind::Changed)],
+            "a rule about runs is judged over runs that are fair to the fair actions"
+        );
+    }
+
+    #[test]
+    fn a_setup_that_starts_another_field_is_changed_whatever_its_stored_text() {
+        let old = tank_and(HALF);
+        let mut new = tank_and(&HALF.replace("level: 2", "valve: \"open\""));
+        new.runs.setups[0].text = old.runs.setups[0].text.clone();
+        assert_eq!(
+            listed(HALF, &HALF.replace("level: 2", "valve: \"open\"")),
+            [("half".to_owned(), Kind::Changed, Some(super::Part::Setup))],
+            "the setup starts another field"
+        );
+        assert_eq!(
+            model_changes(Some(&old), &new, bounds())[0].change,
+            Kind::Changed,
+            "the lowered starts differ even when the stored text is the same"
+        );
+    }
+
+    #[test]
+    fn the_quotes_around_a_text_do_not_change_a_part_about_runs() {
+        let shut = "export const shut = m.setup(Tank, \"shut\", { valve: \"shut\" });\n";
+        let witness = "export const stays = m.witness(Tank, \"stays\", { steps: [fill], expect: (s) => s.valve !== \"open\" });\n";
+        let both = format!("{shut}{witness}");
+        let single = both
+            .replace("\"shut\" }", "'shut' }")
+            .replace("\"open\" }", "'open' }");
+        assert_eq!(listed(&both, &single), [], "`'open'` is `\"open\"`");
+        let spaced = both.replace("\"open\" }", "\"op en\" }");
+        assert_eq!(
+            listed(&both, &spaced),
+            [(
+                "stays".to_owned(),
+                Kind::Changed,
+                Some(super::Part::Witness)
+            )],
+            "`\"op en\"` is another text"
+        );
+    }
+
+    const CLOCK_BY_HAND: &str = "import { m } from '@earnestjs/model';\n\
+        export const Clock = m.model('Clock', { skew: m.int(-2, 2).initial(0), synced: m.boolean().initial(false) });\n\
+        export const drift = m.action(Clock, 'the clock drifts by a second', { input: { by: m.oneOf([-1, 1]) }, when: (s, { by }) => !s.synced && s.skew + by >= -2 && s.skew + by <= 2, changes: (s, { by }) => ({ skew: s.skew + by }) });\n\
+        export const sync = m.action(Clock, 'the clock is synced', { when: s => !s.synced, changes: () => ({ skew: 0, synced: true }) });\n\
+        export const done = m.end(Clock, 'A synced clock is done', s => s.synced);\n\
+        export const shows_zero = m.rule(Clock, 'A synced clock shows no skew', s => !s.synced || s.skew === 0);\n\
+        export const syncs = m.eventually(Clock, 'Every run comes to a synced clock', { reaches: s => s.synced });\n\
+        export const behind = m.setup(Clock, 'The clock runs two seconds behind', { skew: -2 });\n\
+        export const synced_already = m.setup(Clock, 'The clock starts synced', { synced: true });\n\
+        export const drifts_ahead = m.witness(Clock, 'A second ahead after one drift', { steps: [m.step(drift, { by: 1 })], expect: s => s.skew === 1 });\n\
+        export const catches_up = m.witness(Clock, 'Behind, it drifts forward and is synced', { setup: behind, steps: [m.step(drift, { by: 1 }), sync], expect: s => (s.skew === 0) && s.synced });\n";
+
+    const CLOCK_PRETTIER: &str = "import { m } from \"@earnestjs/model\";\n\
+        \n\
+        export const Clock = m.model(\"Clock\", {\n\
+        \tskew: m.int(-2, 2).initial(0),\n\
+        \tsynced: m.boolean().initial(false),\n\
+        });\n\
+        \n\
+        export const drift = m.action(Clock, \"the clock drifts by a second\", {\n\
+        \tinput: { by: m.oneOf([-1, 1]) },\n\
+        \twhen: (s, { by }) => !s.synced && s.skew + by >= -2 && s.skew + by <= 2,\n\
+        \tchanges: (s, { by }) => ({ skew: s.skew + by }),\n\
+        });\n\
+        \n\
+        export const sync = m.action(Clock, \"the clock is synced\", {\n\
+        \twhen: (s) => !s.synced,\n\
+        \tchanges: () => ({ skew: 0, synced: true }),\n\
+        });\n\
+        \n\
+        export const done = m.end(Clock, \"A synced clock is done\", (s) => s.synced);\n\
+        \n\
+        export const shows_zero = m.rule(\n\
+        \tClock,\n\
+        \t\"A synced clock shows no skew\",\n\
+        \t(s) => !s.synced || s.skew === 0,\n\
+        );\n\
+        \n\
+        export const syncs = m.eventually(Clock, \"Every run comes to a synced clock\", {\n\
+        \treaches: (s) => s.synced,\n\
+        });\n\
+        \n\
+        export const behind = m.setup(Clock, \"The clock runs two seconds behind\", {\n\
+        \tskew: -2,\n\
+        });\n\
+        \n\
+        export const synced_already = m.setup(Clock, \"The clock starts synced\", {\n\
+        \tsynced: true,\n\
+        });\n\
+        \n\
+        export const drifts_ahead = m.witness(Clock, \"A second ahead after one drift\", {\n\
+        \tsteps: [m.step(drift, { by: 1 })],\n\
+        \texpect: (s) => s.skew === 1,\n\
+        });\n\
+        \n\
+        export const catches_up = m.witness(\n\
+        \tClock,\n\
+        \t\"Behind, it drifts forward and is synced\",\n\
+        \t{\n\
+        \t\tsetup: behind,\n\
+        \t\tsteps: [m.step(drift, { by: 1 }), sync],\n\
+        \t\texpect: (s) => s.skew === 0 && s.synced,\n\
+        \t},\n\
+        );\n";
+
+    fn read_one(file: &str, source: &str) -> Draft {
+        let mut reading = if file.ends_with(".rs") {
+            earnest_rs::read(file, source)
+        } else {
+            earnest_ts::read(file, source)
+        };
+        assert!(
+            reading.problems.is_empty(),
+            "the test model is readable: {:?}",
+            reading.problems
+        );
+        reading.drafts.remove(0)
+    }
+
+    fn changes_between(file: &str, old: &str, new: &str) -> Vec<(String, Kind)> {
+        model_changes(Some(&read_one(file, old)), &read_one(file, new), bounds())
+            .into_iter()
+            .map(|change| (change.id, change.change))
+            .collect()
+    }
+
+    #[test]
+    fn a_typescript_model_formatted_as_prettier_would_has_no_rule_change() {
+        assert_eq!(
+            changes_between("clock.model.ts", CLOCK_BY_HAND, CLOCK_PRETTIER),
+            [],
+            "quotes, parentheses around one parameter or a term, trailing commas and line breaks \
+             change no rule, rule about runs, witness or setup"
+        );
+        assert_eq!(
+            changes_between(
+                "clock.model.ts",
+                CLOCK_BY_HAND,
+                &CLOCK_PRETTIER.replace("skew: -2,", "skew: -1,")
+            ),
+            [("behind".to_owned(), Kind::Changed)],
+            "a start value that did change is still seen"
+        );
+    }
+
+    const CLOCK_RS_BY_HAND: &str = "use earnest::model::{Model, model, require};\n\
+        const BEHIND: i8 = -2;\n\
+        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]\n\
+        struct Clock { #[range(-2, 2)] #[initial(0)] skew: i8, #[initial(false)] synced: bool }\n\
+        #[model]\n\
+        impl Clock {\n\
+        #[action(\"the clock drifts by a second\")]\n\
+        fn drift(&self, #[one_of(-1, 1)] by: i8) -> Option<Self> { require!(!self.synced && self.skew + by >= -2 && self.skew + by <= 2); Some(Self { skew: self.skew + by, ..self.clone() }) }\n\
+        #[action(\"the clock is synced\")]\n\
+        fn sync(&self) -> Option<Self> { require!(!self.synced); Some(Self { skew: 0, synced: true }) }\n\
+        #[end(\"A synced clock is done\")]\n\
+        fn done(&self) -> bool { self.synced }\n\
+        fn level(&self) -> bool { self.skew == 0 }\n\
+        #[rule(\"A synced clock shows no skew\")]\n\
+        fn shows_zero(&self) -> bool { !self.synced || self.level() }\n\
+        #[eventually(\"Every run comes to a synced clock\")]\n\
+        fn syncs(&self) -> bool { self.synced && self.level() }\n\
+        #[setup(\"The clock runs two seconds behind\")]\n\
+        fn behind(&self) -> Self { Self { skew: BEHIND, ..self.clone() } }\n\
+        #[witness(\"Behind, it drifts forward and is synced\", setup = behind)]\n\
+        fn catches_up(&self) -> Option<bool> { let after = self.drift(1)?.sync()?; Some(after.level() && after.synced) }\n\
+        }\n";
+
+    const CLOCK_RS_RUSTFMT: &str = "use earnest::model::{Model, model, require};\n\
+        \n\
+        const BEHIND: i8 = -2;\n\
+        \n\
+        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]\n\
+        struct Clock {\n\
+        \x20   #[range(-2, 2)]\n\
+        \x20   #[initial(0)]\n\
+        \x20   skew: i8,\n\
+        \x20   #[initial(false)]\n\
+        \x20   synced: bool,\n\
+        }\n\
+        \n\
+        #[model]\n\
+        impl Clock {\n\
+        \x20   #[action(\"the clock drifts by a second\")]\n\
+        \x20   fn drift(&self, #[one_of(-1, 1)] by: i8) -> Option<Self> {\n\
+        \x20       require!(!self.synced && self.skew + by >= -2 && self.skew + by <= 2);\n\
+        \x20       Some(Self {\n\
+        \x20           skew: self.skew + by,\n\
+        \x20           ..self.clone()\n\
+        \x20       })\n\
+        \x20   }\n\
+        \n\
+        \x20   #[action(\"the clock is synced\")]\n\
+        \x20   fn sync(&self) -> Option<Self> {\n\
+        \x20       require!(!self.synced);\n\
+        \x20       Some(Self {\n\
+        \x20           skew: 0,\n\
+        \x20           synced: true,\n\
+        \x20       })\n\
+        \x20   }\n\
+        \n\
+        \x20   #[end(\"A synced clock is done\")]\n\
+        \x20   fn done(&self) -> bool {\n\
+        \x20       self.synced\n\
+        \x20   }\n\
+        \n\
+        \x20   fn level(&self) -> bool {\n\
+        \x20       self.skew == 0\n\
+        \x20   }\n\
+        \n\
+        \x20   #[rule(\"A synced clock shows no skew\")]\n\
+        \x20   fn shows_zero(&self) -> bool {\n\
+        \x20       !self.synced || self.level()\n\
+        \x20   }\n\
+        \n\
+        \x20   #[eventually(\"Every run comes to a synced clock\")]\n\
+        \x20   fn syncs(&self) -> bool {\n\
+        \x20       self.synced && self.level()\n\
+        \x20   }\n\
+        \n\
+        \x20   #[setup(\"The clock runs two seconds behind\")]\n\
+        \x20   fn behind(&self) -> Self {\n\
+        \x20       Self {\n\
+        \x20           skew: BEHIND,\n\
+        \x20           ..self.clone()\n\
+        \x20       }\n\
+        \x20   }\n\
+        \n\
+        \x20   #[witness(\"Behind, it drifts forward and is synced\", setup = behind)]\n\
+        \x20   fn catches_up(&self) -> Option<bool> {\n\
+        \x20       let after = self\n\
+        \x20           .drift(1)?\n\
+        \x20           .sync()?;\n\
+        \x20       Some(after.level() && after.synced)\n\
+        \x20   }\n\
+        }\n";
+
+    #[test]
+    fn a_rust_model_formatted_as_rustfmt_would_has_no_rule_change() {
+        assert_eq!(
+            changes_between("clock.rs", CLOCK_RS_BY_HAND, CLOCK_RS_RUSTFMT),
+            [],
+            "line breaks in a chain and in a struct literal, and a trailing comma, change no \
+             rule, rule about runs, witness or setup"
+        );
+    }
+
+    #[test]
+    fn a_changed_rust_constant_or_helper_makes_a_rule_about_runs_a_witness_and_a_setup_changed() {
+        assert_eq!(
+            changes_between(
+                "clock.rs",
+                CLOCK_RS_RUSTFMT,
+                &CLOCK_RS_RUSTFMT.replace("const BEHIND: i8 = -2;", "const BEHIND: i8 = -1;")
+            ),
+            [("behind".to_owned(), Kind::Changed)],
+            "the setup's text is the same, and `BEHIND` is -1 now"
+        );
+        assert_eq!(
+            changes_between(
+                "clock.rs",
+                CLOCK_RS_RUSTFMT,
+                &CLOCK_RS_RUSTFMT.replace("self.skew == 0\n", "self.skew >= 0\n")
+            ),
+            [
+                ("shows_zero".to_owned(), Kind::Changed),
+                ("syncs".to_owned(), Kind::Changed),
+                ("catches_up".to_owned(), Kind::Changed),
+            ],
+            "the helper `level` gives another answer: every synced state has skew 0, so the \
+             plain rule is told apart by no state and is `changed`, and the rule about runs and \
+             the witness that call it are `changed`"
         );
     }
 }

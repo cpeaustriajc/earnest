@@ -1241,6 +1241,31 @@ the start up in `model.starts()`, the model as declared, and `ReplayOptions` has
 `explore` has. The Rust `replay(&start, &path)` is given the start state by its caller.
 Test: `replay_in_node_walks_the_paths_of_a_setup`.
 
+### Settled after the pass
+
+All five tests pass. `--base` no longer tells by text whether a part changed. `lower_with_earlier_parts`
+in `crates/earnest_semantic/src/lib.rs` lowers every rule, rule about runs, witness and setup of
+the base draft against the new model's fields with the base's constants and helpers, sharing the
+new model's symbols (`None` for one that can't be read there), and `apps/earnest/src/changes.rs`
+compares each with its namesake: a plain rule's `holds` (then `told_apart` as before), a rule
+about runs' `after` and `reaches` and the set of fair actions, a witness's setup id, steps (action
+ids and input values) and `expect`, a setup's start values by field. Equal is not listed, or
+`reworded` when only the sentence differs; unequal, or a base part that can't be read against
+the new fields, is `changed`. So `"a  b"` against `"a b"` is `changed` (it is another text value)
+and what Prettier or rustfmt writes for an unchanged file is no change; an edit of a constant or a
+helper a rule about runs, a witness or a setup uses is `changed`, and an action that became fair
+makes each rule about runs `changed` (the second item below). The printed text is still
+`condition_text`; `same_condition_text` decides nothing any more (it stays, for its tests in
+`crates/earnest_ast/tests/tree.rs`). Unit tests in `apps/earnest/src/changes.rs` (a Prettier-style
+and a rustfmt-style reformatting of the conformance clock, a changed constant and helper in
+TypeScript and Rust, quotes and a second space in a text, a newly fair action) and in
+`crates/earnest_semantic/tests/lower/earlier.rs`; `reference/output.md` and the changelog say so.
+`replay(Model, path, { exports, setup })` in Node starts from the setup's start states, worked
+out by `startsOf` in `packages/model/src/search.ts`, which `explore` now uses too (tests in
+`packages/model/test/replay.test.ts`); in Rust the caller gives the start, and
+`crates/earnest/tests/model/runs.rs` and `rust.md` show the setup method applied to a start
+state.
+
 ### Seen, not written up
 
 - `earnest confirm --tla-rs` on a model whose only broken part is a rule about runs prints
