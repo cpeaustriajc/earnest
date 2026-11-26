@@ -1,11 +1,13 @@
 use crate::changes::Difference;
-use crate::reading::ModelFile;
+use crate::reading::{ModelFile, Readable};
 use crate::run::{
     Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
+    whole_of,
 };
 use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines};
 use earnest_check::EVERY_EXPECTED_FOUND;
 use earnest_diagnostics::Problem;
+use earnest_ir::Model;
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -43,6 +45,7 @@ impl Summary {
 }
 
 const EXPECTED: &str = "broken";
+const REACHED: &str = "reached";
 
 #[derive(Debug, Serialize)]
 struct ExpectedRule<'a> {
@@ -75,7 +78,7 @@ enum Shown<'a> {
     Expecting(Expecting<'a>),
 }
 
-fn shown<'a>(result: &'a ModelResult, expected: &[String]) -> Shown<'a> {
+fn shown<'a>(result: &'a ModelResult, (expected, reachable): Marked<'_>) -> Shown<'a> {
     if expected.is_empty() {
         return Shown::Plain(result);
     }
@@ -94,7 +97,11 @@ fn shown<'a>(result: &'a ModelResult, expected: &[String]) -> Shown<'a> {
             .iter()
             .map(|rule| ExpectedRule {
                 rule,
-                expected: is_expected_result(expected, rule).then_some(EXPECTED),
+                expected: if is_expected_result(reachable, rule) {
+                    Some(REACHED)
+                } else {
+                    is_expected_result(expected, rule).then_some(EXPECTED)
+                },
             })
             .collect(),
         findings: &result.findings,
@@ -112,6 +119,8 @@ struct Document<'a> {
     rule_changes: &'a [Difference],
     summary: Summary,
 }
+
+type Marked<'a> = (&'a [String], &'a [String]);
 
 fn counted(count: usize, one: &str, many: &str) -> String {
     let noun = if count == 1 { one } else { many };
@@ -139,13 +148,18 @@ impl Verified<'_> {
         }
     }
 
-    fn expected_of(&self, checked: &Checked) -> &[String] {
+    fn readable_of(&self, checked: &Checked) -> Option<&Readable> {
         self.files
             .iter()
             .filter(|file| file.path == checked.result.file)
             .flat_map(ModelFile::models)
             .find(|readable| checked.is_of(readable))
-            .map_or(&[], |readable| readable.expected.as_slice())
+    }
+
+    fn expected_of(&self, checked: &Checked) -> Marked<'_> {
+        self.readable_of(checked).map_or((&[], &[]), |readable| {
+            (readable.expected.as_slice(), readable.reachable.as_slice())
+        })
     }
 
     pub(crate) fn text(&self) -> String {
@@ -156,7 +170,11 @@ impl Verified<'_> {
                 lines.extend(unreadable_lines(file));
             }
             while let Some(next) = checked.next_if(|next| next.result.file == file.path) {
-                lines.push(model_line(&next.result));
+                let counts = self
+                    .readable_of(next)
+                    .filter(|readable| readable.counted)
+                    .map(|readable| counts_of(&readable.model));
+                lines.push(model_line(&next.result, counts.as_deref()));
                 lines.extend(not_played_line(&next.result));
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
@@ -196,7 +214,29 @@ impl Verified<'_> {
     }
 }
 
-fn model_line(result: &ModelResult) -> String {
+fn counts_of(model: &Model) -> String {
+    let mut rules: Vec<&str> = Vec::new();
+    let always = model.rules.iter().map(|rule| rule.id.as_str());
+    let eventually = model.runs.eventually.iter().map(|rule| rule.id.as_str());
+    for id in always.chain(eventually).map(whole_of) {
+        if !rules.contains(&id) {
+            rules.push(id);
+        }
+    }
+    let mut runs: Vec<&str> = Vec::new();
+    for id in model.runs.scripts.iter().map(|script| whole_of(&script.id)) {
+        if !runs.contains(&id) {
+            runs.push(id);
+        }
+    }
+    format!(
+        "{}, {}",
+        counted(rules.len(), "rule", "rules"),
+        counted(runs.len(), "run", "runs")
+    )
+}
+
+fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
     let so_far = if result
         .reason
         .as_deref()
@@ -212,6 +252,7 @@ fn model_line(result: &ModelResult) -> String {
         format!("{} states{so_far}", result.states),
         format!("{} ms", result.milliseconds),
     ];
+    fields.extend(counts.map(str::to_owned));
     fields.extend(result.reason.as_ref().map(|reason| format!("({reason})")));
     if result.cached {
         fields.push("(cached)".to_owned());

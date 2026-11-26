@@ -7,6 +7,7 @@ mod checks;
 mod commands;
 mod confirm;
 mod discovery;
+mod marks;
 mod places;
 mod print;
 mod quint;

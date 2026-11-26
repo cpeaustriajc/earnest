@@ -492,7 +492,7 @@ fn each_way_the_checks_file_can_be_wrong_makes_it_unreadable_with_the_key_named(
 }
 
 #[test]
-fn a_quint_file_named_without_an_entry_says_how_to_list_it() {
+fn a_quint_file_named_with_no_mark_no_test_run_and_no_entry_says_how_to_mark_a_property() {
     let quint = Quint::new();
     quint.with_specs("models", &["counter", "dead"], COUNTER_CHECKS);
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
@@ -505,15 +505,15 @@ fn a_quint_file_named_without_an_entry_says_how_to_list_it() {
     );
     let message = message_of(&report);
     assert!(
-        message.contains("earnest.quint.json")
-            && message.ends_with(
-                "{ \"checks\": [\n  { \"file\": \"dead.qnt\", \"main\": \"dead\", \
-                 \"invariants\": [\"inv\"] }\n] }"
-            ),
+        message.contains("earnest.quint.json") && message.contains("`/// @check`"),
         "{message}"
     );
     assert!(models_of(&report).is_empty(), "nothing else is checked");
-    assert_eq!(quint.calls(), Vec::<String>::new(), "no `quint` is started");
+    assert!(
+        quint.compiles().is_empty(),
+        "the file is parsed, and nothing is compiled: {:?}",
+        quint.calls()
+    );
     let lonely = Quint::new();
     lonely
         .sandbox

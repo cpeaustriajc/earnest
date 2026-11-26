@@ -433,13 +433,6 @@ fn written_plainly(file: &str) -> Vec<String> {
     parts
 }
 
-pub(crate) fn example(file: &str, main: &str) -> String {
-    format!(
-        "{{ \"checks\": [\n  {{ \"file\": \"{file}\", \"main\": \"{main}\", \"invariants\": \
-         [\"inv\"] }}\n] }}"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::{Check, read_checks};

@@ -253,6 +253,7 @@ fn a_met_expectation_prints_one_line_and_keeps_its_path_in_the_json() {
             "bugSmall",
             "5 states",
             &run.model_line("bugSmall")[3],
+            "1 rule, 0 runs",
             &format!("({NO_END})")
         ],
         "{run}"

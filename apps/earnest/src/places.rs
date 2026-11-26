@@ -9,6 +9,10 @@ use std::path::Path;
 const QUALIFIED: &str = "::";
 const RUN: &str = "run";
 const TESTS_END_WITH: &str = "Test";
+const EVERY_NAME: &str = "*";
+const CONSTANT: &str = "const";
+const INIT: &str = "init";
+const STEP: &str = "step";
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Names {
@@ -17,6 +21,24 @@ struct Names {
     instances: Vec<(String, String)>,
     has_an_instance: bool,
     run_prefixes: Vec<(String, String)>,
+    seen: Vec<Seen>,
+    constants: bool,
+    file: Option<String>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Seen {
+    proto: String,
+    prefix: String,
+    only: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Documented<'a> {
+    pub(crate) name: String,
+    pub(crate) doc: &'a str,
+    pub(crate) qualifier: Option<&'a str>,
+    pub(crate) id: u64,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,17 +47,37 @@ pub(crate) struct Places {
     files: HashMap<String, String>,
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
-    #[serde(default)]
     qualifiers: HashMap<u64, String>,
+    docs: HashMap<u64, String>,
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
-fn names_of(module: &Value) -> Option<Names> {
+fn seen_of(kind: &str, declaration: &Value, proto: &str) -> Seen {
+    let alias = text(declaration, "qualifiedName");
+    let all = text(declaration, "defName");
+    let prefix = match (kind, alias, all) {
+        (_, Some(alias), _) => format!("{alias}{QUALIFIED}"),
+        ("instance", None, _) | (_, None, Some(_)) => String::new(),
+        _ => format!("{proto}{QUALIFIED}"),
+    };
+    Seen {
+        proto: proto.to_owned(),
+        prefix,
+        only: all.filter(|name| *name != EVERY_NAME).map(str::to_owned),
+    }
+}
+
+fn names_of(module: &Value, at: &HashMap<u64, (String, u32, u32)>) -> Option<Names> {
     let mut names = Names {
         name: text(module, "name")?.to_owned(),
+        file: module
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|id| at.get(&id))
+            .map(|spot| spot.0.clone()),
         ..Names::default()
     };
     for declaration in module.get("declarations")?.as_array()? {
@@ -54,7 +96,12 @@ fn names_of(module: &Value) -> Option<Names> {
                         (_, None) => String::new(),
                     };
                     names.run_prefixes.push((proto.to_owned(), prefix));
+                    names.seen.push(seen_of(kind, declaration, proto));
                 }
+            }
+            (Some(CONSTANT), Some(name), Some(id)) => {
+                names.constants = true;
+                names.declared.push((name.to_owned(), id));
             }
             (Some(_), Some(name), Some(id)) => names.declared.push((name.to_owned(), id)),
             _ => {}
@@ -92,22 +139,31 @@ impl Places {
             .filter_map(|(id, entry)| Some((id.parse().ok()?, spot(entry)?)))
             .collect();
         let listed = parsed.get("modules")?.as_array()?;
-        let modules = listed.iter().filter_map(names_of).collect();
-        let qualifiers = listed
+        let modules = listed
+            .iter()
+            .filter_map(|module| names_of(module, &at))
+            .collect();
+        let declarations: Vec<&Value> = listed
             .iter()
             .filter_map(|module| module.get("declarations")?.as_array())
             .flatten()
-            .filter_map(|declaration| {
-                let id = declaration.get("id").and_then(Value::as_u64)?;
-                Some((id, text(declaration, "qualifier")?.to_owned()))
-            })
             .collect();
+        let kept = |key: &str| -> HashMap<u64, String> {
+            declarations
+                .iter()
+                .filter_map(|declaration| {
+                    let id = declaration.get("id").and_then(Value::as_u64)?;
+                    Some((id, text(declaration, key)?.to_owned()))
+                })
+                .collect()
+        };
         Some(Self {
             read: 0,
             files,
             at,
             modules,
-            qualifiers,
+            qualifiers: kept("qualifier"),
+            docs: kept("doc"),
         })
     }
 
@@ -197,6 +253,78 @@ impl Places {
                 }
             })
             .collect()
+    }
+
+    pub(crate) fn checks_in(&self, file: &Path) -> Vec<String> {
+        let real = |path: &str| std::fs::canonicalize(path).ok();
+        let wanted = std::fs::canonicalize(file).ok();
+        self.modules
+            .iter()
+            .filter(|module| {
+                module
+                    .file
+                    .as_ref()
+                    .and_then(|index| self.files.get(index))
+                    .is_none_or(|path| real(path) == wanted)
+            })
+            .filter(|module| {
+                !module.constants && self.sees(&module.name, INIT) && self.sees(&module.name, STEP)
+            })
+            .map(|module| module.name.clone())
+            .collect()
+    }
+
+    pub(crate) fn documented(&self, main: &str) -> Vec<Documented<'_>> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let mut found: Vec<Documented<'_>> = Vec::new();
+        let mut add = |name: String, id: u64| {
+            let Some(doc) = self.docs.get(&id) else {
+                return;
+            };
+            if found.iter().any(|each| each.name == name) {
+                return;
+            }
+            found.push(Documented {
+                name,
+                doc,
+                qualifier: self.qualifiers.get(&id).map(String::as_str),
+                id,
+            });
+        };
+        for (name, id) in &module.declared {
+            add(name.clone(), *id);
+        }
+        for seen in &module.seen {
+            let Some(spec) = self.module(&seen.proto) else {
+                continue;
+            };
+            for (name, id) in &spec.declared {
+                if seen.only.as_ref().is_none_or(|only| only == name) {
+                    add(format!("{}{name}", seen.prefix), *id);
+                }
+            }
+        }
+        found
+    }
+
+    pub(crate) fn sees_a_test(&self, main: &str) -> bool {
+        let Some(module) = self.module(main) else {
+            return false;
+        };
+        let is_a_test = |names: &Names| {
+            names.declared.iter().any(|(name, id)| {
+                name.ends_with(TESTS_END_WITH)
+                    && self.qualifiers.get(id).map(String::as_str) == Some(RUN)
+            })
+        };
+        is_a_test(module)
+            || module
+                .seen
+                .iter()
+                .filter_map(|seen| self.module(&seen.proto))
+                .any(is_a_test)
     }
 
     pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {

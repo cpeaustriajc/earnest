@@ -1,0 +1,5 @@
+{ "checks": [
+  { "file": "bank.qnt", "main": "bank", "invariants": ["nonNegative"], "runs": true },
+  { "file": "clock.qnt", "main": "Small", "invariants": ["inRange", "belowLimit"], "temporal": ["alwaysInRange"], "expectCounterexample": ["belowLimit"], "runs": true },
+  { "file": "clock.qnt", "main": "Large", "invariants": ["C::inRange", "C::belowLimit"], "temporal": ["C::alwaysInRange"], "expectCounterexample": ["C::belowLimit"], "runs": true }
+] }
