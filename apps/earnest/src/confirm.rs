@@ -1,7 +1,8 @@
 use crate::run::Checked;
 use earnest_tla::{Files, Invariants};
+use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, absolute};
 use std::process::{Command, Stdio};
 
 const INVARIANT_ERROR: &str = "Error: Invariant ";
@@ -213,6 +214,8 @@ pub(crate) struct Checker<'a> {
 }
 
 const INVARIANT: &str = "INVARIANT ";
+const TLC_TEMPORARY_FOLDER: &str = "temporary";
+const JAVA_TEMPORARY_FOLDER_IS: &str = "-Djava.io.tmpdir=";
 
 fn merged(runs: Vec<TlcRun>) -> TlcRun {
     let mut merged = TlcRun {
@@ -239,8 +242,11 @@ impl Checker<'_> {
         let workers = self.workers.max(1).to_string();
         match self.tool {
             Tool::Tlc => {
+                let mut own_temporary_folder = OsString::from(JAVA_TEMPORARY_FOLDER_IS);
+                own_temporary_folder.push(self.tlc_temporary_folder());
                 let mut command = Command::new("java");
                 command
+                    .arg(own_temporary_folder)
                     .arg("-cp")
                     .arg(self.program)
                     .args(["tlc2.TLC", "-continue", "-workers"])
@@ -288,6 +294,11 @@ impl Checker<'_> {
         Ok(run)
     }
 
+    fn tlc_temporary_folder(&self) -> PathBuf {
+        let folder = self.folder.join(TLC_TEMPORARY_FOLDER);
+        absolute(&folder).unwrap_or(folder)
+    }
+
     fn program_word(&self) -> String {
         match self.tool {
             Tool::Tlc => "java".to_owned(),
@@ -333,6 +344,15 @@ impl Checker<'_> {
                 self.folder.to_string_lossy()
             )
         })?;
+        if self.tool == Tool::Tlc {
+            let temporary = self.tlc_temporary_folder();
+            fs::create_dir_all(&temporary).map_err(|error| {
+                format!(
+                    "the folder {} can't be made: {error}",
+                    temporary.to_string_lossy()
+                )
+            })?;
+        }
         let counting = self.run(files, "count.cfg", &files.config_checking(&[]))?;
         let mut rules = Vec::new();
         for (number, exported) in files.rules.iter().enumerate() {

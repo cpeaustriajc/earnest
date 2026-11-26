@@ -20,6 +20,9 @@ const TLC_JAR_VARIABLE: &str = "EARNEST_TLC_JAR";
 const LIMIT_OF_NUMBERS: &str = "TLC's integers hold 32 bits";
 const LIMIT_OF_TEXTS: &str = "which is not ASCII";
 const TLC_JAR_FROM_THE_ROOT: &str = "../../target/tools/tla2tools.jar";
+const OVERLAPPING_CONFIRMS: u32 = 8;
+const ROUNDS_OF_OVERLAPPING_CONFIRMS: usize = 3;
+const BETWEEN_CONFIRM_STARTS: Duration = Duration::from_millis(300);
 
 fn binary() -> PathBuf {
     let test = env::current_exe().expect("a test knows where its own binary is");
@@ -378,4 +381,40 @@ fn tlc_judges_a_quantifier_that_an_early_value_decides_as_the_checker_does() {
          exits 1\n{}",
         confirmed.said()
     );
+}
+
+#[test]
+fn confirms_running_at_the_same_time_do_not_break_each_other() {
+    let jar = tlc_jar();
+    assert!(
+        jar.is_file(),
+        "TLC is missing at {}: `just tlc` downloads it to target/tools, and {TLC_JAR_VARIABLE} \
+         names another copy",
+        jar.display()
+    );
+    let jar = jar.to_string_lossy().into_owned();
+    let file = "sweep.model.ts";
+    let source = include_str!("../../models/sixth/sweep.model.ts");
+    for _ in 0..ROUNDS_OF_OVERLAPPING_CONFIRMS {
+        let running: Vec<_> = (0..OVERLAPPING_CONFIRMS)
+            .map(|position| {
+                let jar = jar.clone();
+                thread::spawn(move || {
+                    thread::sleep(BETWEEN_CONFIRM_STARTS * position);
+                    run_in_folder(&[(file, source)], &["confirm", "--tlc", &jar, file])
+                })
+            })
+            .collect();
+        for run in running {
+            let confirmed = run.join().expect("a confirm that runs beside others ends");
+            assert!(
+                confirmed.code == Some(0) && confirmed.stdout.starts_with("same"),
+                "TLC unpacks its standard modules into Java's temporary folder and deletes \
+                 them when it ends, so a TLC run that starts while another ends in the same \
+                 folder fails with `Parsing or semantic analysis failed`. `confirm` gives each \
+                 run a temporary folder of its own\n{}",
+                confirmed.said()
+            );
+        }
+    }
 }
