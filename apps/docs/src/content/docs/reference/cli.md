@@ -56,6 +56,19 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 
 Results, model order, and the shortest path to each broken rule are identical for every `--jobs` value and across runs.
 
+## Which build is this
+
+`earnest --version` prints the version and, in brackets, what the build was made from:
+
+```
+earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)
+```
+
+- `commit` is the first twelve digits of the commit, when the build was made in a git checkout (`cargo install --git` and `cargo install --path` both are). A build made from an archive of the sources has no `commit`.
+- `sources` is a fingerprint of the checker's own source files. Two builds with the same `sources` give the same results, and a build made from a checkout with uncommitted edits has another `sources` than its commit's.
+
+To pin a build in a hook or in CI, compare this line.
+
 ## Caching
 
 `earnest verify` caches per-model results in `.earnest/`. An unchanged model served from cache ends its result line with `(cached)`.
