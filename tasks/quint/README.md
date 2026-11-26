@@ -1125,3 +1125,107 @@ fail        stuck  3 states  0 ms
 - `q::test`, `q::testOnce`, `q::debug`, an operator defined inside a run, a run with parameters,
   and a run that is neither steps nor a constant boolean.
 - A run whose name does not end in `Test` is not read at all, as `quint test` does not play it.
+
+## Slice 6: report
+
+### Done
+
+- `earnest_ir`: `Script` (a generalised witness), `Plan` and `Stage`, held in a new field
+  `Runs::scripts`. A stage is a set of alternatives (actions of the script's own, each with
+  every combination of its inputs), an optional assertion before it, an optional `expect` after
+  it, and whether it must be refused; a plan adds a condition on the start state, the values the
+  run chose and whether getting through every step breaks it. `Model::rule_ids` lists the
+  scripts after the witnesses. `Model`, `Field`, `Action`, `Witness` and `Played` are unchanged:
+  the witness tests build `Witness` and `Played` with struct literals, so a new field would have
+  changed them (agreed with the orchestrator).
+- `earnest_check/src/witness.rs`: one depth-first player for both. A `Witness` is played as the
+  case of one alternative per step with its inputs given and one condition at the end, and
+  prints byte for byte what it printed before (every witness test passes unchanged). It plays
+  every branch from every start state, skips a step already played from the same state with no
+  break, stops at 100,000 branches from one start state with `unknown` and a reason, and gives
+  the first broken branch with the path played on it, the inputs as values and the reason.
+  Scripts come after the witnesses in the outcome, with `RuleKind::Witness`, and `only_rule`
+  selects them.
+- `earnest_quint/src/runs.rs`: reads each `run` whose name ends in `Test`, in the order written
+  (the order of the definitions' ids), as section "How earnest plays a run" above describes. The
+  edits to the other files are small: `reader.rs` exposes the binding of a name, the unfolding
+  of an `all`, `picked_from` and `is_action`, and resets the input slots; `model.rs` calls the
+  run reader; `scan.rs` leaves `run` definitions to it; the refusal of a run operator elsewhere
+  now says "run operators outside a `run` are not read yet". Every refused run is listed, not
+  only the first.
+- The CLI needed no change: `rule_ids` gives `--rule` and the declared rules, the cache stores
+  outcomes as they are, `earnest confirm` compares only the rules of kind `always` with TLC, and
+  `earnest tla` exports no witness.
+- A script is played in every setup the model starts in, as the orchestrator asked. A setup
+  does not change listed start states yet, so in a Quint model with setups (slice 4) every setup
+  would give the same answer until slice 4 decides how setups change `Runs::starts`.
+
+### Tests
+
+- `crates/earnest_check/tests/explore/scripts.rs` (9): alternatives with open inputs, a step no
+  alternative can take, a condition after a middle step, a last step that must be refused in both
+  outcomes, several start states with the values a plan chose, every plan, assertions, start
+  conditions and runs that must not finish, the branch cap, `only_rule` and the order after the
+  rules.
+- `crates/earnest_quint/src/run_tests.rs` (9): the reading of every run of `runs_ints`,
+  `stuck`, `played` and `unstarted`.
+- `apps/earnest/tests/behavior/quint_runs.rs` (5): the verdicts in JSON, the text path and
+  `why`, `--rule`, the `stuck` module and an unreadable file.
+- Brought to the new truth (slice 1, not on `origin/main`): `a_run_is_refused_and_named` in
+  `crates/earnest_quint/src/tests.rs` is now
+  `a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules`.
+
+### Refused
+
+See "Refused, by name" above: a run that does not start with `init`, a `reps` count that is not
+a constant when the file is read or is below 1, a `fail()` that is not the run's last operator,
+an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, an operator
+defined inside a run, a run with parameters, a run that is neither steps nor a constant boolean,
+more than 1000 steps in a plan or 1000 plans in a run. Every construct the slice 1 reader
+refuses inside a step is still refused, by name.
+
+### Where earnest is stricter than `quint test`
+
+- It plays every branch, where Quint samples 10,000 of them.
+- A `nondet` at the top of a run: Quint takes another value when the run is plainly false for
+  one (`topBoolTest` passes in Quint); earnest needs every value to pass.
+- earnest agrees with Quint's TypeScript backend on the other 39 of the 40 runs above. The Rust
+  evaluator, Quint's default, could not be downloaded here, so it is not compared.
+
+### Doubts about existing code
+
+- An `unknown` witness or script (too many start states, or the branch cap) leaves the model's
+  status `pass`, and the text output prints only broken rules, so it shows only in the JSON. This
+  was already so for witnesses; changing the status is not this slice's to decide.
+- `Model::in_setup` does not change listed start states (slice 1's doubt), which is why a script
+  gives the same answer in every setup.
+- `earnest verify --base` still skips a compiled Quint file (slice 1's doubt), so a run added or
+  removed is not listed as a change.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: `Finished`, no warnings.
+- `just lint-library`: both passes `Finished`.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1820 passed, 0 failed.
+- `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,905,954,026 | -0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores): every budget `met`; the last line is `wide, search time with all
+  cores (0.089 s) over search time with 1 worker (0.292 s): 0.30x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, all in `tasks/conformance/runs/`, which is not on `origin/main` (it came with
+  the integration branch). SAME_BASE_LINE
+- `tests_kept.py --base origin/main`: `tests kept: 1493 tests, 4378 assertions (base: 1304, 3798)`.
+
+### Unfinished, and the next step
+
+- `--match` and the choice of runs per check go into slice 7's `earnest.quint.json`; today the
+  reader takes the names that end in `Test`, as `quint test` does by default.
+- Runs written in a spec that a setup module imports are dropped by `quint compile --main
+  <setup>` (spike 1.4); slice 4 has to compile the spec module too, or read `quint typecheck`.
+- Problems are at line 1, column 1 (slice 3).
+- `assert` after a guard, `reps` of 0 and runs that start elsewhere than `init` could be played
+  exactly with an ordered step; they are refused until a model needs them.
