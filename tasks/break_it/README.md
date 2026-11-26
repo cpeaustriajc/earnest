@@ -2450,3 +2450,81 @@ spec imports other modules (#71) and invariants written in the checks file (#69'
 asked. After the owner's decision to replace `earnest.quint.json` with marks in the `.qnt` file
 (#72), the checks file's own keys and messages were not attacked further than the name collisions
 above.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-3` (#78), on the integration branch at 6362d76 (#69's invariants as
+expressions, #71). The two tests of the findings pass with no assertion changed. Quint 0.33.1
+from npm, `quint verify --backend tlc` (Apalache 0.62.4) and, for `confirm --tlc`, the `v1.8.0`
+release's `tla2tools.jar` at `target/tools/`.
+
+- **A `forall` over an empty set** (`temporal.rs`): a property whose parts come out empty is one
+  rule of its name that holds (`always(true)`), listed, selected by `--rule`, and in
+  `expectCounterexample` not met (`holds  everyonePays  a counterexample was expected`, the
+  check `fail`). Checked through a `.*` setup that gives the set as `Set()` too. A `forall` over
+  an empty set inside the fairness was already no fairness; Quint's parser takes no `and { }`.
+  Test: `a_temporal_property_that_is_a_forall_over_an_empty_set_is_still_a_rule`.
+- **The note of runs not played** (`places.rs`): each `import`, instance and `export` of the
+  parse is kept with its `defName`. The note is the runs `quint test --main X` plays, less those
+  the compiled module holds: a single name imported, that name; `.*`, `as` and an instance,
+  every `…Test` run of the module and those it exports; an `export` in the module itself, the
+  runs it names, bare. Checked against `quint test` on twelve shapes, each alone in its file
+  (one name; `.*`; `as`; one name and `.*`; one name and `as`; `export Spec.specTest` and a
+  module that imports it; `export S.*` and a module that imports it; a module reached only
+  through `import Star.*`; an instance under a name and `.*`): the note names exactly the runs
+  `quint test` plays and earnest does not. Tests:
+  `the_note_of_runs_not_played_names_only_runs_quint_test_plays`, and
+  `places::tests::the_runs_not_played_are_those_quint_test_plays_through_each_import`.
+- **Fairness given a part of a pick** (`temporal.rs` `inputs_of`, `picked_giving`): an argument
+  the step passes as an expression over one `nondet` alone (`p._1`, `r.who`, `b + 1`) is worked
+  out for each value of the pick, and the picks that give the fairness's value are kept. Each is
+  a `FairStep` of its own and the part is fair to their union, which a part of `Fairness::actions`
+  already is, so `FairStep`, `Search::inputs_by` and the liveness pass are unchanged, and a model
+  without such fairness reads as before. Several arguments over one pick narrow it together
+  (`buy(p._1, p._2)`); more than 1,000 combinations are refused. `models/quint_third/fair_parts/`
+  (two buyers, two items): `payEach`, `payOne` (2 parts), `payOneOnly` over `pay(p._1)` and over
+  `pay(r.who)`, and `allPay`, `onePays`, `oneOnly` over `buy(p._1, p._2)`: 4, 4 and 7 states and
+  every verdict as `quint verify --backend tlc`; `confirm --tlc` `same` on all four checks, the
+  export writing `WF_<<paid, last>>(Fair_pay_1 \/ Fair_pay_2)` with each fair step's pick in a set
+  of one. `act(b + 1)`, refused before, is read the same way (`same` with TLC). Test:
+  `fairness_of_an_action_given_a_part_of_a_picked_tuple_or_record_is_judged_as_tlc_judges_it`.
+- **Messages.** `written` prints Quint's surface form: `t._2`, `r.who`, tuples, records,
+  comparisons and `and`/`or`/`implies` infix, with brackets around a nested infix. A condition
+  before `implies` (`(x == 0).implies(eventually(x == 3))`) is judged in the start states, as
+  TLC (`violated` for `x == 0`, ok for `x == 1`) and Apalache (`Found 1 error(s)`, `NoError`)
+  both do: true in every start state, the property is what follows; false in all, it holds;
+  mixed, refused with ``write `always((x == 0) implies eventually(…))` to judge it in every
+  state, or give `init` the start states it is about``. An action or lambda given as an argument
+  is read in its caller's definition (`Reader::callers`), so a refusal inside it says ``in the
+  definition `step` ``. Tests:
+  `a_refusal_writes_the_expression_as_quint_does_names_the_caller_and_says_what_to_write`,
+  `a_condition_implying_a_temporal_formula_is_judged_in_the_start_states_as_tlc_judges_it`.
+- **Output.** An action called with a value that does not change is named with it, the way #71
+  names a `match` branch: `buy(1)` and `buy(R.who)` are `buy  buyer = 1` and `buy  buyer = 2`
+  (Quint's notation, the parameter's last segment). Short names of runs count the module's own
+  runs, so a played `M::aTest` keeps its prefix beside an own `aTest`. `--rule` that names a run
+  and no other rule judges it with the model's actions left out: only the start states are
+  counted, and an endless model ends `pass` (or, with the run in `expectCounterexample`, `pass`
+  with it `broken  (expected)`). Test:
+  `a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_plays_a_run_alone`.
+- **The `export` file.** #71's typecheck build takes setups, not a module of runs only that
+  imports a spec twice, so `TwiceImported` is still compiled. The reader refuses a compiled module
+  that declares one variable twice under one id: ``` `A::S::v` `quint compile --main
+  TwiceImported` writes this variable twice under one id, as `A::S::v` and `A::v`, so the
+  compiled module is not one Quint means: Quint's own TLC run (`quint verify --backend tlc`)
+  stops on it too, while `quint test` plays the module. Quint compiles it so when another module
+  of the file exports a module this one imports: put the two modules in separate files ```. Test:
+  `a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile`.
+
+Found on the way, not changed: a compiled module with `export Spec.specTest` holds `specOverTest`
+too, so earnest plays it where `quint test` plays only `specTest`; and a module that writes
+`export S.*` plays `S::specTest` once where `quint test` plays it under both names.
+
+Tests of earlier Quint slices changed (none is on `origin/main`):
+`temporal::tests::the_actions_are_those_of_the_step` and
+`fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action` (the action
+`move(1)` is `move  d = 1`), `temporal::tests::an_implies_inside_what_must_hold_is_refused`
+(now `a_condition_that_implies_what_must_hold_is_judged_in_the_start_states`: `on` is false at
+the start, so it holds), and
+`arguments_tests::an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_lambda`
+(`caller  k = 2`).
