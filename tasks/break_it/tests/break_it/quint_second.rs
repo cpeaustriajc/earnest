@@ -123,6 +123,23 @@ fn a_nondet_behind_a_guard_or_an_if_is_picked_only_where_the_guard_holds() {
 }
 
 #[test]
+fn a_nondet_in_a_match_branch_of_init_that_a_constant_rules_out_is_not_read() {
+    let report = compiled(
+        "init_match_nondet",
+        include_str!("../../models/quint_second/init_match_nondet.json"),
+    );
+    let model = report.model("init_match_nondet");
+    assert!(
+        !report.is_unreadable()
+            && model["states"] == 1
+            && rule(model, "small")["verdict"] == "holds",
+        "with `Mode = Fixed(1)`, `init`'s `Range(s)` branch never happens, so its `nondet v = \
+         s.oneOf()` is not worked out: `quint verify --backend tlc --main init_match_nondet` \
+         finds 1 distinct state and `[ok]`\n{report}"
+    );
+}
+
+#[test]
 fn a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them() {
     let report = compiled(
         "fold_tuple10",

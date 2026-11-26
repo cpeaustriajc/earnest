@@ -885,8 +885,12 @@ impl<'a> Reader<'a> {
                 earlier.push(this.clone());
                 Expr::Apply(Op::Equal, vec![tag.clone(), this])
             };
-            let paths =
-                self.with_values(vec![(bound.id, value.clone())], |reader| reader.paths(body))?;
+            let never = constant(&holds, self.slots)? == Some(Value::Bool(false));
+            let paths = if never {
+                Vec::new()
+            } else {
+                self.with_values(vec![(bound.id, value.clone())], |reader| reader.paths(body))?
+            };
             for mut path in paths {
                 path.behind(&holds);
                 path.guards.insert(0, holds.clone());

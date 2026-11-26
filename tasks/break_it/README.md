@@ -2213,6 +2213,18 @@ that failed before among them.
   `variant_compare` and on every setup of the project model (179, 2 412, 1 752, 33 765 and 177 048
   states). Test: `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
 
+Two notes of the final report, settled with the findings they belong to:
+
+- `init = match Mode { | Fixed(n) => x' = n | Range(s) => all { nondet v = s.oneOf() x' = v }
+  }` with `Mode = Fixed(1)` given by a setup was refused (``a `nondet` whose value is not
+  `oneOf` a set``): the `Range` branch bound `s` to `1` and worked it out. `cases` no longer
+  reads a branch whose tag test is a constant `false`, as TLC never evaluates it; 1 state and
+  `small` holds, as `quint verify --backend tlc`. Test:
+  `a_nondet_in_a_match_branch_of_init_that_a_constant_rules_out_is_not_read`.
+- When TLC prints no state count, `confirm` shows the first line of its standard error that is
+  not a JVM notice (`Picked up JAVA_TOOL_OPTIONS: …`, `Picked up _JAVA_OPTIONS: …`). Test:
+  `the_java_notices_before_tlc_s_error_are_not_its_error` in `confirm.rs`.
+
 A `nondet` that picks from a written set of such tuples tries its values in the same positional
 order, as the docs say. Not changed: the usability notes and the constructs still refused, left
 for a later ticket.

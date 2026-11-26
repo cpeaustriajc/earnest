@@ -32,6 +32,7 @@ const CONSTANT_LEVEL: &str = " is a constant-level formula ";
 const CONSTANT_LEVEL_FALSE: &str = "evaluates to FALSE.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
+const JVM_NOTICE: &str = "Picked up ";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TlcRun {
@@ -87,6 +88,13 @@ fn property_broken(error: &str) -> bool {
         || error
             .strip_prefix(PROPERTIES_NAMED)
             .is_some_and(|rest| rest.ends_with(PROPERTIES_NAMED_BROKEN))
+}
+
+fn first_said(errors: &str) -> Option<&str> {
+    errors
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with(JVM_NOTICE))
 }
 
 pub(crate) fn read_tlc(output: &str) -> TlcRun {
@@ -364,12 +372,8 @@ impl Checker<'_> {
         if run.distinct_states.is_none() && run.errors.is_empty() {
             let said = String::from_utf8_lossy(&output.stderr);
             run.errors.push(
-                said.lines()
-                    .find(|line| !line.trim().is_empty())
-                    .map_or_else(
-                        || format!("{name} printed no state count"),
-                        |line| line.trim().to_owned(),
-                    ),
+                first_said(&said)
+                    .map_or_else(|| format!("{name} printed no state count"), str::to_owned),
             );
         }
         Ok(run)
@@ -608,6 +612,21 @@ State 1: <Initial predicate>
         assert!(!super::property_broken(
             "Temporal property Eventually_p0 was not checked."
         ));
+    }
+
+    #[test]
+    fn the_java_notices_before_tlc_s_error_are_not_its_error() {
+        assert_eq!(
+            super::first_said(
+                "Picked up JAVA_TOOL_OPTIONS: -Dhttps.proxyHost=x\nPicked up _JAVA_OPTIONS: \
+                 -Xmx1g\n\nError: Unable to access jarfile x\n"
+            ),
+            Some("Error: Unable to access jarfile x")
+        );
+        assert_eq!(
+            super::first_said("Picked up JAVA_TOOL_OPTIONS: -Dx=y\n"),
+            None
+        );
     }
 
     #[test]
