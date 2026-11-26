@@ -49,7 +49,9 @@ pub(crate) fn unknown_mark(written: &str) -> String {
 pub(crate) fn misplaced_mark(kind: Kind, name: &str, qualifier: &str) -> String {
     let marks = match kind {
         Kind::Reachable => format!("`{MARK} {REACHABLE}` marks a `val`"),
-        Kind::Holds => format!("`{MARK}` marks a module, a `val`, a `temporal` definition or a `run`"),
+        Kind::Holds => {
+            format!("`{MARK}` marks a module, a `val`, a `temporal` definition or a `run`")
+        }
         Kind::Broken => {
             format!("`{MARK} {BROKEN}` marks a `val`, a `temporal` definition or a `run`")
         }
@@ -72,15 +74,21 @@ pub(crate) fn constant_unset(module: &str) -> String {
     )
 }
 
-pub(crate) fn nothing_to_judge(module: &str, searches: bool) -> String {
-    let why = if searches {
-        "it sees no marked property and no run to play"
-    } else {
-        "it sees no `init` and `step` to search with, and no run to play"
-    };
+fn nothing_because(module: &str, why: &str) -> String {
     format!(
         "the module `{module}` is marked `{MARK}`, and {why}: mark a `val`, a `temporal` \
          definition or a `run` it sees, or name a run so that it ends in `Test`"
+    )
+}
+
+pub(crate) fn nothing_to_judge(module: &str) -> String {
+    nothing_because(module, "it sees no marked property and no run to play")
+}
+
+pub(crate) fn nothing_to_search(module: &str) -> String {
+    nothing_because(
+        module,
+        "it sees no `init` and `step` to search with, and no run to play",
     )
 }
 

@@ -40,8 +40,8 @@ pub fn is_compiled_quint(source: &str) -> bool {
     serde_json::from_str::<json::Probe>(source).is_ok_and(|probe| probe.stage == "compiling")
 }
 
-/// Which `run` definitions of the main module are played, as a check lists them in
-/// `earnest.quint.json`. The runs it does not choose are not read at all.
+/// Which `run` definitions of the main module are played: the ones whose name ends in `Test`,
+/// or a list that the marks of the module give. The runs it does not choose are not read at all.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Runs {

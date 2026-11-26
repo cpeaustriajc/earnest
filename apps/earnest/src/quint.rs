@@ -1,11 +1,11 @@
 use crate::cache::{ENGINE, fingerprint_of, folder_in, write_whole};
 use crate::checks::{CHECKS_FILE, Check};
-use crate::migrate::migration;
 use crate::discovery::Listed;
 use crate::marks::{
     Kind, constant_unset, how_to_mark, mark_of, misplaced_mark, module_mark_alone, not_seen,
-    nothing_to_judge, unknown_mark,
+    nothing_to_judge, nothing_to_search, unknown_mark,
 };
+use crate::migrate::migration;
 use crate::places::{Documented, Places, place_all};
 use crate::reading::{Content, Declared, ModelFile, Readable};
 use crate::run::whole_of;
@@ -1006,7 +1006,11 @@ fn with_marks(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
             &job.real,
             &job.shown,
             (&check.main, doc),
-            &nothing_to_judge(&check.main, searches),
+            &if searches {
+                nothing_to_judge(&check.main)
+            } else {
+                nothing_to_search(&check.main)
+            },
         ));
     }
     Ok(())
@@ -1205,25 +1209,13 @@ fn unseen_marks(
     files
 }
 
-fn parsed_all(
-    checks: &[Job],
-    candidates: &[Candidate],
-    jobs: usize,
-) -> HashMap<PathBuf, Result<Places, Problem>> {
+fn parsed_all(candidates: &[Candidate], jobs: usize) -> HashMap<PathBuf, Result<Places, Problem>> {
     let mut to_parse: Vec<(PathBuf, String, Quint)> = Vec::new();
-    let reals = checks
-        .iter()
-        .map(|job| (&job.real, job.shown.clone(), &job.quint))
-        .chain(
-            candidates
-                .iter()
-                .map(|each| (&each.real, shown_string(&each.shown), &each.quint)),
-        );
-    for (real_file, shown, quint) in reals {
-        if let Ok(quint) = quint
-            && !to_parse.iter().any(|(file, ..)| file == real_file)
+    for each in candidates {
+        if let Ok(quint) = &each.quint
+            && !to_parse.iter().any(|(file, ..)| *file == each.real)
         {
-            to_parse.push((real_file.clone(), shown, quint.clone()));
+            to_parse.push((each.real.clone(), shown_string(&each.shown), quint.clone()));
         }
     }
     let maps = run_each(&to_parse, jobs, |(file, shown, quint), _| {
@@ -1236,11 +1228,13 @@ fn parsed_all(
         .collect()
 }
 
-pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
-    let mut files = Vec::new();
-    let (old, candidates) = found(listed);
+fn found_checks(
+    candidates: &[Candidate],
+    jobs: usize,
+    files: &mut Vec<ModelFile>,
+) -> (Vec<Job>, HashMap<PathBuf, Places>) {
     let mut checks: Vec<Job> = Vec::new();
-    for candidate in &candidates {
+    for candidate in candidates {
         if let Err(message) = &candidate.quint {
             files.push(problem_file(
                 &shown_string(&candidate.shown),
@@ -1249,23 +1243,30 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             ));
         }
     }
-    let read = parsed_all(&checks, &candidates, jobs);
-    for candidate in &candidates {
+    let read = parsed_all(candidates, jobs);
+    for candidate in candidates {
         if let Some(places) = read.get(&candidate.real) {
-            checks.extend(marked_checks(candidate, places.as_ref(), &mut files));
+            checks.extend(marked_checks(candidate, places.as_ref(), files));
         }
     }
-    let places: HashMap<PathBuf, Places> = read
+    let places = read
         .into_iter()
         .filter_map(|(file, places)| Some((file, places.ok()?)))
         .collect();
-    for checks_file in &old {
-        files.push(problem_file(
+    (checks, places)
+}
+
+pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
+    let mut files = Vec::new();
+    let (old, candidates) = found(listed);
+    let (mut checks, places) = found_checks(&candidates, jobs, &mut files);
+    files.extend(old.iter().map(|checks_file| {
+        problem_file(
             &shown_string(checks_file),
             &format!("`{CHECKS_FILE}`"),
             &migration(checks_file, &places),
-        ));
-    }
+        )
+    }));
     let mut refusals: Vec<Option<Problem>> = Vec::with_capacity(checks.len());
     for job in &mut checks {
         if let Some(found) = places.get(&job.real) {

@@ -170,10 +170,12 @@ fn referred(name: &str, main: &str, wrapper: &Wrapper, places: Option<&Places>) 
         return format!("{ALIAS}{QUALIFIED}{name}");
     }
     match defined {
-        Some((module, _)) if module != main && !name.contains(QUALIFIED) => wrapper
-            .aliases
-            .get(module)
-            .map_or_else(|| name.to_owned(), |alias| format!("{alias}{QUALIFIED}{name}")),
+        Some((module, _)) if module != main && !name.contains(QUALIFIED) => {
+            wrapper.aliases.get(module).map_or_else(
+                || name.to_owned(),
+                |alias| format!("{alias}{QUALIFIED}{name}"),
+            )
+        }
         _ => name.to_owned(),
     }
 }
@@ -237,9 +239,10 @@ fn place_text(name: &str, main: &str, places: Option<&Places>, file: &str) -> St
     let at = places.line_of(name, main);
     match (defined, at) {
         (Some((module, definition)), Some((path, line))) => {
-            let shown = Path::new(path)
-                .file_name()
-                .map_or_else(|| path.to_owned(), |each| each.to_string_lossy().into_owned());
+            let shown = Path::new(path).file_name().map_or_else(
+                || path.to_owned(),
+                |each| each.to_string_lossy().into_owned(),
+            );
             format!("above `{definition}` of the module `{module}`, `{shown}:{line}`")
         }
         _ => format!("above the definition `{name}` that `{main}` sees, in `{file}`"),

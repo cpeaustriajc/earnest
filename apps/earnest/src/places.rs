@@ -473,7 +473,11 @@ impl Places {
         let Some(module) = self.module(main) else {
             return Vec::new();
         };
-        let mut names: Vec<String> = module.declared.iter().map(|(name, _)| name.clone()).collect();
+        let mut names: Vec<String> = module
+            .declared
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect();
         for seen in &module.seen {
             let Some(spec) = self.module(&seen.proto) else {
                 continue;

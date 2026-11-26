@@ -174,6 +174,8 @@ fn problems(report: &Value) -> Vec<(String, u64, String, String)> {
         .collect()
 }
 
+type Listed<'a> = (&'a str, u64, &'a [(&'a str, &'a str)]);
+
 fn pairs(all: &[(&str, &str)]) -> Vec<(String, String)> {
     all.iter()
         .map(|(id, verdict)| ((*id).to_owned(), (*verdict).to_owned()))
@@ -191,8 +193,12 @@ fn a_folder_of_marked_files_gives_what_the_same_checks_gave_when_a_checks_file_l
         .map(|each| each["name"].as_str().unwrap_or_default().to_owned())
         .collect();
     assert_eq!(names, ["bank", "Small", "Large"], "{report}");
-    let listed: [(&str, u64, &[(&str, &str)]); 3] = [
-        ("bank", 4, &[("nonNegative", "holds"), ("depositTest", "holds")]),
+    let listed: [Listed<'_>; 3] = [
+        (
+            "bank",
+            4,
+            &[("nonNegative", "holds"), ("depositTest", "holds")],
+        ),
         (
             "Small",
             4,
@@ -244,7 +250,11 @@ fn a_marked_module_with_no_init_or_step_plays_its_runs_and_an_unmarked_one_is_no
     let run = quint.earnest(&["verify", "runs", "--json"]);
     run.exits(0);
     let report = run.json();
-    assert_eq!(models(&report).len(), 1, "only `Plays` is a check: {report}");
+    assert_eq!(
+        models(&report).len(),
+        1,
+        "only `Plays` is a check: {report}"
+    );
     let plays = model(&report, "Plays");
     assert_eq!(plays["states"], 0, "{plays}");
     assert_eq!(
@@ -280,7 +290,7 @@ fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
     .iter()
     .map(|(line, feature)| (*line, (*feature).to_owned()))
     .collect();
-    let mut sorted = found.clone();
+    let mut sorted = found;
     sorted.sort();
     assert_eq!(
         sorted, expected,
@@ -313,7 +323,10 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
     ] {
         assert!(message.contains(written), "{written}\nin\n{message}");
     }
-    assert!(models(&run.json()).is_empty(), "nothing is checked by the file: {run}");
+    assert!(
+        models(&run.json()).is_empty(),
+        "nothing is checked by the file: {run}"
+    );
     let text = quint.earnest(&["verify", "old"]);
     assert!(
         text.to_string().contains("\n      module SmallBroken {\n"),

@@ -186,15 +186,16 @@ impl Quint {
                 let declarations = module["declarations"]
                     .as_array_mut()
                     .expect("the module has declarations");
-                match declarations.iter_mut().find(|each| each["name"] == *name) {
-                    Some(declaration) => declaration["doc"] = Value::from(*mark),
-                    None => {
-                        next_id = next_id.saturating_add(1);
-                        declarations.push(serde_json::json!({
-                            "id": next_id, "kind": "def", "name": name,
-                            "qualifier": qualifier, "doc": mark
-                        }));
-                    }
+                if let Some(declaration) =
+                    declarations.iter_mut().find(|each| each["name"] == *name)
+                {
+                    declaration["doc"] = Value::from(*mark);
+                } else {
+                    next_id = next_id.saturating_add(1);
+                    declarations.push(serde_json::json!({
+                        "id": next_id, "kind": "def", "name": name,
+                        "qualifier": qualifier, "doc": mark
+                    }));
                 }
             }
         }
@@ -571,9 +572,7 @@ fn a_checks_file_right_or_wrong_is_unreadable_at_itself_and_judges_nothing() {
 fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
     let quint = Quint::new();
     quint.with_specs("models", "counter", &[COUNTER]);
-    quint
-        .sandbox
-        .write("models/dead.qnt", &sample("dead.qnt"));
+    quint.sandbox.write("models/dead.qnt", &sample("dead.qnt"));
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(1);
     let report = run.json();
@@ -583,10 +582,7 @@ fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
         "{report}"
     );
     let message = message_of(&report);
-    assert!(
-        message.contains("`/// @check`"),
-        "{message}"
-    );
+    assert!(message.contains("`/// @check`"), "{message}");
     assert!(models_of(&report).is_empty(), "nothing else is checked");
     assert!(
         quint.compiles().is_empty(),
@@ -937,8 +933,8 @@ fn a_pick_among_every_integer_is_reported_at_its_line_in_the_quint_file() {
     quint
         .sandbox
         .write("models/allnumbers.qnt", &fixture("allnumbers.qnt"));
-    let mut parsed: Value = serde_json::from_str(&fixture("allnumbers.parse.json"))
-        .expect("the parse fixture is JSON");
+    let mut parsed: Value =
+        serde_json::from_str(&fixture("allnumbers.parse.json")).expect("the parse fixture is JSON");
     for module in parsed["modules"].as_array_mut().into_iter().flatten() {
         if module["name"] == "allNumbers" {
             module["doc"] = Value::from("@check");

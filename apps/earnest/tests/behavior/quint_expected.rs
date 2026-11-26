@@ -232,11 +232,7 @@ fn a_met_expectation_prints_one_line_and_keeps_its_path_in_the_json() {
         ],
         "{run}"
     );
-    assert_eq!(
-        run.detail("expect"),
-        ["broken  small  (expected)"],
-        "{run}"
-    );
+    assert_eq!(run.detail("expect"), ["broken  small  (expected)"], "{run}");
     let json = quint.earnest(&["verify", "--json", "--no-cache"]);
     json.exits(0);
     let report = json.json();
@@ -365,7 +361,10 @@ fn rule_selects_an_expected_and_an_ordinary_property() {
 
 #[test]
 fn an_expected_temporal_property_is_met_by_its_counterexample() {
-    let quint = Quint::marked("swing", &[("safe", "@check"), ("swingFair", "@check broken")]);
+    let quint = Quint::marked(
+        "swing",
+        &[("safe", "@check"), ("swingFair", "@check broken")],
+    );
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(0);
     let report = run.json();
@@ -447,7 +446,10 @@ fn a_mark_on_a_definition_that_is_no_property_is_unreadable_and_named() {
 fn a_cached_run_and_any_number_of_jobs_give_what_a_fresh_run_gives() {
     let quint = Quint::marked("expect", &SMALL_AND_TINY);
     quint.mark("counter", &[("inRange", "@check")]);
-    quint.mark("swing", &[("safe", "@check"), ("swingFair", "@check broken")]);
+    quint.mark(
+        "swing",
+        &[("safe", "@check"), ("swingFair", "@check broken")],
+    );
     let arguments = ["verify", "--json", "--max-states", "1000"];
     let fresh = quint.earnest(&[&arguments[..], &["--no-cache", "--jobs", "1"]].concat());
     let cached = quint.earnest(&arguments);

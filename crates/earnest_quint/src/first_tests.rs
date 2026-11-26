@@ -187,13 +187,7 @@ fn a_module_of_runs_only_is_built_from_the_typecheck_and_searches_nothing() {
     );
     assert_eq!(
         model.rule_ids().collect::<Vec<_>>(),
-        [
-            "fixedTest",
-            "listTest",
-            "thirdTest",
-            "thirdOver",
-            "mixTest"
-        ]
+        ["fixedTest", "listTest", "thirdTest", "thirdOver", "mixTest"]
     );
     assert_eq!(own(&model, "thirdTest"), ["Third::n"]);
     assert_eq!(own(&model, "mixTest"), ["Fixed::n", "List::n"]);

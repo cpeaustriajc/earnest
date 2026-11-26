@@ -49,7 +49,7 @@ Both install `earnest` in `~/.cargo/bin`.
 ## The model libraries
 
 - **TypeScript:** A model imports `m` from `@earnestjs/model`, which is not on npm yet. The checker reads the file's text and never resolves the import on disk, so `earnest verify` works with no `node_modules`. The import matters only to your editor, TypeScript type checker, and Node.
-- **Quint:** No Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then. Install it in the project with `npm install --save-dev @informalsystems/quint` and mark the properties to check with `/// @check`; see [Quint models](/reference/quint/).
+- **Quint:** No Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then. Install it in the project with `npm install --save-dev @informalsystems/quint` and mark the modules and properties to check with `/// @check`; see [Quint models](/reference/quint/).
 - **Rust:** A model uses the `earnest` crate. Add it from git:
 
   ```toml

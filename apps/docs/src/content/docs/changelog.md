@@ -5,11 +5,12 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
-## November 2026: Quint checks marked in the model
+## November 2026: Quint checks marked in the model, and no `earnest.quint.json`
 
-`earnest verify specs/` checks the `.qnt` files below `specs/` with no `earnest.quint.json`:
+`earnest verify specs/` checks the modules marked `/// @check` in the `.qnt` files below `specs/`. No other file says what to check:
 
 ```quint title="specs/bank.qnt"
+/// @check
 module bank {
   var balance: int
   action init = balance' = 0
@@ -23,10 +24,12 @@ module bank {
 }
 ```
 
-- **Marks:** `/// @check` on a `val` or `temporal` definition checks it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The lines below the mark are the rule's sentence. A mark with a word earnest does not know is `unreadable` at its line.
-- **Modules:** a module is checked when it sees an `init` and a `step`, declares no `const`, and sees a mark or a run whose name ends in `Test`. A mark on a spec counts in every setup that imports it.
+- **Modules:** a module is a check when its own doc comment starts with `@check`, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no `init` or `step` plays its runs and searches nothing.
+- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The lines below a mark are the rule's sentence.
+- **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check`; `/// @check broken` on a run says it must fail.
+- **Unreadable at the mark's line:** a word after `@check` that earnest does not know, a marked module that leaves a constant unset, a marked module with nothing to judge, and a marked definition or run that no check sees.
 - **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
-- **The checks file:** `earnest.quint.json` is optional, and takes names only. An expression in `invariants` or `expectCounterexample` is `unreadable`, and the message shows the `val` to write.
+- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write and the module to add for another `init` or `step` or a second check of one module.
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
 

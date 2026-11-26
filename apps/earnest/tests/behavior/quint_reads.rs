@@ -68,10 +68,7 @@ fn checked(arguments: &[&str]) -> Run {
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
         .expect("the fake can be made a program");
     sandbox.write("fake/compiled/reads.json", &fixture("reads.json"));
-    sandbox.write(
-        "fake/parse.json",
-        &with_marks(r#"{"modules":[]}"#, MARKS),
-    );
+    sandbox.write("fake/parse.json", &with_marks(r#"{"modules":[]}"#, MARKS));
     sandbox.write(
         "specs/reads.qnt",
         &format!("{}// marked: reads\n", fixture("reads.qnt")),

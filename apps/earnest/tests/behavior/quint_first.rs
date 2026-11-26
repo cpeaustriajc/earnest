@@ -344,7 +344,12 @@ fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows()
 fn a_definition_that_chains_steps_is_played_where_a_run_calls_it() {
     let quint = Quint::new();
     let report = quint
-        .earnest(&["verify", "--json", "specs/HelperRun.qnt", "specs/Helpers.qnt"])
+        .earnest(&[
+            "verify",
+            "--json",
+            "specs/HelperRun.qnt",
+            "specs/Helpers.qnt",
+        ])
         .json();
     assert_eq!(verdicts(&report, "HelperRun"), held(&["twoStepsTest"]));
     assert_eq!(

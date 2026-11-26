@@ -380,16 +380,15 @@ pub(crate) fn with_marks(parsed: &str, checks: Marks<'_>) -> String {
         let modules = parsed["modules"]
             .as_array_mut()
             .expect("the parse has modules");
-        let at = match modules.iter().position(|each| each["name"] == *module) {
-            Some(at) => at,
-            None => {
-                let declarations = vec![
-                    fresh("def", "init", "action"),
-                    fresh("def", "step", "action"),
-                ];
-                modules.push(json!({ "id": 899_999, "name": module, "declarations": declarations }));
-                modules.len().saturating_sub(1)
-            }
+        let at = if let Some(at) = modules.iter().position(|each| each["name"] == *module) {
+            at
+        } else {
+            let declarations = vec![
+                fresh("def", "init", "action"),
+                fresh("def", "step", "action"),
+            ];
+            modules.push(json!({ "id": 899_999, "name": module, "declarations": declarations }));
+            modules.len().saturating_sub(1)
         };
         let found = &mut modules[at];
         found["doc"] = Value::from("@check");
@@ -397,13 +396,12 @@ pub(crate) fn with_marks(parsed: &str, checks: Marks<'_>) -> String {
             let declarations = found["declarations"]
                 .as_array_mut()
                 .expect("the module has declarations");
-            match declarations.iter_mut().find(|each| each["name"] == *name) {
-                Some(declaration) => declaration["doc"] = Value::from(*mark),
-                None => {
-                    let mut added = fresh("def", name, qualifier);
-                    added["doc"] = Value::from(*mark);
-                    declarations.push(added);
-                }
+            if let Some(declaration) = declarations.iter_mut().find(|each| each["name"] == *name) {
+                declaration["doc"] = Value::from(*mark);
+            } else {
+                let mut added = fresh("def", name, qualifier);
+                added["doc"] = Value::from(*mark);
+                declarations.push(added);
             }
         }
     }
