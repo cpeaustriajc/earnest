@@ -393,8 +393,8 @@ fn a_premise_route_that_does_not_fit_takes_no_arrow_and_the_next_one_is_drawn() 
 
 #[test]
 fn a_long_label_is_cut_in_the_note_and_kept_whole_in_the_chart() {
-    let long: String = (0..40).map(|at| format!("f{at} = {at}, ")).collect();
-    let long = long.trim_end_matches(", ").to_owned();
+    let fields: Vec<String> = (0..40).map(|at| format!("f{at} = {at}")).collect();
+    let long = fields.join(", ");
     let mut counter = graph(vec![start("home"), node(&long)], vec![edge(0, 1, &["go"])]);
     holds(&mut counter, "wide", PremiseKind::Implies, &[1]);
     let drawn = read(&chart(&counter));

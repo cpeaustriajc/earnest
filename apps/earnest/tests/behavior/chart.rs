@@ -225,11 +225,7 @@ fn premise_line(file: &str, text: &str) -> String {
     sandbox.write(&format!("models/{file}"), text);
     let run = sandbox.earnest(&["chart", &format!("models/{file}")]);
     mermaid_block(&run);
-    run.stdout
-        .lines()
-        .last()
-        .map(str::to_owned)
-        .unwrap_or_default()
+    run.stdout.lines().last().unwrap_or_default().to_owned()
 }
 
 #[test]
