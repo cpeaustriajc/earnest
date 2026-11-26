@@ -117,3 +117,25 @@ fn a_removed_rule_about_runs_and_a_removed_witness_are_listed_as_removed() {
         );
     }
 }
+
+#[test]
+fn a_rule_loosened_in_the_states_of_a_setup_is_listed_as_loosened() {
+    let sandbox = Sandbox::with(&[(
+        "large.model.ts",
+        include_str!("../../models/seventh/changes/before/large.model.ts"),
+    )]);
+    sandbox.commit();
+    sandbox.write(
+        "large.model.ts",
+        include_str!("../../models/seventh/changes/after/large.model.ts"),
+    );
+    let report = sandbox.verify(&["--base", "HEAD"]);
+    assert_eq!(
+        report.change("low")["change"],
+        "loosened",
+        "in the setup `large` the cap is 2 and the state `n = 2, cap = 2` is reached: it passes \
+         `s.n <= 2` and breaks `s.n <= 1`, so the run `Jar (large)` goes from `fail` to `pass`; \
+         `loosened` is \"some reachable state of the new model satisfies the new rule and breaks \
+         the old rule\"\n{report}"
+    );
+}
