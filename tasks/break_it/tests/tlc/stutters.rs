@@ -127,7 +127,12 @@ impl Writer {
     }
 
     fn app(&mut self, opcode: &str, args: Vec<Value>) -> Value {
-        json!({ "id": self.id(), "kind": "app", "opcode": opcode, "args": args })
+        let mut made = Map::new();
+        made.insert("id".to_owned(), json!(self.id()));
+        made.insert("kind".to_owned(), json!("app"));
+        made.insert("opcode".to_owned(), json!(opcode));
+        made.insert("args".to_owned(), Value::Array(args));
+        Value::Object(made)
     }
 
     fn variable(&mut self, position: usize) -> Value {
@@ -210,9 +215,13 @@ impl Writer {
 
 fn def(writer: &mut Writer, name: &str, qualifier: &str, expr: Value) -> (Value, u64) {
     let id = writer.id();
-    let made =
-        json!({ "id": id, "kind": "def", "name": name, "qualifier": qualifier, "expr": expr });
-    (made, id)
+    let mut made = Map::new();
+    made.insert("id".to_owned(), json!(id));
+    made.insert("kind".to_owned(), json!("def"));
+    made.insert("name".to_owned(), json!(name));
+    made.insert("qualifier".to_owned(), json!(qualifier));
+    made.insert("expr".to_owned(), expr);
+    (Value::Object(made), id)
 }
 
 struct Generated {

@@ -1230,3 +1230,20 @@ definition that `--temporal` does not list is ignored, as an unused `val` is.
 - `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
 - `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
 - `tests_kept.py --base origin/main`: `tests kept: 1490 tests, 4372 assertions (base: 1304, 3798)`.
+- `just tlc`: every model it confirms prints `same` (49 lines, ending `same     Outcome  7222 states  pass`);
+  its clippy step first found two `needless_pass_by_value` in the new `stutters.rs`, fixed; then
+  `cargo test --locked -p earnest_break_it --features tlc --test tlc`: `test result: ok. 9
+  passed; 0 failed`, with `runs::tlc_judges_every_rule_about_runs_of_small_generated_models_as_earnest_does`
+  and the new `stutters::tlc_judges_every_quint_temporal_property_with_its_own_fairness_as_earnest_does`.
+
+### Unfinished, and the next step
+
+- `models/clock.qnt` itself becomes readable when slice 2 (sets and text) merges; then check its
+  `Small` and `Large` against the verdicts above, and retire `clockbits.qnt` or keep it as the
+  int-only sample.
+- Problems are still at line 1, column 1 (slice 3).
+- `quint verify` without `--temporal` but with temporal definitions in the module: they are
+  ignored, as Quint's TLC ignores them.
+- The user docs (`apps/docs`) do not mention Quint yet; they wait for slice 7, as slice 1 said.
+- Next: slice 3 (source places) or slice 4 (setups), which also decides the qualified names
+  above.
