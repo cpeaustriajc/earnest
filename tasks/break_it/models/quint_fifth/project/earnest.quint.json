@@ -1,6 +1,0 @@
-{
-  "checks": [
-    { "file": "setups.qnt", "main": "three", "name": "threeG", "step": "stepGuarded", "invariants": ["mutex", "holderKnown", "bounded"], "temporal": ["gRequests", "gHolds", "gDrains", "gServed", "gIdle"] },
-    { "file": "setups.qnt", "main": "two", "name": "twoG", "step": "stepGuarded", "invariants": ["mutex", "holderKnown", "bounded", "grantsBounded"], "temporal": ["gRequests", "gHolds", "gDrains", "gServed", "gIdle"] }
-  ]
-}

@@ -285,7 +285,10 @@ fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
         (
             Some("unfinished"),
             &serde_json::json!(["S::upTest"]),
-            Some("runs not played: S::upTest")
+            Some(
+                "runs not played: S::upTest: `quint typecheck` gave nothing to build the check \
+                 from"
+            )
         ),
         "with no typecheck, `quint compile` drops `S::upTest`, so the check plays `ownTest` and \
          does not pass: it says which run it did not play\n{report:#}"
