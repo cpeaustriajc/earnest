@@ -1,10 +1,10 @@
 use crate::discovery::{
     IN_EVERY_MODEL_FILE, Language, is_model_file, is_model_name, is_searched, language_of,
 };
-use crate::reading::{ModelFile, read};
+use crate::reading::{ModelFile, Readable, read};
 use crate::run::Bounds;
 use crate::select::Target;
-use earnest_ast::{ConditionDraft, Draft, RuleDraft};
+use earnest_ast::{ConditionDraft, Draft, Quoting, RuleDraft, same_condition_text};
 use earnest_chart::{ChangeKind, ChangedPart, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
 use earnest_ir::{Code, Expr, Model, Op, Rule};
@@ -287,8 +287,8 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         .collect()
 }
 
-fn by_wording(was: &RuleDraft, now: &RuleDraft) -> Option<Kind> {
-    by_text(&Wording::of(was), &Wording::of(now))
+fn by_wording(was: &RuleDraft, now: &RuleDraft, quoting: Quoting) -> Option<Kind> {
+    by_text(&Wording::of(was), &Wording::of(now), quoting)
 }
 
 fn told_apart(
@@ -297,10 +297,11 @@ fn told_apart(
     pairs: &[(&RuleDraft, &RuleDraft)],
     bounds: Bounds,
 ) -> Vec<Option<Kind>> {
+    let quoting = new.language.quoting();
     let Ok((model, at_base)) = lower_with_earlier(new, old) else {
         return pairs
             .iter()
-            .map(|(was, now)| by_wording(was, now))
+            .map(|(was, now)| by_wording(was, now, quoting))
             .collect();
     };
     let lowered: Vec<Option<(&Rule, &Rule)>> = pairs
@@ -343,7 +344,7 @@ fn told_apart(
             } else if before.holds != after.holds {
                 Some(Kind::Changed)
             } else {
-                by_wording(was, now)
+                by_wording(was, now, quoting)
             }
         })
         .collect()
@@ -434,8 +435,8 @@ fn one_sided(file: &str, model: &str, named: Named<'_>, change: Kind) -> Differe
     }
 }
 
-fn by_text(was: &Wording, now: &Wording) -> Option<Kind> {
-    if was.holds != now.holds {
+fn by_text(was: &Wording, now: &Wording, quoting: Quoting) -> Option<Kind> {
+    if !same_condition_text(&was.holds, &now.holds, quoting) {
         Some(Kind::Changed)
     } else if was.says != now.says {
         Some(Kind::Reworded)
@@ -453,7 +454,7 @@ fn changes_about_runs(old: Option<&Draft>, new: &Draft) -> Vec<Difference> {
             changes.push(one_sided(&new.file, &new.name, now.clone(), Kind::Added));
             continue;
         };
-        if let Some(change) = by_text(&was.wording, &now.wording) {
+        if let Some(change) = by_text(&was.wording, &now.wording, new.language.quoting()) {
             changes.push(Difference {
                 file: new.file.clone(),
                 model: new.name.clone(),
@@ -617,24 +618,32 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             AtBase::Absent => Vec::new(),
             AtBase::Models(drafts) => drafts,
         };
-        let now: Vec<&Draft> = file
+        let declared: Vec<&Readable> = file
             .models()
             .iter()
             .filter(|readable| readable.model.runs.chosen.is_none())
+            .collect();
+        let now: Vec<&Draft> = declared
+            .iter()
             .filter_map(|readable| readable.draft.as_ref())
             .collect();
         let old_drafts: Vec<&Draft> = old.iter().collect();
-        for target in targets.iter().filter(|target| {
-            target.file.path == file.path && target.readable.model.runs.chosen.is_none()
-        }) {
-            let Some(new) = &target.readable.draft else {
+        for readable in declared {
+            let Some(new) = &readable.draft else {
                 continue;
             };
-            let before = namesakes_before(&now, target.readable.position);
+            let before = namesakes_before(&now, readable.position);
             let was = namesake(&old_drafts, &new.name, before);
-            compared
-                .changes
-                .extend(model_changes(was, new, compare.bounds));
+            let a_run_is_selected = targets.iter().any(|target| {
+                target.file.path == file.path && target.readable.position == readable.position
+            });
+            let named_at_base =
+                compare.rule.is_some() && was.is_some_and(|was| compare.selects(was));
+            if a_run_is_selected || named_at_base {
+                compared
+                    .changes
+                    .extend(model_changes(was, new, compare.bounds));
+            }
         }
         compared
             .changes

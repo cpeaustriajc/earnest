@@ -274,6 +274,18 @@ pub enum Language {
     Rust,
 }
 
+impl Language {
+    /// How this language writes comments and quoted text, for [`condition_text`] and
+    /// [`same_condition_text`].
+    #[must_use]
+    pub fn quoting(self) -> Quoting {
+        match self {
+            Self::TypeScript => Quoting::TypeScript,
+            Self::Rust => Quoting::Rust,
+        }
+    }
+}
+
 impl Term {
     /// A term of `kind` that starts at `place`.
     #[must_use]
@@ -439,6 +451,20 @@ pub fn condition_text(source: &str, quoting: Quoting) -> String {
     let bare = nesting::without_comments(source, quoting);
     let words: Vec<&str> = bare.split_whitespace().collect();
     words.join(" ")
+}
+
+/// Whether two texts in the normal form of [`condition_text`] are one source apart from white
+/// space: a space counts only between two word letters (letters, digits, `_` and `$`), so
+/// `s.items .size` is `s.items.size` and `return x` is not `returnx`.
+///
+/// Quoted text is compared as it is, so `"a b"` is not `"ab"`. `--base` asks this, not
+/// whether the texts are equal, to tell whether a rule or another part was edited: a formatter
+/// that wraps a long condition before a `.` edits no rule.
+#[must_use]
+pub fn same_condition_text(first: &str, second: &str, quoting: Quoting) -> bool {
+    first == second
+        || nesting::without_loose_spaces(first, quoting)
+            == nesting::without_loose_spaces(second, quoting)
 }
 
 /// A condition on one state, as an [`EventuallyDraft`] holds it.

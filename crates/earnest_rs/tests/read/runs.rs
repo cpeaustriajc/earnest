@@ -84,7 +84,10 @@ fn fair_marks_an_action_and_after_calls_a_helper_method_on_the_state() {
         .after
         .as_ref()
         .expect("`after = paid_up`");
-    assert_eq!(after.text, "paid_up", "the helper's name");
+    assert_eq!(
+        after.text, "paid_up: self.paid",
+        "the helper's name and the text of its body"
+    );
     assert!(
         matches!(&after.term.kind, TermKind::Helper { kind: HelperKind::Method, name, arguments }
             if name == "paid_up"

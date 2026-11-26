@@ -218,12 +218,13 @@ Their `holds` is the source they are compared by, normalized as conditions are (
 
 Additional rules for `--base`:
 
-- Unchanged rules are omitted. Comments and whitespace edits do not count as changes; conditions are normalized so each run of whitespace is a single space.
-- Every shared rule is compared even if its own text was not edited. The base rule is evaluated using the constants and helpers from the base commit, so changing a constant or helper that weakens a rule still reports `loosened`.
+- Unchanged rules are omitted. Comments and whitespace edits do not count as changes. Conditions are printed with each run of whitespace as a single space, and two conditions that differ only in whitespace that joins no two words are the same: `s.items\n  .has(2)` is `s.items.has(2)`, while `return x` is not `returnx` and `"a b"` is not `"ab"`. The text printed is the working tree's.
+- Every shared rule is compared even if its own text was not edited. The base rule is evaluated using the constants and helpers from the base commit, so changing a constant or helper that weakens a rule still reports `loosened`. Rules about runs, witnesses and setups are compared by their `holds` text only: an edit of a constant or a helper function they use is not seen. The one exception is the helper that a Rust `#[eventually("...", after = name)]` names: its `holds` is `after: name: <body>; reaches: <condition>`, so an edit of the helper's body is `changed`.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
 - Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
 - Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
 - With `--model <name>`, removed models matching `<name>` are still reported even if the model no longer exists in the working tree; exit `2` occurs only when neither the working tree nor `--base` contains `<name>`.
+- With `--rule <id>`, every change of each model where some run lists `<id>` is reported, including a witness of a setup. A rule, rule about runs or witness `<id>` that exists only at `--base` is still reported as `removed`; exit `2` occurs only when neither the working tree nor `--base` contains `<id>`.
 
 ## Statecharts and PR reports
 
