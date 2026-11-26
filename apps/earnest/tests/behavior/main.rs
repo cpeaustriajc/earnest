@@ -12,6 +12,7 @@ mod offline;
 mod quint;
 mod quint_checks;
 mod quint_data;
+mod quint_picks;
 mod quint_runs;
 mod quint_temporal;
 mod replay;

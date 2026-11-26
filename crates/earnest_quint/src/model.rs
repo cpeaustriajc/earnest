@@ -7,7 +7,7 @@ use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, Field, Input, Model, Rule, Runs, Script, View,
+    Action, Code, End, Eventually, Expr, Field, Input, Model, Pick, Rule, Runs, Script, View,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
@@ -86,6 +86,24 @@ pub(crate) fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
             }
         })
         .collect()
+}
+
+pub(crate) fn picks(
+    script: Option<usize>,
+    position: usize,
+    path: &Path,
+) -> impl Iterator<Item = Pick> + '_ {
+    path.choices
+        .iter()
+        .enumerate()
+        .filter_map(move |(input, choice)| {
+            Some(Pick {
+                script,
+                action: position,
+                input,
+                from: Code::new(choice.from.clone()?),
+            })
+        })
 }
 
 pub(crate) fn action(id: String, path: &Path, fields: &[String], slots: usize) -> Read<Action> {
@@ -212,7 +230,13 @@ fn variables(declarations: &[Declaration]) -> Vec<Variable<'_>> {
         .collect()
 }
 
-type Parts = (Vec<Vec<Value>>, Vec<Action>, Vec<Rule>, Vec<Eventually>);
+type Parts = (
+    Vec<Vec<Value>>,
+    Vec<Action>,
+    Vec<Rule>,
+    Vec<Eventually>,
+    Vec<Pick>,
+);
 
 fn parts<'a>(
     reader: &mut Reader<'a>,
@@ -250,7 +274,12 @@ fn parts<'a>(
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step)?;
     rules.extend(read.rules);
-    Ok((starts, actions, rules, read.eventually))
+    let picks = stepping
+        .iter()
+        .enumerate()
+        .flat_map(|(position, path)| picks(None, position, path))
+        .collect();
+    Ok((starts, actions, rules, read.eventually, picks))
 }
 
 fn shorten(
@@ -340,10 +369,12 @@ fn built(
         }));
     };
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
-    let (starts, mut actions, mut rules, mut eventually) =
+    let (starts, mut actions, mut rules, mut eventually, picks) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
-    let mut scripts = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    let (mut scripts, script_picks) =
+        scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    let picks = picks.into_iter().chain(script_picks).collect();
     shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
@@ -384,6 +415,7 @@ fn built(
             starts: Some(starts),
             eventually,
             scripts,
+            picks,
             ..Runs::default()
         },
     })
