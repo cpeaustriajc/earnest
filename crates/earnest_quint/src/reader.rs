@@ -70,10 +70,26 @@ impl Path {
         }
     }
 
+    fn behind(&mut self, guard: &Expr) {
+        for choice in &mut self.choices {
+            if let Some(set) = choice.from.take() {
+                choice.from = Some(Expr::Choose(
+                    Box::new(guard.clone()),
+                    Box::new(set),
+                    Box::new(Expr::SetOf(Vec::new())),
+                ));
+            }
+        }
+    }
+
     fn joined(&self, other: &Self) -> Self {
         let mut both = self.clone();
         both.name = self.name.clone().or_else(|| other.name.clone());
-        both.choices.extend(other.choices.iter().cloned());
+        let mut later = other.clone();
+        if !self.guards.is_empty() {
+            later.behind(&all_of(self.guards.clone()));
+        }
+        both.choices.extend(later.choices);
         both.guards.extend(other.guards.iter().cloned());
         both.assigns.extend(other.assigns.iter().cloned());
         both
@@ -81,6 +97,7 @@ impl Path {
 }
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
+const TUPLE_ITEMS_OUT_OF_NAME_ORDER: usize = 10;
 const MATCH: &str = "matchVariant";
 const ALL_ACTION: &str = "an `all { … }` with an assignment in it is an action, not a condition";
 const ANY_ACTION: &str = "an `any { … }` with an assignment in it is an action, not a condition";
@@ -905,6 +922,7 @@ impl<'a> Reader<'a> {
             (otherwise, Expr::Apply(Op::Not, vec![test])),
         ] {
             for mut path in self.paths(branch)? {
+                path.behind(&holds);
                 path.guards.insert(0, holds.clone());
                 all.push(path);
             }
@@ -950,9 +968,14 @@ impl<'a> Reader<'a> {
                 earlier.push(this.clone());
                 Expr::Apply(Op::Equal, vec![tag.clone(), this])
             };
-            let paths =
-                self.with_values(vec![(bound.id, value.clone())], |reader| reader.paths(body))?;
+            let never = constant(&holds, self.slots)? == Some(Value::Bool(false));
+            let paths = if never {
+                Vec::new()
+            } else {
+                self.with_values(vec![(bound.id, value.clone())], |reader| reader.paths(body))?
+            };
             for mut path in paths {
+                path.behind(&holds);
                 path.guards.insert(0, holds.clone());
                 all.push(path);
             }
@@ -964,6 +987,19 @@ impl<'a> Reader<'a> {
             }
         }
         Ok(all)
+    }
+
+    pub(crate) fn in_tlc_order(&self, set: Expr) -> Expr {
+        let tuple_items: Vec<Value> = (1..)
+            .map_while(|position| self.symbols.find(&format!("_{position}")))
+            .map(Value::Str)
+            .collect();
+        let arguments = if tuple_items.len() < TUPLE_ITEMS_OUT_OF_NAME_ORDER {
+            vec![set]
+        } else {
+            vec![set, Expr::Const(Value::seq(tuple_items))]
+        };
+        Expr::Apply(Op::InTlcOrder, arguments)
     }
 
     pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<Picked> {
@@ -1051,10 +1087,8 @@ impl<'a> Reader<'a> {
                         ),
                     );
                 }
-                let listed = Expr::Apply(
-                    Op::InTlcOrder,
-                    vec![Expr::Const(Value::Set(std::sync::Arc::clone(&items)))],
-                );
+                let listed =
+                    self.in_tlc_order(Expr::Const(Value::Set(std::sync::Arc::clone(&items))));
                 let values = match constant(&listed, self.slots)? {
                     Some(Value::Seq(values)) => values.to_vec(),
                     _ => items.iter().cloned().collect(),

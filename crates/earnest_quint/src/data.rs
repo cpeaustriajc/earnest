@@ -416,7 +416,7 @@ impl<'a> Reader<'a> {
                 let carried = self.carried();
                 let body = self.under(lambda, vec![carried.total(), carried.item()])?;
                 let (walked_as, items) = match kept_as {
-                    Shelf::Set => (Shelf::Seq, apply(Op::InTlcOrder, vec![source])),
+                    Shelf::Set => (Shelf::Seq, self.in_tlc_order(source)),
                     _ => (kept_as, source),
                 };
                 Ok(Self::folded_as(walked_as, &carried, items, start, body))

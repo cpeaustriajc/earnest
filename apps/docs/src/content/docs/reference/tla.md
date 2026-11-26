@@ -28,7 +28,8 @@ earnest confirm --tlc tla2tools.jar --tla-rs ~/.cargo/bin/tla-rs
 - Pass both flags to run both checkers on every model. Each model gets one output line per checker, with the `tla-rs` line ending in `(tla-rs)`.
 - `--jobs <n>` sets the worker count passed to each checker (`--workers`).
 - Because `tla-rs` stops at its first violated invariant, each rule invariant runs in its own invocation. Differences report `tla-rs found` and `tla-rs says`.
-- `--tlc` also runs TLC once for each [rule about runs](/reference/typescript/#rules-about-runs), with that rule's property alone, and compares its verdict: `Temporal properties were violated.` is `broken`, a run with no error is `holds`, and anything else is `unknown`. `tla-rs` is not run on rules about runs, so `--tla-rs` compares only the state count and the plain rules.
+- `--tlc` also runs TLC once for each [rule about runs](/reference/typescript/#rules-about-runs), with that rule's property alone, and compares its verdict: `Temporal property Eventually_id was violated.` (or the older `Temporal properties were violated.`) is `broken`, a run with no error is `holds`, and anything else is `unknown`.
+- An invariant that reads no variable is judged by TLC before the search; `The invariant of Rule_id is equal to FALSE` is `broken`. `tla-rs` is not run on rules about runs, so `--tla-rs` compares only the state count and the plain rules.
 
 ## How models map to TLA+
 
@@ -40,6 +41,7 @@ Each rule `id` is exported as an invariant `Rule_id` listed in `<Model>.cfg`:
 - If a rule cannot be evaluated in a state (a fault), `Rule_id` evaluates to `TRUE` in that state, and actions that fault take no step, so TLC counts every reachable state without aborting.
 - For any rule that can fault, the module also defines `Judged_id`, which fails in states where the rule has no value.
 - `earnest confirm` checks both invariants to derive TLC's verdict: `broken` if `Rule_id` fails, else `unknown` if `Judged_id` fails, else `holds`.
+- A Quint variant is the record `[tag |-> "Held", value |-> "a"]`. TLC compares a record's fields in the order it first met their names, and two variants of different tags can hold values TLC can't compare, so a module that writes variants begins with `TagBeforeValue == [tag |-> TRUE, value |-> TRUE]`: TLC then meets `tag` first and tells two variants apart by their tags.
 - TLC cannot observe an out-of-range state or an action/end fault that truncated exploration. When `earnest` leaves a rule `unknown` solely for that reason and `Judged_id` holds in TLC, `holds` in TLC still counts as agreement.
 
 ### Rules about runs and fairness
