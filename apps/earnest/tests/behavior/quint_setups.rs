@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::support::{Run, Sandbox, model, repository, rule};
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 echo "$*" >> "$here/calls"
@@ -32,7 +32,11 @@ case "$1" in
     else
       echo '{"modules":[]}' > "$out"
     fi
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    if [ -f "$here/maps/$name.json" ]; then
+      sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" "$here/maps/$name.json" > "$map"
+    else
+      echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    fi
     ;;
   typecheck)
     name="$(basename "$2" .qnt)"
@@ -50,7 +54,7 @@ case "$1" in
     cat "$here/compiled/$main.json"
     ;;
 esac
-"#;
+"##;
 
 const SPECS: [&str; 11] = [
     "ints",
@@ -126,6 +130,10 @@ impl Quint {
                     &setups(&format!("fixtures/{spec}.typecheck.json")),
                 );
             }
+            sandbox.write(
+                &format!("fake/maps/{spec}.json"),
+                &setups(&format!("fixtures/{spec}.sourcemap.json")),
+            );
         }
         for compiled in COMPILED {
             let main = compiled.split_once('.').map_or(compiled, |(_, main)| main);
@@ -368,6 +376,10 @@ fn seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never()
             &setups("fixtures/many.typecheck.json"),
         );
     }
+    quint.sandbox.write(
+        "fake/maps/many.json",
+        &setups("fixtures/many.sourcemap.json"),
+    );
     let run = quint.earnest(&["verify", "specs/many.qnt"]);
     run.exits(0);
     let kinds: Vec<String> = quint
