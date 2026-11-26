@@ -171,3 +171,38 @@ fn two_models_of_one_name_on_one_line_keep_their_own_cached_results() {
         );
     }
 }
+
+#[test]
+fn two_models_of_one_name_in_one_file_are_each_compared_with_their_own_base() {
+    let sandbox = Sandbox::with(&[(
+        "twins.model.ts",
+        include_str!("../../models/seventh/changes/before/twins.model.ts"),
+    )]);
+    sandbox.commit();
+    let unchanged = sandbox.verify(&["--base", "HEAD"]);
+    assert_eq!(
+        unchanged.json["ruleChanges"],
+        serde_json::json!([]),
+        "the file is as it was at the base, and unchanged rules are omitted\n{unchanged}"
+    );
+    sandbox.write(
+        "twins.model.ts",
+        include_str!("../../models/seventh/changes/after/twins.model.ts"),
+    );
+    let changed = sandbox.verify(&["--base", "HEAD"]);
+    let listed: Vec<(&Value, &Value)> =
+        changed.json["ruleChanges"]
+            .as_array()
+            .map_or_default(|changes| {
+                changes
+                    .iter()
+                    .map(|change| (&change["id"], &change["change"]))
+                    .collect()
+            });
+    assert_eq!(
+        listed,
+        [(&Value::from("lowB"), &Value::from("loosened"))],
+        "only `lowB` changed, from `s.n <= 1` to `s.n <= 2`, and the second `Jar` reaches \
+         `n = 2`, which passes the new rule and breaks the old one\n{changed}"
+    );
+}
