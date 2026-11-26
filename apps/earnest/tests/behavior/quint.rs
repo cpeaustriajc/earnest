@@ -136,6 +136,39 @@ fn a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit()
         !run.stdout.contains("`var r`"),
         "slice 2 reads a record variable instead of refusing it\n{run}"
     );
+    let report = verify(&sandbox, "record", &["--max-states", "100", "--json"]).json();
+    let record = model(&report, "record");
+    assert_eq!(
+        record["states"], 100,
+        "r.n takes 0, 1, 2, ..., one state each, so the search meets the limit of 100\n{run}"
+    );
+    assert!(
+        record["findings"].as_array().is_some_and(Vec::is_empty),
+        "r.n >= 0 holds in every state reached, so there is no finding\n{run}"
+    );
+}
+
+#[test]
+fn an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct() {
+    let sandbox = Sandbox::empty();
+    let source = crate::support::repository().join("crates/earnest_quint/fixtures/refused.json");
+    let text = fs::read_to_string(&source)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", source.display()));
+    sandbox.write("models/refused.json", &text);
+    let run = verify(&sandbox, "refused", &[]);
+    run.exits(1);
+    assert!(
+        run.stdout.starts_with("unreadable"),
+        "a construct the reader does not take is never skipped\n{run}"
+    );
+    assert!(
+        run.stdout.contains("`chooseSome`"),
+        "the problem names the construct\n{run}"
+    );
+    assert!(
+        run.stdout.contains("in the definition `step`"),
+        "the problem names the definition the construct is in\n{run}"
+    );
 }
 
 #[test]

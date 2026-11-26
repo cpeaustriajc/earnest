@@ -1085,14 +1085,27 @@ table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/sr
 - `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
 - `cargo test --locked` (after `bun install --frozen-lockfile`): 1839 passed, 0 failed.
 - `tests_kept.py --base origin/main`: `tests kept: 1507 tests, 4396 assertions (base: 1304, 3798)`.
-  **Against the integration branch** (`--base origin/claude/lucid-brown-f5xvr8`) it reports 8
-  changed lines, all in one test: `apps/earnest/tests/behavior/quint.rs`,
-  `a_record_variable_makes_the_file_unreadable_and_names_the_construct`. That slice-1 test pins
-  the refusal of a record variable, which this slice lifts, so it failed by design. It is now
-  `a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit`, line for line
-  in the same place with three assertions, and needs the owner's override at the merge. Four
-  slice-1 unit tests in `crates/earnest_quint/src/tests.rs` (not a guarded path) that pinned the
-  refusal of text, a set variable, a set operator and `ipow` now test that these are read.
+  None of slice 1's tests is on `origin/main`. The orchestrator agreed to change those that pinned
+  a refusal this slice lifts, to the new truth, renaming any whose name would lie. Every slice-1
+  test changed or renamed:
+  - `apps/earnest/tests/behavior/quint.rs`:
+    `a_record_variable_makes_the_file_unreadable_and_names_the_construct` is now
+    `a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit`: `record.qnt`
+    adds 1 to `r.n` on every step, so it has no finite count. With `--max-states 100` it is
+    `unfinished` at exactly 100 states (one per value of `r.n`) with no finding, and no
+    problem names `var r`. The refusal test of the same shape moved to a construct that is
+    still refused: the new `an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct`
+    (`chooseSome` in `step`, from `fixtures/refused.json`).
+  - `crates/earnest_quint/src/tests.rs`: `text_is_refused_with_the_definition_it_is_in` became
+    `text_is_read_as_a_value`; `a_set_variable_is_refused` and
+    `a_set_operator_is_refused_with_the_definition_it_is_in` became
+    `a_set_variable_holds_every_value_and_its_step_is_read`; `an_integer_power_is_refused`
+    became `an_integer_power_is_read`. The refusal tests of their shape are
+    `an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in` and
+    `a_powerset_of_a_set_from_the_state_is_refused`.
+
+  `tests_kept.py --base origin/claude/lucid-brown-f5xvr8` reports the changed lines of the
+  first one; the owner overrides that at the merge.
 
 ### The operator table's source
 
