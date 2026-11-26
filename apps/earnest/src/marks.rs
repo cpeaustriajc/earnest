@@ -22,6 +22,7 @@ pub(crate) struct Doc {
     pub(crate) marks: Vec<Mark>,
     pub(crate) says: Option<String>,
     pub(crate) wrong: Vec<(usize, String)>,
+    pub(crate) sentence: Vec<(usize, String)>,
 }
 
 impl Doc {
@@ -81,23 +82,65 @@ fn is_unspaced(line: &str) -> bool {
 
 pub(crate) fn read_doc(doc: &str) -> Doc {
     let mut read = Doc::default();
-    let mut sentence: Vec<&str> = Vec::new();
-    for (line, text) in doc.lines().enumerate() {
-        let trimmed = text.trim();
+    let mut lines = doc.lines().map(str::trim).enumerate();
+    while let Some((line, trimmed)) = lines.next() {
         if let Some(rest) = trimmed.strip_prefix(MARK) {
             let spaced = rest.is_empty() || rest.starts_with(char::is_whitespace);
-            match words_after(rest).filter(|_| spaced) {
+            let mut written = rest.trim_end().to_owned();
+            while written.ends_with(',') {
+                match lines.next() {
+                    Some((_, next)) if !next.is_empty() => {
+                        written.push(' ');
+                        written.push_str(next);
+                    }
+                    _ => break,
+                }
+            }
+            match words_after(&written).filter(|_| spaced) {
                 Some((kind, names)) => read.marks.push(Mark { kind, names, line }),
                 None => read.wrong.push((line, unknown_mark(trimmed))),
             }
         } else if is_unspaced(trimmed) {
             read.wrong.push((line, unspaced_mark(trimmed)));
         } else if !trimmed.is_empty() {
-            sentence.push(trimmed);
+            read.sentence.push((line, trimmed.to_owned()));
         }
     }
-    read.says = (!sentence.is_empty()).then(|| sentence.join(" "));
+    read.says = (!read.sentence.is_empty()).then(|| {
+        read.sentence
+            .iter()
+            .map(|(_, text)| text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    });
     read
+}
+
+/// The names a doc line is made of, when it is a comma list of names and nothing else.
+pub(crate) fn names_alone(text: &str) -> Option<Vec<&str>> {
+    let names: Vec<&str> = text.split(',').map(str::trim).collect();
+    names.iter().all(|name| is_a_name(name)).then_some(names)
+}
+
+pub(crate) fn names_unended(names: &[&str]) -> String {
+    let listed: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
+    format!(
+        "this line of the doc comment is made of names the module sees, {}, and the line above \
+         does not end with a comma, so it is read as the check's sentence and none of them is \
+         judged: end the line of the mark with a comma, `{MARK} a,`, so the list goes on here",
+        listed.join(", ")
+    )
+}
+
+pub(crate) fn named_twice(name: &str) -> String {
+    format!(
+        "the doc comment names `{name}` under two marks: a name is judged one way in a check, so \
+         keep it after one of `{MARK}`, `{MARK} {BROKEN}` and `{MARK} {REACHABLE}`"
+    )
+}
+
+pub(crate) fn unspaced_source(written: &str) -> String {
+    unspaced_mark(written)
 }
 
 fn unspaced_mark(written: &str) -> String {
@@ -263,6 +306,28 @@ mod tests {
         assert_eq!(
             marks("@invariant"),
             (vec![], Some("@invariant".to_owned()), vec![])
+        );
+    }
+
+    #[test]
+    fn a_name_list_whose_line_ends_with_a_comma_goes_on_over_the_next_line() {
+        assert_eq!(
+            marks("@check inRange,\n  small, tiny\nThe counter."),
+            (
+                vec![mark(Kind::Holds, &["inRange", "small", "tiny"], 0)],
+                Some("The counter.".to_owned()),
+                vec![]
+            )
+        );
+        assert_eq!(
+            read_doc("@check inRange\n  small, tiny").sentence,
+            [(1, "small, tiny".to_owned())],
+            "with no comma the next line is the sentence, which the planner then reports"
+        );
+        assert_eq!(
+            marks("@check inRange,").2,
+            [0],
+            "a list that ends with a comma"
         );
     }
 

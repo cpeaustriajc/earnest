@@ -230,12 +230,15 @@ fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_fl
     for (main, flattened_as) in mains {
         let flattened = model(&theirs, flattened_as);
         let built = model(&ours, main);
-        for key in ["states", "reason"] {
-            assert_eq!(
-                built[key], flattened[key],
-                "{main}: {key}\n{built}\n{flattened}"
-            );
-        }
+        assert_eq!(
+            built["states"], flattened["states"],
+            "{main}: states\n{built}\n{flattened}"
+        );
+        assert_eq!(
+            search_reason(built),
+            search_reason(flattened),
+            "{main}: the reason the search gives\n{built}\n{flattened}"
+        );
         assert_eq!(rule_ids(built), rule_ids(flattened), "{main}");
         for id in rule_ids(flattened) {
             assert_eq!(
@@ -419,4 +422,26 @@ fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
         problem.starts_with("a value `P::seed` gives takes a division"),
         "a fault in a run's first action names that action, not `init`\n{report}"
     );
+}
+
+fn search_reason(model: &Value) -> Value {
+    let unplayed: Vec<&str> = model["runsNotPlayed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if unplayed.is_empty() {
+        return model["reason"].clone();
+    }
+    assert_ne!(
+        model["status"], "pass",
+        "a compiled check that did not play every run it sees does not pass: {model}"
+    );
+    assert_eq!(
+        model["reason"],
+        format!("runs not played: {}", unplayed.join(", ")),
+        "{model}"
+    );
+    Value::Null
 }

@@ -410,11 +410,18 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             }),
             file: model.file.clone(),
             line: model.line,
-            status: searched.status,
+            status: if searched.status == Status::Pass && !readable.runs_not_played.is_empty() {
+                Status::Unfinished
+            } else {
+                searched.status
+            },
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched.reason,
+            reason: searched.reason.or_else(|| {
+                (!readable.runs_not_played.is_empty())
+                    .then(|| not_played_reason(&readable.runs_not_played))
+            }),
             rules: searched.rules,
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
@@ -485,6 +492,10 @@ fn detail_of(
     }
     lines.extend(detail_lines_in(&rest, notation));
     lines
+}
+
+pub(crate) fn not_played_reason(runs: &[String]) -> String {
+    format!("runs not played: {}", runs.join(", "))
 }
 
 #[cfg(test)]

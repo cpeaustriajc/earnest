@@ -1,5 +1,6 @@
 /target
 /.earnest
+.earnest/
 /.claude/worktrees/
 /mutants.out
 node_modules

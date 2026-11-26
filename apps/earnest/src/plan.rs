@@ -1,7 +1,7 @@
 use crate::marks::{
-    Doc, Kind, Mark, constant_unset, misplaced_mark, module_mark_alone, names_off_module,
-    no_init_or_step, not_judged, not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark,
-    unknown_mark,
+    Doc, Kind, Mark, constant_unset, misplaced_mark, module_mark_alone, named_twice, names_alone,
+    names_off_module, names_unended, no_init_or_step, not_judged, not_seen, not_seen_named,
+    nothing_to_judge, read_doc, second_mark, unknown_mark, unspaced_source,
 };
 use crate::places::{Marked, Places};
 use crate::quint::shown_in_folder;
@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 
 const VALUES: [&str; 4] = ["val", "def", "pureval", "puredef"];
 const TEMPORAL: &str = "temporal";
+const DOC_SLASHES: &str = "///";
+const UNSPACED_MARK: &str = "check";
 const RUN: &str = "run";
 const INIT: &str = "init";
 const STEP: &str = "step";
@@ -126,6 +128,35 @@ impl Placer<'_> {
                 })
         })?;
         u32::try_from(position.saturating_add(1)).ok()
+    }
+
+    fn unspaced_above(&self, declared: u32, feature: &str) -> Vec<Problem> {
+        let lines: Vec<&str> = self.text.lines().collect();
+        let mut found = Vec::new();
+        let mut at = usize::try_from(declared).unwrap_or(0).saturating_sub(1);
+        while let Some(above) = at.checked_sub(1) {
+            let Some(written) = lines.get(above).map(|line| line.trim()) else {
+                break;
+            };
+            let Some(doc) = written.strip_prefix(DOC_SLASHES) else {
+                break;
+            };
+            if let Some(mark) = doc.strip_prefix('@') {
+                let place = Place {
+                    line: u32::try_from(above.saturating_add(1)).unwrap_or(1),
+                    column: 1,
+                };
+                found.push(Problem::new(
+                    self.shown,
+                    place,
+                    feature,
+                    &unspaced_source(mark),
+                ));
+            }
+            at = above;
+        }
+        found.reverse();
+        found
     }
 
     fn at_module(&self, (name, doc): (&str, &str), line: usize, message: &str) -> Problem {
@@ -263,6 +294,38 @@ fn without_init_or_step(
         .collect()
 }
 
+fn module_doc_names(
+    locator: &Placer<'_>,
+    (main, doc_text, doc): (&str, &str, &Doc),
+    judged: &mut Vec<Judged>,
+    problems: &mut Vec<Problem>,
+) {
+    let mut listed: Vec<&str> = Vec::new();
+    for mark in &doc.marks {
+        let mut once = mark.clone();
+        once.names.clear();
+        for name in &mark.names {
+            if listed.contains(&name.as_str()) {
+                problems.push(locator.at_module((main, doc_text), mark.line, &named_twice(name)));
+            } else {
+                listed.push(name);
+                once.names.push(name.clone());
+            }
+        }
+        named_in_module(locator, (main, doc_text), &once, judged, problems);
+    }
+    let visible = locator.places.visible(main);
+    for (line, text) in &doc.sentence {
+        if let Some(names) = names_alone(text)
+            && names
+                .iter()
+                .all(|name| visible.iter().any(|each| each.name == *name))
+        {
+            problems.push(locator.at_module((main, doc_text), *line, &names_unended(&names)));
+        }
+    }
+}
+
 fn plan_of(
     locator: &Placer<'_>,
     (main, doc_text, doc): (&str, &str, &Doc),
@@ -298,9 +361,7 @@ fn plan_of(
             says,
         });
     }
-    for mark in &doc.marks {
-        named_in_module(locator, (main, doc_text), mark, &mut judged, &mut problems);
-    }
+    module_doc_names(locator, (main, doc_text, doc), &mut judged, &mut problems);
     for each in &judged {
         seen.extend(spot_key(places.spot_of(each.id)));
     }
@@ -351,6 +412,13 @@ fn plan_of(
     }
 }
 
+fn hands_over_unspaced(doc: &Doc) -> bool {
+    doc.sentence.iter().any(|(_, text)| {
+        text.strip_prefix(UNSPACED_MARK)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+    })
+}
+
 pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned {
     let locator = Placer {
         places,
@@ -362,6 +430,18 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
     for each in places.marks_in(real_file) {
         let doc = read_doc(each.doc);
         if !doc.is_marked() {
+            if hands_over_unspaced(&doc)
+                && let Some((file, line, _)) = each.spot
+                && real(Path::new(file)) == real(real_file)
+            {
+                let feature = format!("`{}`", each.name);
+                planned.problems.extend(
+                    locator
+                        .unspaced_above(line.saturating_add(1), &feature)
+                        .into_iter()
+                        .map(|problem| (None, problem)),
+                );
+            }
             continue;
         }
         let problems = definition_problems(&locator, &each, &doc);
@@ -394,6 +474,18 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
             .map(|(line, message)| at(*line, message))
             .collect();
         if doc.marks.is_empty() {
+            if doc.wrong.is_empty()
+                && hands_over_unspaced(&doc)
+                && let Some(line) = locator.module_line(module.name)
+            {
+                let feature = format!("`module {}`", module.name);
+                planned.problems.extend(
+                    locator
+                        .unspaced_above(line, &feature)
+                        .into_iter()
+                        .map(|problem| (Some(module.name.to_owned()), problem)),
+                );
+            }
             planned
                 .problems
                 .extend(problems.into_iter().map(|problem| (None, problem)));
