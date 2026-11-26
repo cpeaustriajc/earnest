@@ -950,12 +950,16 @@ fn named_as_written(job: &Job, model: &mut earnest_ir::Model) -> Result<(), Vec<
     }
 }
 
-fn read_check(job: &Job, compiled: Result<String, Problem>) -> Result<Compiled, Vec<Located>> {
+fn read_check(
+    job: &Job,
+    compiled: Result<String, Problem>,
+    runs: &Runs,
+) -> Result<Compiled, Vec<Located>> {
     let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
     let model = if runs_only(&job.check) {
-        earnest_quint::read_runs(&job.shown, &json, &job.check.runs)
+        earnest_quint::read_runs(&job.shown, &json, runs)
     } else {
-        earnest_quint::read_located(&job.shown, &json, &job.check.runs)
+        earnest_quint::read_located(&job.shown, &json, runs)
     };
     let mut model = model?;
     job.model_name().clone_into(&mut model.name);
@@ -1041,11 +1045,19 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .collect();
     let compiled = compiled_all(&checks, &refusals, (&typechecked, &places), jobs);
     let not_played = runs_not_played(&checks, &compiled, &places);
-    let compiled = compiled.into_iter().map(|each| each.map(|(json, _)| json));
     let read: Vec<Result<Compiled, Vec<Located>>> = checks
         .iter()
         .zip(compiled)
-        .map(|(job, compiled)| read_check(job, compiled))
+        .map(|(job, compiled)| {
+            let played = match (&compiled, places.get(&job.real)) {
+                (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
+                    found.runs_played(&job.check.main, json).map(Runs::Named)
+                }
+                _ => None,
+            };
+            let runs = played.as_ref().unwrap_or(&job.check.runs);
+            read_check(job, compiled.map(|(json, _)| json), runs)
+        })
         .collect();
     for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
         files.push(match read {

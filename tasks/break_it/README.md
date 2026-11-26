@@ -2516,9 +2516,19 @@ release's `tla2tools.jar` at `target/tools/`.
   of the file exports a module this one imports: put the two modules in separate files ```. Test:
   `a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile`.
 
-Found on the way, not changed: a compiled module with `export Spec.specTest` holds `specOverTest`
-too, so earnest plays it where `quint test` plays only `specTest`; and a module that writes
-`export S.*` plays `S::specTest` once where `quint test` plays it under both names.
+- **Runs played by a compiled module** (item 7, asked for by the orchestrator after the first
+  push; `places.rs` `runs_played`, one call in `quint.rs`): a compiled module with `export
+  Spec.specTest` holds `specOverTest` too, and earnest played it where `quint test` plays only
+  `specTest`. With `"runs": true` the reader is now given, by name, the runs the compiled module
+  holds that `quint test --main` plays, by the same per-import rule as the note, when it holds
+  others; otherwise `runs` stays as it was. On the twelve shapes above (`quint test --backend
+  typescript`) only `Exporter` changes: it plays `specTest` alone and passes, as `quint test`;
+  on every compiled shape the runs played and the runs noted together are those `quint test`
+  plays. Tests: `a_compiled_module_plays_only_the_runs_quint_test_plays`,
+  `places::tests::a_compiled_module_plays_the_runs_it_holds_that_quint_test_plays`.
+
+Found on the way, not changed: a module that writes `export S.*` plays `S::specTest` once where
+`quint test` plays it under both names (the same run, in a module built from the typecheck).
 
 Tests of earlier Quint slices changed (none is on `origin/main`):
 `temporal::tests::the_actions_are_those_of_the_step` and
