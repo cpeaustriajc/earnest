@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `earnest --version` names the build
+
+`earnest --version` prints the commit and a fingerprint of the sources after the version, as in `earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)`, so a hook can tell two builds of one version apart. See [Which build is this](/reference/cli/#which-build-is-this).
+
 ## November 2026: Quint answers as its TLC run gives them
 
 Five Quint expressions gave a verdict that neither Quint's TLC run nor its TypeScript evaluator gives. See [Where Quint's backends differ](/reference/quint/#where-quints-backends-differ).
