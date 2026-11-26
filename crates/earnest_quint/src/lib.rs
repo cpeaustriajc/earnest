@@ -19,6 +19,7 @@ mod json;
 mod model;
 mod names;
 mod notation;
+mod reach;
 mod reader;
 mod runs;
 mod scan;
@@ -103,6 +104,27 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
 /// The problems of [`read`], each with the id and the definition it was found in, when the
 /// reader knows them, and each run that `runs` names and the module lacks.
 pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
+    read_wanted(path, source, runs, model::Wanted::Search)
+}
+
+/// Reads the compiled Quint module in `source` as [`read_located`] does, for a check that
+/// lists only runs: it plays the runs that `runs` chooses and searches nothing, so the model
+/// has no fields, no actions and no start states, and the module needs no `init` or `step`.
+/// Each run starts from the states its first action gives, `init` among them.
+///
+/// # Errors
+///
+/// The problems of [`read_located`].
+pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
+    read_wanted(path, source, runs, model::Wanted::Runs)
+}
+
+fn read_wanted(
+    path: &str,
+    source: &str,
+    runs: &Runs,
+    wanted: model::Wanted,
+) -> Result<Model, Vec<Located>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
         vec![Located::new(
             Problem::new(
@@ -118,7 +140,7 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
             None,
         )]
     })?;
-    model::model(path, &compiled, runs).map_err(|refused| {
+    model::model(path, &compiled, runs, wanted).map_err(|refused| {
         refused
             .into_iter()
             .map(|refusal| {
@@ -136,6 +158,8 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
 mod actions_tests;
 #[cfg(test)]
 mod arguments_tests;
+#[cfg(test)]
+mod first_tests;
 #[cfg(test)]
 mod fixes_tests;
 #[cfg(test)]

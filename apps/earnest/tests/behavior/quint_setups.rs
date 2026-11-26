@@ -354,9 +354,16 @@ fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() 
             .contains("drops the runs of imported modules"),
         "a compiled setup can't play an imported run\n{report}"
     );
-    assert!(
-        problem("a run", "specs/more.qnt").contains("does not start with `init`"),
-        "a run of one of two instances starts from part of the state\n{report}"
+    assert_eq!(
+        verdicts("Pair"),
+        pairs(&[
+            ("P::upTest", "holds"),
+            ("P::fullTest", "holds"),
+            ("R::upTest", "holds"),
+            ("R::fullTest", "holds")
+        ]),
+        "a run of one of two instances is played over its own instance's variable, as `quint \
+         test --main Pair` judges it\n{report}"
     );
 }
 
