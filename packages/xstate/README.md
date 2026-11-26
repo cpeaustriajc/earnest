@@ -232,9 +232,10 @@ nothing is searched from 4 or 5.
   declare `context: { level: m.int(0, 3).optional() }`; without `.optional()`, every snapshot of
   the member that lacks `level` is out of range. An optional declaration so no longer tells a
   stray `undefined` from `null`.
-  Inside a record, a field set to `undefined` is the same as no field, as it is in the state, and
-  a missing field is out of range even when it is optional. A field the schema does not name is
-  not checked.
+  The same holds inside a record, at any depth: an optional field there is in range when it is
+  missing, `undefined` or `null`, and any other missing field is out of range. A field set to
+  `undefined` is the same as no field, as it is in the state, so a record may hold it where its
+  declaration lacks the field. A field the schema does not name is not checked.
 - A value a record declaration checks must be plain data at every level. An object that is not
   a plain object, such as a `Date` where `m.record({})` is declared, is out of range.
 - `events` can be a record of event types, each with a declaration for each payload field, such
@@ -352,9 +353,11 @@ fail`: TLC finds the same.
   makes reaching that point visible: the event sets the extra field `threw` to 1, outside
   `m.int(0, 0)`, so the state is out of range, and the rule is broken there. Expect `threw` to
   be empty, as the test above does.
-- An optional field's `null` is given to the machine as a missing field when the initial context
-  lacks the field, and as `null` otherwise. A missing field and `undefined` read back as `null`,
-  so a machine that tells `null` from a missing field can count differently.
+- Where `checkMachine` reaches a state, the machine is given the context `checkMachine` reaches
+  there, so an optional field stays missing, `undefined` or `null` as the machine left it, at
+  any depth. Elsewhere an optional context field's `null` is given as a missing field when the
+  initial context lacks the field, and as `null` otherwise; inside a record it is given as
+  `null`. A missing field and `undefined` read back as `null`.
 - Each event and each rule gets a snapshot rebuilt from the state value, the context and what
   history remembers, so an `assign` that changes the context in place changes nothing else. The
   snapshot has no `output` and no child actors: a rule must not read them.
@@ -377,6 +380,11 @@ fail`: TLC finds the same.
   state values found as they are found;
 - a next context that the declaration's type can't hold, such as text in a field declared
   `m.boolean()`, or a field with no declaration, naming the event that wrote it;
+- an optional field, at any depth, that the machine leaves missing or `undefined` in one state
+  and sets to `null` in another that is otherwise the same. `checkMachine` counts two states
+  there and the file has one `null` for both, so the error names the event and the field:
+  ``modelFileOf can't write the context field `spot.dim` after the event {"type":"DROP"}: it is
+  missing or undefined here and null in a state reached before that is otherwise the same``;
 - an initial context outside its declarations, a model name or field name that is not an
   identifier, and the declarations `checkMachine` refuses.
 

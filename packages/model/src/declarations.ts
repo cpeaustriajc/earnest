@@ -29,13 +29,16 @@ export const MOST_VALUES_LISTED = 1_000_000;
  * `.initial` accepts into a value, and `decode` reads a value back from its JSON form, throwing
  * when the JSON is of another kind. `libraryKind` is the kind of the first part whose values are
  * objects of this library, or `null` when every value is plain JavaScript. `source` is the `m`
- * expression that builds it.
+ * expression that builds it. `fields` is a record's declaration of each field, and `inner` the
+ * declaration an optional adds `null` to; other kinds leave both out.
  */
 export interface Shape<T, In = T> {
   readonly kind: string;
   readonly source: string;
   readonly count: number;
   readonly libraryKind: string | null;
+  readonly fields?: Fields;
+  readonly inner?: Declaration<unknown, never>;
   readonly rest: { readonly value: T } | null;
   values(): readonly T[];
   has(value: unknown): value is T;
@@ -51,11 +54,15 @@ const shown = (value: unknown): string =>
 const unreadable = (kind: string, json: Json): Error =>
   new Error(`${JSON.stringify(json)} can't be read as a ${kind}`);
 
-const optionalOf = <T, In>(inner: Shape<T, In>): Shape<T | null, In | null> => ({
+const optionalOf = <T, In>(
+  inner: Shape<T, In>,
+  declared: Declaration<unknown, never>,
+): Shape<T | null, In | null> => ({
   kind: "optional",
   source: `${inner.source}.optional()`,
   count: inner.count + 1,
   libraryKind: inner.libraryKind,
+  inner: declared,
   rest: null,
   values: () => [null, ...inner.values()],
   has: (value): value is T | null => value === null || inner.has(value),
@@ -106,6 +113,25 @@ export class Declaration<T, In = T> {
    */
   get source(): string {
     return this.#shape.source;
+  }
+
+  /**
+   * For a declaration made with `m.record`, the declaration of each field, as given to
+   * `m.record`; `null` for every other kind, an optional record included. Code that checks a
+   * value field by field reads it, as `@earnestjs/xstate` does to let an optional field inside a
+   * record be missing.
+   */
+  get fields(): Fields | null {
+    return this.#shape.fields ?? null;
+  }
+
+  /**
+   * For a declaration made with `.optional()`, the same declaration without `null` and without
+   * `.initial`; `null` for every other kind. Code that checks a value against the declaration
+   * step by step reads it, as `fields` is read for a record.
+   */
+  get inner(): Declaration<unknown, never> | null {
+    return this.#shape.inner ?? null;
   }
 
   /**
@@ -167,7 +193,10 @@ export class Declaration<T, In = T> {
     if (this.kind === "optional" || this.kind === "owned lock") {
       throw new Error(`an ${this.kind} can't be made optional: it already has a null value`);
     }
-    return new Declaration(optionalOf(this.#shape), this.#initial);
+    return new Declaration(
+      optionalOf(this.#shape, new Declaration<T, In>(this.#shape)),
+      this.#initial,
+    );
   }
 }
 
@@ -320,6 +349,7 @@ export const record = <F extends Fields>(fields: F): Declaration<StateOf<F>> => 
     kind: "record",
     source: `m.record({${entries.length === 0 ? "" : ` ${entries.map(([name, declared]) => `${propertyName(name)}: ${declared.source}`).join(", ")} `}})`,
     count: combinationCount(entries),
+    fields: Object.freeze({ ...fields }),
     libraryKind:
       entries.find(([, declared]) => declared.libraryKind !== null)?.[1].libraryKind ?? null,
     rest: null,

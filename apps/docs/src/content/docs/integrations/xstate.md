@@ -295,7 +295,7 @@ The counts 0 to 3 are in range. Groups of 1 and 2 reach 4 and 5 from them, and t
 - The check fails, and a rule not seen broken is `unknown`.
 - A field the schema names but the context lacks, or holds `undefined`, is out of range, unless its declaration is `.optional()`. An optional field is in range when it is missing, `undefined` or `null`, so it does not tell a stray `undefined` from `null`.
 - For the union context `{ mode: "on"; level: number } | { mode: "off" }`, declare `context: { level: m.int(0, 3).optional() }`. Without `.optional()`, every snapshot of the member that lacks `level` is out of range.
-- Inside a record, a field set to `undefined` is the same as no field, and a missing field is out of range even when it is optional.
+- The same holds inside a record, at any depth: an optional field there is in range when it is missing, `undefined` or `null`, and any other missing field is out of range. A field set to `undefined` is the same as no field.
 - A value a record declaration checks must be plain data at every level. An object that is not a plain object, such as a `Date` where `m.record({})` is declared, is out of range.
 - A field the schema does not name is not checked.
 
@@ -391,6 +391,7 @@ export type State = m.Infer<typeof OpenTurnstile>;
 - Each event type is an action with the payload fields as its `input`. Each rule keeps its id and sentence. A top-level final state is an `m.end`.
 - An id that is not a name, such as `user.click`, becomes one, such as `user_click`. `actions` and `rules` in the result map each exported id back.
 - A transition that leaves a declaration is written as it is, so `earnest verify` reports the state out of range, as `checkMachine` does.
+- Where `checkMachine` reaches a state, the machine is given the context `checkMachine` reaches there, so an optional field stays missing, `undefined` or `null` as the machine left it. A missing field and `undefined` read back as `null`.
 - The same machine and options give the same text. `maxStates` is not written: pass `--max-states` to `earnest verify`.
 
 ### What it refuses and what `threw` holds
@@ -400,7 +401,8 @@ export type State = m.Infer<typeof OpenTurnstile>;
 - a context field without a declaration in `context`;
 - `events` given as a function, or a listed event with a payload such as `{ type: "ENTER", group: 1 }`. Write those as a record of event types;
 - a table of more than `MOST_TABLE_ROWS` (100,000) rows, where a row is one state value with one combination of context values and one event with one payload, or one rule;
-- a next context that the declaration's type can't hold, such as text in a field declared `m.boolean()`.
+- a next context that the declaration's type can't hold, such as text in a field declared `m.boolean()`;
+- an optional field, at any depth, left missing or `undefined` in one state and set to `null` in another that is otherwise the same. `checkMachine` counts two states there, and the file has one `null` for both.
 
 A guard, `assign` or rule that throws at a point of the table is listed in `threw`. The file makes reaching that point visible: the event sets an extra field `threw` out of range, and the rule is broken there. Expect `threw` to be empty, as the test above does.
 

@@ -117,10 +117,12 @@ export type MachineContextSchema<TMachine extends AnyStateMachine> = {
  * search before it holds more distinct states than this; the default is 5,000,000. `context`
  * bounds the search: a snapshot whose context has a value outside what `context` declares for
  * it is out of range. A missing field and `undefined` are out of range too, unless the
- * declaration is `.optional()`, which takes them as it takes `null`. A value a record
- * declaration checks must be plain data at every level: an object that is not a plain object,
- * such as a `Date`, is out of range. A snapshot out of range is counted, no rule is judged in it
- * and nothing is searched from it, as `explore` does with a model's state out of range.
+ * declaration is `.optional()`, which takes them as it takes `null`, also inside a record. A
+ * record may hold no field its declaration lacks, unless the field holds `undefined`. A value a
+ * record declaration checks must be plain data at every level: an object that is not a plain
+ * object, such as a `Date`, is out of range. A snapshot out of range is counted, no rule is
+ * judged in it and nothing is searched from it, as `explore` does with a model's state out of
+ * range.
  */
 export interface CheckMachineOptions<TMachine extends AnyStateMachine> {
   readonly events: MachineEvents<TMachine>;
@@ -327,7 +329,8 @@ export const plainFields = (caller: string, option: string, schema: object): Fie
       );
     }
     const held: string | null | undefined = declared.libraryKind;
-    if (held === undefined) {
+    const parts: readonly unknown[] = [held, declared.fields, declared.inner];
+    if (parts.includes(undefined)) {
       throw new TypeError(
         `${caller} can't take ${option}.${name}: it was made with an @earnestjs/model older than the one @earnestjs/xstate uses; install the version it depends on`,
       );
@@ -404,29 +407,33 @@ const eventsToTry = (events: EventList, snapshot: AnyMachineSnapshot) => {
   return events(snapshot).filter((event) => snapshot.can(event));
 };
 
-const isPlainData = (value: unknown): boolean => {
-  if (typeof value !== "object" || value === null) {
-    return true;
+/**
+ * Whether `value` is one of the values `declared` has, as `checkMachine` judges a context field:
+ * an optional is in range when it is `null`, `undefined` or missing, at any depth; a record must
+ * be a plain object with no key the declaration lacks, a key holding `undefined` being no key.
+ * Pass `undefined` for a missing field.
+ */
+export const inRange = (declared: Declared, value: unknown): boolean => {
+  const inner = declared.inner;
+  if (inner !== null) {
+    return value === undefined || value === null || inRange(inner, value);
   }
-  if (Array.isArray(value)) {
-    return value.every(isPlainData);
+  const fields = declared.fields;
+  if (fields === null) {
+    return declared.has(value);
   }
-  return isPlain(value) && Object.values(value).every(isPlainData);
+  if (typeof value !== "object" || value === null || Array.isArray(value) || !isPlain(value)) {
+    return false;
+  }
+  return (
+    Object.entries(value).every(
+      ([name, field]) => field === undefined || Object.hasOwn(fields, name),
+    ) &&
+    Object.entries(fields).every(([name, field]) =>
+      inRange(field, Object.hasOwn(value, name) ? Reflect.get(value, name) : undefined),
+    )
+  );
 };
-
-const withoutUndefined = (value: unknown): unknown =>
-  typeof value === "object" && value !== null && !Array.isArray(value) && isPlain(value)
-    ? Object.fromEntries(
-        Object.entries(value).flatMap(([name, field]) =>
-          field === undefined ? [] : [[name, withoutUndefined(field)]],
-        ),
-      )
-    : value;
-
-const inRange = (declared: Declared, value: unknown): boolean =>
-  value === undefined
-    ? declared.kind === "optional"
-    : isPlainData(value) && declared.has(withoutUndefined(value));
 
 const outsideOf =
   (fields: Fields) =>

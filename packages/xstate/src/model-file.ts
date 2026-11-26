@@ -1,5 +1,11 @@
 import { type Row, combinationsOf } from "@earnestjs/model";
-import type { AnyMachineSnapshot, AnyStateMachine, EventObject, StateValue } from "xstate";
+import type {
+  AnyActorScope,
+  AnyMachineSnapshot,
+  AnyStateMachine,
+  EventObject,
+  StateValue,
+} from "xstate";
 import {
   type CheckMachineOptions,
   type Declared,
@@ -8,6 +14,7 @@ import {
   described,
   fieldRecord,
   historyOf,
+  inRange,
   isPlain,
   keyOf,
   payloadsOf,
@@ -303,6 +310,7 @@ const rowsOf = (fields: readonly Field[]): readonly Row[] =>
   combinationsOf(Object.fromEntries(fields.map(({ name, declared }) => [name, declared])));
 
 interface Configuration {
+  readonly key: string;
   readonly value: StateValue;
   readonly status: AnyMachineSnapshot["status"];
   readonly historyValue: AnyMachineSnapshot["historyValue"];
@@ -746,6 +754,107 @@ const callLines = (head: string, items: readonly string[], tail: string): string
   return line.length <= WIDTH ? line : `${head}\n  ${items.join(",\n  ")},\n${tail}`;
 };
 
+interface Reaching {
+  readonly events: readonly { readonly type: string; readonly payloads: readonly Row[] }[];
+  readonly context: readonly Field[];
+  readonly limit: (configurations: number) => void;
+  readonly configurationKey: (snapshot: AnyMachineSnapshot) => string;
+  readonly contextRow: (snapshot: AnyMachineSnapshot, where: string) => Row;
+}
+
+const heldAs = (value: unknown): string =>
+  value === undefined ? "missing or undefined" : described(value);
+
+const differing = (shape: Shape, now: unknown, before: unknown, path: string) => {
+  if (shape.kind === "record") {
+    for (const [name, inner] of shape.fields) {
+      if (keyOf(fieldOf(now, name)) !== keyOf(fieldOf(before, name))) {
+        return differing(inner, fieldOf(now, name), fieldOf(before, name), `${path}.${name}`);
+      }
+    }
+  }
+  return { path, now, before };
+};
+
+const reachedContexts = (
+  machine: AnyStateMachine,
+  initial: AnyMachineSnapshot,
+  { events, context, limit, configurationKey, contextRow }: Reaching,
+): ReadonlyMap<string, unknown> => {
+  const reached = new Map<string, unknown>();
+  const configurations = new Set<string>();
+  const pending: { readonly snapshot: AnyMachineSnapshot; readonly context: unknown }[] = [];
+  const reach = (snapshot: AnyMachineSnapshot, where: string): void => {
+    const held: unknown = snapshot.context;
+    const configuration = configurationKey(snapshot);
+    const at = `${configuration}|${keyOf(contextRow(snapshot, where))}`;
+    if (reached.has(at)) {
+      const before = reached.get(at);
+      const field = context.find(
+        ({ name }) => keyOf(fieldOf(held, name)) !== keyOf(fieldOf(before, name)),
+      );
+      if (field !== undefined) {
+        const found = differing(
+          field.shape,
+          fieldOf(held, field.name),
+          fieldOf(before, field.name),
+          field.name,
+        );
+        throw new TypeError(
+          `${CALLER} can't write the context field \`${found.path}\` ${where}: it is ${heldAs(found.now)} here and ${heldAs(found.before)} in a state reached before that is otherwise the same; checkMachine counts them as two states, and a model file has one null for both, so keep the field to one of null and missing`,
+        );
+      }
+      return;
+    }
+    configurations.add(configuration);
+    limit(configurations.size);
+    const kept = structuredClone(held);
+    reached.set(at, kept);
+    if (context.every(({ name, declared }) => inRange(declared, fieldOf(held, name)))) {
+      pending.push({ snapshot, context: kept });
+    }
+  };
+  reach(initial, "of the initial snapshot");
+  const scope = quietScope();
+  for (const { snapshot, context: kept } of pending) {
+    if (snapshot.status !== "active") {
+      continue;
+    }
+    for (const { type, payloads } of events) {
+      for (const payload of payloads) {
+        const event: EventObject = { ...structuredClone(payload), type };
+        const fresh = machine.resolveState({
+          value: snapshot.value,
+          context: structuredClone(kept),
+          historyValue: snapshot.historyValue,
+          status: snapshot.status,
+        });
+        const next = stepped(machine, fresh, event, scope);
+        if (next !== null) {
+          reach(next, `after the event ${JSON.stringify(event)}`);
+        }
+      }
+    }
+  }
+  return reached;
+};
+
+const stepped = (
+  machine: AnyStateMachine,
+  snapshot: AnyMachineSnapshot,
+  event: EventObject,
+  scope: AnyActorScope,
+): AnyMachineSnapshot | null => {
+  try {
+    const next: AnyMachineSnapshot | null = snapshot.can(event)
+      ? machine.transition(snapshot, event, scope)
+      : null;
+    return next?.status === "error" ? null : next;
+  } catch {
+    return null;
+  }
+};
+
 const write = (
   machine: AnyStateMachine,
   options: ModelFileOptions<AnyStateMachine>,
@@ -790,6 +899,7 @@ const write = (
     return { type, inputs, payloads: rowsOf(inputs) };
   });
   const contexts = rowsOf(context);
+  const rowKeys = contexts.map(keyOf);
   const declaredNames = new Set(context.map(({ name }) => name));
 
   const contextRow = (snapshot: AnyMachineSnapshot, where: string): Row => {
@@ -838,11 +948,24 @@ const write = (
     }
   }
 
+  const configurationKey = (snapshot: AnyMachineSnapshot): string =>
+    keyOf({ value: snapshot.value, status: snapshot.status, history: historyOf(snapshot) });
+  const reached = reachedContexts(machine, initial, {
+    events,
+    context,
+    limit: (found) => {
+      if (found * rowsPerState > MOST_TABLE_ROWS) {
+        throw tooMany(found);
+      }
+    },
+    configurationKey,
+    contextRow,
+  });
+
   const configurations: Configuration[] = [];
   const known = new Map<string, number>();
   const configurationOf = (snapshot: AnyMachineSnapshot): number => {
-    const history = historyOf(snapshot);
-    const key = keyOf({ value: snapshot.value, status: snapshot.status, history });
+    const key = configurationKey(snapshot);
     const found = known.get(key);
     if (found !== undefined) {
       return found;
@@ -852,10 +975,11 @@ const write = (
     }
     known.set(key, configurations.length);
     configurations.push({
+      key,
       value: snapshot.value,
       status: snapshot.status,
       historyValue: snapshot.historyValue,
-      history,
+      history: historyOf(snapshot),
     });
     return configurations.length - 1;
   };
@@ -871,11 +995,12 @@ const write = (
     }
     const rows = events.map((): Outcome[] => []);
     const judged = ruleEntries.map((): boolean[] => []);
-    for (const row of contexts) {
+    for (const [rowIndex, row] of contexts.entries()) {
+      const at = `${configuration.key}|${rowKeys[rowIndex]}`;
       const resolved = (): AnyMachineSnapshot =>
         machine.resolveState({
           value: configuration.value,
-          context: contextFor(row),
+          context: reached.has(at) ? structuredClone(reached.get(at)) : contextFor(row),
           historyValue: configuration.historyValue,
           status: configuration.status,
         });
@@ -1237,9 +1362,12 @@ const write = (
  * history states remember, and one field per declared context field, starting where the initial
  * snapshot made with `input` starts. Each event type is an action, each rule a rule with the
  * same sentence, and a top-level final state an end. An id that is not a name in a model file,
- * such as `user.click`, is changed to one, such as `user_click`. An optional field's `null` is
- * given to the machine as a missing field when the initial context lacks the field or holds
- * `undefined`, and as `null` otherwise; a missing field and `undefined` read back as `null`.
+ * such as `user.click`, is changed to one, such as `user_click`. Where `checkMachine` reaches a
+ * state, the machine is given the context `checkMachine` reaches there, so a field missing,
+ * `undefined` or `null` stays as the machine left it. Elsewhere an optional context field's
+ * `null` is given as a missing field when the initial context lacks the field or holds
+ * `undefined`, and as `null` otherwise, and inside a record as `null`. A missing field and
+ * `undefined` read back as `null`.
  * A rule is judged on a snapshot rebuilt with `resolveState`, which has no output and no child
  * actors, so a rule must not read them.
  * `maxStates` is not written; pass `--max-states` to `earnest verify`. The same machine and
@@ -1248,8 +1376,11 @@ const write = (
  * `events` given as a function or a list entry with a payload, a model name that is not an
  * identifier, an initial context outside its declarations, and context declarations and events
  * whose table has more than `MOST_TABLE_ROWS` rows for one state. A table that passes the limit
- * as states are found is refused then. A next context the declaration's type can't hold, such as
- * text in a field declared `m.int`, is refused with the event and the field; one of the right
+ * as states are found is refused then. So is a machine that reaches an optional field, at any
+ * depth, as `null` in one state and missing or `undefined` in another that is otherwise the
+ * same, naming the event and the field: `checkMachine` counts two states there, and the file
+ * has one `null` for both. A next context the declaration's type can't hold, such as text in a
+ * field declared `m.int`, is refused with the event and the field; one of the right
  * type outside the declaration is written as it is, so `earnest verify` reports it out of range.
  */
 export const modelFileOf = <TMachine extends AnyStateMachine>(
