@@ -583,6 +583,41 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
     ))
 }
 
+fn compiled_runs(found: &Places, job: &Job, json: &str, unplayed: &mut Vec<String>) -> Runs {
+    let main = &job.check.main;
+    let held = found.runs_held(main, json);
+    let (kept, missing): (Vec<String>, Vec<String>) =
+        job.check.runs.listed().iter().cloned().partition(|name| {
+            held.iter()
+                .any(|each| each == name || each.ends_with(&format!("::{name}")))
+        });
+    for name in missing {
+        if !unplayed.contains(&name) {
+            unplayed.push(name);
+        }
+    }
+    match &job.check.runs {
+        Runs::Tests | Runs::TestsAnd(_) => match found.runs_played(main, json) {
+            Some(mut tests) => {
+                tests.extend(kept);
+                Runs::Named(tests)
+            }
+            None if kept.is_empty() => Runs::Tests,
+            None => Runs::TestsAnd(kept),
+        },
+        Runs::Named(_) => Runs::Named(kept),
+        other => other.clone(),
+    }
+}
+
+fn builds(found: &Places, job: &Job) -> bool {
+    let main = &job.check.main;
+    found.may_be_a_setup(main)
+        || lacks_a_search(&job.check, Some(found))
+        || (job.check.invariants.is_empty() && job.check.temporal.is_empty())
+        || found.plays_an_imported_run(main, &job.check.runs)
+}
+
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
     let check = &job.check;
     typechecked?.setup(&Setup::new(
@@ -1013,7 +1048,14 @@ fn compiled_all(
         .collect();
     let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
         Some(problem) => (Some(Err((*problem).clone())), false),
-        None => match filled(job, typechecked.get(&job.real)) {
+        None => match filled(
+            job,
+            typechecked.get(&job.real).filter(|_| {
+                places
+                    .get(&job.real)
+                    .is_some_and(|found| builds(found, job))
+            }),
+        ) {
             Some(json) => (Some(Ok(json)), true),
             None => (
                 lacks_a_search(&job.check, places.get(&job.real))
@@ -1094,9 +1136,9 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
     for job in &checks {
         if let Ok(quint) = &job.quint
-            && places.get(&job.real).is_some_and(|found| {
-                found.may_be_a_setup(&job.check.main) || lacks_a_search(&job.check, Some(found))
-            })
+            && places
+                .get(&job.real)
+                .is_some_and(|found| builds(found, job))
             && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
         {
             to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
@@ -1111,19 +1153,17 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .filter_map(|((file, ..), read)| Some((file, read?)))
         .collect();
     let compiled = compiled_all(&checks, &refusals, (&typechecked, &places), jobs);
-    let not_played = runs_not_played(&checks, &compiled, &places);
+    let mut not_played = runs_not_played(&checks, &compiled, &places);
     let read: Vec<Result<Compiled, Vec<Located>>> = checks
         .iter()
         .zip(compiled)
-        .map(|(job, compiled)| {
-            let played = match (&compiled, places.get(&job.real)) {
-                (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
-                    found.runs_played(&job.check.main, json).map(Runs::Named)
-                }
-                _ => None,
+        .zip(not_played.iter_mut())
+        .map(|((job, compiled), unplayed)| {
+            let runs = match (&compiled, places.get(&job.real)) {
+                (Ok((json, false)), Some(found)) => compiled_runs(found, job, json, unplayed),
+                _ => job.check.runs.clone(),
             };
-            let runs = played.as_ref().unwrap_or(&job.check.runs);
-            read_check(job, compiled.map(|(json, _)| json), runs)
+            read_check(job, compiled.map(|(json, _)| json), &runs)
         })
         .collect();
     for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {

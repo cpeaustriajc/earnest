@@ -1,6 +1,6 @@
 use crate::quint::shown_in_folder;
 use earnest_diagnostics::Problem;
-use earnest_quint::Located;
+use earnest_quint::{Located, Runs};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
@@ -275,6 +275,11 @@ impl Places {
                     .any(|module| module.name != main && in_module(module, last).is_some())
         });
         (!left.is_empty()).then_some(played)
+    }
+
+    pub(crate) fn runs_held(&self, main: &str, compiled: &str) -> Vec<String> {
+        self.module(main)
+            .map_or_else(Vec::new, |_| runs_held(main, compiled))
     }
 
     fn runs_quint_tests(&self, main: &str) -> Vec<String> {
@@ -610,6 +615,19 @@ impl Places {
             .is_some_and(|module| module.has_an_instance)
     }
 
+    /// Whether the check of `main` plays a run that a module it imports declares, which
+    /// `quint compile` drops: one whose name ends in `Test`, or one `runs` names.
+    pub(crate) fn plays_an_imported_run(&self, main: &str, runs: &Runs) -> bool {
+        let Some(module) = self.module(main) else {
+            return false;
+        };
+        self.visible(main).iter().any(|each| {
+            self.qualifier_of(each.id) == Some(RUN)
+                && !module.declared.iter().any(|(_, id)| *id == each.id)
+                && runs.plays(&each.name, None)
+        })
+    }
+
     fn module(&self, name: &str) -> Option<&Names> {
         self.modules.iter().find(|module| module.name == name)
     }
@@ -716,7 +734,7 @@ pub(crate) fn place_all(
 mod tests {
     use super::Places;
     use earnest_diagnostics::{Place, Problem};
-    use earnest_quint::Located;
+    use earnest_quint::{Located, Runs};
 
     const PARSED: &str = r#"{"modules": [
         {"name": "Clock", "declarations": [

@@ -475,7 +475,7 @@ fn indexed<'t>(
 
 impl<'t> Filler<'t> {
     fn new(typechecked: &'t Typechecked, check: &Setup<'_>) -> Fill<Self> {
-        let (main_name, runs_only) = (check.main, check.runs_only());
+        let main_name = check.main;
         let main = typechecked.module(main_name)?;
         let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();
@@ -491,15 +491,12 @@ impl<'t> Filler<'t> {
                     instances.push(instance(typechecked, main_name, declaration)?);
                 }
                 "import" => {
-                    if runs_only {
-                        let proto = text(declaration, "protoName")?;
-                        *protos.entry(proto).or_insert(0) += 1;
-                        if protos.get(proto).copied().unwrap_or(0) > 1 {
-                            return None;
-                        }
+                    let proto = text(declaration, "protoName")?;
+                    *protos.entry(proto).or_insert(0) += 1;
+                    if protos.get(proto).copied().unwrap_or(0) > 1 {
+                        return None;
                     }
-                    let kept: &[&str] = if runs_only { &["def", "var"] } else { &["def"] };
-                    let found = plain_import(typechecked, declaration, kept)?;
+                    let found = plain_import(typechecked, declaration, &["def", "var"])?;
                     let space = text(declaration, "qualifiedName");
                     for module in &found.modules {
                         *copies.entry(module).or_insert(0) += 1;
@@ -526,15 +523,12 @@ impl<'t> Filler<'t> {
                 "def" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
-                "var" if runs_only => {
+                "var" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
                 "typedef" | "assume" => {}
                 _ => return None,
             }
-        }
-        if !runs_only && instances.iter().all(|each| each.declared.is_none()) {
-            return None;
         }
         for export in exports {
             let alias = text(export, "protoName")?;
