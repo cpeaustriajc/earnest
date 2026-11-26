@@ -228,12 +228,16 @@ fn first_lines(output: &Output) -> String {
     first.unwrap_or_else(|| format!("`{PROGRAM}` stopped with {}", output.status))
 }
 
-fn scratch(what: &str) -> PathBuf {
-    env::temp_dir().join(format!(
-        "earnest-quint-{what}-{}-{}.json",
+fn scratch(what: &str) -> io::Result<PathBuf> {
+    let path = cache_path(&format!(
+        ".{what}-{}-{}.json",
         std::process::id(),
         SCRATCH.fetch_add(1, Ordering::Relaxed)
-    ))
+    ));
+    if let Some(folder) = path.parent() {
+        fs::create_dir_all(folder)?;
+    }
+    Ok(path)
 }
 
 fn version_of(program: &Path) -> Result<String, String> {
@@ -408,7 +412,12 @@ fn compile(job: &Job) -> Result<String, Problem> {
     if let Some(json) = kept(&target, &key) {
         return Ok(json);
     }
-    let written = scratch("compiled");
+    let written = scratch("compiled").map_err(|error| {
+        failed(format!(
+            "the folder `.earnest/quint` can't be written, so `quint compile` has no place to \
+             write to: {error}"
+        ))
+    })?;
     let ran = File::create(&written).and_then(|file| {
         Command::new(&quint.program)
             .args(arguments(&job.check, &job.shown))
@@ -459,7 +468,7 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint, tree: u64) -> Option<Pla
     {
         return Some(places);
     }
-    let (out, map) = (scratch("parse"), scratch("map"));
+    let (out, map) = (scratch("parse").ok()?, scratch("map").ok()?);
     let ran = Command::new(&quint.program)
         .arg("parse")
         .arg(shown)

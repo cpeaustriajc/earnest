@@ -3,7 +3,7 @@ title: CLI and model discovery
 description: Run earnest subcommands, pass flags, interpret exit codes, and control which files count as models.
 ---
 
-`earnest` checks models in one process with no network, no Java, and no setup. It writes only to `.earnest/` in the directory where it runs.
+`earnest` checks models in one process with no network and no setup. No Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then ([Quint models](/reference/quint/)). It writes only to `.earnest/` in the directory where it runs.
 
 ## Commands
 
@@ -82,6 +82,8 @@ More precisely, a file is treated as a model file (and is either read or reporte
 1. It is named directly on the command line, whatever its name or imports.
 2. Its name ends in `.model.ts`, `.model.mts`, or `.model.tsx`, whatever it imports.
 3. It is a `.ts`, `.mts`, or `.tsx` file that imports `@earnestjs/model` by the plain specifier, or a `.rs` file that names the `earnest` crate and declares a model, and it is not a test file.
+
+A Quint module is checked when an `earnest.quint.json` lists it: a folder search reads each `earnest.quint.json` it finds, and a `.qnt` file named on the command line is checked by the entries for it in the `earnest.quint.json` of its folder. See [Quint models](/reference/quint/).
 
 Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting with `.` are skipped when walking directories. Models are checked and printed in file-path order, then declaration order within each file.
 
