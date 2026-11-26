@@ -1,3 +1,4 @@
+/// @check ok, t, v
 module sg2 {
   var m: int -> Set[int]
   var x: int
