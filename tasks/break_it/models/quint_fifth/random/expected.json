@@ -1,0 +1,142 @@
+{
+ "G4": {
+  "states": 84,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "holds",
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "G7": {
+  "states": 42,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "G11": {
+  "states": 56,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "G13": {
+  "states": 73,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "t0": "broken",
+   "t1": "holds",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "holds"
+  }
+ },
+ "G14": {
+  "states": 63,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "G23": {
+  "states": 182,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "broken",
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "holds"
+  }
+ },
+ "G24": {
+  "states": 168,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "G34": {
+  "states": 252,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "G38": {
+  "states": 168,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "holds"
+  }
+ },
+ "G44": {
+  "states": 63,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ }
+}

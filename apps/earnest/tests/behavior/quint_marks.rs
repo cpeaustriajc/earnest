@@ -55,8 +55,9 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 10] = [
+const SETS: [&str; 11] = [
     "specs", "failing", "typo", "lost", "runs", "rules", "old", "names", "faults", "written",
+    "blank",
 ];
 
 fn marked() -> PathBuf {
@@ -601,5 +602,22 @@ fn an_entry_that_writes_a_property_as_an_expression_is_given_the_val_to_add_with
         ),
         "each expression becomes a `val`, under its own name or a new one, named by the mark\n\
          {message}"
+    );
+}
+
+#[test]
+fn a_mark_with_no_space_is_reported_at_its_own_line_beside_a_blank_doc_line() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "blank", "--json"]);
+    run.exits(1);
+    let found: Vec<(u64, String)> = problems(&run.json())
+        .into_iter()
+        .map(|(_, line, feature, _)| (line, feature))
+        .collect();
+    assert_eq!(
+        found,
+        [(7, "`ok`".to_owned()), (11, "`two`".to_owned())],
+        "`///@check broken` on line 7 with a blank `///` below it, and on line 11 with one \
+         above it: {run}"
     );
 }

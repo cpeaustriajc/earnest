@@ -37,6 +37,18 @@ case "$1" in
     fi
     cat "$here/compiled/$main.json"
     ;;
+  typecheck)
+    name="$(basename "$2" .qnt)"
+    for argument in "$@"; do
+      if [ "$previous" = "--out" ]; then out="$argument"; fi
+      previous="$argument"
+    done
+    if [ ! -f "$here/parsed/$name.typecheck.json" ]; then
+      echo "error: no typecheck of $name.qnt is recorded" >&2
+      exit 1
+    fi
+    cp "$here/parsed/$name.typecheck.json" "$out"
+    ;;
   parse)
     file="$2"
     previous=""
@@ -159,6 +171,13 @@ impl Quint {
         self.calls()
             .into_iter()
             .filter(|call| call.starts_with("compile"))
+            .collect()
+    }
+
+    fn reads(&self) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter(|call| call.starts_with("compile") || call.starts_with("typecheck"))
             .collect()
     }
 
@@ -612,9 +631,13 @@ fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
 }
 
 #[test]
-fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
+fn editing_a_file_imported_from_a_parent_folder_reads_the_check_again() {
     let quint = Quint::new();
     quint.with_check("app/specs", "imported/specs", "counter");
+    quint.sandbox.write(
+        "fake/parsed/counter.typecheck.json",
+        &checks("fixtures/imported/specs/counter.typecheck.json"),
+    );
     quint.with_check("app/shared", "imported/shared", "lib");
     let root = quint
         .sandbox
@@ -627,7 +650,11 @@ fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
         &map.replace("ROOT", &root.join("app").to_string_lossy()),
     );
     quint.earnest(&["verify"]).exits(1);
-    assert_eq!(quint.compiles().len(), 1, "the first run compiles");
+    assert_eq!(
+        quint.reads().len(),
+        1,
+        "the first run reads the check from Quint"
+    );
     quint.forget_calls();
     quint.earnest(&["verify"]).exits(1);
     assert_eq!(quint.calls(), Vec::<String>::new(), "nothing changed");
@@ -638,9 +665,9 @@ fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
     let edited = quint.earnest(&["verify"]);
     edited.exits(1);
     assert_eq!(
-        quint.compiles().len(),
+        quint.reads().len(),
         1,
-        "the file Quint read from `../shared` changed, so the check is compiled again\n{edited}"
+        "the file Quint read from `../shared` changed, so the check is read from Quint again\n{edited}"
     );
 }
 

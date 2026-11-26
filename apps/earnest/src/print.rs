@@ -1,6 +1,6 @@
 use crate::changes::Difference;
 use crate::reading::{ModelFile, Readable};
-use crate::run::not_played_reason;
+use crate::run::only_runs_not_played;
 use crate::run::{
     Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
     whole_of,
@@ -239,7 +239,7 @@ fn counts_of(model: &Model) -> String {
 
 fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
     let so_far = if result.reason.as_deref().is_some_and(|reason| {
-        reason != EVERY_EXPECTED_FOUND && *reason != not_played_reason(&result.runs_not_played)
+        reason != EVERY_EXPECTED_FOUND && !only_runs_not_played(reason, &result.runs_not_played)
     }) {
         " so far"
     } else {
@@ -265,8 +265,8 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
     }
     Some(format!(
         "{INDENT}note{INDENT}runs not played: {} (written in a module this one imports, whose \
-         runs `quint compile` drops: the checker plays them only in a setup it builds itself, \
-         so write them in this module to play them here)",
+         runs `quint compile` drops: the checker plays them only in a setup it builds itself; \
+         as a last resort, write them in this module to play them here)",
         one_line(&result.runs_not_played.join(", "))
     ))
 }

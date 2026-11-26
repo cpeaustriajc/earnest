@@ -418,10 +418,20 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched.reason.or_else(|| {
-                (!readable.runs_not_played.is_empty())
-                    .then(|| not_played_reason(&readable.runs_not_played))
-            }),
+            reason: searched
+                .reason
+                .filter(|reason| {
+                    readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND
+                })
+                .or_else(|| {
+                    (!readable.runs_not_played.is_empty()).then(|| {
+                        let reason = not_played_reason(&readable.runs_not_played);
+                        match &readable.not_built {
+                            Some(cause) => format!("{reason}: {cause}"),
+                            None => reason,
+                        }
+                    })
+                }),
             rules: searched.rules,
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
@@ -492,6 +502,10 @@ fn detail_of(
     }
     lines.extend(detail_lines_in(&rest, notation));
     lines
+}
+
+pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
+    !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
 }
 
 pub(crate) fn not_played_reason(runs: &[String]) -> String {
