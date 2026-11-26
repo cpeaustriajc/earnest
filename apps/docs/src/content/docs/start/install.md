@@ -36,8 +36,6 @@ curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.s
 $env:EARNEST_VERSION = 'v0.1.0-nightly.20261126'; irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex
 ```
 
-`earnest --version` of a build from the nightly workflow prints the commit it was built from, as `earnest 0.1.0 (commit <sha>)`. A build from `cargo install` prints only `earnest 0.1.0`.
-
 To fetch the archive yourself, download it and its `.sha256` file from `https://github.com/cpeaustriajc/earnest/releases/download/<tag>/`, keep both in one folder, and run:
 
 ```sh

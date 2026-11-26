@@ -122,7 +122,6 @@ jobs:
       TARGET: ${{ matrix.target }}
       BINARY: ${{ matrix.binary }}
       ARCHIVE: ${{ matrix.archive }}
-      EARNEST_BUILD_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -158,14 +157,10 @@ jobs:
       - name: Install from the archive with install.sh
         if: matrix.runs_here && runner.os != 'Windows'
         env:
-          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/releases
-          EARNEST_VERSION: ${{ needs.decide.outputs.dated_tag }}
+          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/dist
           EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
         run: |
-          mkdir -p "releases/$EARNEST_VERSION"
-          cp dist/* "releases/$EARNEST_VERSION/"
           sh install.sh
-          "$EARNEST_INSTALL_DIR/earnest" --version | grep -F "(commit $GITHUB_SHA)"
           "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
       - uses: actions/upload-artifact@v4
         with:
@@ -196,8 +191,6 @@ jobs:
         run: |
           {
             echo "The tip of \`main\` at commit $GITHUB_SHA ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA), built on $(date -u +%Y-%m-%d)."
-            echo
-            echo "\`earnest --version\` of these archives prints that commit."
           } > common.md
           {
             cat common.md
@@ -300,7 +293,7 @@ jobs:
           EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
         run: |
           sh install.sh
-          "$EARNEST_INSTALL_DIR/earnest" --version | grep -F "(commit $GITHUB_SHA)"
+          "$EARNEST_INSTALL_DIR/earnest" --version | grep -F "commit ${GITHUB_SHA:0:12}"
           "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
       - name: Install the published nightly with install.ps1
         if: runner.os == 'Windows'
@@ -310,6 +303,6 @@ jobs:
           EARNEST_INSTALL_DIR: ${{ runner.temp }}\installed
         run: |
           ./install.ps1
-          if (-not ((& "$env:EARNEST_INSTALL_DIR\earnest.exe" --version) -like "*(commit $env:GITHUB_SHA)*")) { throw "version does not name the commit" }
+          if (-not ((& "$env:EARNEST_INSTALL_DIR\earnest.exe" --version) -like "*commit $($env:GITHUB_SHA.Substring(0, 12))*")) { throw "version does not name the commit" }
           & "$env:EARNEST_INSTALL_DIR\earnest.exe" verify --no-cache $env:SMOKE_MODEL
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

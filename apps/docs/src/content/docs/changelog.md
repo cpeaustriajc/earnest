@@ -7,7 +7,7 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 ## November 2026: pin a nightly build
 
-Each nightly is now also published as `v0.1.0-nightly.YYYYMMDD`, a release that is never replaced. `install.sh` and `install.ps1` install it when `EARNEST_VERSION` names the tag, after checking its SHA-256. `earnest --version` of a nightly prints the commit it was built from. Dated nightlies older than 90 days are removed. See [Install](/start/install/#pin-a-build).
+Each nightly is now also published as `v0.1.0-nightly.YYYYMMDD`, a release that is never replaced. `install.sh` and `install.ps1` install it when `EARNEST_VERSION` names the tag, after checking its SHA-256. Dated nightlies older than 90 days are removed. See [Install](/start/install/#pin-a-build).
 
 ## November 2026: check an XState machine from a test
 

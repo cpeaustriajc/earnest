@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[derive(Debug, Parser)]
 #[command(
     name = "earnest",
-    version = concat!(env!("CARGO_PKG_VERSION"), env!("EARNEST_COMMIT_SUFFIX")),
+    version,
     about = "Checks models written in TypeScript or Rust by visiting every reachable state"
 )]
 pub(crate) struct Arguments {

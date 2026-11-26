@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-DEFAULT_RELEASES_URL="https://github.com/cpeaustriajc/earnest/releases/download"
+RELEASES_URL="https://github.com/cpeaustriajc/earnest/releases/download"
 DEFAULT_VERSION="v0.1.0-nightly"
 
 fail() {
@@ -41,9 +41,8 @@ sha256() {
 
 main() {
   command -v curl >/dev/null 2>&1 || fail "curl is needed to download earnest"
-  releases_url=${EARNEST_DOWNLOAD_URL:-$DEFAULT_RELEASES_URL}
   version=${EARNEST_VERSION:-$DEFAULT_VERSION}
-  download_url="$releases_url/$version"
+  download_url=${EARNEST_DOWNLOAD_URL:-$RELEASES_URL/$version}
   install_dir=${EARNEST_INSTALL_DIR:-$HOME/.local/bin}
   archive="earnest-$(platform).tar.gz"
 
