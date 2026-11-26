@@ -67,9 +67,11 @@ impl Typechecked {
         }
     }
 
-    fn verify(&self) -> Value {
+    fn verify(&self, arguments: &[&str]) -> Value {
         let output = Command::new(binary())
-            .args(["verify", "--json", "--no-cache", "."])
+            .args(["verify", "--json", "--no-cache"])
+            .args(arguments)
+            .arg(".")
             .env("EARNEST_QUINT", &self.quint)
             .current_dir(self.folder.path())
             .output()
@@ -136,7 +138,7 @@ fn a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_f
         r#"{ "checks": [ { "file": "named_helpers.qnt", "main": "small",
             "invariants": ["inRange"], "runs": true } ] }"#,
     );
-    let report = checked.verify();
+    let report = checked.verify(&[]);
     let model = model_named(&report, "small");
     assert!(
         model["states"] == 3
@@ -150,5 +152,144 @@ fn a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_f
          and `quint compile` stops with `Internal error while flattening`, so the check is \
          unreadable (in {})\n{report:#}",
         checked.path().display()
+    );
+}
+
+const SEEDED: [(&str, &str, &str); 10] = [
+    (
+        "Q2",
+        include_str!("../../models/quint_fourth/random/Q2.qnt"),
+        include_str!("../../models/quint_fourth/random/Q2.json"),
+    ),
+    (
+        "Q5",
+        include_str!("../../models/quint_fourth/random/Q5.qnt"),
+        include_str!("../../models/quint_fourth/random/Q5.json"),
+    ),
+    (
+        "Q9",
+        include_str!("../../models/quint_fourth/random/Q9.qnt"),
+        include_str!("../../models/quint_fourth/random/Q9.json"),
+    ),
+    (
+        "Q14",
+        include_str!("../../models/quint_fourth/random/Q14.qnt"),
+        include_str!("../../models/quint_fourth/random/Q14.json"),
+    ),
+    (
+        "Q20",
+        include_str!("../../models/quint_fourth/random/Q20.qnt"),
+        include_str!("../../models/quint_fourth/random/Q20.json"),
+    ),
+    (
+        "Q26",
+        include_str!("../../models/quint_fourth/random/Q26.qnt"),
+        include_str!("../../models/quint_fourth/random/Q26.json"),
+    ),
+    (
+        "Q29",
+        include_str!("../../models/quint_fourth/random/Q29.qnt"),
+        include_str!("../../models/quint_fourth/random/Q29.json"),
+    ),
+    (
+        "Q32",
+        include_str!("../../models/quint_fourth/random/Q32.qnt"),
+        include_str!("../../models/quint_fourth/random/Q32.json"),
+    ),
+    (
+        "Q34",
+        include_str!("../../models/quint_fourth/random/Q34.qnt"),
+        include_str!("../../models/quint_fourth/random/Q34.json"),
+    ),
+    (
+        "Q38",
+        include_str!("../../models/quint_fourth/random/Q38.qnt"),
+        include_str!("../../models/quint_fourth/random/Q38.json"),
+    ),
+];
+
+const SEEDED_SETUPS: [&str; 3] = ["A", "B", "C"];
+
+fn seeded_checks(seed: &str) -> String {
+    let checks: Vec<String> = SEEDED_SETUPS
+        .iter()
+        .map(|setup| {
+            format!(
+                r#"{{ "file": "{seed}.qnt", "main": "{seed}{setup}", "invariants": ["inv0", "inv1", "inv2"], "temporal": ["t0", "t1", "t2", "t3", "t4", "t5"], "runs": true }}"#
+            )
+        })
+        .collect();
+    format!(r#"{{ "checks": [ {} ] }}"#, checks.join(", "))
+}
+
+fn verdict_of(model: &Value, name: &str) -> Option<String> {
+    let verdicts: Vec<&str> = model["rules"]
+        .as_array()?
+        .iter()
+        .filter(|found| {
+            found["id"]
+                .as_str()
+                .is_some_and(|id| id.split('#').next() == Some(name))
+        })
+        .filter_map(|found| found["verdict"].as_str())
+        .collect();
+    if verdicts.is_empty() {
+        None
+    } else if verdicts.contains(&"broken") {
+        Some("broken".to_owned())
+    } else if verdicts.iter().all(|verdict| *verdict == "holds") {
+        Some("holds".to_owned())
+    } else {
+        Some("unknown".to_owned())
+    }
+}
+
+#[test]
+fn every_seeded_setup_over_types_and_helpers_has_the_answers_of_quint_s_tlc_run_and_quint_test() {
+    let expected: Value = serde_json::from_str(include_str!(
+        "../../models/quint_fourth/random/expected.json"
+    ))
+    .expect("the expected answers are JSON");
+    let mut differences = Vec::new();
+    let mut compared = 0_usize;
+    for (seed, source, typecheck) in SEEDED {
+        let checked = Typechecked::new(
+            &format!("{seed}.qnt"),
+            source,
+            typecheck,
+            &seeded_checks(seed),
+        );
+        for jobs in ["1", "4"] {
+            let report = checked.verify(&["--jobs", jobs]);
+            for setup in SEEDED_SETUPS {
+                let main = format!("{seed}{setup}");
+                let answers = &expected[seed][&main];
+                let model = model_named(&report, &main);
+                compared += 1;
+                if model["states"] != answers["states"] {
+                    differences.push(format!(
+                        "{main} (--jobs {jobs}): {} states, Quint's TLC run {}",
+                        model["states"], answers["states"]
+                    ));
+                }
+                for (name, answer) in answers["rules"].as_object().into_iter().flatten() {
+                    compared += 1;
+                    let found = verdict_of(model, name);
+                    if found.as_deref() != answer.as_str() {
+                        differences.push(format!(
+                            "{main}::{name} (--jobs {jobs}): {found:?}, Quint {answer}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        differences.is_empty(),
+        "each answer is Quint's: the states and invariant and temporal verdicts of `quint verify \
+         --backend tlc --main <setup>`, a property in parts broken when one part is, and each run \
+         as `quint test --backend typescript --main <setup>`; {compared} compared, these \
+         differ:\n{}",
+        differences.join("\n")
     );
 }
