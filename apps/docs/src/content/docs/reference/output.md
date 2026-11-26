@@ -239,7 +239,7 @@ Additional rules for `--base`:
 
 `earnest chart` prints a fenced `mermaid` code block containing a `stateDiagram-v2` diagram.
 
-- States and arrows use labels from the model's view (`m.view` in TypeScript, `#[view]` in Rust). A Rust model and a TypeScript twin with the same view produce identical chart text.
+- States and arrows use labels from the model's view (`m.view` in TypeScript, `#[view]` in Rust, `/// @view state` and `/// @view group` on a `val` in Quint, which label states and their boxes but not arrows: see [Chart labels](/reference/quint/#chart-labels)). A Rust model and a TypeScript twin with the same view produce identical chart text.
 - States that break a rule receive the class `broken`.
 - A chart draws at most `20` arrows by default (override with `--max-arrows <n>`, minimum `1`).
 - When a model exceeds the arrow cap, `earnest chart` keeps paths to broken states first and prints a note counting omitted states and arrows:

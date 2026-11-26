@@ -5,6 +5,21 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint chart labels marked in the model
+
+A Quint model's chart labelled each state with every variable, `base = Set(1), server = Set(1), screen = Set(), phase = Map(...), ...`. Mark a `val` with `/// @view state` to label each state with its value, and a `val` with `/// @view group` to label the box the state is drawn in:
+
+```quint
+/// @view state
+val seen = if (screen.size() > 0) "some shown" else if (base.size() > 0) "placed" else "nothing placed"
+/// @view group
+val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
+```
+
+- A text prints without quotes, and any other value as Quint's REPL writes it. States with the same label and group are drawn as one box.
+- A check uses the labels it sees, its own and those its imports bring, as it sees marked properties. The labels change no verdict, state count or result line, and `confirm` and `earnest tla` leave them out.
+- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, a second `@view` in one doc comment, `@view` on anything but a `val` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read, and a label no check that searches sees.
+
 ## November 2026: Quint fairness of the step beside fairness of an action
 
 A temporal property under `weakFair(step, vars)` together with `weakFair(A, vars)` was judged broken where Quint's TLC run says it holds, when a run could stop in a state where the step can do nothing more and `A` alone could still happen. Such a run is not fair to `A`, so it no longer counts. Fairness of the step alone, and of an action alone, are judged as before.
