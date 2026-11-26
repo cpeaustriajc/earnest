@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 7] = [
+const SETS: [&str; 12] = [
     "samename",
     "exported",
     "nospace",
@@ -63,6 +63,11 @@ const SETS: [&str; 7] = [
     "noinit",
     "migrated",
     "leftover",
+    "twowords",
+    "wrapped",
+    "onename",
+    "importedtests",
+    "importedrun",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -266,4 +271,85 @@ fn a_property_seen_through_an_import_under_a_name_and_its_export_is_judged_once(
         ids, once,
         "`Exported` is `import Base(K = 1) as B` and `export B.*`"
     );
+}
+
+#[test]
+fn a_name_a_module_doc_lists_under_two_words_is_not_judged_by_the_last_word_without_a_word() {
+    let report = Quint::new().report("twowords");
+    assert!(
+        speaks_of(&report, "twowords.qnt", "small"),
+        "`Twice` writes `@check small` and `@check broken small`, and is judged with `small` \
+         broken, as if the first line were not there: {report}"
+    );
+}
+
+#[test]
+fn names_a_module_doc_wraps_onto_the_next_line_are_judged_or_reported() {
+    let report = Quint::new().report("wrapped");
+    let judged = find_model(&report, "Bare").map_or_else(Vec::new, verdicts);
+    for name in ["small", "tiny"] {
+        assert!(
+            judged.iter().any(|(id, _)| id == name) || speaks_of(&report, "wrapped.qnt", name),
+            "`/// @check inRange` then `///   small, tiny` above `Bare`: `{name}` is read as a \
+             sentence, and `Bare` passes, where `quint verify --main Bare --invariant small` \
+             finds a violation: {report}"
+        );
+    }
+}
+
+#[test]
+fn a_name_list_that_ends_its_line_with_a_comma_is_read_on_or_said_to_continue() {
+    let report = Quint::new().report("wrapped");
+    let judged = find_model(&report, "Comma").map_or_else(Vec::new, verdicts);
+    for name in ["small", "tiny"] {
+        assert!(
+            judged.iter().any(|(id, _)| id == name) || speaks_of(&report, "wrapped.qnt", name),
+            "`/// @check inRange,` then `///   small, tiny` above `Comma` is called `not a mark \
+             the checker knows`, which sends the author to the three words and not to the \
+             wrapped line: {report}"
+        );
+    }
+}
+
+#[test]
+fn a_module_doc_of_check_and_one_name_with_no_space_is_not_dropped_without_a_word() {
+    let report = Quint::new().report("onename");
+    assert!(
+        find_model(&report, "Unspaced").is_some() || speaks_of(&report, "onename.qnt", "Unspaced"),
+        "`///@check small` above `module Unspaced` reaches earnest as the doc `check small`, and \
+         the folder reports no model and no problem: {report}"
+    );
+}
+
+#[test]
+fn a_check_that_imports_a_failing_test_run_does_not_pass() {
+    let report = Quint::new().report("importedtests");
+    let found = find_model(&report, "Plain")
+        .unwrap_or_else(|| panic!("`Plain` imports `Counter.*` and marks `inRange`: {report}"));
+    assert_ne!(
+        found["status"], "pass",
+        "`quint test --main Plain` plays `badTest`, which fails; the check plays every run it \
+         sees whose name ends in `Test`: {found}"
+    );
+}
+
+#[test]
+fn a_run_marked_in_an_imported_module_is_judged_or_said_how_to_judge_it() {
+    let report = Quint::new().report("importedrun");
+    if let Some(found) = find_model(&report, "Plain") {
+        let judged = verdicts(found);
+        assert!(
+            judged.iter().any(|(id, _)| id.ends_with("skips")),
+            "`quint test --main Plain --match skips` plays `skips`: {judged:?}"
+        );
+        return;
+    }
+    for (file, feature, message) in unreadable(&report) {
+        assert!(
+            !message.contains("the check names this run"),
+            "{file} {feature}: `Plain` names no run, `skips` is marked `@check broken` on its \
+             own line in `Counter`, and the message says neither why it can't be played nor \
+             what to write: {message}"
+        );
+    }
 }
