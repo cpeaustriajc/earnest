@@ -380,6 +380,7 @@ fn parts<'a>(
         parts: &parts,
         fields: names,
         paths: &stepping,
+        starts: starts.as_deref().unwrap_or_default(),
     };
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step).map_err(|mut found| refused.append(&mut found));

@@ -241,3 +241,131 @@ fn every_seeded_model_of_buyers_has_the_states_and_verdicts_of_quint_s_tlc_run_a
         }
     }
 }
+
+fn verdicts_of(model: &Value) -> Vec<(String, String)> {
+    model["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|found| {
+            (
+                found["id"].as_str().unwrap_or_default().to_owned(),
+                found["verdict"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn fairness_of_an_action_given_a_part_of_a_picked_tuple_or_record_is_judged_as_tlc_judges_it() {
+    let holds = |id: &str| (id.to_owned(), "holds".to_owned());
+    let broken = |id: &str| (id.to_owned(), "broken".to_owned());
+    let cases = [
+        (
+            include_str!("../../models/quint_third/fair_parts/fair_parts_pair.json"),
+            4,
+            vec![
+                holds("payEach"),
+                holds("payEach#2"),
+                holds("payOne"),
+                broken("payOne#2"),
+                holds("payOneOnly"),
+            ],
+        ),
+        (
+            include_str!("../../models/quint_third/fair_parts/fair_parts_record.json"),
+            4,
+            vec![
+                holds("payEach"),
+                holds("payEach#2"),
+                holds("payOne"),
+                broken("payOne#2"),
+                holds("payOneOnly"),
+            ],
+        ),
+        (
+            include_str!("../../models/quint_third/fair_parts/fair_parts_both.json"),
+            7,
+            vec![
+                holds("allPay"),
+                holds("allPay#2"),
+                holds("onePays"),
+                broken("onePays#2"),
+                holds("oneOnly"),
+            ],
+        ),
+    ];
+    for (json, states, expected) in cases {
+        let report = compiled("fair_parts", json);
+        let model = report.model("fair_parts");
+        let mut found = verdicts_of(model);
+        found.sort();
+        let mut wanted = expected.clone();
+        wanted.sort();
+        assert_eq!(
+            (model["states"].as_u64(), found),
+            (Some(states), wanted),
+            "`pay(p._1)` with `nondet p` over `tuples(BUYERS, ITEMS)`, `pay(r.who)` over a set \
+             of records and `buy(p._1, p._2)`: `weakFair(pay(1), paid)` is fair to the steps \
+             whose pick has `1` there, so buyer 2 may never pay; `quint verify --backend tlc` \
+             gives these states, `[ok]` for `payEach`, `payOneOnly`, `allPay` and `oneOnly`, \
+             and a violation for `payOne` and `onePays`\n{report}"
+        );
+    }
+}
+
+#[test]
+fn a_refusal_writes_the_expression_as_quint_does_names_the_caller_and_says_what_to_write() {
+    let report = compiled(
+        "messages",
+        include_str!("../../models/quint_third/messages/messages.json"),
+    );
+    let messages: Vec<&str> = report.json["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|problem| problem["message"].as_str())
+        .collect();
+    let wanted = [
+        "fairness over `t._2`",
+        "`chooseSome`, whose choice Quint's backends make differently, is not read: pick every \
+         item with `nondet x = S.oneOf()`, or write `S.getOnlyElement()` for a set of one, in \
+         the definition `step`",
+        "`x == 0` before `implies` is judged in the start states only, as TLC judges it, and it \
+         holds in some start states and not in others",
+        "write `always((x == 0) implies eventually(…))`",
+    ];
+    for part in wanted {
+        assert!(
+            messages.iter().any(|message| message.contains(part)),
+            "`weakFair(step, t._2)` is shown as written, the `chooseSome` in the action given \
+             to `wrap` in `step` is in `step`, and `(x == 0).implies(eventually(x == 3))` over \
+             start states where `x` is 0 and 1 says what to write: no message has {part:?}\n\
+             {report}"
+        );
+    }
+}
+
+#[test]
+fn a_condition_implying_a_temporal_formula_is_judged_in_the_start_states_as_tlc_judges_it() {
+    let report = compiled(
+        "start_implies",
+        include_str!("../../models/quint_third/start_implies/start_implies.json"),
+    );
+    let mut found = verdicts_of(report.model("start_implies"));
+    found.sort();
+    let expected: Vec<(String, String)> = [
+        ("fairFromZero", "holds"),
+        ("fromOne", "holds"),
+        ("fromZero", "broken"),
+    ]
+    .iter()
+    .map(|(id, verdict)| ((*id).to_owned(), (*verdict).to_owned()))
+    .collect();
+    assert_eq!(
+        found, expected,
+        "`x` starts at 0: `(x == 0).implies(eventually(x == 3))` is broken by a run that stays, \
+         holds under `weakFair(step, x)`, and `(x == 1).implies(…)` holds for no start state \
+         has `x == 1`, as `quint verify --backend tlc` and Apalache judge them\n{report}"
+    );
+}
