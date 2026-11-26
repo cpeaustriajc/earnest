@@ -4572,3 +4572,13 @@ The behavior tests' fake `quint` serves the parse recorded from Quint with the `
 put in as Quint 0.33.1 gives it, and appends a `// marked:` line to the `.qnt` so the caches see
 the change; `quint_marks`, `quint_setups`, `quint_imports`, `quint_first` and `quint_confirm` read
 fixtures recorded from the marked files themselves.
+
+Proof, on the tree merged with `claude/lucid-brown-f5xvr8` (`6362d76`) and
+`claude/feedback-confirm-quint` (`6a4d280`):
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
+  warnings. `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2169 passed, 0 failed.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`,
+  `every model file: 392 runs, 0 differences`.
