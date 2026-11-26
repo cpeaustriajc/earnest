@@ -123,6 +123,17 @@ impl Sandbox {
         self.finished(&mut command, "earnest verify")
     }
 
+    pub(crate) fn node(&self, script: &str) -> Report {
+        let library = repository().join("packages/model/src/index.ts");
+        self.write("hooks.mjs", HOOKS);
+        self.write("script.mjs", script);
+        let mut command = Command::new("node");
+        command
+            .args(["--import", "./hooks.mjs", "script.mjs"])
+            .env("EARNEST_MODEL_LIBRARY", &library);
+        self.finished(&mut command, "node")
+    }
+
     pub(crate) fn explore(&self, file: &str, model: &str) -> Report {
         let library = repository().join("packages/model/src/index.ts");
         assert!(
