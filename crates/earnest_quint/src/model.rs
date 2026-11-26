@@ -253,6 +253,20 @@ fn parts<'a>(
     Ok((starts, actions, rules, read.eventually))
 }
 
+fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
+    let flattened = format!("{main}::");
+    let mut found: Vec<String> = table
+        .values()
+        .filter(|entry| entry.kind == "def" && entry.qualifier.as_deref() == Some("run"))
+        .filter_map(|entry| entry.name.as_deref())
+        .filter_map(|name| name.strip_prefix(&flattened))
+        .filter_map(|rest| rest.rsplit_once("::").map(|(_, last)| last.to_owned()))
+        .collect();
+    found.sort_unstable();
+    found.dedup();
+    found
+}
+
 fn shorten(
     actions: &mut [Action],
     rules: &mut [Rule],
@@ -343,7 +357,13 @@ fn built(
     let (starts, mut actions, mut rules, mut eventually) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
-    let mut scripts = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    let imported = imported_runs(&compiled.table, &compiled.main);
+    let mut scripts = scripts(
+        &mut reader,
+        (&module.declarations, &imported),
+        (init, runs),
+        &names,
+    )?;
     shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables

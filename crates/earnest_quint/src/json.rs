@@ -32,6 +32,10 @@ pub(crate) struct Module {
 pub(crate) struct Entry {
     pub(crate) kind: String,
     pub(crate) id: u64,
+    #[serde(default)]
+    pub(crate) name: Option<String>,
+    #[serde(default)]
+    pub(crate) qualifier: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

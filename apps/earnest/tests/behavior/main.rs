@@ -13,6 +13,7 @@ mod quint;
 mod quint_checks;
 mod quint_data;
 mod quint_runs;
+mod quint_setups;
 mod quint_temporal;
 mod replay;
 mod results;
