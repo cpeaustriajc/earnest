@@ -310,6 +310,28 @@ mod tests {
     }
 
     #[test]
+    fn a_name_list_whose_line_ends_with_a_comma_goes_on_over_the_next_line() {
+        assert_eq!(
+            marks("@check inRange,\n  small, tiny\nThe counter."),
+            (
+                vec![mark(Kind::Holds, &["inRange", "small", "tiny"], 0)],
+                Some("The counter.".to_owned()),
+                vec![]
+            )
+        );
+        assert_eq!(
+            read_doc("@check inRange\n  small, tiny").sentence,
+            [(1, "small, tiny".to_owned())],
+            "with no comma the next line is the sentence, which the planner then reports"
+        );
+        assert_eq!(
+            marks("@check inRange,").2,
+            [0],
+            "a list that ends with a comma"
+        );
+    }
+
+    #[test]
     fn a_mark_the_checker_can_not_read_is_wrong_at_its_line() {
         for (doc, line) in [
             ("@checked", 0),

@@ -33,6 +33,11 @@ module bank {
 - **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
 - **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write above the module with the names each judges, a `val` for each property written as an expression, the module to add for another `init` or `step` or a second check of one module, and the runs ending in `Test` that are played from now on although the entry left them out.
 
+- **A list of names goes on over the next line** when its line ends with a comma; a doc line of a check made only of names it sees, after a line with no comma, is `unreadable` at that line.
+- **`///@check small`** above a module or a definition is `unreadable` at that line, read from the source.
+- **One name after two marks** of a module's doc is `unreadable`. A mark on a definition that a check's doc names under another word is not: the check's doc wins.
+- **A spec imported whole with a property:** a check that plays a run declared in a module it imports, `import Spec.*` with a property among them, is built from `quint typecheck`, so the run is played. A compiled check that sees a run it can't play is `unfinished` with `(runs not played: …)`, not `pass`, and a marked run it can't play no longer makes it `unreadable`: its properties are judged.
+
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
 
 ## November 2026: Quint fairness given a part of a pick, and fixes from the third Quint pass

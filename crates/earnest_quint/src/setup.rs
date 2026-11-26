@@ -520,10 +520,7 @@ impl<'t> Filler<'t> {
                     }
                 }
                 "export" => exports.push(declaration),
-                "def" => {
-                    own.insert(number(declaration, "id")?, declaration);
-                }
-                "var" => {
+                "def" | "var" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
                 "typedef" | "assume" => {}

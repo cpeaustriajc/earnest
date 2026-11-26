@@ -1,5 +1,6 @@
 use crate::changes::Difference;
 use crate::reading::{ModelFile, Readable};
+use crate::run::not_played_reason;
 use crate::run::{
     Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
     whole_of,
@@ -237,11 +238,9 @@ fn counts_of(model: &Model) -> String {
 }
 
 fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
-    let so_far = if result
-        .reason
-        .as_deref()
-        .is_some_and(|reason| reason != EVERY_EXPECTED_FOUND)
-    {
+    let so_far = if result.reason.as_deref().is_some_and(|reason| {
+        reason != EVERY_EXPECTED_FOUND && *reason != not_played_reason(&result.runs_not_played)
+    }) {
         " so far"
     } else {
         ""

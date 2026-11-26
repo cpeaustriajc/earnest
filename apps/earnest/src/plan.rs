@@ -294,6 +294,38 @@ fn without_init_or_step(
         .collect()
 }
 
+fn module_doc_names(
+    locator: &Placer<'_>,
+    (main, doc_text, doc): (&str, &str, &Doc),
+    judged: &mut Vec<Judged>,
+    problems: &mut Vec<Problem>,
+) {
+    let mut listed: Vec<&str> = Vec::new();
+    for mark in &doc.marks {
+        let mut once = mark.clone();
+        once.names.clear();
+        for name in &mark.names {
+            if listed.contains(&name.as_str()) {
+                problems.push(locator.at_module((main, doc_text), mark.line, &named_twice(name)));
+            } else {
+                listed.push(name);
+                once.names.push(name.clone());
+            }
+        }
+        named_in_module(locator, (main, doc_text), &once, judged, problems);
+    }
+    let visible = locator.places.visible(main);
+    for (line, text) in &doc.sentence {
+        if let Some(names) = names_alone(text)
+            && names
+                .iter()
+                .all(|name| visible.iter().any(|each| each.name == *name))
+        {
+            problems.push(locator.at_module((main, doc_text), *line, &names_unended(&names)));
+        }
+    }
+}
+
 fn plan_of(
     locator: &Placer<'_>,
     (main, doc_text, doc): (&str, &str, &Doc),
@@ -329,30 +361,7 @@ fn plan_of(
             says,
         });
     }
-    let mut listed: Vec<&str> = Vec::new();
-    for mark in &doc.marks {
-        let mut once = mark.clone();
-        once.names.clear();
-        for name in &mark.names {
-            if listed.contains(&name.as_str()) {
-                problems.push(locator.at_module((main, doc_text), mark.line, &named_twice(name)));
-            } else {
-                listed.push(name);
-                once.names.push(name.clone());
-            }
-        }
-        named_in_module(locator, (main, doc_text), &once, &mut judged, &mut problems);
-    }
-    let sees = places.visible(main);
-    for (line, text) in &doc.sentence {
-        if let Some(names) = names_alone(text)
-            && names
-                .iter()
-                .all(|name| sees.iter().any(|each| each.name == *name))
-        {
-            problems.push(locator.at_module((main, doc_text), *line, &names_unended(&names)));
-        }
-    }
+    module_doc_names(locator, (main, doc_text, doc), &mut judged, &mut problems);
     for each in &judged {
         seen.extend(spot_key(places.spot_of(each.id)));
     }

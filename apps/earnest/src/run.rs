@@ -494,6 +494,10 @@ fn detail_of(
     lines
 }
 
+pub(crate) fn not_played_reason(runs: &[String]) -> String {
+    format!("runs not played: {}", runs.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Bounds, Graphs, Search, checked, explore_each};
@@ -537,8 +541,4 @@ mod tests {
             "a fresh result of one never replaces the cached result of the other"
         );
     }
-}
-
-pub(crate) fn not_played_reason(runs: &[String]) -> String {
-    format!("runs not played: {}", runs.join(", "))
 }
