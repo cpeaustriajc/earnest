@@ -46,24 +46,32 @@ pub(crate) fn builtin(opcode: &str) -> Option<Builtin> {
     Some(found)
 }
 
-const NOT_READ: [(&str, &str); 8] = [
+const NOT_READ: [(&str, &str); 6] = [
     (
         "chooseSome",
-        "`chooseSome`, whose choice Quint's backends make differently, is not read",
+        "`chooseSome`, whose choice Quint's backends make differently, is not read: pick \
+         every item with `nondet x = S.oneOf()`, or write `S.getOnlyElement()` for a set of one",
     ),
-    ("allLists", "the set of every list over a set is not read"),
+    (
+        "allLists",
+        "the set of every list over a set, which has no end, is not read: build the list in \
+         steps with `append`",
+    ),
     (
         "allListsUpTo",
-        "the set of every list over a set is not read",
+        "the set of every list over a set is not read: build the list in steps with \
+         `append`, picking each item with `nondet x = S.oneOf()`",
     ),
     (
         "setOfMaps",
-        "the set of every map between two sets is not read",
+        "the set of every map between two sets is not read: pick each value with \
+         `nondet v = S.oneOf()` and build the map with `put`, or pick from a written set of maps",
     ),
-    ("foldr", "`foldr` is not read: write `foldl`"),
-    ("fieldNames", "the field names of a record are not read"),
     ("apalache::generate", "Apalache's `generate` is not read"),
-    ("q::debug", "`q::debug` is not read"),
+    (
+        "q::debug",
+        "`q::debug` is read only as `q::debug(message, value)`, which is `value`",
+    ),
 ];
 const TEMPORAL: [&str; 9] = [
     "always",

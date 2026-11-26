@@ -2914,3 +2914,113 @@ changed.
   copies expressions unchanged, so a new read operator needs nothing here.
 - Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
   treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
+
+## Reads 1 (issue #64): what is checked
+
+Constructs `quint typecheck` accepts that the reader refused, from the first adversarial pass's
+list "Legal Quint that earnest refuses". The fixtures are in `crates/earnest_quint/fixtures/`,
+each `.qnt` beside the JSON `quint compile --target json` wrote for it (to a file, not a pipe):
+`reads` (the sample of all of it), `values` (single values), `onlyfault`, `helpers`, `endless`
+(also `endlessfold.json`, module `endlessFold`), `openfields` and `bigint`; the setup
+`tasks/quint/setups/readsetup.qnt` with its typecheck and compile JSON in `setups/fixtures/`.
+
+### How each is read
+
+- **`Bool`**: a name `Bool` that the compiled table does not hold is the constant set
+  `{false, true}`, wherever an expression is read. `Bool.oneOf()` in a `nondet` was already read.
+- **`Nat`, `Int`**: `x.in(S)`, `S.contains(x)` and `X.subseteq(S)` with `S` the bare name are
+  read before the set is: `x >= 0` for `Nat`, `x == x` for `Int` (so a fault in `x` stays a fault,
+  as `isFinite` does), and `X.forall(e => ...)` for `subseteq`. Anywhere else the name is refused:
+  `` `Nat` is the set of every integer from 0 up, a set without end, which the checker cannot hold:
+  it is read only in `x.in(Nat)`, `S.contains(x)` and `S.subseteq(Nat)`; elsewhere write a range
+  such as `0.to(9)` ``.
+- **`getOnlyElement`**: `S` is bound once; a fold puts each item at key 1 of an empty map, and the
+  result reads the key `S.size()`. A set of one gives its item; an empty set reads key 0 of an
+  empty map and a larger set key 2 or more of a map of one key: both `Fault::Missing`. Quint's
+  TypeScript evaluator stops on both with `QNT505` (`Called 'getOnlyElement' on a set with 0
+  elements`); Apalache 0.62.4 refuses the operator itself (`No entry found for id ... in lookup
+  table`), so `quint verify --backend tlc` gives no value. No `Op` was added: the fault says what
+  any missing key says, not `getOnlyElement`.
+- **`fieldNames`**: worked out when the file is read, from the record's type in the `types` table
+  of the compiled JSON (closed rows only), else from a record written out, a state variable's type,
+  or a constant record. A setup built from `quint typecheck` carries the types of the variables and
+  of each `fieldNames` argument, with aliases inlined. A record whose type is open where it is read
+  (`def names(r) = r.fieldNames()` given `m.get(1)`) is refused with what to write.
+- **`foldr`**: `l.foldr(z, (item, total) => ...)`, Quint's `(List[a], b, (a, b) => b) => b`
+  (`builtinSignatures.js`) and the TypeScript evaluator's `reduceRight` with `lambda([val,
+  accValue])`: a left fold that reverses the list (`[item].concat(total)`), then a left fold over
+  the reversed list with the lambda given the item first.
+- **Operators as arguments**: a bound parameter is now a value, a definition, or a lambda
+  (`Bound::Lambda`). At a call of a definition each argument that is a lambda or names an operator
+  (a definition whose body is a lambda, or a parameter that holds one) is bound as it is, and the
+  rest are read as values. A call of a parameter that holds a lambda reads the lambda's body with
+  its parameters bound to the arguments; `map`, `forall` and the other builtins take one too.
+  Bindings are by Quint's ids, which are unique in a module, and Quint has no recursion, so the
+  substitution ends. `val f = (x) => x + 1` is refused by Quint itself (`QNT200`: use `def`), and
+  Quint's effect checker refuses an operator kept as a value (`if (b) inc else dec`,
+  `Set(inc)`, `f == f`), so the reader's refusal of an operator as a value is not reached from
+  legal Quint.
+- **Unreached definitions**: `scan.rs` no longer looks into definitions; it keeps the refusals of
+  variable types, constants without a value, unknown declarations and `q::inductiveInv`. The
+  reader already read only what `init`, `step`, `q::inv`, `q::temporalProps` and the played runs
+  reach, and refuses at the first construct it does not take. A refusal inside a helper says which
+  definition the read started from and the names in between: `` in the definition `deeper`, which
+  `reached` reaches through `check` ``. Generated `q::` names are left out of the path.
+- **`q::debug(message, value)`**: read as `value`.
+- **Messages**: a literal past 64 bits is shown with `{:.0}` of the `f64` serde gives it, which is
+  the number as written for a round literal such as `100000000000000000000` (serde_json without
+  `arbitrary_precision` keeps no more digits); `chooseSome`, `allLists`, `allListsUpTo`,
+  `setOfMaps`, `q::debug` used otherwise, the powerset limit and the `nondet` limits now say what
+  to write instead; a name the reader does not know says it is neither a definition nor a builtin
+  earnest reads.
+
+### The sample against Quint
+
+`reads.qnt` (8 states: `n` from 0 to 3, `flag` either way) uses all of the above and an unused
+`chooseSome` helper. `quint verify --backend tlc` cannot run it, because Apalache refuses `foldr`
+and `getOnlyElement`, so `tasks/quint/models/reads_tlc.qnt` writes those two with `foldl` and
+`fold` and is otherwise the same file:
+
+| | states | `natural` `booleans` `names` `only` `operators` `folded` | `small` |
+|---|---|---|---|
+| `quint verify --backend tlc` on `reads_tlc.qnt` | 8 distinct | no error | violated |
+| `quint run --backend typescript --max-samples 2000` on `reads.qnt`, one run per invariant | | `[ok]` each | `[violation]` |
+| `earnest verify reads.json` | 8 | holds | broken after 3 steps |
+| `earnest confirm --tlc` (earnest's TLA+ export, TLC in Apalache's jar) | `same` | | |
+
+Each single value in `values.qnt` was run through `quint run --backend typescript --invariant
+<name>`: `foldedRight` (321), `foldedRightList` (`[3, 2, 1]`), `foldedRightEmpty`, `names`,
+`only`, `booleans`, `natural`, `operators`, `debugged` are `[ok]`; `emptyOnly` and `twoOnly` stop
+with `QNT505`.
+
+### Tests
+
+- `crates/earnest_quint/src/reads_tests.rs` (14): each value of `values.json` evaluated in the
+  start state; the `Nat`/`Int` refusals; the open `fieldNames` refusal; the unused helper of
+  `reads.json` read and the used one of `helpers.json` refused with its path; the literal; `Bool`
+  in a run and `q::debug` in an action; the `readsetup` setup built from the typecheck, read as
+  the compiled one, its invariants true at the start.
+- `apps/earnest/tests/behavior/quint_reads.rs` (3): `earnest verify specs/reads.qnt` through a fake
+  `quint` prints one line `fail  reads  8 states`, the verdicts as above, and the
+  `getOnlyElement` fault of `onlyfault.json` with its path and its run passing.
+- `tasks/break_it/tests/tlc/quint_reads.rs` (1, feature `tlc`): `earnest confirm --tlc` on
+  `reads.json` says `same` with 8 states.
+- Earlier slices' tests changed (none is on `origin/main`): `tests.rs`
+  `an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in` swaps the
+  invariant's `powerset` out before looking for `chooseSome` and now asserts `foldr` is not named;
+  `quint_data.rs` `an_operator_the_reader_does_not_take_makes_the_file_unreadable_and_names_it`
+  looks for the `powerset` of `every` and asserts `foldr` is not named; `quint.rs`
+  `an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct` swaps `powerset`
+  out of the fixture text. Each fixture lists both of its helpers as invariants, so the first
+  refusal the reader meets is now the invariant's, where the old scan listed every definition.
+
+### Not done, and doubts
+
+- A check now reports only the first refusal the reader meets; the old scan listed one per
+  definition. A module with several unread constructs shows them one at a time.
+- The `getOnlyElement` fault does not name the operator: that needs a new `Fault`, which every
+  backend's printing would see.
+- `fieldNames` of a record whose type is open where it is read is refused, though the call site's
+  type is known; reading it would need the argument's type carried with the binding.
+- A literal past 2^53 with digits below its leading ones (`123456789012345678901`) is shown as the
+  `f64` nearest it, not as written.

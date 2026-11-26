@@ -19,7 +19,37 @@ pub(crate) struct Compiled {
     pub(crate) modules: Vec<Module>,
     pub(crate) table: HashMap<String, Entry>,
     #[serde(default)]
+    pub(crate) types: HashMap<String, Scheme>,
+    #[serde(default)]
     pub(crate) errors: Vec<IgnoredAny>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Scheme {
+    #[serde(rename = "type")]
+    pub(crate) shape: Shape,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Shape {
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) fields: Option<Row>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Row {
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) fields: Vec<RowField>,
+    #[serde(default)]
+    pub(crate) other: Option<Box<Row>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RowField {
+    #[serde(rename = "fieldName")]
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Deserialize)]
