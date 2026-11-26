@@ -177,6 +177,7 @@ pub(crate) struct Reader<'a> {
     pub(crate) unnamed: Vec<u64>,
     pub(crate) within: String,
     trail: Vec<String>,
+    callers: HashMap<u64, (String, Vec<String>)>,
     types: &'a HashMap<String, Scheme>,
     declared: Vec<&'a str>,
 }
@@ -194,7 +195,7 @@ fn base_name(parameter: &str) -> &str {
     }
 }
 
-fn reads_state(expr: &Expr, bound: &[usize]) -> bool {
+pub(crate) fn reads_state(expr: &Expr, bound: &[usize]) -> bool {
     let any = |all: &[Expr]| all.iter().any(|each| reads_state(each, bound));
     let within = |slots: &[usize], body: &Expr| {
         let inner: Vec<usize> = bound.iter().chain(slots).copied().collect();
@@ -299,6 +300,7 @@ impl<'a> Reader<'a> {
             unnamed: Vec::new(),
             within: String::new(),
             trail: Vec::new(),
+            callers: HashMap::new(),
             types: &compiled.types,
             declared: compiled
                 .modules
@@ -512,6 +514,10 @@ impl<'a> Reader<'a> {
                 self.parameters
                     .insert(slot, base_name(&parameter.name).to_owned());
             }
+            if matches!(argument, Bound::Action(_) | Bound::Lambda(..)) {
+                self.callers
+                    .insert(parameter.id, (self.within.clone(), self.trail.clone()));
+            }
             outer.push((parameter.id, self.bound.insert(parameter.id, argument)));
         }
         Ok(outer)
@@ -546,9 +552,8 @@ impl<'a> Reader<'a> {
         &mut self,
         name: &str,
         (parameters, body): (&'a [Param], &'a Quint),
-        args: &'a [Quint],
+        arguments: Vec<Bound<'a>>,
     ) -> Read<Expr> {
-        let arguments = self.passed(args)?;
         let outer = self.bind_parameters((name, LAMBDA), parameters, arguments)?;
         let result = self.pure(body);
         self.unbind(outer);
@@ -559,9 +564,8 @@ impl<'a> Reader<'a> {
         &mut self,
         name: &str,
         (parameters, body): (&'a [Param], &'a Quint),
-        args: &'a [Quint],
+        arguments: Vec<Bound<'a>>,
     ) -> Read<Vec<Path>> {
-        let arguments = self.passed(args)?;
         let outer = self.bind_parameters((name, LAMBDA), parameters, arguments)?;
         let result = self.paths(body);
         self.unbind(outer);
@@ -596,6 +600,19 @@ impl<'a> Reader<'a> {
                 .then_some(Bound::Operator(def))
             }
         }
+    }
+
+    fn as_caller<T>(&mut self, id: u64, read: impl FnOnce(&mut Self) -> Read<T>) -> Read<T> {
+        let entry = self.table.get(&id.to_string()).map_or(id, |entry| entry.id);
+        let Some((within, trail)) = self.callers.get(&entry).cloned() else {
+            return read(self);
+        };
+        let within = std::mem::replace(&mut self.within, within);
+        let trail = std::mem::replace(&mut self.trail, trail);
+        let result = read(self);
+        self.within = within;
+        self.trail = trail;
+        result
     }
 
     pub(crate) fn given_lambda(&self, id: u64) -> Option<(&'a [Param], &'a Quint)> {
@@ -662,7 +679,9 @@ impl<'a> Reader<'a> {
             _ => {
                 match self.bound.get(&entry.id) {
                     Some(Bound::Value(value)) => return Ok(value.clone()),
-                    Some(Bound::Action(given)) => return self.pure(given),
+                    Some(Bound::Action(given)) => {
+                        return self.as_caller(entry.id, |reader| reader.pure(given));
+                    }
                     Some(Bound::Lambda(..)) => {
                         return self.refuse(&format!("`{name}`"), OPERATOR_AS_VALUE);
                     }
@@ -696,7 +715,9 @@ impl<'a> Reader<'a> {
                     .map_err(|refused| refused.at(id));
             }
             if let Some(lambda) = self.given_lambda(id) {
-                return self.called_lambda(opcode, lambda, args);
+                let arguments = self.passed(args)?;
+                return self
+                    .as_caller(id, |reader| reader.called_lambda(opcode, lambda, arguments));
             }
             let entry = self.entry(id, opcode)?;
             let def = self.operator(entry, opcode)?;
@@ -847,7 +868,10 @@ impl<'a> Reader<'a> {
                 Some(Builtin::Ite) => self.branches(args),
                 _ => {
                     if let Some(lambda) = self.given_lambda(*id) {
-                        return self.called_action(opcode, lambda, args);
+                        let arguments = self.passed(args)?;
+                        return self.as_caller(*id, |reader| {
+                            reader.called_action(opcode, lambda, arguments)
+                        });
                     }
                     let entry = self.entry(*id, opcode)?;
                     let def = self.operator(entry, opcode)?;
@@ -858,7 +882,7 @@ impl<'a> Reader<'a> {
             Quint::Name { id, name } => {
                 let entry = self.entry(*id, name)?;
                 if let Some(Bound::Action(given)) = self.bound.get(&entry.id) {
-                    return self.paths(given);
+                    return self.as_caller(entry.id, |reader| reader.paths(given));
                 }
                 let def = self.operator(entry, name)?;
                 self.action(def, Vec::new())
@@ -917,10 +941,14 @@ impl<'a> Reader<'a> {
             .collect();
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;
         if !self.unnamed.contains(&def.id) {
+            let written = self.written_arguments(def, &given);
             for path in &mut paths {
                 if path.name.is_some() {
                     let outer = path.branch.len().saturating_sub(path.named_branches);
                     path.branch.truncate(outer);
+                }
+                if let Some(written) = &written {
+                    path.branch.insert(0, written.clone());
                 }
                 path.named_branches = path.branch.len();
                 path.name = Some(def.name.clone());
@@ -928,6 +956,27 @@ impl<'a> Reader<'a> {
             }
         }
         Self::checked(paths)
+    }
+
+    fn written_arguments(&self, def: &Def, given: &[Option<Expr>]) -> Option<String> {
+        let Quint::Lambda { params, .. } = &def.expr else {
+            return None;
+        };
+        let shown: Vec<String> = params
+            .iter()
+            .zip(given)
+            .filter_map(|(param, passed)| {
+                let passed = passed.as_ref()?;
+                if matches!(passed, Expr::Local(_)) {
+                    return None;
+                }
+                let value = constant(passed, self.slots).ok().flatten()?;
+                let name = base_name(&param.name);
+                let name = name.rsplit_once("::").map_or(name, |(_, last)| last);
+                Some(format!("{name} = {}", self.symbols.show(&value)))
+            })
+            .collect();
+        (!shown.is_empty()).then(|| format!(" {}", shown.join("  ")))
     }
 
     fn assign(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {

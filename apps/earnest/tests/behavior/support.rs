@@ -367,43 +367,8 @@ pub(crate) fn without_timings(report: &Value) -> Value {
     without(report, &["milliseconds", "cached"])
 }
 
-pub(crate) type Marks<'a> = &'a [(&'a str, &'a [(&'a str, &'a str, &'a str)])];
-
-pub(crate) fn with_marks(parsed: &str, checks: Marks<'_>) -> String {
-    let mut parsed: Value = serde_json::from_str(parsed).expect("the parse is JSON");
-    let mut next_id: u64 = 900_000;
-    let mut fresh = |kind: &str, name: &str, qualifier: &str| {
-        next_id = next_id.saturating_add(1);
-        json!({ "id": next_id, "kind": kind, "name": name, "qualifier": qualifier })
-    };
-    for (module, properties) in checks {
-        let modules = parsed["modules"]
-            .as_array_mut()
-            .expect("the parse has modules");
-        let at = if let Some(at) = modules.iter().position(|each| each["name"] == *module) {
-            at
-        } else {
-            let declarations = vec![
-                fresh("def", "init", "action"),
-                fresh("def", "step", "action"),
-            ];
-            modules.push(json!({ "id": 899_999, "name": module, "declarations": declarations }));
-            modules.len().saturating_sub(1)
-        };
-        let found = &mut modules[at];
-        found["doc"] = Value::from("@check");
-        for (name, qualifier, mark) in *properties {
-            let declarations = found["declarations"]
-                .as_array_mut()
-                .expect("the module has declarations");
-            if let Some(declaration) = declarations.iter_mut().find(|each| each["name"] == *name) {
-                declaration["doc"] = Value::from(*mark);
-            } else {
-                let mut added = fresh("def", name, qualifier);
-                added["doc"] = Value::from(*mark);
-                declarations.push(added);
-            }
-        }
-    }
-    parsed.to_string()
+pub(crate) fn checks(name: &str) -> String {
+    let path = repository().join("tasks/quint/checks").join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
 }

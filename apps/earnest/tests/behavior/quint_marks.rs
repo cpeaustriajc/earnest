@@ -55,7 +55,9 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 7] = ["specs", "failing", "typo", "lost", "runs", "rules", "old"];
+const SETS: [&str; 10] = [
+    "specs", "failing", "typo", "lost", "runs", "rules", "old", "names", "faults", "written",
+];
 
 fn marked() -> PathBuf {
     repository().join("tasks/quint/marked")
@@ -285,7 +287,6 @@ fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
         (10, "`module Empty`"),
         (21, "`zero`"),
         (26, "`module Worded`"),
-        (31, "`fixed`"),
     ]
     .iter()
     .map(|(line, feature)| (*line, (*feature).to_owned()))
@@ -294,8 +295,8 @@ fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
     sorted.sort();
     assert_eq!(
         sorted, expected,
-        "a constant unset, nothing to judge, a mark no check sees (twice, one in a module whose \
-         own mark is unreadable), and an unknown word on a module: {run}"
+        "a constant unset, nothing to judge, a mark no check sees, and a name on a module the \
+         module does not see: {run}"
     );
     assert!(models(&run.json()).is_empty(), "nothing is judged: {run}");
 }
@@ -315,11 +316,16 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
         "{run}"
     );
     for written in [
-        "1. `clock.qnt`, module `Small`: write `/// @check` above `module Small`, `clock.qnt:14`",
-        "write `/// @check` above `inRange` of the module `Clock`, `clock.qnt:7`",
-        "write `/// @check` above `alwaysInRange` of the module `Clock`, `clock.qnt:10`",
-        "/// @check\nmodule SmallBroken {\n  import Clock(Limit = 3) as V\n  action init = V::init\n  action step = V::step\n  /// @check broken\n  val belowLimit = V::belowLimit\n}",
-        "3. `clock.qnt`, module `Large`: write `/// @check` above `module Large`, `clock.qnt:18`",
+        "1. `clock.qnt`, the check of `Small`: write these lines above `module Small` \
+         (`clock.qnt:14`):\n      /// @check inRange, alwaysInRange\n",
+        "2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to \
+         `clock.qnt`, and mark nothing in `Small` for it:\n      /// @check broken \
+         V::belowLimit\n      module SmallBroken {\n        import Clock(Limit = 3) as V\n        \
+         action init = V::init\n        action step = V::step\n      }\n",
+        "so `tickTest` is played from now on, which the entry left out",
+        "3. `clock.qnt`, the check of `Large`: write these lines above `module Large` \
+         (`clock.qnt:18`):\n      /// @check C::inRange\n",
+        "so `C::tickTest` is played from now on",
     ] {
         assert!(message.contains(written), "{written}\nin\n{message}");
     }
@@ -329,7 +335,8 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
     );
     let text = quint.earnest(&["verify", "old"]);
     assert!(
-        text.to_string().contains("\n      module SmallBroken {\n"),
+        text.to_string()
+            .contains("\n            module SmallBroken {\n"),
         "the text output keeps the module on lines of its own, to copy: {text}"
     );
 }
@@ -469,5 +476,130 @@ fn a_changed_mark_checks_again_and_changes_the_quint_entries() {
         broken.detail("bank"),
         ["holds  nonNegative  a counterexample was expected"],
         "{broken}"
+    );
+}
+
+#[test]
+fn names_after_a_mark_in_a_module_s_doc_are_judged_in_that_check_only() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "names", "--json"]);
+    run.exits(0);
+    let report = run.json();
+    for (name, judged) in [
+        (
+            "Holds",
+            &[
+                ("low", "holds"),
+                ("bounded", "holds"),
+                ("upTest", "holds"),
+                ("upTwice", "holds"),
+            ][..],
+        ),
+        (
+            "Broken",
+            &[
+                ("high", "broken"),
+                ("stays", "broken"),
+                ("upTest", "holds"),
+                ("tooFar", "broken"),
+            ][..],
+        ),
+        ("Reached", &[("high", "broken"), ("upTest", "holds")][..]),
+        ("Plain", &[("upTest", "holds")][..]),
+    ] {
+        assert_eq!(
+            verdicts(&report, name),
+            pairs(judged),
+            "a val, a temporal property and a run named in the doc of `{name}`, and the run \
+             ending in `Test` that every check plays\n{run}"
+        );
+    }
+    for (name, id, expected) in [
+        ("Broken", "high", "broken"),
+        ("Broken", "stays", "broken"),
+        ("Broken", "tooFar", "broken"),
+        ("Reached", "high", "reached"),
+    ] {
+        assert_eq!(
+            rule(model(&report, name), id)["expected"],
+            expected,
+            "{name}: {id}\n{run}"
+        );
+    }
+    assert_eq!(
+        rule(model(&report, "Holds"), "low").get("expected"),
+        None,
+        "{run}"
+    );
+}
+
+#[test]
+fn each_new_way_a_mark_is_unreadable_is_reported_at_its_line_and_a_later_doc_line_counts() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "faults", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let found: Vec<(u64, String)> = problems(&report)
+        .into_iter()
+        .map(|(_, line, feature, _)| (line, feature))
+        .collect();
+    let expected: Vec<(u64, String)> = [
+        (4, "`N`"),
+        (6, "`x`"),
+        (8, "`init`"),
+        (12, "`twice`"),
+        (14, "`listed`"),
+        (16, "`always0`"),
+        (18, "`above`"),
+        (27, "`Faults`"),
+    ]
+    .iter()
+    .map(|(line, feature)| (*line, (*feature).to_owned()))
+    .collect();
+    assert_eq!(
+        found, expected,
+        "`///@check` with no space, a `var`, an `action`, a second mark, names on a \
+         definition, `reachable` on a temporal property, a definition with parameters and an \
+         import: {run}"
+    );
+    let messages: Vec<String> = problems(&report)
+        .into_iter()
+        .map(|(_, _, _, message)| message)
+        .collect();
+    for (at, said) in [
+        (0, "which is how Quint hands over `///@check`"),
+        (3, "holds a second mark"),
+        (4, "only the doc comment of a check's module does"),
+        (5, "`@check reachable` marks a `val`"),
+        (6, "is a definition with parameters"),
+    ] {
+        assert!(messages[at].contains(said), "{said}\nin {}", messages[at]);
+    }
+    assert_eq!(
+        verdicts(&report, "Uses"),
+        pairs(&[("later", "holds")]),
+        "the mark on the second line of the doc of `later` counts\n{run}"
+    );
+}
+
+#[test]
+fn an_entry_that_writes_a_property_as_an_expression_is_given_the_val_to_add_with_its_mark() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "written", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(file, _, _, message)] = found.as_slice() else {
+        panic!("one problem: {run}");
+    };
+    assert_eq!(file, "written/earnest.quint.json", "{run}");
+    assert!(
+        message.contains(
+            "write these lines above `module counter` (`counter.qnt:2`):\n      /// @check \
+             small, nonNegative, property\n      /// @check broken property2\n      and add \
+             these lines inside `module counter`:\n      val nonNegative = n >= 0\n      val \
+             property = n != 7\n      val property2 = n < 3"
+        ),
+        "each expression becomes a `val`, under its own name or a new one, named by the mark\n\
+         {message}"
     );
 }

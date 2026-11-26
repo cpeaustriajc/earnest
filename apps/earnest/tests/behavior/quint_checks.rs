@@ -52,8 +52,8 @@ case "$1" in
       sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" \
         "$here/parsed/$name.sourcemap.json" > "$map"
     else
-      echo '{"modules":[]}' > "$out"
-      echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+      echo "error: no parse of $name.qnt is recorded" >&2
+      exit 1
     fi
     ;;
 esac
@@ -69,27 +69,10 @@ const FAILED_COMPILE: &str = "
 error: parsing failed
 ";
 
-const COUNTER: Marked<'static> = Marked {
-    module: "counter",
-    properties: &[("inRange", "val", "@check"), ("tooBig", "val", "@check")],
-};
-
-const IN_RANGE: Marked<'static> = Marked {
-    module: "counter",
-    properties: &[("inRange", "val", "@check")],
-};
-
-const DEAD: Marked<'static> = Marked {
-    module: "dead",
-    properties: &[("ok", "val", "@check")],
-};
-
-const PARSED: [&str; 3] = ["counter", "choose", "stuck"];
-
-#[derive(Clone, Copy)]
-struct Marked<'a> {
-    module: &'a str,
-    properties: &'a [(&'a str, &'a str, &'a str)],
+fn checks(name: &str) -> String {
+    let path = repository().join("tasks/quint/checks").join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
 }
 
 fn sample(name: &str) -> String {
@@ -116,9 +99,6 @@ impl Quint {
                 &sample(&format!("{module}.json")),
             );
         }
-        for name in ["choose.parse.json", "choose.sourcemap.json"] {
-            sandbox.write(&format!("fake/parsed/{name}"), &sample(name));
-        }
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
     }
@@ -130,86 +110,17 @@ impl Quint {
             .expect("the fake can be made a program");
     }
 
-    fn with_specs(&self, folder: &str, file: &str, checks: &[Marked<'_>]) {
-        let written: Vec<String> = checks
-            .iter()
-            .map(|check| {
-                let properties: Vec<String> = check
-                    .properties
-                    .iter()
-                    .map(|(name, _, mark)| format!("{name} {mark}"))
-                    .collect();
-                format!("{} [{}]", check.module, properties.join(", "))
-            })
-            .collect();
+    fn with_check(&self, folder: &str, variant: &str, file: &str) {
         self.sandbox.write(
             &format!("{folder}/{file}.qnt"),
-            &format!(
-                "{}// marked: {}\n",
-                sample(&format!("{file}.qnt")),
-                written.join("; ")
-            ),
+            &checks(&format!("{variant}/{file}.qnt")),
         );
-        let mut parsed: Value = if PARSED.contains(&file) {
-            serde_json::from_str(&sample(&format!("{file}.parse.json")))
-                .expect("the parse fixture is JSON")
-        } else {
-            serde_json::json!({ "modules": [] })
-        };
-        let mut next_id: u64 = 100_000;
-        for check in checks {
-            let modules = parsed["modules"]
-                .as_array_mut()
-                .expect("the parse has modules");
-            let at = modules
-                .iter()
-                .position(|module| module["name"] == check.module)
-                .unwrap_or_else(|| {
-                    let mut declarations = Vec::new();
-                    for name in ["init", "step"] {
-                        next_id = next_id.saturating_add(1);
-                        declarations.push(serde_json::json!({
-                            "id": next_id, "kind": "def", "name": name, "qualifier": "action"
-                        }));
-                    }
-                    modules.push(serde_json::json!({
-                        "id": next_id.saturating_add(1),
-                        "name": check.module,
-                        "declarations": declarations
-                    }));
-                    next_id = next_id.saturating_add(1);
-                    modules.len().saturating_sub(1)
-                });
-            let module = &mut modules[at];
-            module["doc"] = Value::from("@check");
-            for (name, qualifier, mark) in check.properties {
-                let declarations = module["declarations"]
-                    .as_array_mut()
-                    .expect("the module has declarations");
-                if let Some(declaration) =
-                    declarations.iter_mut().find(|each| each["name"] == *name)
-                {
-                    declaration["doc"] = Value::from(*mark);
-                } else {
-                    next_id = next_id.saturating_add(1);
-                    declarations.push(serde_json::json!({
-                        "id": next_id, "kind": "def", "name": name,
-                        "qualifier": qualifier, "doc": mark
-                    }));
-                }
-            }
+        for kind in ["parse", "sourcemap"] {
+            self.sandbox.write(
+                &format!("fake/parsed/{file}.{kind}.json"),
+                &checks(&format!("fixtures/{variant}/{file}.{kind}.json")),
+            );
         }
-        self.sandbox.write(
-            &format!("fake/parsed/{file}.parse.json"),
-            &parsed.to_string(),
-        );
-        let map = if PARSED.contains(&file) {
-            sample(&format!("{file}.sourcemap.json"))
-        } else {
-            format!(r#"{{"sourceIndex":{{"0":"{file}.qnt"}},"map":{{}}}}"#)
-        };
-        self.sandbox
-            .write(&format!("fake/parsed/{file}.sourcemap.json"), &map);
     }
 
     fn earnest(&self, arguments: &[&str]) -> Run {
@@ -282,19 +193,8 @@ fn message_of(report: &serde_json::Value) -> String {
 #[test]
 fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_checked() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[COUNTER]);
-    quint.with_specs(
-        "models",
-        "dead",
-        &[Marked {
-            module: "dead",
-            properties: &[
-                ("ok", "val", "@check"),
-                ("later", "temporal", "@check"),
-                ("sooner", "temporal", "@check"),
-            ],
-        }],
-    );
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "temporal", "dead");
     let run = quint.earnest(&["verify"]);
     run.exits(1);
     let calls = quint.calls();
@@ -347,16 +247,14 @@ fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_check
 fn compiles_run_side_by_side_but_never_more_than_jobs_at_once() {
     let quint = Quint::new();
     quint.sandbox.write("fake/pause", "");
-    let specs = ["counter", "dead", "starts", "mixed"];
-    for module in specs {
-        quint.with_specs(
-            "models",
-            module,
-            &[Marked {
-                module,
-                properties: &[("ok", "val", "@check")],
-            }],
-        );
+    let specs = [
+        ("inrange", "counter"),
+        ("dead", "dead"),
+        ("starts", "starts"),
+        ("inbounds", "mixed"),
+    ];
+    for (variant, file) in specs {
+        quint.with_check("models", variant, file);
     }
     let peaks = |jobs: &str| -> Vec<u64> {
         quint.sandbox.write("fake/peaks", "");
@@ -390,8 +288,8 @@ fn compiles_run_side_by_side_but_never_more_than_jobs_at_once() {
 #[test]
 fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again() {
     let quint = Quint::new();
-    quint.with_specs("first", "counter", &[COUNTER]);
-    quint.with_specs("second", "dead", &[DEAD]);
+    quint.with_check("first", "counter", "counter");
+    quint.with_check("second", "dead", "dead");
     let first = quint.earnest(&["verify"]);
     first.exits(1);
     assert_eq!(
@@ -445,8 +343,8 @@ fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again
 #[test]
 fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[IN_RANGE]);
-    quint.with_specs("models", "dead", &[DEAD]);
+    quint.with_check("models", "inrange", "counter");
+    quint.with_check("models", "dead", "dead");
     let dead = quint.sandbox.path().join("models/dead.qnt");
     quint.sandbox.write(
         "fake/fails/dead",
@@ -485,8 +383,8 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
 #[test]
 fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[COUNTER]);
-    quint.with_specs("models", "dead", &[DEAD]);
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "dead", "dead");
     let run = quint.without_quint(&["verify", "--json"]);
     run.exits(1);
     let report = run.json();
@@ -521,7 +419,7 @@ fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
 #[test]
 fn quint_in_node_modules_above_the_checks_is_used() {
     let quint = Quint::new();
-    quint.with_specs("app/specs", "counter", &[COUNTER]);
+    quint.with_check("app/specs", "counter", "counter");
     fs::create_dir_all(quint.sandbox.path().join("app/node_modules/.bin"))
         .expect("the folder can be made");
     std::os::unix::fs::symlink(
@@ -543,9 +441,7 @@ fn a_checks_file_right_or_wrong_is_unreadable_at_itself_and_judges_nothing() {
         r#"{ "checks": [ "#,
     ] {
         let quint = Quint::new();
-        quint
-            .sandbox
-            .write("models/counter.qnt", &sample("counter.qnt"));
+        quint.with_check("models", "plain", "counter");
         quint.sandbox.write("models/earnest.quint.json", checks);
         let run = quint.earnest(&["verify", "--json"]);
         run.exits(1);
@@ -571,8 +467,8 @@ fn a_checks_file_right_or_wrong_is_unreadable_at_itself_and_judges_nothing() {
 #[test]
 fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[COUNTER]);
-    quint.sandbox.write("models/dead.qnt", &sample("dead.qnt"));
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "plain", "dead");
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(1);
     let report = run.json();
@@ -590,9 +486,7 @@ fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
         quint.calls()
     );
     let lonely = Quint::new();
-    lonely
-        .sandbox
-        .write("alone/counter.qnt", &sample("counter.qnt"));
+    lonely.with_check("alone", "plain", "counter");
     let alone = lonely.earnest(&["verify", "alone/counter.qnt", "--json"]);
     alone.exits(1);
     assert_eq!(
@@ -614,8 +508,8 @@ fn models_of(report: &serde_json::Value) -> Vec<String> {
 #[test]
 fn a_quint_file_named_on_the_command_line_checks_only_its_marked_modules() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[IN_RANGE]);
-    quint.with_specs("models", "dead", &[DEAD]);
+    quint.with_check("models", "inrange", "counter");
+    quint.with_check("models", "dead", "dead");
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(0);
     assert_eq!(models_of(&run.json()), ["dead"], "{run}");
@@ -625,20 +519,8 @@ fn a_quint_file_named_on_the_command_line_checks_only_its_marked_modules() {
 #[test]
 fn model_and_rule_select_across_checks() {
     let quint = Quint::new();
-    quint.with_specs("models", "counter", &[COUNTER]);
-    quint.with_specs(
-        "models",
-        "mixed",
-        &[Marked {
-            module: "mixed",
-            properties: &[
-                ("inBounds", "val", "@check"),
-                ("downAtZero", "val", "@check"),
-                ("agree", "val", "@check"),
-                ("neverFourDown", "val", "@check"),
-            ],
-        }],
-    );
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "mixed", "mixed");
     let one = quint.earnest(&["verify", "--model", "mixed", "--json"]);
     one.exits(1);
     assert_eq!(models_of(&one.json()), ["mixed"], "{one}");
@@ -654,14 +536,7 @@ fn model_and_rule_select_across_checks() {
 #[test]
 fn a_refused_construct_is_reported_at_its_line_in_the_quint_file() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        "choose",
-        &[Marked {
-            module: "choose",
-            properties: &[("ok", "val", "@check")],
-        }],
-    );
+    quint.with_check("models", "choose", "choose");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     let expected = [(
@@ -712,17 +587,7 @@ fn a_compiled_json_named_on_the_command_line_needs_no_quint() {
 #[test]
 fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
     let quint = Quint::new();
-    quint.with_specs(
-        "models",
-        "counter",
-        &[
-            COUNTER,
-            Marked {
-                module: "wide",
-                properties: &[("inRange", "val", "@check")],
-            },
-        ],
-    );
+    quint.with_check("models", "wide", "counter");
     for main in ["counter", "wide"] {
         quint.sandbox.write(
             &format!("fake/fails/{main}"),
@@ -749,22 +614,17 @@ fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
 #[test]
 fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
     let quint = Quint::new();
-    quint.with_specs("app/specs", "counter", &[COUNTER]);
-    quint.sandbox.write(
-        "app/shared/lib.qnt",
-        "module lib {\n  pure val Limit = 5\n}\n",
-    );
+    quint.with_check("app/specs", "imported/specs", "counter");
+    quint.with_check("app/shared", "imported/shared", "lib");
     let root = quint
         .sandbox
         .path()
         .canonicalize()
         .expect("the sandbox has a real path");
+    let map = quint.sandbox.read("fake/parsed/counter.sourcemap.json");
     quint.sandbox.write(
         "fake/parsed/counter.sourcemap.json",
-        &format!(
-            r#"{{"sourceIndex":{{"0":"counter.qnt","1":"{}"}},"map":{{}}}}"#,
-            root.join("app/shared/lib.qnt").display()
-        ),
+        &map.replace("ROOT", &root.join("app").to_string_lossy()),
     );
     quint.earnest(&["verify"]).exits(1);
     assert_eq!(quint.compiles().len(), 1, "the first run compiles");
@@ -784,21 +644,12 @@ fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
     );
 }
 
-fn with_stuck(runs: &[(&str, &str, &str)]) -> Quint {
+fn with_stuck(variant: &str) -> Quint {
     let quint = Quint::new();
     quint
         .sandbox
         .write("fake/compiled/stuck.json", &sample("stuck.json"));
-    let mut properties = vec![("ok", "val", "@check")];
-    properties.extend_from_slice(runs);
-    quint.with_specs(
-        "models",
-        "stuck",
-        &[Marked {
-            module: "stuck",
-            properties: &properties,
-        }],
-    );
+    quint.with_check("models", variant, "stuck");
     quint
 }
 
@@ -825,7 +676,7 @@ fn pairs(all: &[(&str, &str)]) -> Vec<(String, String)> {
 
 #[test]
 fn a_check_plays_the_runs_whose_names_end_in_test() {
-    let quint = with_stuck(&[]);
+    let quint = with_stuck("stuck");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     assert_eq!(
@@ -844,10 +695,7 @@ fn a_check_plays_the_runs_whose_names_end_in_test() {
 
 #[test]
 fn a_marked_run_is_played_and_one_marked_broken_is_met_when_it_breaks() {
-    let quint = with_stuck(&[
-        ("thirdTest", "run", "@check broken"),
-        ("wrongExpectTest", "run", "@check broken"),
-    ]);
+    let quint = with_stuck("broken");
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(0);
     assert_eq!(
@@ -870,19 +718,7 @@ fn a_setup_prints_short_names_and_its_rule_is_selected_by_the_printed_name() {
     quint
         .sandbox
         .write("fake/compiled/SmallBits.json", &sample("smallbits.json"));
-    quint.with_specs(
-        "models",
-        "clockbits",
-        &[Marked {
-            module: "SmallBits",
-            properties: &[
-                ("allHeard", "temporal", "@check"),
-                ("timeAdvances", "temporal", "@check"),
-                ("fairHear", "temporal", "@check"),
-                ("leads", "temporal", "@check"),
-            ],
-        }],
-    );
+    quint.with_check("models", "smallbits", "clockbits");
     let run = quint.earnest(&["verify", "--rule", "allHeard"]);
     run.exits(1);
     let detail = run.detail("SmallBits");

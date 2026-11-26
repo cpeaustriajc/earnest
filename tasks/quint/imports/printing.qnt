@@ -29,13 +29,11 @@ module Printing {
   run noStartTest = all { 1 > 2, balances' = Map(), seen' = Set(), queue' = [] }.then(step)
 }
 
-/// @check
+/// @check P::annBelowFive
 /// `Printing` with the run whose first action faults, apart from the other checks.
 module fault {
   import Printing as P
   action init = P::init
   action step = P::step
-  /// @check
-  val annBelowFive = P::annBelowFive
   run faultTest = P::seed(0).then(P::step)
 }

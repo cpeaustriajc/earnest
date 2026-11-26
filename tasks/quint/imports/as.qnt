@@ -11,19 +11,16 @@ module SpecAs {
   action up = all { n < K, n' = n + H::Start, on' = not(on), last' = T::Up }
   action down = all { n > 0, n' = n - 1, on' = on, last' = T::Down(n) }
   action step = any { up, down }
-  /// @check
   val ok = n <= H::quad(K)
-  /// @check
   val noDownAtTop = last != T::Down(K)
   run upTest = init.then(up).expect(n == 2)
   run downTest = init.then(down).expect(last == T::Down(1))
 }
 
-/// @check
+/// @check ok, noDownAtTop, small
 module As {
   import Kinds.* from "./star"
   import Helpers.* from "./star"
   import SpecAs(K = quad(1)).*
-  /// @check
   val small = n < quad(2) and last != Down(quad(1) + 1)
 }

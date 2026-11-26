@@ -380,6 +380,7 @@ fn parts<'a>(
         parts: &parts,
         fields: names,
         paths: &stepping,
+        starts: starts.as_deref().unwrap_or_default(),
     };
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step).map_err(|mut found| refused.append(&mut found));
@@ -451,11 +452,58 @@ fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
     found
 }
 
+fn written_twice(declarations: &[Declaration], main: &str) -> Option<Refusal> {
+    let variables: Vec<(u64, &str)> = declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Var { id, name, .. } => Some((*id, name.as_str())),
+            _ => None,
+        })
+        .collect();
+    variables.iter().enumerate().find_map(|(at, (id, first))| {
+        let (_, second) = variables
+            .iter()
+            .skip(at.saturating_add(1))
+            .find(|(other, _)| other == id)?;
+        Some(refusal(
+            &format!("`{first}`"),
+            &format!(
+                "`quint compile --main {main}` writes this variable twice under one id, as \
+                 `{first}` and `{second}`, so the compiled module is not one Quint means: Quint's \
+                 own TLC run (`quint verify --backend tlc`) stops on it too, while `quint test` \
+                 plays the module. Quint compiles it so when another module of the file \
+                 exports a module this one imports: put the two modules in separate files"
+            ),
+        ))
+    })
+}
+
+fn defs_of(declarations: &[Declaration]) -> HashMap<u64, &Def> {
+    declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) => Some((def.id, def)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn runs_declared(declarations: &[Declaration]) -> Vec<&str> {
+    declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) if def.qualifier == "run" => Some(def.name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn shorten(
     actions: &mut [Action],
     rules: &mut [Rule],
     eventually: &mut [Eventually],
     scripts: &mut [Script],
+    runs: &[&str],
 ) {
     let played = scripts.iter().flat_map(|script| &script.actions);
     let short_actions = Short::of_ids(actions.iter().chain(played).map(|each| each.id.as_str()));
@@ -470,7 +518,8 @@ fn shorten(
             .iter()
             .map(|each| each.id.as_str())
             .chain(eventually.iter().map(|each| each.id.as_str()))
-            .chain(scripts.iter().map(|each| each.id.as_str())),
+            .chain(scripts.iter().map(|each| each.id.as_str()))
+            .chain(runs.iter().copied()),
     );
     for rule in rules {
         short_rules.rename_rule(rule);
@@ -496,7 +545,8 @@ pub(crate) fn model(
     wanted: Wanted,
 ) -> Result<Model, Vec<Refusal>> {
     let met = built(path, compiled, Symbols::default(), (runs, wanted))?;
-    let mut read = built(path, compiled, met.symbols.alphabetical(), (runs, wanted))?;
+    let symbols = met.symbols.alphabetical().written_in(notation(compiled));
+    let mut read = built(path, compiled, symbols, (runs, wanted))?;
     read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
     Ok(read)
 }
@@ -613,18 +663,12 @@ fn built(
     else {
         return Err(missing(&compiled.main));
     };
-    let refusals = refused(&module.declarations);
+    let mut refusals = refused(&module.declarations);
+    refusals.extend(written_twice(&module.declarations, &compiled.main));
     if !refusals.is_empty() {
         return Err(refusals);
     }
-    let defs: HashMap<u64, &Def> = module
-        .declarations
-        .iter()
-        .filter_map(|declaration| match declaration {
-            Declaration::Def(def) => Some((def.id, def)),
-            _ => None,
-        })
-        .collect();
+    let defs = defs_of(&module.declarations);
     let (every, variables) = layout(compiled, &defs, &module.declarations, wanted);
     let searched: Vec<u64> = variables.iter().map(|(each, _)| each.id).collect();
     let names: Vec<String> = variables.iter().map(|(_, name)| name.clone()).collect();
@@ -655,7 +699,13 @@ fn built(
         (mut scripts, script_picks),
     ) = both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
-    shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
+    shorten(
+        &mut actions,
+        &mut rules,
+        &mut eventually,
+        &mut scripts,
+        &runs_declared(&module.declarations),
+    );
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()

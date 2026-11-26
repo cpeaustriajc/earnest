@@ -32,98 +32,62 @@ module Limit {
   pure def twice(x: int): int = 2 * x
 }
 
-/// @check
+/// @check B::ok, B::below, B::grows
 module Named {
-  import Base(K = 3) as B
   action init = B::init
   action step = B::step
-  /// @check
-  val ok = B::ok
-  /// @check
-  val below = B::below
-  /// @check
-  temporal grows = B::grows
+  import Base(K = 3) as B
 }
 
-/// @check
+/// @check ok, small
 module Reexported {
   import Base(K = 3) as B
   action init = B::init
   action step = B::step
-  /// @check
   val ok = B::ok
-  /// @check
   val small = B::v < 3
   run ownTest = B::init.then(B::step).expect(B::v == 1)
 }
 
-/// @check
+/// @check ok
 module ByOwn {
   pure val Own = 3
-  import Base(K = Own) as B
-  action init = B::init
-  action step = B::step
-  /// @check
-  val ok = B::ok
+  import Base(K = Own).*
 }
 
-/// @check
+/// @check ok
 module ByName {
   import Limit.*
-  import Base(K = twice(L)) as B
-  action init = B::init
-  action step = B::step
-  /// @check
-  val ok = B::ok
+  import Base(K = twice(L)).*
 }
 
-/// @check
-/// Two specs, searched with a start and a step over both.
-module Two {
-  import Base(K = 2) as B
-  import Other(M = 3) as O
-  action init = all { B::init, O::start }
-  action step = any { all { B::step, O::w' = O::w }, all { O::go, B::v' = B::v } }
-  /// @check
-  val ok = B::ok
-  /// @check
-  val fine = O::fine
-}
-
-/// @check
+/// @check ok, apart
 module Pair {
   import Base(K = 2) as P
   import Base(K = 3) as R
   action init = all { P::init, R::init }
   action step = any { all { P::step, R::v' = R::v }, all { R::step, P::v' = P::v } }
-  /// @check
   val ok = P::ok and R::ok
-  /// @check
   val apart = P::v != R::v or P::v == 0
 }
 
-/// @check
-/// `Base` with `K = 1`, through an export; its properties named as `Plain` names them.
+/// @check ok, below, grows
 module Exported {
   import Base(K = 1) as B
   export B.*
-  /// @check
-  val okOne = ok
-  /// @check
-  val belowOne = below
-  /// @check
-  temporal growsOne = grows
 }
 
-/// @check
+/// @check ok, below, grows
 module Plain {
-  import Base(K = 1) as B
-  action init = B::init
-  action step = B::step
-  /// @check
-  val okOne = B::ok
-  /// @check
-  val belowOne = B::below
-  /// @check
-  temporal growsOne = B::grows
+  import Base(K = 1).*
+}
+
+/// @check V::ok, V1::fine
+module Two {
+  import Base(K = 2) as V
+  import Other(M = 3) as V1
+  action both = all { V::init, V1::start }
+  action either = any { all { V::step, V1::w' = V1::w }, all { V1::go, V::v' = V::v } }
+  action init = both
+  action step = either
 }

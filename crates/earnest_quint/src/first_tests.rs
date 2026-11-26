@@ -165,9 +165,15 @@ fn a_module_of_runs_only_is_built_from_the_typecheck_and_searches_nothing() {
     let typechecked = Typechecked::read(&fixture(FIRST, "OnlyRuns.typecheck.json"))
         .expect("the typecheck is read");
     let played = Runs::Named(
-        ["fixedTest", "listTest", "thirdTest", "thirdOver", "mixTest"]
-            .map(str::to_owned)
-            .to_vec(),
+        [
+            "fixedTest",
+            "listTest",
+            "thirdTest",
+            "thirdOverTest",
+            "mixTest",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
     );
     let built = typechecked
         .setup(&Setup::new(
@@ -187,7 +193,13 @@ fn a_module_of_runs_only_is_built_from_the_typecheck_and_searches_nothing() {
     );
     assert_eq!(
         model.rule_ids().collect::<Vec<_>>(),
-        ["fixedTest", "listTest", "thirdTest", "thirdOver", "mixTest"]
+        [
+            "fixedTest",
+            "listTest",
+            "thirdTest",
+            "thirdOverTest",
+            "mixTest"
+        ]
     );
     assert_eq!(own(&model, "thirdTest"), ["Third::n"]);
     assert_eq!(own(&model, "mixTest"), ["Fixed::n", "List::n"]);

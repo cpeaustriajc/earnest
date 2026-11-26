@@ -26,20 +26,17 @@ module SpecStar {
   action up = all { n < K, n' = n + Start, on' = not(on), last' = Up }
   action down = all { n > 0, n' = n - 1, on' = on, last' = Down(n) }
   action step = any { up, down }
-  /// @check
   val ok = n <= quad(K)
-  /// @check
   val noDownAtTop = last != Down(K)
   run upTest = init.then(up).expect(n == 2)
   run downTest = init.then(down).expect(last == Down(1))
 }
 
-/// @check
+/// @check ok, noDownAtTop, small
 module Star {
   import Kinds.*
   import Helpers.*
   import SpecStar(K = quad(1)).*
-  /// @check
   val small = n < quad(2) and last != Down(quad(1) + 1)
 }
 
@@ -51,12 +48,11 @@ module SpecOther {
   var last: Cmd
   action init = all { n' = quad(Start), last' = Up }
   action step = all { n < quad(K), n' = n + 1, last' = Down(n) }
-  /// @check
   val ok = n <= quad(K)
   run upTest = init.then(step).expect(n == 5)
 }
 
-/// @check
+/// @check apart, tagged, A::ok, B::ok
 module Both {
   import Kinds.*
   import SpecStar(K = 2) as A
@@ -66,9 +62,7 @@ module Both {
     all { A::step, B::n' = B::n, B::last' = B::last },
     all { B::step, A::on' = A::on, A::n' = A::n, A::last' = A::last },
   }
-  /// @check
   val apart = A::n <= 2 and B::n <= 8
-  /// @check
   val tagged = A::last != Down(2) and B::last != Down(9)
   run bothTest = init.then(all { A::up, B::step }).expect(A::n + B::n == 7)
 }

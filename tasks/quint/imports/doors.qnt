@@ -47,14 +47,10 @@ module doors {
 
   action step = any { send, ping, deliver }
 
-  /// @check
   val bounded = queue.length() <= LIMIT
-  /// @check
   val counted = NODES.forall(n => doors.get(n).count <= LIMIT)
-  /// @check
   val neverAllOpen = not(NODES.forall(n => doors.get(n).open))
 
-  /// @check
   temporal drains = weakFair(step, vars) implies always(eventually(queue.length() == 0))
 
   run openTest = init.then(send).then(deliver).expect(sent == 1 and queue.length() == 0)

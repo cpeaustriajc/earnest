@@ -24,14 +24,27 @@ module bank {
 }
 ```
 
-- **Modules:** a module is a check when its own doc comment starts with `@check`, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no `init` or `step` plays its runs and searches nothing.
-- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The lines below a mark are the rule's sentence.
-- **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check`; `/// @check broken` on a run says it must fail.
-- **Unreadable at the mark's line:** a word after `@check` that earnest does not know, a marked module that leaves a constant unset, a marked module with nothing to judge, and a marked definition or run that no check sees.
+- **Modules:** a module is a check when its own doc comment holds a `/// @check` mark, on any line, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no property to judge plays its runs and searches nothing.
+- **Names in a module's doc:** `/// @check levelOk, darkWhenOff`, `/// @check broken neverFull` or `/// @check reachable atTop` above a module judges those names, as the module sees them, in that check only.
+- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The other lines of the doc comment are the rule's sentence. A definition's doc comment holds one mark.
+- **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check` or named in its doc comment; `/// @check broken` on a run says it must fail.
+- **What a check sees** is what `quint compile --main` resolves: own definitions, `import M.*`, `import M as A` (`A::name`), `import M` (`M::name`), `import M.name`, imports `from` another file, instances, and exports through any number of modules. Each property is judged once, even when an import under a name and its export both bring it.
+- **Unreadable at the mark's line:** a word after `@check` that earnest does not know, `///@check` with no space, a second mark, names after a mark on a definition, a mark on an `action`, `var`, `const`, `import` or a definition with parameters, `@check reachable` on anything but a value, a name in a module's doc that the module does not see, a marked module that leaves a constant unset, one with a property and no `init` or `step` (the message shows the `action step = ...` to write), one with nothing to judge, and a marked definition or run that no check sees.
 - **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
-- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write and the module to add for another `init` or `step` or a second check of one module.
+- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write above the module with the names each judges, a `val` for each property written as an expression, the module to add for another `init` or `step` or a second check of one module, and the runs ending in `Test` that are played from now on although the entry left them out.
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
+
+## November 2026: Quint fairness given a part of a pick, and fixes from the third Quint pass
+
+- **Fairness given a part of a pick:** `weakFair(buy(p._1), vars)` where the step picks `nondet p = tuples(BUYERS, ITEMS).oneOf()` and calls `buy(p._1)` is read, as are a record field (`buy(r.who)`) and any expression over one `nondet` (`act(b + 1)`): a step counts when its pick gives the value. It was refused.
+- **A condition before `implies`:** `(x == 0).implies(eventually(x == 3))` is judged in the start states, as TLC and Apalache judge it. It was refused.
+- **An empty `forall`:** a temporal property that is a `forall` over an empty set is a rule that holds, which `--rule` and `/// @check broken` find. It was left out of the result.
+- **Runs not played:** the note names only the runs `quint test --main` plays: for `import Spec.specTest`, only `specTest`; runs reached through `export` are named too.
+- **`--rule` of a run:** plays the run from the start states with no search, so a model without end gives the run's verdict.
+- **Output and messages:** a step of an action called with a value prints it, `buy  buyer = 1`, not `buy` and `buy#2`; a played `M::aTest` keeps its prefix when the module has its own `aTest`; a refusal shows `t._2` and `r.who` as written and names the definition that wrote an action given as an argument; a module whose `quint compile` writes one variable twice under one id is refused naming Quint's compile.
+
+See [What is read today](/reference/quint/#what-is-read-today) and [Runs](/reference/quint/#runs).
 
 ## November 2026: confirm a Quint check with Quint itself
 

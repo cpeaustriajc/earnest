@@ -3,11 +3,11 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::support::{Marks, Run, Sandbox, finding, model, repository, rule, with_marks};
+use crate::support::{Run, Sandbox, checks, finding, model, repository, rule};
 
 const FIXTURES: &str = "crates/earnest_quint/fixtures";
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 case "$1" in
@@ -27,24 +27,12 @@ case "$1" in
       if [ "$previous" = "--source-map" ]; then map="$argument"; fi
       previous="$argument"
     done
+    folder="$(cd "$(dirname "$2")" && pwd)"
     cp "$here/parse.json" "$out"
-    echo '{"sourceIndex":{},"map":{}}' > "$map"
+    sed "s#\"0\":\"reads.qnt\"#\"0\":\"$folder/reads.qnt\"#" "$here/sourcemap.json" > "$map"
     ;;
 esac
-"#;
-
-const MARKS: Marks<'static> = &[(
-    "reads",
-    &[
-        ("natural", "val", "@check"),
-        ("booleans", "val", "@check"),
-        ("names", "val", "@check"),
-        ("only", "val", "@check"),
-        ("operators", "val", "@check"),
-        ("folded", "val", "@check"),
-        ("small", "val", "@check"),
-    ],
-)];
+"##;
 
 const HOLDING: [&str; 6] = [
     "natural",
@@ -68,11 +56,15 @@ fn checked(arguments: &[&str]) -> Run {
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
         .expect("the fake can be made a program");
     sandbox.write("fake/compiled/reads.json", &fixture("reads.json"));
-    sandbox.write("fake/parse.json", &with_marks(r#"{"modules":[]}"#, MARKS));
     sandbox.write(
-        "specs/reads.qnt",
-        &format!("{}// marked: reads\n", fixture("reads.qnt")),
+        "fake/parse.json",
+        &checks("fixtures/reads/reads.parse.json"),
     );
+    sandbox.write(
+        "fake/sourcemap.json",
+        &checks("fixtures/reads/reads.sourcemap.json"),
+    );
+    sandbox.write("specs/reads.qnt", &checks("reads/reads.qnt"));
     let empty = sandbox.path().join("no-programs");
     fs::create_dir_all(&empty).expect("an empty folder can be made");
     Run::of(

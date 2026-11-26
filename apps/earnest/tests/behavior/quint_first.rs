@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::support::{Run, Sandbox, model, repository};
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 echo "$*" >> "$here/calls"
@@ -27,7 +27,7 @@ case "$1" in
     name="$(basename "$2" .qnt)"
     folder="$(cd "$(dirname "$2")" && pwd)"
     cp "$here/typechecked/$name.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" "$here/maps/$name.json" > "$map"
     ;;
   typecheck)
     name="$(basename "$2" .qnt)"
@@ -41,7 +41,7 @@ case "$1" in
     cat "$here/compiled/$main.json"
     ;;
 esac
-"#;
+"##;
 
 const FILES: [&str; 13] = [
     "Plain",
@@ -112,6 +112,10 @@ impl Quint {
                 &format!("fake/typechecked/{file}.json"),
                 &first(&format!("fixtures/{file}.typecheck.json")),
             );
+            sandbox.write(
+                &format!("fake/maps/{file}.json"),
+                &first(&format!("fixtures/{file}.sourcemap.json")),
+            );
         }
         for (file, main) in COMPILED {
             sandbox.write(
@@ -167,7 +171,7 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 #[test]
-fn the_owner_s_three_samples_each_print_one_pass_line() {
+fn the_owner_s_samples_pass_and_a_failing_test_run_fails_its_check_with_its_path() {
     let quint = Quint::new();
     let run = quint.earnest(&[
         "verify",
@@ -175,15 +179,33 @@ fn the_owner_s_three_samples_each_print_one_pass_line() {
         "specs/TwoInstances.qnt",
         "specs/OnlyRuns.qnt",
     ]);
-    run.exits(0);
-    for main in ["RunFromHelper", "TwoInstances", "OnlyRuns"] {
+    run.exits(1);
+    for (status, main) in [
+        ("pass", "RunFromHelper"),
+        ("pass", "TwoInstances"),
+        ("fail", "OnlyRuns"),
+    ] {
         assert_eq!(
             run.model_line(main)[..3],
-            ["pass", main, "0 states"],
+            [status, main, "0 states"],
             "a check of runs only searches nothing\n{run}"
         );
     }
-    assert_eq!(run.summary_line(), "3 models: 3 pass, 0 fail, 0 unfinished");
+    let detail = run.detail("OnlyRuns");
+    assert!(
+        detail
+            .first()
+            .is_some_and(|line| line.starts_with("broken  thirdOverTest")),
+        "the failing run is named\n{run}"
+    );
+    assert!(
+        detail.iter().any(|line| line == "start  Third::n = 10")
+            && detail
+                .iter()
+                .any(|line| line == "why    step 4, `Third::step`, can't happen here"),
+        "the path of the failing run is printed\n{run}"
+    );
+    assert_eq!(run.summary_line(), "3 models: 2 pass, 1 fail, 0 unfinished");
     assert!(
         !quint
             .compiled()
@@ -226,7 +248,7 @@ fn every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_v
             ("fixedTest", "holds"),
             ("listTest", "holds"),
             ("thirdTest", "holds"),
-            ("thirdOver", "broken"),
+            ("thirdOverTest", "broken"),
             ("mixTest", "holds"),
         ])
     );
@@ -286,10 +308,10 @@ fn every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_v
     assert_eq!(
         unset,
         [
-            ("`x`".to_owned(), 1),
-            ("`y`".to_owned(), 1),
-            ("`y`".to_owned(), 1),
-            ("`y`".to_owned(), 1),
+            ("`x`".to_owned(), 12),
+            ("`y`".to_owned(), 14),
+            ("`y`".to_owned(), 15),
+            ("`y`".to_owned(), 16),
         ],
         "each run that reads a variable its first action leaves unset\n{report}"
     );

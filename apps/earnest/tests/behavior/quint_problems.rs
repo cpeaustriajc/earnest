@@ -3,7 +3,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use crate::support::{Marks, Run, Sandbox, repository, with_marks};
+use crate::support::{Run, Sandbox, checks, repository};
 
 const FIXTURES: &str = "crates/earnest_quint/fixtures";
 
@@ -36,22 +36,6 @@ case "$1" in
 esac
 "##;
 
-const MARKS: Marks<'static> = &[
-    (
-        "problems",
-        &[("small", "val", "@check"), ("chosen", "val", "@check")],
-    ),
-    (
-        "repeated",
-        &[
-            ("small", "val", "@check"),
-            ("listed", "val", "@check"),
-            ("strong", "temporal", "@check"),
-            ("fairPick", "temporal", "@check"),
-        ],
-    ),
-];
-
 fn fixture(name: &str) -> String {
     let path = repository().join(FIXTURES).join(name);
     fs::read_to_string(&path)
@@ -68,13 +52,13 @@ fn checked(arguments: &[&str]) -> Run {
     sandbox.write("fake/compiled/repeated.json", &fixture("repeated.json"));
     sandbox.write(
         "fake/parse.json",
-        &with_marks(&fixture("problems.parse.json"), MARKS),
+        &checks("fixtures/problems/problems.parse.json"),
     );
-    sandbox.write("fake/sourcemap.json", &fixture("problems.sourcemap.json"));
     sandbox.write(
-        "models/problems.qnt",
-        &format!("{}// marked: problems, repeated\n", fixture("problems.qnt")),
+        "fake/sourcemap.json",
+        &checks("fixtures/problems/problems.sourcemap.json"),
     );
+    sandbox.write("models/problems.qnt", &checks("problems/problems.qnt"));
     let empty = sandbox.path().join("no-programs");
     fs::create_dir_all(&empty).expect("an empty folder can be made");
     Run::of(

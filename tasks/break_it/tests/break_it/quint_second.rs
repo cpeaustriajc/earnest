@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 use crate::support::{Report, Sandbox, binary, rule};
 
-const FAKE_QUINT: &str = r#"#!/bin/sh
+const FAKE_QUINT: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 previous=""
@@ -26,7 +26,7 @@ case "$1" in
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
     cp "$here/typecheck.json" "$out"
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$(basename "$2")\"},\"map\":{}}" > "$map"
+    sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
     cp "$here/typecheck.json" "$out"
@@ -35,7 +35,7 @@ case "$1" in
     cat "$here/compiled.json"
     ;;
 esac
-"#;
+"##;
 
 const FAKE_JAVA: &str = r#"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -159,6 +159,7 @@ struct QuintFixtures<'a> {
     file: &'a str,
     source: &'a str,
     typecheck: &'a str,
+    sourcemap: &'a str,
     compiled: &'a str,
 }
 
@@ -175,6 +176,7 @@ impl RecordedQuint {
         program(&fake, "quint", FAKE_QUINT);
         for (name, text) in [
             ("typecheck.json", fixtures.typecheck),
+            ("sourcemap.json", fixtures.sourcemap),
             ("compiled.json", fixtures.compiled),
         ] {
             fs::write(fake.join(name), text).expect("a fixture can be written");
@@ -221,6 +223,7 @@ fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them(
         file: "named_runs.qnt",
         source: include_str!("../../models/quint_second/named_runs/named_runs.qnt"),
         typecheck: include_str!("../../models/quint_second/named_runs/typecheck.json"),
+        sourcemap: include_str!("../../models/quint_second/named_runs/named_runs.sourcemap.json"),
         compiled: include_str!("../../models/quint_second/named_runs/Named.json"),
     });
     assert_eq!(
@@ -239,6 +242,9 @@ fn runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play() {
         file: "runs_not_played.qnt",
         source: include_str!("../../models/quint_second/runs_not_played/runs_not_played.qnt"),
         typecheck: include_str!("../../models/quint_second/runs_not_played/parse.json"),
+        sourcemap: include_str!(
+            "../../models/quint_second/runs_not_played/runs_not_played.sourcemap.json"
+        ),
         compiled: include_str!("../../models/quint_second/runs_not_played/Plays.json"),
     });
     let report = recorded.verify(&["--no-cache"]);
@@ -380,56 +386,66 @@ fn confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken() {
     );
 }
 
-const SEEDED: [(&str, &str, &str); 10] = [
+const SEEDED: [(&str, &str, &str, &str); 10] = [
     (
         "H14",
         include_str!("../../models/quint_second/random/H14.qnt"),
         include_str!("../../models/quint_second/random/H14.typecheck.json"),
+        include_str!("../../models/quint_second/random/H14.sourcemap.json"),
     ),
     (
         "H25",
         include_str!("../../models/quint_second/random/H25.qnt"),
         include_str!("../../models/quint_second/random/H25.typecheck.json"),
+        include_str!("../../models/quint_second/random/H25.sourcemap.json"),
     ),
     (
         "H37",
         include_str!("../../models/quint_second/random/H37.qnt"),
         include_str!("../../models/quint_second/random/H37.typecheck.json"),
+        include_str!("../../models/quint_second/random/H37.sourcemap.json"),
     ),
     (
         "H45",
         include_str!("../../models/quint_second/random/H45.qnt"),
         include_str!("../../models/quint_second/random/H45.typecheck.json"),
+        include_str!("../../models/quint_second/random/H45.sourcemap.json"),
     ),
     (
         "H54",
         include_str!("../../models/quint_second/random/H54.qnt"),
         include_str!("../../models/quint_second/random/H54.typecheck.json"),
+        include_str!("../../models/quint_second/random/H54.sourcemap.json"),
     ),
     (
         "H63",
         include_str!("../../models/quint_second/random/H63.qnt"),
         include_str!("../../models/quint_second/random/H63.typecheck.json"),
+        include_str!("../../models/quint_second/random/H63.sourcemap.json"),
     ),
     (
         "H1002",
         include_str!("../../models/quint_second/random/H1002.qnt"),
         include_str!("../../models/quint_second/random/H1002.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1002.sourcemap.json"),
     ),
     (
         "H1006",
         include_str!("../../models/quint_second/random/H1006.qnt"),
         include_str!("../../models/quint_second/random/H1006.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1006.sourcemap.json"),
     ),
     (
         "H1010",
         include_str!("../../models/quint_second/random/H1010.qnt"),
         include_str!("../../models/quint_second/random/H1010.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1010.sourcemap.json"),
     ),
     (
         "H1013",
         include_str!("../../models/quint_second/random/H1013.qnt"),
         include_str!("../../models/quint_second/random/H1013.typecheck.json"),
+        include_str!("../../models/quint_second/random/H1013.sourcemap.json"),
     ),
 ];
 
@@ -440,13 +456,14 @@ fn every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_t
     let expected: Value =
         serde_json::from_str(SEEDED_EXPECTED).expect("the expected answers are JSON");
     let mut wrong = Vec::new();
-    for (name, source, typecheck) in SEEDED {
+    for (name, source, typecheck, sourcemap) in SEEDED {
         let answers = &expected[name];
         let file = format!("{name}.qnt");
         let report = verified_with_recorded_quint(&QuintFixtures {
             file: &file,
             source,
             typecheck,
+            sourcemap,
             compiled: "",
         });
         let model = model_named(&report, name);

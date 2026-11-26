@@ -1,0 +1,182 @@
+{
+ "R13": {
+  "states": 660,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "inv2": "broken",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "r3Test": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "broken",
+   "t4": "holds"
+  }
+ },
+ "R14": {
+  "states": 84,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "holds",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "holds",
+   "r3Test": "holds",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "R15": {
+  "states": 30,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "broken",
+   "inv2": "holds",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "holds",
+   "r2Test": "holds",
+   "r3Test": "broken",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "R16": {
+  "states": 146,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "broken",
+   "nondetTest": "broken",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "r3Test": "broken",
+   "t0": "broken",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "R25": {
+  "states": 114,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "inv2": "broken",
+   "nondetTest": "broken",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "holds",
+   "r3Test": "broken",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "holds"
+  }
+ },
+ "R30": {
+  "states": 156,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "broken",
+   "inv2": "holds",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "r3Test": "holds",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "R35": {
+  "states": 78,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "holds",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "r3Test": "broken",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "holds"
+  }
+ },
+ "R36": {
+  "states": 156,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "broken",
+   "inv2": "broken",
+   "nondetTest": "broken",
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "holds",
+   "r3Test": "broken",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "holds"
+  }
+ },
+ "R6": {
+  "states": 148,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "broken",
+   "nondetTest": "holds",
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "r2Test": "holds",
+   "r3Test": "holds",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "R9": {
+  "states": 876,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "broken",
+   "nondetTest": "holds",
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "holds",
+   "r3Test": "broken",
+   "t0": "broken",
+   "t1": "holds",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ }
+}

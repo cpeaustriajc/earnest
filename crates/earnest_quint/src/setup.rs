@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 const SEPARATOR: &str = "::";
 const WILDCARD: &str = "_";
-const TESTS_END_WITH: &str = "Test";
 const MOST_ALIASES: usize = 64;
 const FIELD_NAMES: &str = "fieldNames";
 const MOST_IMPORTS: usize = 64;
@@ -931,16 +930,7 @@ impl<'t> Filler<'t> {
                 .filter(|(id, _)| !each.imported.contains(id))
                 .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
                 .filter_map(|(id, declaration)| Some((*id, text(declaration, "name")?)))
-                .filter(|(_, name)| match runs {
-                    Runs::None => false,
-                    Runs::Tests => name.ends_with(TESTS_END_WITH),
-                    Runs::Named(names) => names.iter().any(|listed| {
-                        listed == name
-                            || each
-                                .alias
-                                .is_some_and(|alias| *listed == format!("{alias}{SEPARATOR}{name}"))
-                    }),
-                })
+                .filter(|(_, name)| runs.plays(name, each.alias))
                 .collect();
             runs_here.sort_unstable();
             found.extend(runs_here.into_iter().map(|(id, _)| (position, id)));
@@ -1038,13 +1028,9 @@ impl<'t> Filler<'t> {
             .iter()
             .filter(|(id, _)| !self.hidden.contains(id))
             .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
-            .filter(
-                |(_, declaration)| match (check.runs, text(declaration, "name")) {
-                    (Runs::Tests, Some(name)) => name.ends_with(TESTS_END_WITH),
-                    (Runs::Named(names), Some(name)) => names.iter().any(|listed| listed == name),
-                    _ => false,
-                },
-            )
+            .filter(|(_, declaration)| {
+                text(declaration, "name").is_some_and(|name| check.runs.plays(name, None))
+            })
             .map(|(id, _)| *id)
             .collect();
         imported_runs.sort_unstable();

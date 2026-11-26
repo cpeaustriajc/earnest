@@ -12,6 +12,7 @@ mod discovery;
 mod marks;
 mod migrate;
 mod places;
+mod plan;
 mod print;
 mod quint;
 mod reading;
