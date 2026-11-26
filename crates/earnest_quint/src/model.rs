@@ -1,5 +1,5 @@
 use crate::Runs as Chosen;
-use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
+use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint, Module};
 use crate::names::Short;
 use crate::notation::notation;
 use crate::reach::variables_reached;
@@ -8,6 +8,7 @@ use crate::runs::{Variables, scripts};
 use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
+use crate::view::{self, Views};
 use earnest_ir::{
     Action, Code, End, Eventually, Expr, FairStep, Field, Frame, Input, Model, Pick, Rule, Runs,
     Script, View, eval,
@@ -542,11 +543,11 @@ pub(crate) fn model(
     path: &str,
     compiled: &Compiled,
     runs: &Chosen,
-    wanted: Wanted,
+    (wanted, views): (Wanted, &Views),
 ) -> Result<Model, Vec<Refusal>> {
-    let met = built(path, compiled, Symbols::default(), (runs, wanted))?;
+    let met = built(path, compiled, Symbols::default(), (runs, wanted, views))?;
     let symbols = met.symbols.alphabetical().written_in(notation(compiled));
-    let mut read = built(path, compiled, symbols, (runs, wanted))?;
+    let mut read = built(path, compiled, symbols, (runs, wanted, views))?;
     read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
     Ok(read)
 }
@@ -644,12 +645,62 @@ fn assumed<'a>(reader: &mut Reader<'a>, declarations: &'a [Declaration]) -> Read
     Ok(())
 }
 
-fn built(
-    path: &str,
-    compiled: &Compiled,
-    symbols: Symbols,
-    (runs, wanted): (&Chosen, Wanted),
-) -> Result<Model, Vec<Refusal>> {
+type Labels<'a> = (Option<&'a Def>, Option<&'a Def>);
+
+fn view_defs<'a>(defs: &HashMap<u64, &'a Def>, views: &Views) -> Result<Labels<'a>, Vec<Refusal>> {
+    let find = |name: Option<&String>| match name {
+        None => Ok(None),
+        Some(name) => view::found(defs, Some(name))
+            .map(Some)
+            .ok_or_else(|| missing(name)),
+    };
+    let state = find(views.state.as_ref());
+    let group = find(views.group.as_ref());
+    match (state, group) {
+        (Ok(state), Ok(group)) => Ok((state, group)),
+        (state, group) => Err(state
+            .err()
+            .into_iter()
+            .chain(group.err())
+            .flatten()
+            .collect()),
+    }
+}
+
+fn unheld<'a>(
+    reader: &Reader<'a>,
+    (compiled, defs): (&'a Compiled, &HashMap<u64, &'a Def>),
+    (state, group): Labels<'a>,
+    (declarations, searched): (&'a [Declaration], &[u64]),
+) -> Result<(), Vec<Refusal>> {
+    let names: HashMap<u64, &str> = variables(declarations)
+        .into_iter()
+        .map(|each| (each.id, each.name))
+        .collect();
+    let labels: Vec<&Def> = state.into_iter().chain(group).collect();
+    let refused =
+        view::unheld_variables(reader, (&compiled.table, defs), &labels, (searched, &names));
+    if refused.is_empty() {
+        Ok(())
+    } else {
+        Err(refused)
+    }
+}
+
+fn labels<'a>(reader: &mut Reader<'a>, (state, group): Labels<'a>) -> Result<View, Vec<Refusal>> {
+    let state = state.map(|def| view::label(reader, def)).transpose();
+    let group = group.map(|def| view::label(reader, def)).transpose();
+    match (state, group) {
+        (Ok(state), Ok(group)) => Ok(View {
+            state,
+            group,
+            ..View::default()
+        }),
+        (state, group) => Err(state.err().into_iter().chain(group.err()).collect()),
+    }
+}
+
+fn main_module(compiled: &Compiled) -> Result<&Module, Vec<Refusal>> {
     if !compiled.errors.is_empty() {
         return Err(vec![refusal(
             "the compiled module",
@@ -665,9 +716,20 @@ fn built(
     };
     let mut refusals = refused(&module.declarations);
     refusals.extend(written_twice(&module.declarations, &compiled.main));
-    if !refusals.is_empty() {
-        return Err(refusals);
+    if refusals.is_empty() {
+        Ok(module)
+    } else {
+        Err(refusals)
     }
+}
+
+fn built(
+    path: &str,
+    compiled: &Compiled,
+    symbols: Symbols,
+    (runs, wanted, views): (&Chosen, Wanted, &Views),
+) -> Result<Model, Vec<Refusal>> {
+    let module = main_module(compiled)?;
     let defs = defs_of(&module.declarations);
     let (every, variables) = layout(compiled, &defs, &module.declarations, wanted);
     let searched: Vec<u64> = variables.iter().map(|(each, _)| each.id).collect();
@@ -680,6 +742,13 @@ fn built(
     let search = search_of(&defs, (runs, wanted))?;
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
     assumed(&mut reader, &module.declarations).map_err(|refusal| vec![refusal])?;
+    let labelled = view_defs(&defs, views)?;
+    unheld(
+        &reader,
+        (compiled, &defs),
+        labelled,
+        (&module.declarations, &searched),
+    )?;
     let read = match search {
         Some(search) => parts(&mut reader, &compiled.table, &defs, search, &names),
         None => Ok(Default::default()),
@@ -706,6 +775,7 @@ fn built(
         &mut scripts,
         &runs_declared(&module.declarations),
     );
+    let view = labels(&mut reader, labelled)?;
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
@@ -739,7 +809,7 @@ fn built(
             when: Code::new(Expr::Const(Value::Bool(true))),
             slots: 0,
         }],
-        view: View::default(),
+        view,
         runs: Runs {
             starts: Some(starts),
             eventually,

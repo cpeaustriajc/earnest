@@ -26,11 +26,13 @@ mod scan;
 mod setup;
 mod starts;
 mod temporal;
+mod view;
 
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::Model;
 
 pub use setup::{Setup, Typechecked};
+pub use view::{Labelled, Views, split_views};
 
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
 
@@ -139,7 +141,30 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
 /// The problems of [`read`], each with the id and the definition it was found in, when the
 /// reader knows them, and each run that `runs` names and the module lacks.
 pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
-    read_wanted(path, source, runs, model::Wanted::Search)
+    read_wanted(
+        path,
+        source,
+        runs,
+        (model::Wanted::Search, &Views::default()),
+    )
+}
+
+/// Reads the compiled Quint module in `source` as [`read_located`] does, with the chart
+/// labelled by the definitions `views` names, as [`split_views`] gave them with the JSON. A
+/// label never changes what is searched or checked.
+///
+/// # Errors
+///
+/// The problems of [`read_located`], and each label that reads a variable the check does not
+/// search or that the reader can't read. A label's problem names, as its definition, the name
+/// in `views`, and has no id.
+pub fn read_viewed(
+    path: &str,
+    source: &str,
+    runs: &Runs,
+    views: &Views,
+) -> Result<Model, Vec<Located>> {
+    read_wanted(path, source, runs, (model::Wanted::Search, views))
 }
 
 /// Reads the compiled Quint module in `source` as [`read_located`] does, for a check that
@@ -151,14 +176,14 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
 ///
 /// The problems of [`read_located`].
 pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
-    read_wanted(path, source, runs, model::Wanted::Runs)
+    read_wanted(path, source, runs, (model::Wanted::Runs, &Views::default()))
 }
 
 fn read_wanted(
     path: &str,
     source: &str,
     runs: &Runs,
-    wanted: model::Wanted,
+    wanted: (model::Wanted, &Views),
 ) -> Result<Model, Vec<Located>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
         vec![Located::new(
