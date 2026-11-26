@@ -160,9 +160,23 @@ fn eventually_always_is_refused() {
 }
 
 #[test]
-fn a_temporal_operator_under_not_or_or_is_refused() {
-    refused("negated", "`eventually`", "under `not`");
+fn a_temporal_operator_under_or_is_refused() {
     refused("either", "`eventually`", "under `or`");
+}
+
+#[test]
+fn not_eventually_at_the_top_of_a_property_is_read_as_a_rule_that_always_holds() {
+    let model = model_of("negated");
+    assert!(
+        model.runs.eventually.is_empty(),
+        "nothing must be reached: {:?}",
+        model.runs.eventually
+    );
+    assert!(
+        model.rules.iter().any(|rule| rule.id == "negated"),
+        "`not(eventually(x == 2))` is `always(not(x == 2))`: {:?}",
+        model.rules.iter().map(|rule| &rule.id).collect::<Vec<_>>()
+    );
 }
 
 #[test]

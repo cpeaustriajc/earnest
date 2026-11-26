@@ -86,7 +86,7 @@ unreadable  src/clock.model.ts
 ### Formatting and escaping
 
 - Any name printed on its own line (such as a model name or file path) collapses line breaks, tabs, control characters, and Unicode line/paragraph separators into single spaces and trims surrounding whitespace, matching `earnest report`. A name cannot forge a new output line.
-- Values print as `"text"`, `12`, `true`, `null`, `{a, b}` (set), `[a, b]` (sequence or queue), `{k -> v}` (map), and `{name: value}` (record).
+- Values print as `"text"`, `12`, `true`, `null`, `{a, b}` (set), `[a, b]` (sequence or queue), `{k -> v}` (map), and `{name: value}` (record). A [Quint check](/reference/quint/#how-values-print) prints its values as Quint writes them instead: `Set(a, b)`, `Map(k -> v)`, `{ name: value }`, a tuple as `(1, 5)` and a variant as `Some(3)` or `None`.
 - Inside quoted text, `"` escapes as `\"`, `\` as `\\`, line feed as `\n`, carriage return as `\r`, tab as `\t`, and other control characters or line separators as `\u{...}` in hexadecimal.
 
 ## JSON output
@@ -154,7 +154,7 @@ Field meanings:
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
 - `summary`: `models` counts models only; `unreadable` counts unreadable files separately. A model with setups counts once for itself and once for each setup.
 - `models[].setup`: present only on the result of a model in a setup ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
-- **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects.
+- **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects. In a Quint check a tuple is `{"#tup": [1, 5]}` and a variant `{"tag": "Some", "value": 3}`, as Quint's ITF traces write them.
 - Two runs on the same files produce identical JSON apart from `milliseconds` and `cached`.
 
 ## Rule changes (`--base`)

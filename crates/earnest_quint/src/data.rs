@@ -4,9 +4,9 @@ use earnest_ir::{Expr, MapOp, Math, Op, SeqOp, SetOp, Shelf, Sweep};
 use earnest_value::{MOST_VALUES_LISTED, Sym, Value};
 use std::collections::BTreeSet;
 
-const TAG: &str = "tag";
-const VALUE: &str = "value";
-const ANY_OTHER_TAG: &str = "_";
+pub(crate) const TAG: &str = "tag";
+pub(crate) const VALUE: &str = "value";
+pub(crate) const ANY_OTHER_TAG: &str = "_";
 const MOST_POWERSET_ITEMS: u32 = MOST_VALUES_LISTED.ilog2();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

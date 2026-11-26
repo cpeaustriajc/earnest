@@ -1,5 +1,5 @@
 use crate::builtins::{Builtin, builtin, not_read};
-use crate::data::data_builtin;
+use crate::data::{ANY_OTHER_TAG, TAG, VALUE, data_builtin};
 use crate::json::{Def, Entry, Expr as Quint};
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
@@ -80,6 +80,10 @@ impl Path {
 }
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
+const MATCH: &str = "matchVariant";
+const ACTION_AS_A_VALUE: &str = "an action where Quint wants a value, such as an operator's \
+                                 argument or a condition: an action is read as a part of `init`, \
+                                 `step` or a run, of `all`, `any`, `if` or a `match`";
 
 pub(crate) enum Bound<'a> {
     Value(Expr),
@@ -470,10 +474,13 @@ impl<'a> Reader<'a> {
                 Expr::Choose(Box::new(test), Box::new(then), Box::new(otherwise))
             }
             (Builtin::ActionAll | Builtin::ActionAny | Builtin::Assign, _) => {
-                return self.refuse(
-                    &format!("`{opcode}`"),
-                    "an action used inside an expression",
-                );
+                let written = match (found, args) {
+                    (Builtin::ActionAll, _) => "`all { … }`".to_owned(),
+                    (Builtin::ActionAny, _) => "`any { … }`".to_owned(),
+                    (_, [Quint::Name { name, .. }, ..]) => format!("`{name}' = …`"),
+                    _ => "an assignment".to_owned(),
+                };
+                return self.refuse(&written, ACTION_AS_A_VALUE);
             }
             (Builtin::OneOf, _) => {
                 return self.refuse(
@@ -493,6 +500,12 @@ impl<'a> Reader<'a> {
 
     pub(crate) fn is_action(&self, expr: &Quint) -> bool {
         match expr {
+            Quint::App { opcode, args, .. } if opcode == MATCH => {
+                args.iter().skip(1).any(|case| match case {
+                    Quint::Lambda { expr, .. } => self.is_action(expr),
+                    _ => self.is_action(case),
+                })
+            }
             Quint::App { id, opcode, args } => match builtin(opcode) {
                 Some(Builtin::ActionAll | Builtin::ActionAny | Builtin::Assign) => true,
                 Some(Builtin::And | Builtin::Or) => args.iter().any(|each| self.is_action(each)),
@@ -532,6 +545,7 @@ impl<'a> Reader<'a> {
             return Ok(vec![Path::guarded(self.pure(expr)?)]);
         }
         match expr {
+            Quint::App { opcode, args, .. } if opcode == MATCH => self.cases(args),
             Quint::App { id, opcode, args } => match builtin(opcode) {
                 Some(Builtin::ActionAll | Builtin::And) => self.all_paths(args),
                 Some(Builtin::ActionAny | Builtin::Or) => {
@@ -600,9 +614,14 @@ impl<'a> Reader<'a> {
         };
         let entry = self.entry(*id, name)?;
         let Some(position) = self.fields.get(&entry.id).copied() else {
+            let written = base_name(name);
             return self.refuse(
-                &format!("`{name}`"),
-                "an assignment to something that is not a variable",
+                &format!("`{written}' = …`"),
+                &format!(
+                    "an assignment to `{written}`, which here is not a state variable: a \
+                     parameter, `nondet` or `val` of that name hides the variable, and Quint \
+                     assigns that instead, so rename it"
+                ),
             );
         };
         let value = self.pure(value)?;
@@ -628,6 +647,60 @@ impl<'a> Reader<'a> {
             }
         }
         Self::checked(all)
+    }
+
+    fn cases(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {
+        let Some((subject, cases)) = args.split_first() else {
+            return self.refuse("`match`", "a `match` without a value");
+        };
+        let subject = self.pure(subject)?;
+        let (tag_name, value_name) = (self.text(TAG), self.text(VALUE));
+        let tag = Expr::Get(Box::new(subject.clone()), tag_name);
+        let value = Expr::Get(Box::new(subject), value_name);
+        let mut earlier: Vec<Expr> = Vec::new();
+        let mut all = Vec::new();
+        for case in cases.chunks(2) {
+            let [
+                Quint::Str { value: name },
+                Quint::Lambda { params, expr: body },
+            ] = case
+            else {
+                return self.refuse(
+                    "`match`",
+                    "a case that is not a tag and `value => ...`, as `quint compile` writes one",
+                );
+            };
+            let [bound] = params.as_slice() else {
+                return self.refuse("`match`", "a case that binds more than one value");
+            };
+            let others_fail = earlier
+                .iter()
+                .map(|each| Expr::Apply(Op::Differ, vec![tag.clone(), each.clone()]))
+                .collect();
+            let holds = if name == ANY_OTHER_TAG {
+                all_of(others_fail)
+            } else {
+                let this = Expr::Const(Value::Str(self.text(name)));
+                if earlier.contains(&this) {
+                    continue;
+                }
+                earlier.push(this.clone());
+                Expr::Apply(Op::Equal, vec![tag.clone(), this])
+            };
+            let paths =
+                self.with_values(vec![(bound.id, value.clone())], |reader| reader.paths(body))?;
+            for mut path in paths {
+                path.guards.insert(0, holds.clone());
+                all.push(path);
+            }
+            if all.len() > MOST_ACTIONS {
+                return Err(too_many_actions());
+            }
+            if name == ANY_OTHER_TAG {
+                break;
+            }
+        }
+        Ok(all)
     }
 
     pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<Picked> {

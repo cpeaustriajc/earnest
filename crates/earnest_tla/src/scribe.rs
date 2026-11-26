@@ -780,6 +780,7 @@ fn alone(op: Op, on: &Written) -> Option<Written> {
         ),
         Op::Unwrap => Written::new(format!("{text}[1]"), on.kind.present()),
         Op::Fit(_) | Op::Safe => Written::new(text.clone(), Kind::Int),
+        Op::Assert => Written::truth("TRUE".to_owned()),
         Op::Set(SetOp::Size) => Written::new(format!("Cardinality({text})"), Kind::Int),
         Op::Map(MapOp::Size) => Written::new(format!("Cardinality(DOMAIN {text})"), Kind::Int),
         Op::Map(MapOp::Keys) => Written::new(format!("(DOMAIN {text})"), Kind::set(on.kind.key())),
@@ -934,6 +935,7 @@ fn has_a_value(op: Op, given: &[Written]) -> Option<String> {
     match (op, given) {
         (Op::Unwrap, [on, ..]) => Some(format!("({} # {NULL})", on.text)),
         (Op::Fit(ty), [on, ..]) => inside(ty, &on.text),
+        (Op::Assert, [on, ..]) => Some(on.text.clone()),
         (Op::Math(Math::Remainder | Math::Divide), [left, right, ..]) => Some(format!(
             "(({} >= 0) {AND} ({} >= 1))",
             left.text, right.text

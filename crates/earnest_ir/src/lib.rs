@@ -175,6 +175,9 @@ pub enum Op {
     /// The sequence of whole numbers from the first up to, not including, the second. A first
     /// number above the second is [`Fault::Undefined`].
     Ascending,
+    /// True when its argument is true. False is [`Fault::Asserted`]: an `assert` in a Quint
+    /// action, which Quint's backends read differently when it is false.
+    Assert,
 }
 
 /// What an [`Expr::Sweep`] does with the test's answers.

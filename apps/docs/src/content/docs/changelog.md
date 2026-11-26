@@ -5,6 +5,16 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint `match` actions, `assert`, fairness over `vars`, and values as Quint writes them
+
+- **`match` as an action:** a `match` whose branches are actions is read in `init`, in a step and in a run step, one action per branch, each guarded by its variant, with a `_` branch for the rest.
+- **`assert` in an action:** a true `assert(P)` changes nothing. A false one is a fault naming `assert`, since `quint run` stops on it and TLC reads it as a guard.
+- **Fairness:** `weakFair(step, vars)` with `val vars = (x, y)` is read, in any order of the variables, and the message for a tuple that leaves one out names it. `not(eventually(P))` and `not(always(P))` at the top of a property are read.
+- **Values:** paths, `why` lines, the JSON and the chart of a Quint check print `(1, 5)`, `Some(3)`, `None`, `Set(1, 2)`, `Map(k -> v)` and `{ a: 1 }`. TypeScript and Rust models print as before.
+- **Places:** a refusal inside a `run` is reported at its line in the `.qnt` file, and `a.qnt` and `./a.qnt` with one `main` are the same check twice, `unreadable`.
+
+See [What is read today](/reference/quint/#what-is-read-today) and [How values print](/reference/quint/#how-values-print).
+
 ## November 2026: `--base` reads a witness's inputs by name
 
 `earnest verify --base <ref>` compares each step of a witness by its action and the value it gives each input, by the input's name.

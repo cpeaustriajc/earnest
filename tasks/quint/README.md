@@ -2914,3 +2914,91 @@ changed.
   copies expressions unchanged, so a new read operator needs nothing here.
 - Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
   treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
+
+## The first pass's reads (#65): what is checked
+
+Issue #65 takes the forms the first adversarial pass (`tasks/break_it/README.md`, "First Quint
+pass": "Legal Quint that earnest refuses" and "Seen, not written up") found refused or printed in
+earnest's own encoding, in the reader's actions, fairness, runs and printing. The fixtures are in
+`crates/earnest_quint/fixtures`, each `.qnt` beside the JSON Quint 0.33.1 compiled from it
+(output redirected to a file):
+
+```sh
+# crates/earnest_quint/fixtures
+quint compile --target json --main matches --invariant small,neverBoth matches.qnt > matches.json
+quint compile --target json --main asserts --invariant small,short asserts.qnt > asserts.json
+quint compile --target json --main broken --invariant small asserts.qnt > assertbroken.json
+quint compile --target json --main fairtuple --temporal finishes,finishesThroughVals,finishesBackwards,unfairFinishes,neverFour,neverTwo,leavesZero,mayStayAtZero fairtuple.qnt > fairtuple.json
+quint compile --target json --main fairtuple --temporal finishes,finishesThroughVals,finishesBackwards,neverFour,neverTwo,leavesZero fairtuple.qnt > fairconfirmed.json
+quint compile --target json --main fairtuple --temporal halfListed fairtuple.qnt > halflisted.json
+quint compile --target json --main fairtuple --temporal doubleNot fairtuple.qnt > doublenot.json
+quint compile --target json --main values --invariant near values.qnt > values.json
+quint compile --target json --main lookalike --invariant small lookalike.qnt > lookalike.json
+quint compile --target json --main runplace --invariant small runplace.qnt > runplace.json
+quint parse runplace.qnt --out runplace.parse.json --source-map runplace.sourcemap.json
+```
+
+(`runplace.sourcemap.json`'s `sourceIndex` made relative.)
+
+### What Quint does [ran]
+
+- **`match` of actions**: `quint typecheck` takes a `match` whose branches are all actions, and
+  refuses one that mixes an action branch with `false` (`Expected [x,y,order] and [] to be the
+  same`): a branch that can't happen is written `all { false, x' = x, ... }`. `matches.qnt` has
+  one in `init` (a `nondet` start, three branches binding a value, a tuple among them), in a
+  step (`follow`: two named variants and `_`), inside `any` beside an `if (c) A else B` of
+  actions (`turn`), and in a run step (`chooseTest`). `quint verify --backend tlc`: 43 distinct
+  states, `small` holds, `neverBoth` violated. `quint test --backend typescript`: `followTest`
+  and `chooseTest` pass 10000 tests, `jumpTest` fails (`Expect condition does not hold true`).
+- **`assert` in an action**: with `P` true in every state, both backends go on as if it were not
+  written (`asserts`: TLC 22 states, `small` holds, `short` violated; `quint test` passes
+  `upTest`). With `P` false in a reachable state they differ (`broken`, `step = all {
+  assert(x < 2), x' = x + 1 }`): TLC reads it as a guard (3 distinct states, no violation of
+  `small`), `quint run` stops with `Error [QNT508]: Assertion failed` and `quint test` fails
+  `climbTest` with the same error.
+- **Fairness**: `fairtuple.qnt`, 4 states, each property alone under TLC: `finishes`
+  (`weakFair(tick, vars)`, `val vars = (x, done)`), `finishesThroughVals` (`val allVars = vars`),
+  `finishesBackwards` (`(done, x)`), `neverFour` (`not(eventually(x == 4))`) and `leavesZero`
+  (`weakFair(tick, vars) implies not(always(x == 0))`) hold; `unfairFinishes`, `neverTwo` and
+  `mayStayAtZero` (`not(always(x == 0))` with no fairness: the run that stutters at the start)
+  are violated.
+- **Values**: `quint -r r.qnt::r --backend typescript` prints `Aa`, `Bb(3)`, `Cc((1, "x"))`,
+  `Dd({ a: 1 })`, `(1, 5)`, `()`, `{ a: 1, b: "x" }`, `Set(1, 2)`, `Set()`,
+  `Map((0, 1) -> Aa, (1, 2) -> Bb(3))`, `Map()`, `[1, 2]`, `-3`, `Set(Set(), Set(1, 2))`. The
+  REPL's default Rust backend could not be fetched (`Forbidden`). `quint run --out-itf` writes a
+  tuple as `{"#tup": [...]}` and a variant as `{"tag": "Aa", "value": {"#tup": []}}`.
+- **A `nondet` at the top of a run**: as the pass found, `quint test` fails the run on the first
+  value it samples that breaks it; it does not take another.
+
+### earnest
+
+```text
+$ earnest verify crates/earnest_quint/fixtures/matches.json
+fail        matches  43 states  0 ms
+  broken  neverBoth  "The Quint invariant `neverBoth` holds"
+    start  x = 2, y = 3, order = Jump((2, 3))
+    1. follow#2  x: 2 -> 0, y: 3 -> 2, order: Jump((2, 3)) -> Idle
+    ...
+  broken  jumpTest  "The Quint run `jumpTest` passes"
+$ earnest verify crates/earnest_quint/fixtures/assertbroken.json
+fail        broken  3 states  0 ms
+  broken  climbTest  "The Quint run `climbTest` passes"
+    ...
+    why    step 3: the condition of the action `step` finds an `assert` false, which `quint run` stops on as an error and TLC reads as a guard that disables the action here
+  fault  the condition of the action `step` finds an `assert` false, ...
+$ earnest verify crates/earnest_quint/fixtures/values.json
+    start  at = (0, 0), info = { name: "a", where: (0, 0) }, slot = Empty, seen = Map(), marks = Set()
+    1. step  dx = 2  at: (0, 0) -> (2, 1), slot: Empty -> Pair((2, "far")), seen: Map() -> Map((0, 0) -> Empty), marks: Set() -> Set((2, Empty))
+```
+
+`fairtuple.json`: 4 states and the eight verdicts TLC gives. `broken`'s `small` is `unknown`
+(the fault stops the search there).
+
+`earnest confirm --tlc <apalache.jar>` (the TLC inside Apalache 0.62.4's jar): `same` for
+`matches` (43 states), `asserts` (22), `broken` (3: the TLA+ export checks the assert's
+condition where earnest has a fault) and `fairconfirmed` (4). On `fairtuple.json` it says
+`differs` for `unfairFinishes` and `mayStayAtZero`: "TLC says unknown (Temporal property
+Eventually_unfairFinishes was violated.)". The integration branch before this slice says the same
+for `unfairFinishes` alone (`eventually(done)`, no fairness), which it already read: a broken
+rule about runs without fairness in a Quint model is not matched to TLC's counterexample. It is
+not this slice's, and is left for the TLA+ export's owner.
