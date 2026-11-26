@@ -90,8 +90,16 @@ type MayLack<TContext, Key> = TContext extends unknown
     : true
   : never;
 
+type Declarable<TValue> = TValue extends object
+  ? {
+      [Key in keyof TValue]-?:
+        | Declarable<Exclude<TValue[Key], undefined>>
+        | (MayLack<TValue, Key> extends false ? never : null);
+    }
+  : TValue;
+
 type DeclaredField<TContext, Key> =
-  | Exclude<ContextField<TContext, Key>, undefined>
+  | Declarable<Exclude<ContextField<TContext, Key>, undefined>>
   | (MayLack<TContext, Key> extends false ? never : null);
 
 /**
@@ -100,7 +108,8 @@ type DeclaredField<TContext, Key> =
  * taken, as in `MachinePayloadSchema`. Fields it does not name are not checked. Any field of any
  * member of a union context can be named, its declaration checked against that field's type in
  * the members that have it. Where a member lacks the field, or the field is optional or may be
- * `undefined`, the declaration may be `.optional()`, which also takes a missing field.
+ * `undefined`, the declaration may be `.optional()`, which also takes a missing field. The same
+ * holds for the fields of a record, at every depth.
  */
 export type MachineContextSchema<TMachine extends AnyStateMachine> = {
   readonly [Field in ContextKey<ContextFrom<TMachine>>]?: Declaration<
