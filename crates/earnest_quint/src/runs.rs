@@ -1,6 +1,6 @@
 use crate::json::{Declaration, Def, Expr as Quint};
 use crate::model::{action, ids};
-use crate::reader::{Read, Reader, all_of, constant, refusal};
+use crate::reader::{Read, Reader, Refusal, all_of, constant, refusal};
 use earnest_ir::{Action, Code, Expr, Plan, Script, Stage};
 use earnest_value::Value;
 
@@ -335,7 +335,7 @@ pub(crate) fn scripts<'a>(
     declarations: &'a [Declaration],
     init: u64,
     fields: &[String],
-) -> Read<Vec<Script>> {
+) -> Result<Vec<Script>, Vec<Refusal>> {
     let mut tests: Vec<&Def> = declarations
         .iter()
         .filter_map(|declaration| match declaration {
@@ -348,8 +348,17 @@ pub(crate) fn scripts<'a>(
         })
         .collect();
     tests.sort_by_key(|def| def.id);
-    tests
-        .into_iter()
-        .map(|def| script(reader, def, init, fields))
-        .collect()
+    let mut played = Vec::with_capacity(tests.len());
+    let mut refused = Vec::new();
+    for def in tests {
+        match script(reader, def, init, fields) {
+            Ok(script) => played.push(script),
+            Err(refusal) => refused.push(refusal),
+        }
+    }
+    if refused.is_empty() {
+        Ok(played)
+    } else {
+        Err(refused)
+    }
 }

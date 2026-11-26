@@ -10,6 +10,7 @@ mod harness;
 mod limits;
 mod offline;
 mod quint;
+mod quint_runs;
 mod replay;
 mod results;
 mod runs;

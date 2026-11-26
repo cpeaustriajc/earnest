@@ -852,3 +852,276 @@ and names the construct and the definition it is in.
 - Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
   general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
   `scan.rs`.
+
+## Slice 6: what is checked
+
+`earnest verify <file>.json` plays each `run` of the compiled main module whose name ends in
+`Test`, as `quint test` selects them (issue #59). Each is listed after the invariants with
+`"kind": "witness"`, its name as id and the sentence ``The Quint run `name` passes``.
+
+The models, each `.qnt` beside the `.json` compiled from it with Quint 0.33.1:
+
+- `models/runs_ints.qnt`: `runs.qnt` with `emptyTest` choosing from `Set()` in place of
+  `Set().filter(x => x > 0)`, which needs sets. `runs.qnt` is kept as it was.
+- `models/stuck.qnt`: the module `stuck` of `edge.qnt` with `Test` added to each run's name, since
+  `quint test` plays no run of the original (`quint test --main stuck edge.qnt` lists none;
+  the spike's 5 runs came from `--match`). `edge.qnt` is kept as it was.
+- `crates/earnest_quint/fixtures/played.qnt`: 22 runs that try each run operator in the ways the
+  spike did not (an `expect` after a false step, `fail()` around an `expect`, a `nondet` inside a
+  step that is false for some values, an action argument read from the state, `init` in the
+  middle, a run called by name, a `nondet` of the run that makes it false for some values).
+- `crates/earnest_quint/fixtures/unstarted.qnt`: 4 runs the reader refuses.
+
+A plain compile keeps the runs written in the main module; it needs no flag [ran]:
+
+```sh
+quint compile --target json --main runs runs_ints.qnt > runs_ints.json
+quint compile --target json --main stuck --invariant ok stuck.qnt > stuck.json
+quint compile --target json --main played played.qnt > played.json
+quint compile --target json --main unstarted unstarted.qnt > unstarted.json
+```
+
+`quint test` downloads its Rust evaluator from GitHub, which this session can't reach
+("Release v0.7.1 not found: Error: Failed to fetch from GitHub: Forbidden"), so every
+`quint test` below runs with `--backend typescript`, as the spike's did.
+
+### The verdicts
+
+| Run | `quint test` | earnest | earnest's reason |
+|---|---|---|---|
+| `failDirectTest` | ok | holds | |
+| `failChainTest` | ok | holds | |
+| `failRepsTest` | failed (QNT513, reps) | broken | step 3, `inc`, can't happen here |
+| `disabledMidTest` | failed (QNT513, then) | broken | step 3, `inc`, can't happen here |
+| `pickSomeTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here (`v = 1`) |
+| `pickAllTest` | ok (10000 samples) | holds | |
+| `plainTest` | ok | holds | |
+| `assertFalseTest` | failed (QNT508, assertion) | broken | the assertion of step 1 is false here |
+| `boolTest` | ok | holds | |
+| `stepTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here (`pick`, `v = 1`) |
+| `nondetRunTest` | ok (10000 samples) | holds | |
+| `repsIndexTest` | ok | holds | |
+| `emptyTest` | failed (QNT511, false) | broken | the run is false |
+| `toTwoTest` | ok | holds | |
+| `thirdTest` | failed (QNT513, reps) | broken | step 3, `step`, can't happen here |
+| `withNondetTest` | ok (10000 samples) | holds | |
+| `assertedTest` | ok | holds | |
+| `wrongExpectTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here |
+
+13 runs in `runs_ints.qnt` and 5 in `stuck.qnt`, as the spike counted. The invariant `ok` of
+`stuck` holds.
+
+| Run of `played.qnt` | `quint test` | earnest | earnest's reason |
+|---|---|---|---|
+| `expectAfterFalseTest` | failed (QNT508, "Cannot continue to expect") | broken | step 3, `inc`, can't happen here |
+| `failExpectFalseTest` | failed (QNT508, the same) | broken | step 3, `inc`, can't happen here |
+| `failExpectTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here |
+| `failExpectTrueTest` | failed (QNT511, false) | broken | the run gets through every step, and its `fail()` expects it not to |
+| `midExpectTest` | ok | holds | |
+| `gatedTest` | ok (10000 samples) | holds | |
+| `eitherTest` | ok (10000 samples) | holds | |
+| `assertFirstTest` | failed (QNT508, assertion) | broken | the assertion of step 1 is false here |
+| `argStateTest` | ok | holds | |
+| `initMidTest` | ok | holds | |
+| `nondetArgTest` | ok (10000 samples) | holds | |
+| `failCanTest` | failed (QNT511, false) | broken | step 1, `inc`, can happen here, and the run's `fail()` expects it can't |
+| `repsThenTest` | failed (QNT513, then) | broken | step 3, `inc`, can't happen here |
+| `initExpectTest` | ok | holds | |
+| `nestedExpectTest` | ok | holds | |
+| `falseBoolTest` | failed (QNT511, false) | broken | the run is false |
+| `topBoolTest` | **ok (10000 samples)** | **broken** | with `n` = 1: the run is false |
+| `topErrorTest` | failed (QNT508, expect) | broken | with `n` = 2: what the run expects after step 1 is false here |
+| `failOnlyTest` | failed (QNT511, false) | broken | step 2, `inc`, can happen here, and the run's `fail()` expects it can't |
+| `anyRunsTest` | ok (10000 samples) | holds | |
+| `valTest` | ok | holds | |
+| `calledTest` | ok | holds | |
+
+`topBoolTest` is the one difference, and earnest is the stricter one: see "How earnest plays a
+run" below.
+
+### `quint test`
+
+```text
+$ quint test --backend typescript --main runs runs_ints.qnt
+  runs
+    ok failDirectTest passed 1 test(s)
+    ok failChainTest passed 1 test(s)
+    1) failRepsTest failed after 1 test(s)
+    2) disabledMidTest failed after 1 test(s)
+    3) pickSomeTest failed after 1 test(s)
+    ok pickAllTest passed 10000 test(s)
+    ok plainTest passed 1 test(s)
+    4) assertFalseTest failed after 1 test(s)
+    ok boolTest passed 1 test(s)
+    5) stepTest failed after 4 test(s)
+    ok nondetRunTest passed 10000 test(s)
+    ok repsIndexTest passed 1 test(s)
+    6) emptyTest failed after 1 test(s)
+  7 passing (604ms)
+  6 failed
+  1) failRepsTest:
+       Error [QNT513]: Reps loop could not continue after iteration #3 evaluated to false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:18:32
+        18:   run failRepsTest = init.then(3.reps(_ => inc)).fail()
+                                           ^^^^^^^^^^^^^^^^
+  2) disabledMidTest:
+       Error [QNT513]: Cannot continue in `then` because the highlighted expression evaluated to false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:20:55
+        20:   run disabledMidTest = init.then(inc).then(inc).then(inc).then(inc)
+                                                                  ^^^
+  3) pickSomeTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:22:22
+        22:   run pickSomeTest = init.then(pick).expect(picked == 2)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  4) assertFalseTest:
+       Error [QNT508]: Assertion failed
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:28:41
+        28:   run assertFalseTest = init.then(all { assert(y == 1), inc })
+                                                    ^^^^^^^^^^^^^^
+  5) stepTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:32:18
+        32:   run stepTest = init.then(step).expect(y == 1)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  6) emptyTest:
+       Error [QNT511]: Test emptyTest returned false
+        at /home/user/earnest/tasks/quint/models/runs_ints.qnt:39:7
+        39:   run emptyTest = { nondet n = Set().oneOf()
+                  ^^^^^^^^^
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 runs_ints.qnt
+error: Tests failed
+$ quint test --backend typescript --main stuck stuck.qnt
+  stuck
+    ok toTwoTest passed 1 test(s)
+    1) thirdTest failed after 1 test(s)
+    ok withNondetTest passed 10000 test(s)
+    ok assertedTest passed 1 test(s)
+    2) wrongExpectTest failed after 1 test(s)
+  3 passing (350ms)
+  2 failed
+  1) thirdTest:
+       Error [QNT513]: Reps loop could not continue after iteration #3 evaluated to false
+        at /home/user/earnest/tasks/quint/models/stuck.qnt:8:29
+        8:   run thirdTest = init.then(3.reps(_ => step)).fail()
+                                       ^^^^^^^^^^^^^^^^^
+  2) wrongExpectTest:
+       Error [QNT508]: Expect condition does not hold true
+        at /home/user/earnest/tasks/quint/models/stuck.qnt:14:25
+        14:   run wrongExpectTest = init.then(step).expect(y == 5)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 stuck.qnt
+error: Tests failed
+```
+
+`quint test --backend typescript --main played played.qnt` ends `12 passing`, `10 failed`, with
+each verdict as in the table above.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/models/runs_ints.json
+fail        runs  12 states  0 ms
+  broken  failRepsTest  "The Quint run `failRepsTest` passes"
+    start  y = 0, picked = 0
+    1. inc  y: 0 -> 1
+    2. inc  y: 1 -> 2
+    end    y = 2, picked = 0
+    why    step 3, `inc`, can't happen here
+  broken  disabledMidTest  "The Quint run `disabledMidTest` passes"
+    start  y = 0, picked = 0
+    1. inc  y: 0 -> 1
+    2. inc  y: 1 -> 2
+    end    y = 2, picked = 0
+    why    step 3, `inc`, can't happen here
+  broken  pickSomeTest  "The Quint run `pickSomeTest` passes"
+    start  y = 0, picked = 0
+    1. pick  v = 1  picked: 0 -> 1
+    end    y = 0, picked = 1
+    why    what the run expects after step 1 is false here
+  broken  assertFalseTest  "The Quint run `assertFalseTest` passes"
+    start  y = 0, picked = 0
+    why    the assertion of step 1 is false here
+  broken  stepTest  "The Quint run `stepTest` passes"
+    start  y = 0, picked = 0
+    1. pick  v = 1  picked: 0 -> 1
+    end    y = 0, picked = 1
+    why    what the run expects after step 1 is false here
+  broken  emptyTest  "The Quint run `emptyTest` passes"
+    start  y = 0, picked = 0
+    why    the run is false
+1 model: 0 pass, 1 fail, 0 unfinished
+$ earnest verify tasks/quint/models/stuck.json
+fail        stuck  3 states  0 ms
+  broken  thirdTest  "The Quint run `thirdTest` passes"
+    start  y = 0
+    1. step  y: 0 -> 1
+    2. step  y: 1 -> 2
+    end    y = 2
+    why    step 3, `step`, can't happen here
+  broken  wrongExpectTest  "The Quint run `wrongExpectTest` passes"
+    start  y = 0
+    1. step  y: 0 -> 1
+    end    y = 1
+    why    what the run expects after step 1 is false here
+1 model: 0 pass, 1 fail, 0 unfinished
+```
+
+### How earnest plays a run [ran: the probes above]
+
+- `init` as the first step is the start states, which the reader works out from `q::init`.
+  Each later operand of `then` is a step.
+- A step is every way its action can be taken: each branch of an `any`, and each value of each
+  `nondet` inside it. **Quint's `nondet` inside an action picks again until the action can
+  happen** (`gatedTest`, whose `nondet v = 1.to(3)` is false unless `v` is 2, passes 10000
+  samples), so a step can't happen only when no branch with no value can, and every branch and
+  value that can happen is played. An `if` in a step is a branch too.
+- A step that can't happen breaks the run with the path played on that branch. So does a fault,
+  a field taken out of its values, an `expect` that is false, and an `assert` that is false.
+- `expect(P)` is checked after the step it follows; after `init` it is checked on the start
+  state. Quint makes a false step before an `expect` an error (`expectAfterFalseTest`), so a
+  `fail()` around it rescues nothing.
+- `n.reps(i => A(i))` with `n` a constant when the file is read is `n` steps, each with its
+  index. A false round is an error in Quint, so `fail()` around a chain that ends in `reps`
+  breaks on every branch.
+- `fail()` around a chain whose last operand is a step (or `A.fail()` as that operand) makes the
+  last step one that must be refused: the run holds where it can't happen and breaks where it
+  can. Anywhere else, `fail()` is refused.
+- `assert(P)` as the first parts of a step's `all { ... }` is checked in the state before the
+  step, before anything else of the step, which is the order Quint evaluates it in.
+- An action's arguments are worked out in the state before the step, as Quint does
+  (`argStateTest`).
+- A `nondet` at the top of the run gives one plan per value; a `val` there is a constant. A run
+  that is a constant boolean is true or false without steps. A run called by name is played in
+  place.
+- The player explores every branch, depth first, from every start state, and skips a step it
+  has already played from the same state with no break. **Quint samples**: it plays 10000
+  random branches of a run that chooses. Exhaustive play finds every failure sampling finds, and
+  those it misses.
+- **Where earnest is stricter than `quint test`**: a `nondet` at the top of the run. Quint picks
+  another value when the run is plainly false for one (not an error): `{ nondet n =
+  1.to(3).oneOf() n == 2 }` passes. earnest requires every value to pass, and breaks it with
+  `n = 1`. An error for one value (`topErrorTest`) fails in both.
+- **Bounds**: at most 100,000 branches from one start state; past that the run is `unknown`, with
+  the reason "the run has more than 100000 branches from one start state, and the checker
+  stopped after playing that many". At most 1000 steps in a plan and 1000 plans in a run, else
+  the file is unreadable. Start states past the state limit give `unknown`, as for a witness.
+
+### Refused, by name
+
+- A run that does not start with `init` (Quint fails it: "Variable y not set").
+- A `reps` whose count is not a constant when the file is read. Quint's own typechecker refuses
+  a count read from the state ("Expected [y] and [] to be the same"), so this is a count from
+  something the reader does not fold.
+- A `reps` of 0 times or fewer: Quint passes `init.then(0.reps(_ => step))` but then leaves the
+  state unset, so an `expect` after it fails with "Variable y not set".
+- A `fail()` that is not the run's last operator (Quint errors when the step under it can
+  happen, and then leaves the state unset when it can't).
+- An `assert` after another part of a step's `all { ... }`: Quint stops at a false part before
+  it reaches the assert, so the step is plainly false there and not a failed assertion
+  (`all { y > 5, assert(false), inc }.fail()` passes in Quint), an order the reader does not keep.
+- `q::test`, `q::testOnce`, `q::debug`, an operator defined inside a run, a run with parameters,
+  and a run that is neither steps nor a constant boolean.
+- A run whose name does not end in `Test` is not read at all, as `quint test` does not play it.

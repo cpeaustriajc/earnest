@@ -267,8 +267,7 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
         Quint::Name { name, .. } => named(&defs, name).map_or(init.id, |def| def.id),
         _ => init.id,
     };
-    let scripts = scripts(&mut reader, &module.declarations, started_by, &names)
-        .map_err(|refusal| vec![refusal])?;
+    let scripts = scripts(&mut reader, &module.declarations, started_by, &names)?;
     let mut symbols = Symbols::default();
     let fields = variables
         .into_iter()

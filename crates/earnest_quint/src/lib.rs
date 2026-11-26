@@ -57,4 +57,6 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
 }
 
 #[cfg(test)]
+mod run_tests;
+#[cfg(test)]
 mod tests;

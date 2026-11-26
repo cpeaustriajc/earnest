@@ -427,7 +427,6 @@ impl Search<'_> {
         let scripts = runs
             .scripts
             .iter()
-            .filter(|_| runs.chosen.is_none())
             .filter(|script| wanted(&script.id))
             .map(|script| self.played_outcome(&script.id, &script.says, self.play_script(script)));
         witnesses.chain(scripts).collect()

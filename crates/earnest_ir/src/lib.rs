@@ -431,7 +431,8 @@ pub struct Runs {
     pub eventually: Vec<Eventually>,
     /// The witnesses.
     pub witnesses: Vec<Witness>,
-    /// The generalised witnesses, played from the model's own start states only.
+    /// The generalised witnesses, played from the start states of whichever setup the model
+    /// starts in.
     pub scripts: Vec<Script>,
     /// The setups the model is also checked in.
     pub setups: Vec<Setup>,
@@ -506,7 +507,7 @@ pub struct Model {
 impl Model {
     /// The id of everything this model is checked for and reported by its id: each rule, then
     /// each rule about runs, then each witness that is played from this model's start states,
-    /// then each script when the model is in no setup.
+    /// then each script.
     pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
         let always = self.rules.iter().map(|rule| rule.id.as_str());
         let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
@@ -516,12 +517,7 @@ impl Model {
             .iter()
             .filter(|witness| witness.setup == self.runs.chosen)
             .map(|witness| witness.id.as_str());
-        let scripts = self
-            .runs
-            .scripts
-            .iter()
-            .filter(|_| self.runs.chosen.is_none())
-            .map(|script| script.id.as_str());
+        let scripts = self.runs.scripts.iter().map(|script| script.id.as_str());
         always.chain(eventually).chain(witnesses).chain(scripts)
     }
 
