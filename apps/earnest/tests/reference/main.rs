@@ -61,6 +61,12 @@ for (const value of Object.values(exports)) {
 	if (!(value instanceof Model)) continue;
 	const found = explore(value, { exports, ...limit });
 	results.push({ name: value.name, states: found.states, rules: found.rules });
+	for (const setup of value.runners().setups ?? []) {
+		const id = Object.keys(exports).find((key) => exports[key] === setup.part);
+		const started = explore(value, { exports, ...limit, setup: setup.part });
+		const named = { id, says: setup.says };
+		results.push({ name: value.name, setup: named, states: started.states, rules: started.rules });
+	}
 }
 console.log(JSON.stringify(results));
 "#;
@@ -331,6 +337,15 @@ fn node_and_the_checker_give_the_same_rules_and_witnesses_with_their_paths_and_r
                 .iter()
                 .find(|node| node["name"] == *name)
                 .unwrap_or_else(|| panic!("node found no model {name} in {}", file.display()));
+            let setup = &checker["setup"];
+            let node = Some(node)
+                .filter(|found| found["setup"] == *setup)
+                .or_else(|| {
+                    theirs
+                        .iter()
+                        .find(|found| found["name"] == *name && found["setup"] == *setup)
+                })
+                .unwrap_or_else(|| panic!("node did not run {name} in the setup {setup}"));
             assert_eq!(
                 node["states"], checker["states"],
                 "{name}: the same distinct states"
@@ -375,4 +390,50 @@ fn node_and_the_checker_play_a_witness_alike_when_there_are_more_start_states_th
             "the same witnesses with a limit of {limit} states"
         );
     }
+}
+
+#[test]
+fn node_and_the_checker_judge_every_rule_about_runs_and_every_setup_alike() {
+    let scratch = scratch_folder();
+    let files = typescript_models(&repository().join("tasks/conformance/runs"));
+    let mut setups = 0_usize;
+    let mut about_runs = 0_usize;
+    for file in &files {
+        let ours = checker_results(scratch.path(), file);
+        let theirs = node_rules(scratch.path(), file, None);
+        assert_eq!(
+            ours.len(),
+            theirs.len(),
+            "both run the model and each of its setups in {}",
+            file.display()
+        );
+        for (checker, node) in ours.iter().zip(&theirs) {
+            let run = format!("{} {}", checker["name"], checker["setup"]);
+            assert_eq!(
+                (&node["name"], &node["setup"]),
+                (&checker["name"], &checker["setup"]),
+                "{run}: the runs come in the same order"
+            );
+            assert_eq!(
+                node["states"], checker["states"],
+                "{run}: the same distinct states"
+            );
+            assert_eq!(
+                node["rules"], checker["rules"],
+                "{run}: the same verdicts, paths, reasons and loops"
+            );
+            setups += usize::from(checker.get("setup").is_some());
+            about_runs += checker["rules"]
+                .as_array()
+                .expect("a model has a `rules` array")
+                .iter()
+                .filter(|rule| rule["kind"] == "eventually")
+                .count();
+        }
+    }
+    assert!(setups >= 2, "every setup was compared: {setups}");
+    assert!(
+        about_runs >= 15,
+        "every rule about runs was compared: {about_runs}"
+    );
 }
