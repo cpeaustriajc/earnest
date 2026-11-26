@@ -593,3 +593,146 @@ The first is simpler and testable [inferred: a product decision, flag it to the 
   by `--match`, earnest needs the same pattern [read].
 - The default Rust evaluator for `quint test` could not be downloaded here. Every `quint test`
   result above is from `--backend typescript` [ran].
+
+---
+
+## Slice 1: what is checked
+
+`earnest verify <file>.json` reads a module that `quint compile --target json` wrote (issue
+#54). The samples are in `models/`, each `.qnt` beside the `.json` compiled from it with Quint
+0.33.1; `counter.json` was compiled again, with both invariants. The small modules the unit tests
+of `crates/earnest_quint` read are in `crates/earnest_quint/fixtures`.
+
+Compiled with:
+
+```sh
+quint compile --target json --main counter --invariant inRange,tooBig counter.qnt > counter.json
+quint compile --target json --main mixed --invariant inBounds,downAtZero,agree,neverFourDown mixed.qnt > mixed.json
+quint compile --target json --main starts --invariant small starts.qnt > starts.json
+quint compile --target json --main dead --invariant ok dead.qnt > dead.json
+quint compile --target json --main record --invariant ok record.qnt > record.json
+```
+
+### State counts and verdicts by hand
+
+- **counter**: `count` 0 to 5, `on` either. From `(0, false)`, `toggle` flips `on`, `bump` needs
+  `on` and adds 1 to 3, cut at 5, and `reset` takes 5 back to `(0, false)`. With `on` true every
+  count from 0 to 5 is reached, and `toggle` gives each with `on` false: 6 × 2 = **12**.
+  `inRange` holds (the cut keeps 0 to 5). `tooBig` (`count < 4`) is broken; a bump adds at most
+  3, so the shortest path is `toggle`, then two bumps that add up to 4: **3 steps**.
+- **mixed** (`any`, `all`, `if`, `nondet` over `Set(-1, 1, 2)`, an action with a parameter, a
+  `val` inside an action, `implies`, `iff`): `x` 0 to 4, `up` either. A move to `x + d` sets
+  `up` to `d > 0`; `flip` toggles `up` and sends `x` to 0 when `up` was false; `wrap` at 4. Every
+  `(k, true)` is reached by moves up and every `(k, false)` by a flip from it: 5 × 2 = **10**.
+  `inBounds`, `downAtZero` and `agree` hold; `neverFourDown` is broken by
+  `move(2)`, `move(2)`, `flip`: **3 steps**.
+- **starts** (a nondeterministic `init`): `a` in {0, 2, 4} and `b` either, so **6** start states;
+  `step` adds 1 to `a` up to 6 and keeps `b`, so `a` reaches 0 to 6 with either `b`:
+  7 × 2 = **14**. `small` holds. Every run stops at `a = 6`.
+- **dead**: `a` from 0 to 3, then no action: **4** states, `ok` holds, and the stop at 3 is no
+  finding.
+- **params** (`crates/earnest_quint/fixtures/params.qnt`: an action called with a `nondet`, an
+  `any` inside the step): `x` from 0; `add` gives 1 or 2 below 6, so up to 7; `x - 1` above 0;
+  `x * 2` below 3. Every `x` from 0 to 7: **8**. `ok` holds.
+
+| Model | States by hand | TLC | earnest | Invariant | By hand | TLC | earnest |
+|---|---|---|---|---|---|---|---|
+| counter | 12 | 12 | 12 | `inRange` | holds | ok | holds |
+| | | | | `tooBig` | broken, 3 steps | violation, 3 steps | broken, 3 steps |
+| mixed | 10 | 10 | 10 | `inBounds`, `downAtZero`, `agree` | hold | ok | hold |
+| | | | | `neverFourDown` | broken, 3 steps | violation, 3 steps | broken, 3 steps |
+| starts | 14 (6 start) | 14 (6 initial) | 14 | `small` | holds | ok | holds |
+| dead | 4 | 4 | 4 | `ok` | holds, no deadlock | ok | pass, not stuck |
+| params | 8 | 8 | 8 | `ok` | holds | ok | holds |
+
+TLC stops at the first violation, so a broken invariant's TLC count is partial (8 for
+`tooBig`); the full count is from a run of an invariant that holds.
+
+### TLC, as Quint runs it
+
+Quint 0.33.1 from npm, Java 21, Apalache 0.62.4 (which Quint downloads). One command per
+invariant, so TLC reports each one alone:
+
+```text
+=== quint verify --backend tlc --main counter --invariant inRange counter.qnt
+33 states generated, 12 distinct states found, 0 states left on queue.
+[ok] No violation found (605ms).
+=== quint verify --backend tlc --main counter --invariant tooBig counter.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>  on = FALSE, count = 0
+State 2: <toggle>             on = TRUE,  count = 0
+State 3: <bump>               on = TRUE,  count = 1
+State 4: <bump>               on = TRUE,  count = 4
+16 states generated, 8 distinct states found, 0 states left on queue.
+[violation] Found an issue (680ms).
+=== quint verify --backend tlc --main mixed --invariant inBounds mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (532ms).
+=== quint verify --backend tlc --main mixed --invariant downAtZero mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (919ms).
+=== quint verify --backend tlc --main mixed --invariant agree mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (1272ms).
+=== quint verify --backend tlc --main mixed --invariant neverFourDown mixed.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>  up = TRUE,  x = 0
+State 2: <move(2)>            up = TRUE,  x = 2
+State 3: <move(2)>            up = TRUE,  x = 4
+State 4: <flip>               up = FALSE, x = 4
+31 states generated, 10 distinct states found, 0 states left on queue.
+[violation] Found an issue (1527ms).
+=== quint verify --backend tlc --main starts --invariant small starts.qnt
+Finished computing initial states: 6 distinct states generated
+18 states generated, 14 distinct states found, 0 states left on queue.
+[ok] No violation found (902ms).
+=== quint verify --backend tlc --main dead --invariant ok dead.qnt
+4 states generated, 4 distinct states found, 0 states left on queue.
+[ok] No violation found (1069ms).
+=== quint verify --backend tlc --main params --invariant ok params.qnt
+23 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (673ms).
+```
+
+The state lines are cut to the action and the values; the rest of each output is Apalache's and
+TLC's start-up text.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/models/counter.json
+fail        counter  12 states  0 ms
+  broken  tooBig  "The Quint invariant `tooBig` holds"
+    start  count = 0, on = false
+    1. toggle  on: false -> true
+    2. bump  by = 1  count: 0 -> 1
+    3. bump  by = 3  count: 1 -> 4
+    end    count = 4, on = true
+$ earnest verify tasks/quint/models/mixed.json
+fail        mixed  10 states  0 ms
+  broken  neverFourDown  "The Quint invariant `neverFourDown` holds"
+    start  x = 0, up = true
+    1. move  d = 2  x: 0 -> 2
+    2. move  d = 2  x: 2 -> 4
+    3. flip  up: true -> false
+    end    x = 4, up = false
+$ earnest verify tasks/quint/models/starts.json
+pass        starts  14 states  0 ms
+$ earnest verify tasks/quint/models/dead.json
+pass        dead  4 states  0 ms
+$ earnest verify crates/earnest_quint/fixtures/params.json
+pass        params  8 states  0 ms
+$ earnest verify tasks/quint/models/record.json
+unreadable  tasks/quint/models/record.json
+  tasks/quint/models/record.json:1:1  `var r`  a variable that holds records: only `int` and `bool` variables are read yet
+  tasks/quint/models/record.json:1:1  `Rec`  records are not read yet, in the definition `step`
+  tasks/quint/models/record.json:1:1  `field`  records are not read yet, in the definition `ok`
+  tasks/quint/models/record.json:1:1  `Rec`  records are not read yet, in the definition `init`
+```
+
+The TLA+ export of each of these models (`earnest tla`), run through the TLC in Apalache's jar
+(`java -cp apalache.jar tlc2.TLC`), finds the same counts (14 for `starts`, 4 for `dead`, with
+no deadlock error) and the same broken invariants.
+
+The tests: `crates/earnest_quint/src/tests.rs` (the reader) and
+`apps/earnest/tests/behavior/quint.rs` (the CLI on the samples above).
