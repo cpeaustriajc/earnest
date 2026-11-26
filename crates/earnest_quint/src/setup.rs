@@ -180,7 +180,11 @@ struct Filler<'t> {
     next: u64,
 }
 
-fn plain_import<'t>(typechecked: &'t Typechecked, declaration: &Value) -> Fill<Vec<&'t Value>> {
+fn plain_import<'t>(
+    typechecked: &'t Typechecked,
+    declaration: &Value,
+    runs_only: bool,
+) -> Fill<Vec<&'t Value>> {
     let whole = matches!(
         (
             text(declaration, "defName"),
@@ -196,6 +200,7 @@ fn plain_import<'t>(typechecked: &'t Typechecked, declaration: &Value) -> Fill<V
     for each in list(module, "declarations") {
         match text(each, "kind")? {
             "def" => definitions.push(each),
+            "var" if runs_only => definitions.push(each),
             "typedef" => {}
             _ => return None,
         }
@@ -269,7 +274,14 @@ impl<'t> Filler<'t> {
                     instances.push(instance(typechecked, main_name, declaration)?);
                 }
                 "import" => {
-                    let definitions = plain_import(typechecked, declaration)?;
+                    if runs_only {
+                        let proto = text(declaration, "protoName")?;
+                        *protos.entry(proto).or_insert(0) += 1;
+                        if protos.get(proto).copied().unwrap_or(0) > 1 {
+                            return None;
+                        }
+                    }
+                    let definitions = plain_import(typechecked, declaration, runs_only)?;
                     match text(declaration, "qualifiedName") {
                         None => {
                             for definition in definitions {
@@ -768,6 +780,23 @@ impl<'t> Filler<'t> {
         }
         for (position, run) in self.played(check.runs) {
             self.reach(run, Some(position))?;
+        }
+        let mut imported_runs: Vec<u64> = self
+            .own
+            .iter()
+            .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
+            .filter(
+                |(_, declaration)| match (check.runs, text(declaration, "name")) {
+                    (Runs::Tests, Some(name)) => name.ends_with(TESTS_END_WITH),
+                    (Runs::Named(names), Some(name)) => names.iter().any(|listed| listed == name),
+                    _ => false,
+                },
+            )
+            .map(|(id, _)| *id)
+            .collect();
+        imported_runs.sort_unstable();
+        for run in imported_runs {
+            self.reach(run, None)?;
         }
         let mut table = Map::new();
         for (key, entry) in &self.typechecked.table {

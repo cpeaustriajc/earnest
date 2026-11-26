@@ -43,7 +43,9 @@ case "$1" in
 esac
 "#;
 
-const FILES: [&str; 11] = [
+const FILES: [&str; 13] = [
+    "Plain",
+    "Other",
     "OwnRuns",
     "RunFromHelper",
     "TwoInstances",
@@ -57,7 +59,8 @@ const FILES: [&str; 11] = [
     "Helpers",
 ];
 
-const COMPILED: [(&str, &str); 14] = [
+const COMPILED: [(&str, &str); 15] = [
+    ("Plain", "PlainNested"),
     ("RunFromHelper", "RunFromHelper"),
     ("TwoInstances", "TwoInstances"),
     ("FirstSteps", "FirstSteps"),
@@ -301,12 +304,10 @@ fn a_module_of_runs_only_on_a_plain_import_is_played_with_or_without_init_and_st
             held(&["stepsOnceTest"]),
             "{entry}\n{report}"
         );
-        assert_eq!(
-            quint.compiled(),
-            [
-                "compile --target json --main RunsOnly --init Main::init --step Main::step specs/RunsOnly.qnt"
-            ],
-            "one compile, with the imported module's `init` and `step`: {entry}"
+        assert!(
+            quint.compiled().is_empty(),
+            "a plain import is built from the typecheck: {entry} {:?}",
+            quint.compiled()
         );
     }
 }
@@ -327,25 +328,10 @@ fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows()
             "as `quint test --main {main}` judges them\n{report}"
         );
     }
-    let compiled = quint.compiled();
-    for (main, init) in [
-        ("StarImport", "init"),
-        ("AsImport", "L::init"),
-        ("FromFile", "F::init"),
-        ("Several", "F::init"),
-        ("Mixed", "init"),
-    ] {
-        assert!(
-            compiled
-                .iter()
-                .any(|call| call.contains(&format!("--main {main} --init {init} "))),
-            "{main} is compiled once with `{init}`: {compiled:?}"
-        );
-    }
-    assert_eq!(
-        compiled.len(),
-        5,
-        "the instances and `OwnVariables` are built, the rest compiled once each: {compiled:?}"
+    assert!(
+        quint.compiled().is_empty(),
+        "every shape is built from the typecheck: {:?}",
+        quint.compiled()
     );
 }
 
@@ -424,5 +410,43 @@ fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck()
         quint.compiled().is_empty(),
         "nothing to compile: {:?}",
         quint.compiled()
+    );
+}
+
+#[test]
+fn a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly() {
+    let checks: Vec<String> = ["PlainAs", "PlainStar", "PlainFrom", "PlainNested"]
+        .iter()
+        .map(|main| format!(r#"{{ "file": "Plain.qnt", "main": "{main}", "runs": true }}"#))
+        .collect();
+    let quint = Quint::new(&format!(r#"{{ "checks": [{}] }}"#, checks.join(", ")));
+    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let spec = [("specTest", "holds"), ("specOverTest", "broken")];
+    for main in ["PlainAs", "PlainStar"] {
+        assert_eq!(
+            verdicts(&report, main),
+            pairs(&[spec[0], spec[1], ("ownTest", "holds")]),
+            "as `quint test --main {main}` judges them, `Main::specTest` and `specTest` among them\n{report}"
+        );
+    }
+    assert_eq!(
+        verdicts(&report, "PlainFrom"),
+        pairs(&[
+            spec[0],
+            spec[1],
+            ("bothTest", "holds"),
+            ("otherTest", "holds")
+        ]),
+        "`O::otherTest` of another file is played too\n{report}"
+    );
+    assert_eq!(
+        verdicts(&report, "PlainNested"),
+        held(&["nestedTest"]),
+        "a spec that imports a module of helpers is compiled, with `H::init`\n{report}"
+    );
+    assert_eq!(
+        quint.compiled(),
+        ["compile --target json --main PlainNested --init H::init --step H::step specs/Plain.qnt"],
+        "only the shape the typecheck build can't take is compiled"
     );
 }
