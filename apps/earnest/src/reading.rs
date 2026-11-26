@@ -12,12 +12,6 @@ pub(crate) struct Readable {
     pub(crate) position: usize,
 }
 
-impl Readable {
-    pub(crate) fn is_run_of_one_model_with(&self, other: &Self) -> bool {
-        self.position == other.position && self.model.file == other.model.file
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum Content {
     Models(Vec<Readable>),

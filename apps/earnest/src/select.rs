@@ -12,11 +12,11 @@ fn has_rule(target: &Target<'_>, id: &str) -> bool {
 
 impl Target<'_> {
     pub(crate) fn is_run_of_one_model_with(&self, other: &Self) -> bool {
-        self.file.path == other.file.path && self.readable.is_run_of_one_model_with(other.readable)
+        self.file.path == other.file.path && self.readable.position == other.readable.position
     }
 }
 
-pub(crate) fn one_run_of_each_model<'a, 't>(targets: &'t [Target<'a>]) -> Vec<&'t Target<'a>> {
+fn one_run_of_each_model<'a, 't>(targets: &'t [Target<'a>]) -> Vec<&'t Target<'a>> {
     targets
         .iter()
         .enumerate()
