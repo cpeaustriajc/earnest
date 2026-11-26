@@ -303,8 +303,9 @@ test("a path of a setup from explore replays with that setup", () => {
   const high = m.setup(Hops, "n starts at three", { n: 3 });
   const found = explore(Hops, { exports: { ...exports, high }, setup: high });
   const broken = found.rules.find((rule) => rule.id === "belowFour");
-  assert(broken?.path !== undefined, "one step from n = 3 breaks the rule");
-  expect(replay(Hops, broken.path, { exports, setup: high })).toStrictEqual([{ n: 3 }, { n: 4 }]);
+  const path = broken?.path;
+  assert.ok(path, "one step from n = 3 breaks the rule");
+  expect(replay(Hops, path, { exports, setup: high })).toStrictEqual([{ n: 3 }, { n: 4 }]);
 });
 
 test("a setup of another model is refused", () => {

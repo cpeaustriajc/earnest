@@ -291,8 +291,8 @@ fn by_sentence(was: &str, now: &str) -> Option<Kind> {
     (was != now).then_some(Kind::Reworded)
 }
 
-fn by_meaning(same_meaning: bool, was: &str, now: &str) -> Option<Kind> {
-    if same_meaning {
+fn by_meaning<T: PartialEq + ?Sized>(meant: (&T, &T), was: &str, now: &str) -> Option<Kind> {
+    if meant.0 == meant.1 {
         by_sentence(was, now)
     } else {
         Some(Kind::Changed)
@@ -308,7 +308,7 @@ fn told_apart(
     let Some((model, at_base)) = lowered else {
         return pairs
             .iter()
-            .map(|(was, now)| by_meaning(was.text == now.text, &was.says, &now.says))
+            .map(|(was, now)| by_meaning((&was.text, &now.text), &was.says, &now.says))
             .collect();
     };
     let lowered: Vec<Option<(&Rule, &Rule)>> = pairs
@@ -349,7 +349,7 @@ fn told_apart(
             } else if broken.contains(&tightens_id(&now.id)) {
                 Some(Kind::Tightened)
             } else {
-                by_meaning(before.holds == after.holds, &was.says, &now.says)
+                by_meaning((&before.holds, &after.holds), &was.says, &now.says)
             }
         })
         .collect()
@@ -550,8 +550,13 @@ fn changes_about_runs(
             changes.push(one_sided(&new.file, &new.name, now.clone(), Kind::Added));
             continue;
         };
-        let same = old.is_some_and(|old| same_meaning(old, new, lowered, now, &was.wording));
-        if let Some(change) = by_meaning(same, &was.wording.says, &now.wording.says) {
+        let sentences = (&was.wording.says, &now.wording.says);
+        let change = if old.is_some_and(|old| same_meaning(old, new, lowered, now, &was.wording)) {
+            by_sentence(sentences.0, sentences.1)
+        } else {
+            Some(Kind::Changed)
+        };
+        if let Some(change) = change {
             changes.push(Difference {
                 file: new.file.clone(),
                 model: new.name.clone(),
@@ -1773,7 +1778,10 @@ mod tests {
         );\n";
 
     fn read_one(file: &str, source: &str) -> Draft {
-        let mut reading = if file.ends_with(".rs") {
+        let rust = Path::new(file)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("rs"));
+        let mut reading = if rust {
             earnest_rs::read(file, source)
         } else {
             earnest_ts::read(file, source)

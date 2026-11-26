@@ -141,7 +141,7 @@ fn lowered_with_earlier(
     }
     lowerer.draft = earlier;
     let runs = &earlier.runs;
-    let lowered = EarlierParts {
+    let at_base = EarlierParts {
         rules: earlier
             .rules
             .iter()
@@ -165,7 +165,7 @@ fn lowered_with_earlier(
     };
     lowerer.problems.clear();
     lowerer.draft = draft;
-    Ok((lowerer.finish(parts)?, lowered))
+    Ok((lowerer.finish(parts)?, at_base))
 }
 
 struct Parts {
