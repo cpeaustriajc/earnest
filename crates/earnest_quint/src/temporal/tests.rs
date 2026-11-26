@@ -77,7 +77,7 @@ fn the_actions_are_those_of_the_step() {
         .iter()
         .map(|action| action.id.as_str())
         .collect();
-    assert_eq!(ids, ["up", "flip", "move"]);
+    assert_eq!(ids, ["up", "flip", "move  d = 1"]);
 }
 
 #[test]
@@ -180,11 +180,14 @@ fn not_eventually_at_the_top_of_a_property_is_read_as_a_rule_that_always_holds()
 }
 
 #[test]
-fn an_implies_inside_what_must_hold_is_refused() {
-    refused(
-        "nested",
-        "`eventually`",
-        "an `implies` that is not fairness",
+fn a_condition_that_implies_what_must_hold_is_judged_in_the_start_states() {
+    let model = model_of("nested");
+    let ids: Vec<&str> = model.rules.iter().map(|rule| rule.id.as_str()).collect();
+    assert_eq!(
+        (ids, model.runs.eventually.len()),
+        (vec!["nested"], 0),
+        "`on` is false in the only start state, so `on implies eventually(x == 2)` holds in \
+         every run, as TLC and Apalache judge a condition at the top of a property"
     );
 }
 
@@ -213,7 +216,7 @@ fn fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_actio
     let moved = model
         .actions
         .iter()
-        .position(|action| action.id == "move")
+        .position(|action| action.id == "move  d = 1")
         .expect("the step calls `move(1)`");
     assert_eq!(the_rule(&model, "given").fair, Some(fair_to(&[&[moved]])));
     assert!(
