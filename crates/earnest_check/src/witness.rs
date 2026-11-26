@@ -2,7 +2,7 @@ use crate::explore::{Search, Starts};
 use crate::outcome::{Change, Named, Path, RuleKind, RuleOutcome, Step, Verdict};
 use earnest_ir::{Action, Code, Fault, Frame, Plan, Script, Witness};
 use earnest_value::Value;
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 const MOST_BRANCHES: usize = 100_000;
 
@@ -127,23 +127,21 @@ fn none_can_happen(number: usize, leg: &Leg<'_>) -> String {
             ids.push(&action.id);
         }
     }
-    match ids.as_slice() {
-        [id] => format!("step {number}, `{id}`, can't happen here"),
-        _ => {
-            let listed: Vec<String> = ids.iter().map(|id| format!("`{id}`")).collect();
-            format!(
-                "step {number}: none of {} can happen here",
-                listed.join(", ")
-            )
-        }
+    if let [id] = ids.as_slice() {
+        return format!("step {number}, `{id}`, can't happen here");
     }
+    let listed: Vec<String> = ids.iter().map(|id| format!("`{id}`")).collect();
+    format!(
+        "step {number}: none of {} can happen here",
+        listed.join(", ")
+    )
 }
 
 struct Player<'s, 'a> {
     search: &'s Search<'s>,
     course: &'s Course<'a>,
     played: usize,
-    held: HashSet<(usize, Vec<Value>)>,
+    held: FxHashSet<(usize, Vec<Value>)>,
 }
 
 impl Player<'_, '_> {
@@ -332,7 +330,7 @@ impl Search<'_> {
 
     fn play_course(&self, course: &Course<'_>) -> Ended {
         let most = self.limits.max_states;
-        let mut held = HashSet::new();
+        let mut held = FxHashSet::default();
         for (played, start) in Starts::of(self.model).enumerate() {
             if played >= most {
                 return Ended::TooManyStarts;
@@ -347,7 +345,7 @@ impl Search<'_> {
                 played: 0,
                 held,
             };
-            let played = match course.start {
+            let walked = match course.start {
                 Some(start_holds) => player
                     .check(
                         start_holds,
@@ -358,7 +356,7 @@ impl Search<'_> {
                     .and_then(|()| player.walk(0, &start, &mut path)),
                 None => player.walk(0, &start, &mut path),
             };
-            match played {
+            match walked {
                 Ok(()) => {}
                 Err(Stop::Broken(path, why)) => return Ended::Broken(path, why),
                 Err(Stop::TooManyBranches) => return Ended::TooManyBranches,
@@ -386,7 +384,7 @@ impl Search<'_> {
         Ended::Held
     }
 
-    fn played_outcome(&self, id: &str, says: &str, ended: Ended) -> RuleOutcome {
+    fn played_outcome(id: &str, says: &str, ended: Ended) -> RuleOutcome {
         let (verdict, path, reason) = match ended {
             Ended::Held => (Verdict::Holds, None, None),
             Ended::Broken(path, why) => (Verdict::Broken, Some(path), Some(why)),
@@ -422,13 +420,13 @@ impl Search<'_> {
             .filter(|witness| wanted(&witness.id))
             .map(|witness| {
                 let course = Course::of_witness(witness, &self.model.actions);
-                self.played_outcome(&witness.id, &witness.says, self.play_course(&course))
+                Self::played_outcome(&witness.id, &witness.says, self.play_course(&course))
             });
         let scripts = runs
             .scripts
             .iter()
             .filter(|script| wanted(&script.id))
-            .map(|script| self.played_outcome(&script.id, &script.says, self.play_script(script)));
+            .map(|script| Self::played_outcome(&script.id, &script.says, self.play_script(script)));
         witnesses.chain(scripts).collect()
     }
 }

@@ -17,6 +17,12 @@ struct Step {
     refused: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Last,
+    Inside,
+}
+
 #[derive(Default)]
 struct Drawn {
     started: bool,
@@ -74,12 +80,12 @@ impl<'a> Run<'_, 'a> {
         Ok(())
     }
 
-    fn constant_plan(chosen: &[(String, Value)], holds: bool) -> Plan {
+    fn without_steps(chosen: &[(String, Value)]) -> Plan {
         Plan {
             chosen: chosen.to_vec(),
             start: None,
             steps: Vec::new(),
-            must_not_finish: !holds,
+            must_not_finish: false,
         }
     }
 
@@ -91,7 +97,10 @@ impl<'a> Run<'_, 'a> {
             Quint::Let { opdef, expr } if opdef.qualifier == "nondet" => {
                 let (_, values) = self.reader.picked_from(opdef)?;
                 if values.is_empty() {
-                    return self.push(Self::constant_plan(chosen, false));
+                    return self.push(Plan {
+                        must_not_finish: true,
+                        ..Self::without_steps(chosen)
+                    });
                 }
                 for value in values {
                     let was = self.reader.hold(opdef.id, Expr::Const(value.clone()));
@@ -125,7 +134,10 @@ impl<'a> Run<'_, 'a> {
             _ => {
                 let holds = self.reader.pure(expr)?;
                 match constant(&holds)? {
-                    Some(Value::Bool(holds)) => self.push(Self::constant_plan(chosen, holds)),
+                    Some(Value::Bool(holds)) => self.push(Plan {
+                        must_not_finish: !holds,
+                        ..Self::without_steps(chosen)
+                    }),
                     _ => self.refuse(
                         "a run",
                         "a run that is neither steps nor a constant boolean",
@@ -137,7 +149,7 @@ impl<'a> Run<'_, 'a> {
 
     fn plan(&mut self, expr: &'a Quint, chosen: &[(String, Value)]) -> Read<()> {
         let mut drawn = Drawn::default();
-        self.walk(expr, true, &mut drawn)?;
+        self.walk(expr, Place::Last, &mut drawn)?;
         let plan = Plan {
             chosen: chosen.to_vec(),
             start: drawn.start.map(Code::new),
@@ -156,21 +168,21 @@ impl<'a> Run<'_, 'a> {
         self.push(plan)
     }
 
-    fn walk(&mut self, expr: &'a Quint, last: bool, drawn: &mut Drawn) -> Read<bool> {
+    fn walk(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
         if let Some(def) = self.called_run(expr) {
-            return self.walk(&def.expr, last, drawn);
+            return self.walk(&def.expr, place, drawn);
         }
         let Quint::App { opcode, args, .. } = expr else {
             return self.leaf(expr, drawn);
         };
         match (opcode.as_str(), args.as_slice()) {
             ("then", [first, second]) => {
-                self.walk(first, false, drawn)?;
-                self.walk(second, last, drawn)
+                self.walk(first, Place::Inside, drawn)?;
+                self.walk(second, place, drawn)
             }
             ("reps", [count, repeated]) => self.reps(count, repeated, drawn),
             ("expect", [first, condition]) => {
-                self.walk(first, false, drawn)?;
+                self.walk(first, Place::Inside, drawn)?;
                 let holds = self.reader.pure(condition)?;
                 if let Some(step) = drawn.steps.last_mut() {
                     step.expect = Some(both(step.expect.take(), holds));
@@ -180,10 +192,10 @@ impl<'a> Run<'_, 'a> {
                 Ok(false)
             }
             ("fail", [first]) => {
-                if !last {
+                if place == Place::Inside {
                     return self.refuse("`fail`", "a `fail()` that is not the run's last operator");
                 }
-                let can_be_false = self.walk(first, false, drawn)?;
+                let can_be_false = self.walk(first, Place::Inside, drawn)?;
                 match drawn.steps.last_mut() {
                     Some(step) if can_be_false => step.refused = true,
                     _ => drawn.must_not_finish = true,
@@ -230,7 +242,7 @@ impl<'a> Run<'_, 'a> {
         }
         for round in 0..times {
             let was = self.reader.hold(index.id, Expr::Const(Value::Int(round)));
-            let walked = self.walk(body, false, drawn);
+            let walked = self.walk(body, Place::Inside, drawn);
             self.reader.release(index.id, was);
             walked?;
         }
