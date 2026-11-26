@@ -246,18 +246,23 @@ Additional rules for `--base`:
   - A box represents every state sharing its label; the note counts the underlying states in omitted boxes, and one arrow between two boxes counts once regardless of how many actions share it.
   - If the shortest path to a broken state exceeds the arrow cap, the chart draws the prefix of that path and notes: `Not shown: 5 of 26 states and 5 of 25 arrows. A broken state lies beyond what is shown.`
   - If one or more broken states are drawn and others are omitted, the note adds `Another broken state lies beyond what is shown.` (or `<n> more broken states lie beyond what is shown.`).
-- After the paths to broken states, the chart spends what is left of the cap on the shortest path to the nearest box where each rule's premise holds, one rule at a time in the order the result lists the rules. A premise that holds in a box already drawn, or in a start state, costs no arrow. The rest of the cap goes to the states nearest the start.
+- After the paths to broken states, the chart spends what is left of the cap on the premises of the rules, one at a time in the order the result lists the rules. For each, it draws the shortest path to the nearest box where the premise holds, counted from the start states. That path is drawn whole or not at all: a path longer than what is left takes no arrow, and the next premise is tried. A premise whose nearest box is already drawn, or is a start state, costs no arrow. Paths to broken states are still drawn as far as the cap allows. The rest of the cap goes to the states nearest the start.
 - A rule's premise is:
   - for a rule whose condition is an implication, its left side: `!a || b` in TypeScript and Rust, `a ? b : true` in TypeScript, `if a { b } else { true }` in Rust, each also inside a helper, and `a implies b` in Quint. With several negations before the last `||`, as in `!a || !b || c`, the premise is all of them: `a && b`. Any other condition, such as `!(a && b)` or `a !== 1 || b`, has no premise.
-  - for an eventually rule, the states where its `after` condition holds, and also the states where its `reaches` condition holds, so the chart shows where the rule starts and where it is met.
+  - for an eventually rule with `after`, the nearest box where `after` holds, where the rule starts. From that box, the chart also draws the shortest path to the nearest box where `reaches` holds, which may lead back through boxes nearer the start. When no box where `reaches` holds can be reached from it, only the start is drawn. An `after` that holds in no reachable state gives the rule no premise.
+  - for an eventually rule without `after`, the nearest box where `reaches` holds.
 - A property marked `/// @check reachable` needs no premise: the state that reaches it breaks its rule, so its path is drawn with the broken states. Witnesses and runs add no premise.
-- When a rule has a premise that holds in a reachable state, the chart ends with one more line, after a blank line, naming where each first holds, or that it lies beyond what is shown:
+- When a rule has a premise that holds in a reachable state, the chart ends with one more line, after a blank line, with one sentence per rule:
 
-  ```text
-  The premise of `cornered` first holds in `x = 5, y = 5`. `settles` starts in `busy` and is met in `idle`.
-  ```
+  | Rule | Sentence |
+  |---|---|
+  | Implication | ``The premise of `cornered` first holds in `x = 5, y = 5`.`` |
+  | Eventually rule with `after` | ``` `settles` starts in `busy`; what it must reach holds in `idle`.``` |
+  | The same box for both | ``` `settles` starts in `idle`, where what it must reach holds too.``` |
+  | No box of `reaches` after the start | ``` `settles` starts in `busy`.``` |
+  | Eventually rule without `after` | ``What `grows` must reach first holds in `v = 3`.`` |
 
-  A chart of a model with no premise has no such line.
+  `beyond what is shown` takes the place of `in` and the box when the path did not fit. These sentences say where conditions hold, not whether the rule holds: a broken eventually rule gets the same sentence. A label longer than 80 characters is cut to 80 with `…` in this line; the chart keeps it whole. A chart of a model with no premise has no such line.
 
 ### `earnest report`
 
