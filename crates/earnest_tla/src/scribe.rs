@@ -165,6 +165,11 @@ impl<'a> Scribe<'a> {
         &self.variables
     }
 
+    pub(crate) fn label_written(&self, text: &str) -> Option<String> {
+        let name = self.symbols.find(text)?;
+        self.labels.get(&name).cloned()
+    }
+
     fn label(&mut self, name: Sym) -> String {
         if let Some(known) = self.labels.get(&name) {
             return known.clone();

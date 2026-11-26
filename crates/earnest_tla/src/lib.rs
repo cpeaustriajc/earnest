@@ -181,6 +181,9 @@ impl Files {
 const INDENT: &str = "    ";
 const EXTENDED: &str = "EXTENDS Integers, Sequences, FiniteSets, TLC";
 const FILLER: &str = "nothing";
+const VARIANT_TAG: &str = "tag";
+const VARIANT_VALUE: &str = "value";
+const FIELD_ORDER: &str = "TagBeforeValue";
 
 /// Why TLC can't confirm `model`, from what the model declares: a number outside TLC's 32-bit
 /// integers, or a text that is not ASCII, which TLC may count as equal to another. Empty when
@@ -334,7 +337,7 @@ impl Writer<'_> {
             .collect()
     }
 
-    fn module(&self, name: &str, blocks: &[String]) -> String {
+    fn module(&mut self, name: &str, blocks: &[String]) -> String {
         let every = self.every_variable().join(", ");
         let written: BTreeSet<&str> = blocks
             .iter()
@@ -354,11 +357,18 @@ impl Writer<'_> {
             })
             .map(|helper| helper.definition(&self.names, &texts))
             .collect();
-        let mut sections = vec![
-            format!("---- MODULE {name} ----\n{EXTENDED}"),
+        let mut sections = vec![format!("---- MODULE {name} ----\n{EXTENDED}")];
+        if let (Some(tag), Some(value)) = (
+            self.scribe.label_written(VARIANT_TAG),
+            self.scribe.label_written(VARIANT_VALUE),
+        ) {
+            let order = self.names.claim(FIELD_ORDER);
+            sections.push(format!("{order} == [{tag} |-> TRUE, {value} |-> TRUE]"));
+        }
+        sections.extend([
             format!("VARIABLES {every}"),
             format!("{EVERY_VARIABLE} == <<{every}>>"),
-        ];
+        ]);
         if !helpers.is_empty() {
             sections.push(helpers.join("\n"));
         }
