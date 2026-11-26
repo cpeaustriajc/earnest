@@ -58,8 +58,19 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 9] = [
-    "labels", "bare", "kinds", "imported", "refused", "twice", "outside", "unread", "checked",
+const SETS: [&str; 12] = [
+    "labels",
+    "bare",
+    "kinds",
+    "imported",
+    "refused",
+    "twice",
+    "outside",
+    "unread",
+    "checked",
+    "numbers",
+    "numbers_bare",
+    "defs",
 ];
 
 const SHOP_HOLDS: &str = "[TLC] Running TLC model checker...\n\
@@ -480,6 +491,11 @@ fn a_property_may_also_label_the_chart_and_a_check_that_only_plays_runs_draws_no
         "the mark is not part of the rule's sentence"
     );
     assert_eq!(model(&report, "checked")["status"], "pass");
+    assert_eq!(
+        model(&report, "checked")["rules"].as_array().map(Vec::len),
+        Some(1),
+        "the property that is also the label is judged once, though it is compiled twice"
+    );
     assert_eq!(model(&report, "played")["status"], "pass");
     let found = problems(&report);
     assert!(
@@ -590,5 +606,164 @@ fn the_export_and_quints_own_run_carry_no_view() {
     assert!(
         not_compiled.is_empty(),
         "only the compile that earnest reads names a label: {not_compiled:?}"
+    );
+}
+
+#[test]
+fn a_label_keeps_every_number_of_the_compiled_module_as_quint_wrote_it() {
+    let quint = Quint::new();
+    let marked = quint.earnest(&["verify", "numbers", "--json"]);
+    let bare = quint.earnest(&["verify", "numbers_bare", "--json"]);
+    marked.exits(1);
+    bare.exits(1);
+    let keys = ["milliseconds", "cached", "file", "line"];
+    assert_eq!(
+        without(&marked.json(), &keys),
+        without(&bare.json(), &keys),
+        "the same verdicts and the same faults, as  and not a float"
+    );
+    let faults = |run: &Run| -> Vec<(String, String)> {
+        problems(&run.json())
+            .into_iter()
+            .map(|(_, _, feature, message)| (feature, message))
+            .collect()
+    };
+    assert_eq!(faults(&marked).len(), 2, "{marked}");
+    assert_eq!(faults(&marked), faults(&bare));
+    let text = quint.earnest(&["verify", "numbers", "--no-cache"]);
+    let plain = quint.earnest(&["verify", "numbers_bare", "--no-cache"]);
+    assert_eq!(result_line(&text, "wide"), result_line(&plain, "wide"));
+    assert_eq!(
+        result_line(&text, "wide"),
+        ["pass", "wide", "3 states", "1 rule, 0 runs"]
+    );
+    let chart = quint.earnest(&["chart", "numbers", "--model", "wide"]);
+    assert_eq!(
+        states_drawn(&chart.stdout).first().map(String::as_str),
+        Some("#123; n#58; 9007199254740993, top#58; 9223372036854775807 #125;"),
+        "{chart}"
+    );
+}
+
+#[test]
+fn a_def_is_refused_as_a_label_whether_its_check_is_built_from_the_typecheck_or_compiled() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "defs", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let found = problems(&report);
+    assert_eq!(
+        problem_at(&found, 12),
+        "`stage` `stage` is declared with `def`, and a chart label is a `val`: write `val stage = \
+         ...` and mark it `/// @view state`"
+    );
+    assert!(
+        problem_at(&found, 33).starts_with("`label` `label` is declared with `def`"),
+        "{found:?}"
+    );
+    assert_eq!(model(&report, "Small")["status"], "pass");
+    assert_eq!(model(&report, "plain")["status"], "pass");
+    let compiled: Vec<String> = quint
+        .calls()
+        .into_iter()
+        .filter(|call| call.starts_with("compile"))
+        .collect();
+    assert_eq!(
+        compiled.len(),
+        1,
+        "only `plain` is compiled; `Small` is built from the typecheck: {compiled:?}"
+    );
+}
+
+#[test]
+fn a_label_leaves_a_setup_built_from_the_typecheck_and_its_imported_runs_played() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "imported"]);
+    run.exits(0);
+    assert_eq!(
+        result_line(&run, "Small"),
+        ["pass", "Small", "4 states", "1 rule, 1 run"]
+    );
+    assert_eq!(
+        result_line(&run, "Named"),
+        ["pass", "Named", "3 states", "2 rules, 1 run"]
+    );
+    let compiled: Vec<String> = quint
+        .calls()
+        .into_iter()
+        .filter(|call| call.starts_with("compile"))
+        .collect();
+    assert!(
+        compiled.is_empty(),
+        "both setups, with their labels, are built from the typecheck: {compiled:?}"
+    );
+}
+
+#[test]
+fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_not_judged() {
+    let quint = Quint::new();
+    let fixture =
+        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    let text = quint.sandbox.read(fixture);
+    let last = r#"{"id":251,"kind":"name","name":"retried"}]"#;
+    assert!(
+        text.contains(last),
+        "the fixture ends its invariants with the group label"
+    );
+    quint.sandbox.write(
+        fixture,
+        &text.replace(
+            last,
+            r#"{"id":251,"kind":"name","name":"acceptedWasPlaced"}]"#,
+        ),
+    );
+    let run = quint.earnest(&["verify", "labels", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    assert!(
+        crate::support::find_model(&report, "shop").is_none(),
+        "no check is judged with a label taken for an invariant: {report}"
+    );
+    let said = problem_at(&problems(&report), 74);
+    assert!(
+        said.starts_with(
+            "`seen` the module compiled for the check `shop` does not end its invariants with \
+             the chart label `seen` and `retried`"
+        ),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
+    let quint = Quint::new();
+    let labelled =
+        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    fs::remove_file(quint.sandbox.path().join(labelled)).expect("the fixture is there");
+    let plain = quint
+        .sandbox
+        .read("fake/fixtures/compiled/bare/shop@shownWasAccepted,acceptedWasPlaced@.json");
+    quint.sandbox.write(
+        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced@.json",
+        &plain,
+    );
+    let run = quint.earnest(&["verify", "labels", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    assert!(
+        crate::support::find_model(&report, "shop").is_none(),
+        "{report}"
+    );
+    let said = problem_at(&problems(&report), 74);
+    assert!(
+        said.starts_with(
+            "`seen` `quint compile --main shop` fails when the chart label `seen` and \
+             `retried` follows the invariants, and compiles the check without it"
+        ),
+        "{said}"
+    );
+    assert!(
+        said.contains("Quint said: no fixture for labels/shop@"),
+        "{said}"
     );
 }

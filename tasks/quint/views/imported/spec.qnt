@@ -11,6 +11,8 @@ module Spec {
 
   /// @view state
   val stage = if (time == 0) "start" else if (time == Limit) "top" else "between"
+
+  run tickTest = init.then(step).expect(time == 1)
 }
 
 /// @check
