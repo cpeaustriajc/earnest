@@ -217,3 +217,17 @@ fn a_temporal_property_over_a_computed_pick_is_judged_as_tlc_judges_it() {
         );
     }
 }
+
+#[test]
+fn a_pick_flattened_in_from_an_instance_prints_its_short_names() {
+    let sandbox = with_compiled(&["servedsetup"]);
+    let run = verify(&sandbox, "servedsetup", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    let desk = model(&report, "TwoAtTheDesk");
+    assert_eq!(desk["states"], 4, "every subset of {{ann, bob}}\n{run}");
+    let step = &steps(&rule(desk, "annWaits")["path"])[0];
+    assert_eq!(step["action"], "serve", "not `D::serve`\n{run}");
+    assert_eq!(step["input"][0]["name"], "who", "{run}");
+    assert_eq!(step["input"][0]["value"], "ann", "{run}");
+}
