@@ -439,6 +439,7 @@ pub(crate) fn temporal<'a>(
         let name = &def.name;
         name.clone_into(&mut properties.reader.within);
         let (fair, goals) = properties.property(&def.expr, step)?;
+        let slots = properties.reader.slots;
         let count = goals.len();
         for (index, goal) in goals.into_iter().enumerate() {
             let number = index.saturating_add(1);
@@ -451,7 +452,7 @@ pub(crate) fn temporal<'a>(
                     line: DECLARED_ON,
                     after: after.map(Code::new),
                     reaches: Code::new(reaches),
-                    slots: 0,
+                    slots,
                     fair: Some(fair.clone()),
                 }),
                 Goal::Always(holds) => read.rules.push(Rule {
@@ -460,7 +461,7 @@ pub(crate) fn temporal<'a>(
                     line: DECLARED_ON,
                     text: name.clone(),
                     holds: Code::new(holds),
-                    slots: 0,
+                    slots,
                 }),
             }
         }

@@ -251,6 +251,51 @@ fn a_cached_result_is_not_served_for_a_check_whose_runs_changed() {
     );
 }
 
+fn cached_after_the_entry_became(entry: &str) -> (bool, bool) {
+    let first = r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"] }"#;
+    let recorded = RecordedQuint::new(&QuintFixtures {
+        file: "cached_runs.qnt",
+        source: include_str!("../../models/quint_second/cached_runs/cached_runs.qnt"),
+        typecheck: include_str!("../../models/quint_second/cached_runs/parse.json"),
+        compiled: include_str!("../../models/quint_second/cached_runs/cached_runs.json"),
+        checks: &format!(r#"{{ "checks": [ {first} ] }}"#),
+    });
+    recorded.verify(&[]);
+    let again = recorded.verify(&[]);
+    recorded.write(
+        "earnest.quint.json",
+        &format!(r#"{{ "checks": [ {entry} ] }}"#),
+    );
+    let changed = recorded.verify(&[]);
+    let cached = |report: &Value| {
+        report["models"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|model| model["cached"] == true)
+    };
+    (cached(&again), cached(&changed))
+}
+
+#[test]
+fn a_cached_result_is_not_served_for_a_check_whose_entry_changed() {
+    for entry in [
+        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "invariants": ["upTest"] }"#,
+        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "temporal": ["upTest"] }"#,
+        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "init": "step" }"#,
+        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": ["upTest"], "step": "init" }"#,
+        r#"{ "file": "cached_runs.qnt", "main": "other", "runs": ["upTest"] }"#,
+        r#"{ "file": "cached_runs.qnt", "main": "cached_runs", "runs": true }"#,
+    ] {
+        assert_eq!(
+            cached_after_the_entry_became(entry),
+            (true, false),
+            "a second run of the same entry is served from the cache, and a run after the \
+             entry became {entry} is not, though `quint` hands back the same JSON"
+        );
+    }
+}
+
 fn confirmed_with_tlc_as_it_prints_today(
     name: &str,
     json: &str,

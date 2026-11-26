@@ -678,7 +678,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         files.push(match read {
             Ok((json, model)) => ModelFile {
                 path: job.shown.clone(),
-                source: json,
+                source: format!("{json}\n{:?}", job.check),
                 declared: vec![Declared {
                     name: model.name.clone(),
                     rules: model.rule_ids().map(str::to_owned).collect(),
