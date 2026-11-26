@@ -4,11 +4,11 @@ use crate::discovery::{
 use crate::reading::{ModelFile, Readable, read};
 use crate::run::Bounds;
 use crate::select::Target;
-use earnest_ast::{ConditionDraft, Draft, Quoting, RuleDraft, same_condition_text};
+use earnest_ast::{ConditionDraft, Draft, RuleDraft};
 use earnest_chart::{ChangeKind, ChangedPart, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
-use earnest_ir::{Code, Expr, Model, Op, Rule};
-use earnest_semantic::lower_with_earlier;
+use earnest_ir::{Code, Eventually, Expr, Model, Op, Played, Rule, Setup, Witness};
+use earnest_semantic::{EarlierParts, lower_with_earlier_parts};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -287,28 +287,35 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         .collect()
 }
 
-fn by_wording(was: &RuleDraft, now: &RuleDraft, quoting: Quoting) -> Option<Kind> {
-    by_text(&Wording::of(was), &Wording::of(now), quoting)
+fn by_sentence(was: &str, now: &str) -> Option<Kind> {
+    (was != now).then_some(Kind::Reworded)
+}
+
+fn by_meaning(same_meaning: bool, was: &str, now: &str) -> Option<Kind> {
+    if same_meaning {
+        by_sentence(was, now)
+    } else {
+        Some(Kind::Changed)
+    }
 }
 
 fn told_apart(
     old: &Draft,
-    new: &Draft,
+    lowered: Option<&(Model, EarlierParts)>,
     pairs: &[(&RuleDraft, &RuleDraft)],
     bounds: Bounds,
 ) -> Vec<Option<Kind>> {
-    let quoting = new.language.quoting();
-    let Ok((model, at_base)) = lower_with_earlier(new, old) else {
+    let Some((model, at_base)) = lowered else {
         return pairs
             .iter()
-            .map(|(was, now)| by_wording(was, now, quoting))
+            .map(|(was, now)| by_meaning(was.text == now.text, &was.says, &now.says))
             .collect();
     };
     let lowered: Vec<Option<(&Rule, &Rule)>> = pairs
         .iter()
         .map(|(was, now)| {
             let position = old.rules.iter().position(|rule| rule.id == was.id)?;
-            let before = at_base.get(position)?.as_ref()?;
+            let before = at_base.rules.get(position)?.as_ref()?;
             let after = model.rules.iter().find(|rule| rule.id == now.id)?;
             Some((before, after))
         })
@@ -341,13 +348,104 @@ fn told_apart(
                 Some(Kind::Loosened)
             } else if broken.contains(&tightens_id(&now.id)) {
                 Some(Kind::Tightened)
-            } else if before.holds != after.holds {
-                Some(Kind::Changed)
             } else {
-                by_wording(was, now, quoting)
+                by_meaning(before.holds == after.holds, &was.says, &now.says)
             }
         })
         .collect()
+}
+
+fn fair_actions(draft: &Draft) -> BTreeSet<&str> {
+    draft
+        .actions
+        .iter()
+        .filter(|action| action.fair)
+        .map(|action| action.id.as_str())
+        .collect()
+}
+
+fn same_rule_about_runs(old: &Draft, before: &Eventually, after: &Eventually, new: &Draft) -> bool {
+    before.after.as_ref().map(Code::expr) == after.after.as_ref().map(Code::expr)
+        && before.reaches.expr() == after.reaches.expr()
+        && fair_actions(old) == fair_actions(new)
+}
+
+fn action_id<'d>(draft: &'d Draft, step: &Played) -> Option<&'d str> {
+    let action = draft.actions.get(step.action)?;
+    Some(action.id.as_str())
+}
+
+fn same_steps(old: &Draft, before: &[Played], new: &Draft, after: &[Played]) -> bool {
+    before.len() == after.len()
+        && before.iter().zip(after).all(|(was, now)| {
+            action_id(old, was) == action_id(new, now) && was.input == now.input
+        })
+}
+
+fn setup_id(draft: &Draft, position: Option<usize>) -> Option<&str> {
+    let setup = draft.runs.setups.get(position?)?;
+    Some(setup.id.as_str())
+}
+
+fn same_witness(old: &Draft, before: &Witness, after: &Witness, new: &Draft) -> bool {
+    setup_id(old, before.setup) == setup_id(new, after.setup)
+        && same_steps(old, &before.steps, new, &after.steps)
+        && before.expect.expr() == after.expect.expr()
+}
+
+fn same_starts(before: &Setup, after: &Setup) -> bool {
+    before.starts.len() == after.starts.len()
+        && before.starts.iter().all(|start| after.starts.contains(start))
+}
+
+fn earlier_part<'p, T>(
+    parts: &'p [Option<T>],
+    ids: impl Iterator<Item = &'p str>,
+    id: &str,
+) -> Option<&'p T> {
+    let position = ids.into_iter().position(|known| known == id)?;
+    parts.get(position)?.as_ref()
+}
+
+fn same_meaning(
+    old: &Draft,
+    new: &Draft,
+    lowered: Option<&(Model, EarlierParts)>,
+    named: &Named<'_>,
+    was: &Wording,
+) -> bool {
+    let Some((model, at_base)) = lowered else {
+        return was.holds == named.wording.holds;
+    };
+    let id = named.id;
+    let runs = &model.runs;
+    match named.part {
+        None => true,
+        Some(Part::Eventually) => {
+            let ids = old.runs.eventually.iter().map(|rule| rule.id.as_str());
+            let before = earlier_part(&at_base.eventually, ids, id);
+            let after = runs.eventually.iter().find(|rule| rule.id == id);
+            before
+                .zip(after)
+                .is_some_and(|(before, after)| same_rule_about_runs(old, before, after, new))
+        }
+        Some(Part::Witness) => {
+            let ids = old.runs.witnesses.iter().map(|witness| witness.id.as_str());
+            let before = earlier_part(&at_base.witnesses, ids, id);
+            let after = runs.witnesses.iter().find(|witness| witness.id == id);
+            before
+                .zip(after)
+                .is_some_and(|(before, after)| same_witness(old, before, after, new))
+        }
+        Some(Part::Setup) => {
+            let ids = old.runs.setups.iter().map(|setup| setup.id.as_str());
+            let before = earlier_part(&at_base.setups, ids, id);
+            let after = runs.setups.iter().find(|setup| setup.id == id);
+            before
+                .zip(after)
+                .is_some_and(|(before, after)| same_starts(before, after))
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -435,17 +533,11 @@ fn one_sided(file: &str, model: &str, named: Named<'_>, change: Kind) -> Differe
     }
 }
 
-fn by_text(was: &Wording, now: &Wording, quoting: Quoting) -> Option<Kind> {
-    if !same_condition_text(&was.holds, &now.holds, quoting) {
-        Some(Kind::Changed)
-    } else if was.says != now.says {
-        Some(Kind::Reworded)
-    } else {
-        None
-    }
-}
-
-fn changes_about_runs(old: Option<&Draft>, new: &Draft) -> Vec<Difference> {
+fn changes_about_runs(
+    old: Option<&Draft>,
+    new: &Draft,
+    lowered: Option<&(Model, EarlierParts)>,
+) -> Vec<Difference> {
     let old_parts = old.map_or_else(Vec::new, about_runs);
     let new_parts = about_runs(new);
     let mut changes = Vec::new();
@@ -454,7 +546,8 @@ fn changes_about_runs(old: Option<&Draft>, new: &Draft) -> Vec<Difference> {
             changes.push(one_sided(&new.file, &new.name, now.clone(), Kind::Added));
             continue;
         };
-        if let Some(change) = by_text(&was.wording, &now.wording, new.language.quoting()) {
+        let same = old.is_some_and(|old| same_meaning(old, new, lowered, now, &was.wording));
+        if let Some(change) = by_meaning(same, &was.wording.says, &now.wording.says) {
             changes.push(Difference {
                 file: new.file.clone(),
                 model: new.name.clone(),
@@ -483,7 +576,10 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
         .iter()
         .filter_map(|now| Some((was_of(&now.id)?, now)))
         .collect();
-    let kinds = old.map_or_else(Vec::new, |draft| told_apart(draft, new, &kept, bounds));
+    let lowered = old.and_then(|draft| lower_with_earlier_parts(new, draft).ok());
+    let kinds = old.map_or_else(Vec::new, |draft| {
+        told_apart(draft, lowered.as_ref(), &kept, bounds)
+    });
     let mut changes: Vec<Difference> = new
         .rules
         .iter()
@@ -511,7 +607,7 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
             .filter(|was| !new.rules.iter().any(|now| now.id == was.id))
             .map(|was| one_sided(&new.file, &new.name, Named::rule(was), Kind::Removed)),
     );
-    changes.extend(changes_about_runs(old, new));
+    changes.extend(changes_about_runs(old, new, lowered.as_ref()));
     changes
 }
 

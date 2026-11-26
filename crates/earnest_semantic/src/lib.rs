@@ -88,6 +88,43 @@ pub fn lower_with_earlier(
     draft: &Draft,
     earlier: &Draft,
 ) -> Result<(Model, Vec<Option<Rule>>), Vec<Problem>> {
+    lower_with_earlier_parts(draft, earlier).map(|(model, parts)| (model, parts.rules))
+}
+
+/// The parts of an older draft, each lowered against the fields of a newer one by
+/// [`lower_with_earlier_parts`], in the order of the older draft, with `None` for a part that
+/// can't be read against the newer fields.
+///
+/// A witness's [`Witness::setup`] and each [`Played::action`] are positions in the older
+/// draft's setups and actions, so compare them by the ids found there.
+#[derive(Clone, Debug, Default)]
+pub struct EarlierParts {
+    /// The plain rules, in the order of the older draft's rules.
+    pub rules: Vec<Option<Rule>>,
+    /// The rules about runs, in the order of the older draft's.
+    pub eventually: Vec<Option<Eventually>>,
+    /// The witnesses, in the order of the older draft's.
+    pub witnesses: Vec<Option<Witness>>,
+    /// The setups, each starting fields of the newer model, in the order of the older draft's.
+    pub setups: Vec<Option<Setup>>,
+}
+
+/// Lowers `draft` as [`lower`] does, and with it every rule, rule about runs, witness and
+/// setup of `earlier`, an older version of the same model, so that each old part can be
+/// compared with its namesake in the new model by what it means rather than how it is written.
+///
+/// Each part of `earlier` is read against the fields of `draft`, but with the constants and
+/// the helper functions of `earlier`, as [`lower_with_earlier`] reads the rules. They share
+/// the model's symbols, so they are only meaningful together with the model returned here.
+///
+/// # Errors
+///
+/// The problems of `draft`, exactly as [`lower`] gives them. A problem in `earlier` is never
+/// an error.
+pub fn lower_with_earlier_parts(
+    draft: &Draft,
+    earlier: &Draft,
+) -> Result<(Model, EarlierParts), Vec<Problem>> {
     let (met, _) = lowered_with_earlier(draft, earlier, Symbols::default())?;
     lowered_with_earlier(draft, earlier, met.symbols.alphabetical())
 }
@@ -96,21 +133,39 @@ fn lowered_with_earlier(
     draft: &Draft,
     earlier: &Draft,
     symbols: Symbols,
-) -> Result<(Model, Vec<Option<Rule>>), Vec<Problem>> {
+) -> Result<(Model, EarlierParts), Vec<Problem>> {
     let mut lowerer = Lowerer::reading(draft, symbols);
     let parts = lowerer.parts();
     if !lowerer.problems.is_empty() {
         return Err(lowerer.problems);
     }
     lowerer.draft = earlier;
-    let rules = earlier
-        .rules
-        .iter()
-        .map(|rule| lowerer.rule(rule).ok())
-        .collect();
+    let runs = &earlier.runs;
+    let lowered = EarlierParts {
+        rules: earlier
+            .rules
+            .iter()
+            .map(|rule| lowerer.rule(rule).ok())
+            .collect(),
+        eventually: runs
+            .eventually
+            .iter()
+            .map(|rule| lowerer.eventually(rule).ok())
+            .collect(),
+        witnesses: runs
+            .witnesses
+            .iter()
+            .map(|witness| lowerer.witness(witness).ok())
+            .collect(),
+        setups: runs
+            .setups
+            .iter()
+            .map(|setup| lowerer.setup(setup, &parts.fields).ok())
+            .collect(),
+    };
     lowerer.problems.clear();
     lowerer.draft = draft;
-    Ok((lowerer.finish(parts)?, rules))
+    Ok((lowerer.finish(parts)?, lowered))
 }
 
 struct Parts {
