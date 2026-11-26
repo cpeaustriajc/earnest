@@ -40,7 +40,7 @@ mod names;
 mod scribe;
 
 use earnest_ir::{Action, Expr, Fairness, Model};
-use earnest_value::Value;
+use earnest_value::{Domain, Value};
 use helper::{EVERY_HELPER, Helper};
 use kind::Kind;
 pub use limits::BEYOND_32_BITS_COMPUTED;
@@ -309,7 +309,8 @@ pub fn write_apart_from(model: &Model, modules: &[&str]) -> Files {
             judged: judged.map(|(name, _)| name),
         });
     }
-    let (specification, eventually) = writer.runs(&actions, &mut blocks);
+    let (fair_to, subscripts) = writer.fair_steps(&actions, &mut blocks);
+    let (specification, eventually) = writer.runs(&fair_to, &subscripts, &mut blocks);
     Files {
         module: writer.module(&name, &blocks),
         config: config(&exported, specification.as_deref(), &eventually),
@@ -377,9 +378,47 @@ impl Writer<'_> {
         sections.join("\n\n")
     }
 
+    fn fair_steps(
+        &mut self,
+        actions: &[String],
+        blocks: &mut Vec<String>,
+    ) -> (Vec<String>, Vec<Option<String>>) {
+        let model = self.model;
+        let mut fair_to = actions.to_vec();
+        let mut subscripts = vec![None; actions.len()];
+        for (position, step) in model.runs.fair_steps.iter().enumerate() {
+            let Some(action) = model.actions.get(step.action) else {
+                continue;
+            };
+            let defined = self.names.claim(&format!(
+                "Fair_{}_{}",
+                action.id,
+                position.saturating_add(1)
+            ));
+            let mut narrowed = action.clone();
+            for (at, value) in &step.inputs {
+                if let Some(input) = narrowed.inputs.get_mut(*at) {
+                    input.values = vec![value.clone()];
+                    input.domain = Domain::OneOf(vec![value.clone()]);
+                }
+            }
+            blocks.push(self.action(step.action, &narrowed, &defined));
+            let over: Vec<String> = step
+                .over
+                .iter()
+                .filter_map(|field| self.scribe.variables().get(*field))
+                .map(|variable| variable.name.clone())
+                .collect();
+            subscripts.push((!over.is_empty()).then(|| format!("<<{}>>", over.join(", "))));
+            fair_to.push(defined);
+        }
+        (fair_to, subscripts)
+    }
+
     fn runs(
         &mut self,
         actions: &[String],
+        subscripts: &[Option<String>],
         blocks: &mut Vec<String>,
     ) -> (Option<String>, Vec<Property>) {
         let model = self.model;
@@ -394,7 +433,7 @@ impl Writer<'_> {
         };
         let mut parts = vec![STARTS.to_owned(), format!("[][{STEPS}]_{EVERY_VARIABLE}")];
         if !own_fairness {
-            parts.extend(weak_fairness(&model_fairness, actions));
+            parts.extend(weak_fairness(&model_fairness, actions, subscripts));
         }
         let fairness = parts.join(" /\\ ");
         blocks.push(definition(&specification, &[fairness]));
@@ -410,7 +449,11 @@ impl Writer<'_> {
                 None => format!("<>({reaches})"),
             };
             let body = if own_fairness {
-                let fair = weak_fairness(rule.fair.as_ref().unwrap_or(&model_fairness), actions);
+                let fair = weak_fairness(
+                    rule.fair.as_ref().unwrap_or(&model_fairness),
+                    actions,
+                    subscripts,
+                );
                 if fair.is_empty() {
                     body
                 } else {
@@ -593,7 +636,11 @@ fn reads_the_state(expr: &Expr) -> bool {
     }
 }
 
-fn weak_fairness(fairness: &Fairness, actions: &[String]) -> Vec<String> {
+fn weak_fairness(
+    fairness: &Fairness,
+    actions: &[String],
+    subscripts: &[Option<String>],
+) -> Vec<String> {
     let mut parts = Vec::new();
     if fairness.step {
         parts.push(format!("WF_{EVERY_VARIABLE}({STEPS})"));
@@ -604,8 +651,12 @@ fn weak_fairness(fairness: &Fairness, actions: &[String]) -> Vec<String> {
             .filter_map(|position| actions.get(*position))
             .map(String::as_str)
             .collect();
+        let subscript = part
+            .iter()
+            .find_map(|position| subscripts.get(*position).cloned().flatten())
+            .unwrap_or_else(|| EVERY_VARIABLE.to_owned());
         if !named.is_empty() {
-            parts.push(format!("WF_{EVERY_VARIABLE}({})", named.join(" \\/ ")));
+            parts.push(format!("WF_{subscript}({})", named.join(" \\/ ")));
         }
     }
     parts

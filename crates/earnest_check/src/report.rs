@@ -32,6 +32,24 @@ impl Search<'_> {
             .collect()
     }
 
+    pub(crate) fn input_values(
+        &self,
+        position: usize,
+        input: usize,
+        before: &[Value],
+    ) -> Option<Vec<Value>> {
+        let action = self.model.actions.get(position)?;
+        match sets_of(self.model, position) {
+            Some(_) => combinations(self.model, position, before)
+                .0
+                .into_iter()
+                .nth(input),
+            None => chosen(action, input)
+                .map(Option::<&Value>::cloned)
+                .collect(),
+        }
+    }
+
     fn step(&self, from: usize, to: usize) -> Option<Step> {
         self.step_by(from, to, None)
     }

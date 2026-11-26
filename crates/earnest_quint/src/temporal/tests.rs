@@ -1,6 +1,6 @@
 use crate::read;
 use earnest_diagnostics::Problem;
-use earnest_ir::{Eventually, Expr, Fairness, Model};
+use earnest_ir::{Eventually, Expr, FairStep, Fairness, Model};
 use earnest_value::Value;
 use serde_json::Value as Json;
 
@@ -189,13 +189,38 @@ fn an_implies_inside_what_must_hold_is_refused() {
 }
 
 #[test]
-fn fairness_over_some_variables_is_refused() {
-    refused("some", "`weakFair`", "only some of the state variables");
+fn fairness_over_some_variables_is_fair_to_the_steps_that_change_them() {
+    let model = model_of("some");
+    let after_the_actions = model.actions.len();
+    assert_eq!(
+        the_rule(&model, "some").fair,
+        Some(fair_to(&[&[after_the_actions]]))
+    );
+    assert_eq!(
+        model.runs.fair_steps,
+        [FairStep {
+            action: UP,
+            inputs: Vec::new(),
+            over: vec![0],
+        }],
+        "`weakFair(up, x)` counts an `up` step that changes `x`"
+    );
 }
 
 #[test]
-fn fairness_of_an_action_given_arguments_is_refused() {
-    refused("given", "`weakFair`", "given arguments");
+fn fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action() {
+    let model = model_of("given");
+    let moved = model
+        .actions
+        .iter()
+        .position(|action| action.id == "move")
+        .expect("the step calls `move(1)`");
+    assert_eq!(the_rule(&model, "given").fair, Some(fair_to(&[&[moved]])));
+    assert!(
+        model.runs.fair_steps.is_empty(),
+        "{:?}",
+        model.runs.fair_steps
+    );
 }
 
 #[test]
@@ -255,11 +280,6 @@ fn fairness_over_an_expression_that_can_stay_the_same_while_a_variable_changes_i
 }
 
 #[test]
-fn fairness_over_a_shape_that_leaves_a_variable_out_names_it() {
-    refused_in_shapes("overSome", "`weakFair`", "the tuple leaves out `y`");
-}
-
-#[test]
 fn fairness_under_exists_is_refused() {
     refused_in_shapes(
         "someFair",
@@ -271,4 +291,126 @@ fn fairness_under_exists_is_refused() {
 #[test]
 fn a_forall_over_more_than_a_thousand_items_is_refused() {
     refused_in_shapes("tooMany", "`forall`", "more than 1000 items");
+}
+
+const BUYERS: &str = include_str!("../../fixtures/buyers.json");
+const BUYERS_REFUSED: &str = include_str!("../../fixtures/buyersrefused.json");
+
+fn buyers_only(compiled: &str, property: &str) -> String {
+    let mut compiled: Json = serde_json::from_str(compiled).expect("the fixture is JSON");
+    let declarations = compiled["modules"][0]["declarations"]
+        .as_array_mut()
+        .expect("the module has declarations");
+    let listed = declarations
+        .iter_mut()
+        .find(|declaration| declaration["name"] == "q::temporalProps")
+        .expect("the fixture lists its temporal properties");
+    let named = listed["expr"]["args"]
+        .as_array()
+        .and_then(|all| all.iter().find(|each| each["name"] == property))
+        .cloned()
+        .unwrap_or_else(|| panic!("the fixture lists {property}"));
+    listed["expr"] = named;
+    compiled.to_string()
+}
+
+fn buyers_with(compiled: &str, property: &str) -> Result<Model, Vec<Problem>> {
+    read("buyers.json", &buyers_only(compiled, property))
+}
+
+fn buyers_refuse(property: &str, feature: &str, why: &str) {
+    let Err(problems) = buyers_with(BUYERS_REFUSED, property) else {
+        panic!("{property} was read, but it must be refused");
+    };
+    assert!(
+        problems.iter().any(|problem| problem.feature == feature
+            && problem.message.contains(why)
+            && problem
+                .message
+                .contains(&format!("in the definition `{property}`"))),
+        "a problem names {feature}, says {why:?} and names {property}: {problems:?}"
+    );
+}
+
+#[test]
+fn fairness_of_an_action_given_a_buyer_counts_its_steps_with_that_buyer_that_change_the_tuple() {
+    let model = buyers_with(BUYERS, "annReaches")
+        .unwrap_or_else(|problems| panic!("annReaches is read: {problems:?}"));
+    let reach = model
+        .actions
+        .iter()
+        .position(|action| action.id == "reachDeadline")
+        .expect("the step takes `reachDeadline`");
+    let field = |name: &str| {
+        model
+            .fields
+            .iter()
+            .position(|each| each.name == name)
+            .unwrap_or_else(|| panic!("no field {name}"))
+    };
+    assert_eq!(
+        model.runs.fair_steps,
+        [FairStep {
+            action: reach,
+            inputs: vec![(
+                0,
+                Value::Str(model.symbols.find("ann").expect("ann is a text"))
+            )],
+            over: vec![field("controls"), field("lastBuyer"), field("previousPeer")],
+        }],
+        "the tuple keeps the order the file wrote"
+    );
+    assert_eq!(
+        the_rule(&model, "annReaches").fair,
+        Some(fair_to(&[&[model.actions.len()]]))
+    );
+}
+
+#[test]
+fn fairness_per_buyer_under_forall_is_one_part_for_each_buyer() {
+    let model = buyers_with(BUYERS, "allReach")
+        .unwrap_or_else(|problems| panic!("allReach is read: {problems:?}"));
+    let after = model.actions.len();
+    assert_eq!(
+        the_rule(&model, "allReach").fair,
+        Some(fair_to(&[&[after], &[after + 1]]))
+    );
+    assert_eq!(
+        model.runs.fair_steps.len(),
+        2,
+        "{:?}",
+        model.runs.fair_steps
+    );
+}
+
+#[test]
+fn fairness_of_an_action_that_leaves_a_variable_of_the_tuple_open_is_refused() {
+    buyers_refuse(
+        "leavesOpen",
+        "`weakFair`",
+        "`reachDeadline` alone does not give `noise'`",
+    );
+}
+
+#[test]
+fn fairness_of_an_action_given_a_value_of_the_state_is_refused() {
+    buyers_refuse(
+        "givenTheState",
+        "`reachDeadline`",
+        "an argument that changes with the state",
+    );
+}
+
+#[test]
+fn fairness_of_an_action_given_a_value_the_step_never_picks_is_refused() {
+    buyers_refuse(
+        "neverPicked",
+        "`reachDeadline`",
+        "a value the step never picks for `buyer`",
+    );
+}
+
+#[test]
+fn fairness_of_some_buyer_is_refused() {
+    buyers_refuse("someBuyer", "`exists`", "fairness under `exists`");
 }

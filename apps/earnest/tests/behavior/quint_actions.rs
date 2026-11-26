@@ -142,14 +142,13 @@ fn fairness_over_a_named_tuple_and_not_at_the_top_of_a_property_are_judged_as_tl
         found, expected,
         "each verdict is the one quint verify --backend tlc gives for the property alone\n{run}"
     );
-    let half = verify(&sandbox, "halflisted", &[]);
-    half.exits(1);
-    assert!(
-        half.detail("halflisted.json")
-            .iter()
-            .chain(std::iter::once(&half.to_string()))
-            .any(|line| line.contains("the tuple leaves out `done`")),
-        "the message names the variable left out\n{half}"
+    let half = verify(&sandbox, "halflisted", &["--json"]);
+    half.exits(0);
+    assert_eq!(
+        verdicts(&half.json(), "fairtuple"),
+        pairs(&[("halfListed", "holds")]),
+        "TLC: `weakFair(tick, onlyX) implies eventually(done)` holds, fair to the `tick` steps \
+         that change `x`\n{half}"
     );
     let double = verify(&sandbox, "doublenot", &[]);
     double.exits(1);

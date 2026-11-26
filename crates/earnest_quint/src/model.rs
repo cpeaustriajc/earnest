@@ -9,7 +9,8 @@ use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, Field, Input, Model, Pick, Rule, Runs, Script, View,
+    Action, Code, End, Eventually, Expr, FairStep, Field, Input, Model, Pick, Rule, Runs, Script,
+    View,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::{HashMap, HashSet};
@@ -263,7 +264,7 @@ type Parts = (
     Vec<Vec<Value>>,
     Vec<Action>,
     Vec<Rule>,
-    Vec<Eventually>,
+    (Vec<Eventually>, Vec<FairStep>),
     Vec<Pick>,
 );
 
@@ -331,6 +332,7 @@ fn parts<'a>(
         defs: aliases(reader, step),
         parts: &parts,
         fields: names,
+        paths: &stepping,
     };
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step).map_err(|mut found| refused.append(&mut found));
@@ -343,7 +345,13 @@ fn parts<'a>(
         .enumerate()
         .flat_map(|(position, path)| picks(None, position, path))
         .collect();
-    Ok((starts, actions, rules, read.eventually, picks))
+    Ok((
+        starts,
+        actions,
+        rules,
+        (read.eventually, read.fair_steps),
+        picks,
+    ))
 }
 
 fn both<A, B>(
@@ -555,8 +563,10 @@ fn built(
             searched: &searched,
         },
     );
-    let ((starts, mut actions, mut rules, mut eventually, picks), (mut scripts, script_picks)) =
-        both(read, played, &defs)?;
+    let (
+        (starts, mut actions, mut rules, (mut eventually, fair_steps), picks),
+        (mut scripts, script_picks),
+    ) = both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
     shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);
@@ -598,6 +608,7 @@ fn built(
             eventually,
             scripts,
             picks,
+            fair_steps,
             ..Runs::default()
         },
     })

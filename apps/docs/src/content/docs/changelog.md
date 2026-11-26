@@ -30,6 +30,8 @@ Five setups of a real project wrote fairness and temporal properties in forms ea
 - **Fairness over a shape of the variables:** `weakFair(A, Set(st))`, a record, a list or a nested tuple of every variable is read. `x + y`, `Set(x, y)` and `x.size()` are refused with the expression.
 - **A property that is an `and`:** each part is checked on its own as `P`, `P#2`, …, with the fairness of its own `implies`. A part with no temporal operator is judged in the start states, as Quint's backends judge it. `--rule P` checks every part of `P`.
 - **`forall` over a set that does not change:** at the top of a property, of a part, or of its fairness, it is the `and` over the set's items.
+- **Fairness of an action given arguments, over some of the variables:** `weakFair(reachDeadline(buyer), (controls, lastBuyer))` counts the `reachDeadline` steps with that buyer that change the tuple, as TLC does. `earnest tla` writes it as `WF_<<controls, lastBuyer>>(…)` of the action with that buyer.
+- **Rules about runs and lambdas:** `eventually(S.forall(b => …))` was a fault, "uses a value of the wrong kind", because the rule had no room for `b`. It is judged now.
 - **`earnest confirm --tlc`:** a broken temporal property is read from `tla2tools.jar` 1.8, which writes ``Temporal property `name` was violated.``, where it was `unknown` and the check said `differs`.
 
 ## November 2026: `earnest --version` names the build
