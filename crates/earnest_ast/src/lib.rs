@@ -442,10 +442,9 @@ pub struct RuleDraft {
 /// dropped, each run of white space is one space and there is none at either end.
 ///
 /// A reader passes the source of a rule's condition through this before it stores it in
-/// [`RuleDraft::text`], so an edit that only moves white space does not count as a change of
-/// the rule, and neither does a comment. `quoting` says which language's comments and quoted
-/// text the source has. White space inside a text literal is folded too, so two texts can be
-/// equal when the conditions are not.
+/// [`RuleDraft::text`], the text `--base` shows. `quoting` says which language's comments and
+/// quoted text the source has. White space inside a text literal is folded too, so two texts
+/// can be equal when the conditions are not: tell whether a part changed by what it lowers to.
 #[must_use]
 pub fn condition_text(source: &str, quoting: Quoting) -> String {
     let bare = nesting::without_comments(source, quoting);
@@ -457,9 +456,9 @@ pub fn condition_text(source: &str, quoting: Quoting) -> String {
 /// space: a space counts only between two word letters (letters, digits, `_` and `$`), so
 /// `s.items .size` is `s.items.size` and `return x` is not `returnx`.
 ///
-/// Quoted text is compared as it is, so `"a b"` is not `"ab"`. `--base` asks this, not
-/// whether the texts are equal, to tell whether a rule or another part was edited: a formatter
-/// that wraps a long condition before a `.` edits no rule.
+/// Quoted text is kept whole, so `"a b"` is not `"ab"`; but [`condition_text`] has already
+/// folded white space inside it, so `"a  b"` and `"a b"` are the same here. Two texts this
+/// calls the same can mean different things: `--base` compares what parts lower to instead.
 #[must_use]
 pub fn same_condition_text(first: &str, second: &str, quoting: Quoting) -> bool {
     first == second

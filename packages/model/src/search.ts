@@ -641,6 +641,33 @@ class Search implements Visitor<Row, Taken> {
 }
 
 /**
+ * Gives the start states of `model`, or of `setup`, a setup declared on it with `m.setup`: each
+ * start state of the model with the setup's fields put in, once each, in the model's order.
+ * `asker` names the function in the error thrown for a setup of another model.
+ */
+export const startsOf = (model: AnyModel, setup: object | undefined, asker: string): Row[] => {
+  if (setup === undefined) {
+    return [...model.starts()];
+  }
+  const fields = Object.keys(model.fields);
+  const key = (row: Row): string => fields.map((name) => keyOf(row[name])).join(";");
+  const chosen = (model.runners().setups ?? []).find((each) => each.part === setup);
+  if (chosen === undefined) {
+    throw new Error(`${model.name}: the setup given to ${asker} is not one declared on this model`);
+  }
+  const seen = new Set<string>();
+  return model
+    .starts()
+    .map((start): Row => frozen({ ...start, ...chosen.starts }))
+    .filter((start) => {
+      const found = key(start);
+      const isNew = !seen.has(found);
+      seen.add(found);
+      return isNew;
+    });
+};
+
+/**
  * Searches every state a model can reach, breadth first, and gives the count of distinct
  * states, each rule's verdict with the shortest path to a state that breaks it, and the first
  * stuck, out-of-range and fault findings. An end is asked only in a state where no action can
@@ -657,23 +684,5 @@ export const explore = (model: AnyModel, options: ExploreOptions = {}): Explorat
     const found = new Search(fields, parts, options, starts);
     return found.outcome(breadthFirst(starts, key, maxStates, found));
   };
-  if (options.setup === undefined) {
-    return search(model.starts());
-  }
-  const chosen = (parts.setups ?? []).find((setup) => setup.part === options.setup);
-  if (chosen === undefined) {
-    throw new Error(`${model.name}: the setup given to explore is not one declared on this model`);
-  }
-  const seen = new Set<string>();
-  return search(
-    model
-      .starts()
-      .map((start): Row => frozen({ ...start, ...chosen.starts }))
-      .filter((start) => {
-        const found = key(start);
-        const isNew = !seen.has(found);
-        seen.add(found);
-        return isNew;
-      }),
-  );
+  return search(startsOf(model, options.setup, "explore"));
 };

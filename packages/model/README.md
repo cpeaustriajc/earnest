@@ -189,6 +189,11 @@ input is missing or undeclared, the action's `when` is false, the action can't b
 the state after the action differs from the step's `state`. Without `exports` a step is matched
 by its `label`, the action's sentence.
 
+`replay(Model, path, { exports, setup: half })` replays a path of the setup `half`, as the
+setup's own result in `earnest verify --json` gives it: the path must begin at one of the setup's
+start states, the ones `explore(Model, { setup: half })` starts from. Without `setup` the path must
+begin where the model declares. It throws when the setup is not one declared on this model.
+
 ## Searching states that are not a model
 
 `search` runs the same breadth-first search as `explore` on states the library knows nothing

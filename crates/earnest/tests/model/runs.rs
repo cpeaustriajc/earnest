@@ -1,4 +1,5 @@
 use earnest::model::{Behavior, Eventually, Model, Setup, Witnessed, model, require};
+use earnest::model::{Move, replay};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]
 struct Shop {
@@ -168,4 +169,36 @@ fn the_rules_about_runs_give_what_their_methods_give_in_a_state() {
         ["open_up", "deliver", "deliver", "close"],
         "a fair action is an action like any other"
     );
+}
+
+#[test]
+fn a_path_of_a_setup_is_replayed_from_the_setup_applied_to_a_start_state() {
+    let start = Shop::starts().remove(0).full();
+    let path = [Move::new("open_up"), Move::new("close")];
+    let states = replay(&start, &path).expect("a full shop opens and closes");
+    assert_eq!(
+        states,
+        [
+            Shop {
+                stock: 3,
+                open: false
+            },
+            Shop {
+                stock: 3,
+                open: true
+            },
+            Shop {
+                stock: 3,
+                open: false
+            },
+        ],
+        "the path starts where `Shop (full)` starts, with three boxes"
+    );
+    let applied: Vec<Shop> = Shop::starts()
+        .iter()
+        .flat_map(Behavior::setups)
+        .filter(|setup| setup.id == "full")
+        .map(|setup| setup.state)
+        .collect();
+    assert_eq!(applied, [start], "the setup method and `setups()` agree");
 }

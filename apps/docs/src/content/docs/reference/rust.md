@@ -377,6 +377,7 @@ assert!(!states[2].bills());
 ```
 
 - `Turnstile::starts()` returns every start state. `state.steps()` enumerates every enabled step.
+- To replay a path of a setup's result, start from the setup applied to a start state: `Shop::starts().remove(0).full()` for `#[setup("...")] fn full`, or the `state` of the entry with that `id` in `state.setups()`.
 - `Move::new(action).with(input, value)` accepts values formatted as in text or JSON output: bare or quoted enum variants and strings (`Bill` or `"Bill"`), numbers (`3`), booleans (`true`), `null` for `None`, and `{row: 1, lit: true}` for records (fields in any order). Every input of the action must be supplied.
 - `Step::input` is formatted via `earnest::model::Report` (implemented by `#[derive(Domain)]` and built-ins). Compare resulting states with `assert_eq!` or rule methods (`state.stays_locked()`).
 - If a step cannot execute, `replay` returns a `Mismatch` naming the step index and the enabled steps at that state.

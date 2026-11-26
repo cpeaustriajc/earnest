@@ -1,10 +1,13 @@
+use crate::build::HERE;
 use crate::build::{
     binary, draft, field, first_state, helper, helper_call, here, int, name, range, rule, starting,
     text,
 };
 use earnest_ast::{Binary, Draft};
+use earnest_ast::{ConditionDraft, EventuallyDraft, SetupDraft, Term};
 use earnest_ir::{Frame, Model, Rule};
 use earnest_semantic::lower_with_earlier;
+use earnest_semantic::lower_with_earlier_parts;
 
 fn tank(level: i64) -> Draft {
     draft(vec![("level", starting(range(0, 9), int(level)))])
@@ -105,4 +108,81 @@ fn the_problems_of_the_new_draft_are_the_error() {
     let problems = lower_with_earlier(&new, &tank(0)).expect_err("the new draft is unreadable");
     assert_eq!(problems.len(), 1, "one problem: {problems:?}");
     assert_eq!(problems[0].feature, "the state field `depth`");
+}
+
+fn reaching(goal: Term) -> EventuallyDraft {
+    EventuallyDraft {
+        id: "reaches".to_owned(),
+        says: "the level reaches the goal".to_owned(),
+        place: HERE,
+        after: None,
+        reaches: ConditionDraft {
+            state_name: Some("s".to_owned()),
+            term: binary(Binary::Equal, field("level"), goal),
+            text: "same".to_owned(),
+        },
+    }
+}
+
+fn starting_at(start: Term) -> SetupDraft {
+    SetupDraft {
+        id: "high".to_owned(),
+        says: "the level starts high".to_owned(),
+        place: HERE,
+        starts: vec![("level".to_owned(), HERE, start)],
+        text: "same".to_owned(),
+    }
+}
+
+fn goal(value: i64) -> Draft {
+    let mut source = tank(0);
+    source.constants.push(("GOAL".to_owned(), int(value)));
+    source.runs.eventually.push(reaching(name("GOAL")));
+    source.runs.setups.push(starting_at(name("GOAL")));
+    source
+}
+
+#[test]
+fn earlier_rules_about_runs_and_setups_read_the_constants_of_their_own_draft() {
+    let (model, earlier) = lower_with_earlier_parts(&goal(3), &goal(2)).expect("both are readable");
+    let was = earlier.eventually[0]
+        .as_ref()
+        .expect("the earlier rule about runs is readable");
+    let now = &model.runs.eventually[0];
+    assert_ne!(
+        was.reaches, now.reaches,
+        "the earlier GOAL is 2, the new one 3"
+    );
+    let setup = earlier.setups[0]
+        .as_ref()
+        .expect("the earlier setup is readable");
+    assert_ne!(
+        setup.starts, model.runs.setups[0].starts,
+        "it starts at the earlier GOAL"
+    );
+    let (model, same) = lower_with_earlier_parts(&goal(3), &goal(3)).expect("readable");
+    let was = same.eventually[0].as_ref().expect("readable");
+    assert_eq!(
+        was.reaches, model.runs.eventually[0].reaches,
+        "the same GOAL"
+    );
+    assert_eq!(
+        same.setups[0].as_ref().map(|setup| &setup.starts),
+        Some(&model.runs.setups[0].starts)
+    );
+}
+
+#[test]
+fn an_earlier_setup_of_a_field_the_new_model_lacks_is_none() {
+    let mut old = goal(2);
+    old.runs.setups[0].starts[0].0 = "depth".to_owned();
+    let (_, earlier) = lower_with_earlier_parts(&goal(2), &old).expect("the new draft is readable");
+    assert!(
+        earlier.setups[0].is_none(),
+        "the new model has no field `depth`"
+    );
+    assert!(
+        earlier.eventually[0].is_some(),
+        "the rule about runs is still read"
+    );
 }

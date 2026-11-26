@@ -197,11 +197,11 @@ rule changes since origin/main
     now  "Half full"  { n: 1 }
 ```
 
-Their `holds` is the source they are compared by, normalized as conditions are (see below):
+Their `holds` is their source, normalized as conditions are (see below). It is what is shown, not what they are compared by:
 
 | Kind | `holds` |
 |---|---|
-| `eventually` | `reaches: <condition>`, or `after: <condition>; reaches: <condition>` when the rule has an `after` |
+| `eventually` | `reaches: <condition>`, or `after: <condition>; reaches: <condition>` when the rule has an `after`. A Rust `after = name` shows `name: <body of the helper>` |
 | `witness` | The object with its `setup`, `steps` and `expect` |
 | `setup` | The object with the fields it starts elsewhere |
 
@@ -213,13 +213,14 @@ Their `holds` is the source they are compared by, normalized as conditions are (
 | `removed` | Present at `--base`, absent in the working tree (deleted rule, deleted model, deleted or renamed file, file that no longer imports the library, or file that became unreadable) |
 | `loosened` | Some reachable state of the new model, as declared or in one of its setups, satisfies the new rule and breaks the old rule |
 | `tightened` | Some reachable state, as declared or in one of its setups, satisfies the old rule and breaks the new rule, and no reachable state loosens it |
-| `changed` | The condition changed semantically, but no reachable state separates old and new, the old condition cannot be evaluated against the new model, or one condition faults without another state loosening or tightening it. A rule about runs, a witness or a setup whose `holds` changed is always `changed`: no state is searched for it |
+| `changed` | The condition changed semantically, but no reachable state separates old and new, the old condition cannot be evaluated against the new model, or one condition faults without another state loosening or tightening it. A rule about runs, a witness or a setup that means something else is always `changed`: no state is searched for it |
 | `reworded` | Only the rule's sentence changed |
 
 Additional rules for `--base`:
 
-- Unchanged rules are omitted. Comments and whitespace edits do not count as changes. Conditions are printed with each run of whitespace as a single space, and two conditions that differ only in whitespace that joins no two words are the same: `s.items\n  .has(2)` is `s.items.has(2)`, while `return x` is not `returnx` and `"a b"` is not `"ab"`. The text printed is the working tree's.
-- Every shared rule is compared even if its own text was not edited. The base rule is evaluated using the constants and helpers from the base commit, so changing a constant or helper that weakens a rule still reports `loosened`. Rules about runs, witnesses and setups are compared by their `holds` text only: an edit of a constant or a helper function they use is not seen. The one exception is the helper that a Rust `#[eventually("...", after = name)]` names: its `holds` is `after: name: <body>; reaches: <condition>`, so an edit of the helper's body is `changed`.
+- Unchanged rules are omitted. Each part is compared by what it means, not how it is written: the base version is read against the working tree's fields, with the constants and helper functions of the base commit, and compared with the working tree's. Comments, white space, quote style, parentheses, trailing commas, the order of a setup's fields and the name a condition gives the state do not count as changes; a second space inside a text (`"a  b"` for `"a b"`) does, and so does an edit of a constant or a helper a part uses, even when the part's own text is the same. A part that refers to a field the working tree no longer has is `changed`. Conditions are printed with each run of whitespace as a single space, also inside a text; the text printed is the working tree's.
+- Every shared rule is compared even if its own text was not edited, so changing a constant or helper that weakens a rule still reports `loosened`.
+- A rule about runs is `changed` when its `after` or `reaches` means something else, or when the set of fair actions changed, since it is judged over the runs that are fair to them. A witness is `changed` when its setup, its steps (each action and its input values) or its `expect` changed. A setup is `changed` when a field starts at another value or another field is started.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
 - Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
 - Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
