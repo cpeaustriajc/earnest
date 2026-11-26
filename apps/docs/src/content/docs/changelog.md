@@ -30,6 +30,13 @@ module bank {
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
 
+## November 2026: confirm a Quint check with Quint itself
+
+- **`earnest confirm --quint`:** runs Quint's own `quint verify --backend tlc` and `quint test` on each Quint check and prints `same`, `differs` or `cannot`. Quint reads the `.qnt` file itself, so a fault in earnest's reading of it shows, where `--tlc` checks the model as earnest read it. A check whose properties all hold costs one `quint verify`; a property gets a job of its own only when that job finds a violation.
+- **`cannot`, never `differs`,** where Quint's backends are known to answer otherwise: numbers outside 32 bits, a fault such as `/` of a negative number, a run `quint test` passes on random samples, `range` and folds. Without Java, the line says so.
+
+See [Confirming a check with Quint](/reference/quint/#confirming-a-check-with-quint).
+
 ## November 2026: a kept Quint parse is read again by another build
 
 - **Fixed:** `.earnest/quint/` kept what earnest read from `quint parse` by the version of Quint and the file alone, so a newer build reused what an older build had read. After an update, a check that lists a `val` in `expectCounterexample` was `unreadable` with `which is not an invariant, a temporal property or a run`, and `--no-cache` did not clear it. The entry is now kept for one build, as [cached results](/reference/cli/#caching) are. On an older build, delete `.earnest/quint/` after updating.

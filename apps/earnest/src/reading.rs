@@ -1,4 +1,5 @@
 use crate::discovery::{Found, Language, Text};
+use crate::quint::QuintCheck;
 use earnest_ast::{Draft, Reading};
 use earnest_diagnostics::Problem;
 use earnest_ir::Model;
@@ -17,6 +18,7 @@ pub(crate) struct Readable {
     pub(crate) reachable: Vec<String>,
     pub(crate) counted: bool,
     pub(crate) runs_not_played: Vec<String>,
+    pub(crate) quint: Option<QuintCheck>,
 }
 
 #[derive(Debug)]
@@ -185,6 +187,7 @@ fn understand(reading: Reading) -> Content {
                     reachable: Vec::new(),
                     counted: false,
                     runs_not_played: Vec::new(),
+                    quint: None,
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
                     draft: Some(draft.clone()),
@@ -194,6 +197,7 @@ fn understand(reading: Reading) -> Content {
                     reachable: Vec::new(),
                     counted: false,
                     runs_not_played: Vec::new(),
+                    quint: None,
                 }));
             }
             Err(found) => problems.extend(found),
@@ -222,6 +226,7 @@ fn quint(path: String, source: String) -> ModelFile {
                 reachable: Vec::new(),
                 counted: false,
                 runs_not_played: Vec::new(),
+                quint: None,
             }]),
         ),
         Err(problems) => (Vec::new(), Content::Unreadable(problems)),
