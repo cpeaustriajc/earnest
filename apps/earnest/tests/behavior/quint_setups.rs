@@ -99,6 +99,8 @@ const COMPILED: [&str; 24] = [
 
 const SAME_AS: [(&str, &str); 1] = [("Exported", "Plain")];
 
+const SMALL_RUNS: &str = ", tickTwice, tickMany, overTick, hearAny";
+
 const FALLBACKS: [&str; 2] = ["Nested", "Single"];
 
 fn setups(name: &str) -> String {
@@ -189,6 +191,19 @@ impl Quint {
         fs::remove_dir_all(self.sandbox.path().join(".earnest")).unwrap_or_default();
     }
 
+    fn without_named_runs(&self) {
+        let blank = " ".repeat(SMALL_RUNS.len());
+        for file in [
+            "specs/clock.qnt",
+            "fake/parsed/clock.json",
+            "fake/typechecked/clock.json",
+        ] {
+            let text = self.sandbox.read(file);
+            assert!(text.contains(SMALL_RUNS), "{file} names the runs of Small");
+            self.sandbox.write(file, &text.replace(SMALL_RUNS, &blank));
+        }
+    }
+
     fn without_typecheck(&self) {
         fs::remove_dir_all(self.sandbox.path().join("fake/typechecked"))
             .expect("the typechecked fixtures go");
@@ -212,6 +227,7 @@ fn rule_ids(model: &Value) -> Vec<String> {
 #[test]
 fn every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens() {
     let quint = Quint::new();
+    quint.without_named_runs();
     let ours = quint.earnest(&["verify", "--json", "specs"]).json();
     assert_eq!(
         quint.compiled_mains(),
