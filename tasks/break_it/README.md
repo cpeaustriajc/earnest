@@ -975,6 +975,25 @@ new.name)`, the first base model of that name, for both. The fourth pass found t
 model of one name each correct. Test:
 `two_models_of_one_name_in_one_file_are_each_compared_with_their_own_base`.
 
+### Settled after the pass
+
+All five tests pass. The runs of one model (as declared and in each setup) are one model to
+`--rule`, so `--rule low` checks `low` in both runs of `Jar` (unit tests in
+`apps/earnest/src/select.rs`); `tla` and `confirm` number two runs of one model whose module
+names TLA+ spells alike apart (`Jar__one`, `Jar__one_2`), and still refuse two models of one
+name (tests in `apps/earnest/src/commands.rs`). `--base` lists rules about runs, witnesses and
+setups as `added`, `removed`, `reworded` or `changed`, with `kind` in JSON and the kind in
+round brackets after the id in text: a witness and a setup keep their source text in the
+TypeScript reader, and an eventually rule is compared by its `after` and `reaches` (tests in
+`apps/earnest/src/changes.rs`, `crates/earnest_ts/src/members.rs` and
+`crates/earnest_chart/tests/writer/report.rs`). A rule is `loosened` or `tightened` when a
+state of the model as declared or of any of its setups tells the old rule from the new. Two
+models of one name in one file are told apart by their order in the file, in the cache and
+under `--base`; `unreadable` was not taken, since the tests of this pass ask for both models
+to be checked (unit tests in `apps/earnest/src/run.rs` and `changes.rs`). `m.step((inc), {})`
+is read as `m.step(inc, {})`. The Rust reader reads no witness or setup yet, so the source
+text of both is filled in by the TypeScript reader only.
+
 ### Attacked and found correct
 
 Each compared with `explore` in Node (status, states, rules with paths, reasons and

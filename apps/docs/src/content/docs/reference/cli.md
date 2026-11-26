@@ -34,7 +34,7 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 |---|---|---|---|
 | `PATH...` | current directory | all | Files or folders to search for models |
 | `--model <name>` | all | all | Check only the model with this name |
-| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule or witness (requires `--model` when two models share the id) |
+| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule or witness, as declared and in each setup of its model that lists it (requires `--model` when two models share the id) |
 | `--json` | off | `verify` | Print results as JSON instead of text |
 | `--max-states <n>` | `5000000` | `verify`, `chart`, `report`, `confirm` | Stop a model after this many distinct states; every counted state has its rules judged |
 | `--time-limit <seconds>` | none | `verify`, `chart`, `report`, `confirm` | Stop a model after this long, including inside a single state if an action or rule runs too long |
