@@ -742,6 +742,12 @@ pub(crate) fn temporal<'a>(
             refused.push(refusal);
             continue;
         }
+        if parts.is_empty() {
+            parts.push((
+                Fairness::default(),
+                Goal::Always(Expr::Const(Value::Bool(true))),
+            ));
+        }
         let slots = properties.reader.slots;
         let count = parts.len();
         for (index, (fair, goal)) in parts.into_iter().enumerate() {
