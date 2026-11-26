@@ -4175,6 +4175,11 @@ helpers), `as.qnt` (`As`: the spec with `import Kinds as T`, `import Helpers as 
 | `Direct`, `Bad` (`assume.qnt`) | `Assumption ... is false`; `Bad` `[ok]` (dropped) | ok | both `unreadable` at the assumption |
 | `Good` | 3 states | ok | 3 states, built |
 
+Run by the orchestrator (this session's permissions refused running TLC's jar): `earnest verify`
+on `tasks/quint/imports` gives As 16, two 57, three 764, named 25, scenarios 0, Star 16, Both 40
+states in 2.2 s cold, and `earnest confirm --tlc target/tools/tla2tools.jar .` says `same` on all
+seven.
+
 One `earnest verify` of the folder starts `quint --version`, one `parse` per file and one
 `typecheck` per file with a setup, and no `compile`. The second pass's project
 (`tasks/break_it/models/quint_second/project`): one parse and one typecheck, no compile, 2.4 s
