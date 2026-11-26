@@ -1304,3 +1304,88 @@ TLC and tla-rs: running `tla2tools.jar` through `earnest confirm --tlc` and inst
 `tla-tools` were refused by this session's permission rules, so no verdict was compared with an
 external checker. Rust formatting (`rustfmt` adds no comma after `..self.clone()`, and no model
 here wraps a call's arguments). Windows. Quint models.
+
+## Tenth pass
+
+A tenth adversarial pass, made on commit 32050db against the fixes of the ninth pass (`--base`
+by what each part lowers to, `replay` with a setup in Node) and against rules about runs, fair
+actions, witnesses and setups in TypeScript and Rust models. Its tests are in
+`tests/break_it/tenth.rs` and its files in `models/tenth/`. Every expected result below is
+derived by hand from the contract (`reference/output.md`, `typescript.md`, `rust.md`). Both tests
+fail today. TLC was run only through the repository's TLC tests (see "Not covered").
+
+### A witness's inputs are compared in the order each version declares them
+
+`tenth/changes/{before,after}/dial.model.ts`: `Dial` (`n` 0 to 3, from 0), the action `turn` with
+the inputs `to` (0 to 3) and `by` (1 or 2), possible while `n === 0 && by === 2`, setting `n` to
+`to`; an end at `n !== 0`; the witness `once` (`steps: [m.step(turn, { to: 1, by: 2 })]`, `expect:
+(s) => s.n === 1`). The only edit declares the inputs as `{ by: ..., to: ... }` in place of `{ to:
+..., by: ... }`. The witness still plays `turn` with `to` 1 and `by` 2 and holds before and after
+(4 states, `pass`). `output.md`: "A witness is `changed` when its setup, its steps (each action and
+its input values) or its `expect` changed", and the order of a setup's fields does not count. The
+right list is empty. Today `once` is `changed`, with the same text under `was` and `now`.
+
+`tenth/changes/{before,after}/dial.rs` is the Rust twin, where the reverse happens: the only
+edit is `fn turn(&self, #[range(0, 3)] to: u8, #[range(1, 2)] by: u8)` becoming `fn turn(&self,
+#[range(1, 2)] by: u8, #[range(0, 3)] to: u8)`, the body and the witness `self.turn(1, 2)?` left
+as written. Rust passes arguments by position, so the witness played `to` 1, `by` 2 and now plays
+`by` 1, `to` 2: `require!(self.n == 0 && by == 2)` is false, the method gives `None` (both files
+compile against `crates/earnest`, and `once()` gives `Some(true)` before and `None` after), and
+`earnest verify` says `once` is broken (`step 1, `turn`, can't happen here`), `Dial` going from
+`pass` to `fail`. Its input values changed, so the right list is `once` `changed`. Today
+`ruleChanges` is empty (`rule changes since HEAD  none`), in text and JSON, with `--rule once`,
+`--model Dial` and `--jobs 3` alike.
+
+Cause: `same_steps` in `apps/earnest/src/changes.rs` compares `was.input == now.input`, and
+`Played::input` holds the values "in the order of `Action::inputs`" of the draft each side was
+lowered against (`played` in `crates/earnest_semantic/src/lib.rs` walks `action.inputs` of
+`self.draft`, the base draft for the old witness). Two orders are compared position by position:
+TypeScript names its inputs, so a reordering is seen as a change; Rust gives them by position, so
+a reordering that changes the values is not. Tests:
+`inputs_declared_in_another_order_leave_a_typescript_witness_unchanged`,
+`parameters_swapped_under_a_rust_witness_change_the_witness`.
+
+### Contract unclear (no test)
+
+- What a witness, a rule about runs and a setup depend on. `output.md` lists what makes each
+  `changed` (`after`, `reaches`, the set of fair actions; setup, steps, `expect`; start values),
+  and says an edit of a constant or a helper a part uses counts. It does not say whether an edit
+  of an action the witness plays or a rule about runs is judged over, or of a field's
+  declaration or initial value, counts. With `tenth/changes/before/dial.model.ts` and `when: (s,
+  { by }) => s.n === 0 && by === 1`, `once` goes from holds to broken and nothing is listed; with
+  `cap` declared `.initial(3)` in place of `.initial(2)`, a setup that names only other fields
+  starts in another state and is not listed. Reading one: these parts are their own text and the
+  values in it, as today, and a verdict may flip with nothing listed (as for a plain rule whose
+  model changed). Reading two: "a field starts at another value" and "each action" include what
+  the setup and the steps run on, so each is `changed`. The docs should say which.
+- "A witness is `changed` when its setup ... changed": its setup's id (today), or also the
+  values of the setup it names (today the setup is listed and the witness is not).
+
+### Attacked and found correct
+
+- `replay` in Node with `setup`, over every path `verify --json` prints, for a TypeScript model
+  with a set, an optional, a fair action, two setups (one starting a set field, one three fields),
+  witnesses of both setups and of the model, an out-of-range step in a setup's witness and
+  out-of-range findings in two setups: every path replays, and from `repeatsFrom` the loop comes
+  back to the same state; `explore` with `setup` gives the same status, states and rules (paths,
+  verdicts, `repeatsFrom`) on every run. The same with a queue, a set, an optional, a lock and two
+  fair actions, and with a map of records, a sequence, a timer, a request, a retry and a fair
+  action whose input is a map key.
+- The Rust twin of that model (an enum set, `#[range]` fields, a fair action, two setups, three
+  witnesses, `after = full`) against the TypeScript one: the same states, verdicts, paths, reasons
+  and `repeatsFrom` in each run, apart from the spelling of ids and variants; the order of
+  `eventually()`, `witnesses()` and `setups()` is the macro's file order, the checker's order.
+- A witness step that changes nothing (holds), a rule about runs that only a stuttering action
+  could put off (holds).
+- `--base` with `--rule`, `--model`, both, an unknown rule, an unknown model, an end named as a
+  rule and `--jobs 3`: the same listing, or exit 2 with the documented sentence.
+
+### Not covered
+
+TLC: `earnest confirm --tlc target/tools/tla2tools.jar` on models of this pass (a queue, a set,
+a lock and an optional with two fair actions and a setup that starts the queue; a map of records,
+a sequence, a timer, a request and a retry with a fair action whose input is a map key and a
+setup that starts the map) was refused by this session's auto mode classifier ("Undermining
+Oversight"), so no verdict of a model written here was compared with TLC.
+`cargo test --locked -p earnest_break_it --features tlc --test tlc` ran with the jar from the
+latest release: 9 passed, in 173 s. tla-rs. Windows. Quint models (out of scope).
