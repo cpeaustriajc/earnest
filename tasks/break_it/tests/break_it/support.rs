@@ -227,3 +227,7 @@ pub(crate) fn is_broken_after(rule: &Value, steps: usize) -> bool {
             .as_array()
             .is_some_and(|taken| taken.len() == steps)
 }
+
+pub(crate) fn binary() -> &'static Path {
+    earnest()
+}
