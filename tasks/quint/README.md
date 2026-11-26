@@ -3863,3 +3863,28 @@ and `vaultKnownBugs`; on `vaultForever`, which has no end, TLC does not finish.
 - Every Quint check's result cache key changed (the ids it judges), so the first run after this
   build checks each Quint model once again. Compiles are cached under a new name too, so each
   compiles once again.
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `6cd635b`:
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings. `just lint-library`: no
+  warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2102 passed, 0
+  failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.40%`, `mixed/shelf`, budget 2%; `grid_1m` `+0.27%`
+  as on the integration head). On the tree merged with `641c099` it could not run: valgrind 3.22
+  read no symbols from that build of the binary (`callgrind's output names no file`), while it
+  read the integration head's. Whole-process totals of the seven cases agreed with that head's
+  within 0.01% on one worker and 0.21% on four.
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.932 s, 1 worker 2.694 s).
+- `just same-answers 6cd635b`: `0 differences` in the three sweeps and `every model file: 392
+  runs, 0 differences`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, all in `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts`
+  and `clock.model.ts`, which `origin/main` reports `unreadable` (`m.eventually`, `m.setup`).
+- `tests_kept.py --base origin/main`: `tests kept: 1674 tests, 4860 assertions (base: 1304,
+  3798)`.
