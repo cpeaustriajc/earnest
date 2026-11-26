@@ -369,3 +369,54 @@ fn a_condition_implying_a_temporal_formula_is_judged_in_the_start_states_as_tlc_
          has `x == 1`, as `quint verify --backend tlc` and Apalache judge them\n{report}"
     );
 }
+
+#[test]
+fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_plays_a_run_alone() {
+    let recorded = RecordedQuint::new(&QuintFixtures {
+        file: "output.qnt",
+        source: include_str!("../../models/quint_third/output/output.qnt"),
+        typecheck: include_str!("../../models/quint_third/output/typecheck.json"),
+        compiled: "{}",
+        checks: r#"{ "checks": [
+            { "file": "output.qnt", "main": "Own", "runs": ["M::aTest"] },
+            { "file": "output.qnt", "main": "Own", "name": "endless",
+              "invariants": ["small"], "runs": true } ] }"#,
+    });
+    let report = recorded.verify(&["--no-cache", "--max-states", "1000", "--model", "Own"]);
+    let rules = model_named(&report, "Own")["rules"].clone();
+    let ids: Vec<&str> = rules
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|found| found["id"].as_str())
+        .collect();
+    let steps: Vec<&str> = rules[0]["path"]["steps"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|step| step["action"].as_str())
+        .collect();
+    assert_eq!(
+        (ids, steps),
+        (vec!["M::aTest"], vec!["add  k = 2"]),
+        "`Own` has its own `aTest` beside the listed `M::aTest`, so the played run keeps the \
+         prefix that tells them apart, and its step `add(N)` with `N = 2` shows the value\n\
+         {report:#}"
+    );
+    let ruled = recorded.verify(&[
+        "--no-cache",
+        "--max-states",
+        "1000",
+        "--model",
+        "endless",
+        "--rule",
+        "aTest",
+    ]);
+    let endless = model_named(&ruled, "endless");
+    assert_eq!(
+        (&endless["status"], &endless["states"]),
+        (&Value::from("pass"), &Value::from(1)),
+        "`--rule aTest` judges a run alone, so the model, which has no end, is not searched: \
+         only its start state is counted, and the run passes as `quint test` says\n{ruled:#}"
+    );
+}

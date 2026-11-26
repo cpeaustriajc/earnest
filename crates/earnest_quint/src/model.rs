@@ -457,6 +457,7 @@ fn shorten(
     rules: &mut [Rule],
     eventually: &mut [Eventually],
     scripts: &mut [Script],
+    runs: &[&str],
 ) {
     let played = scripts.iter().flat_map(|script| &script.actions);
     let short_actions = Short::of_ids(actions.iter().chain(played).map(|each| each.id.as_str()));
@@ -471,7 +472,8 @@ fn shorten(
             .iter()
             .map(|each| each.id.as_str())
             .chain(eventually.iter().map(|each| each.id.as_str()))
-            .chain(scripts.iter().map(|each| each.id.as_str())),
+            .chain(scripts.iter().map(|each| each.id.as_str()))
+            .chain(runs.iter().copied()),
     );
     for rule in rules {
         short_rules.rename_rule(rule);
@@ -497,7 +499,8 @@ pub(crate) fn model(
     wanted: Wanted,
 ) -> Result<Model, Vec<Refusal>> {
     let met = built(path, compiled, Symbols::default(), (runs, wanted))?;
-    let mut read = built(path, compiled, met.symbols.alphabetical(), (runs, wanted))?;
+    let symbols = met.symbols.alphabetical().written_in(notation(compiled));
+    let mut read = built(path, compiled, symbols, (runs, wanted))?;
     read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
     Ok(read)
 }
@@ -656,7 +659,21 @@ fn built(
         (mut scripts, script_picks),
     ) = both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
-    shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
+    let runs: Vec<&str> = module
+        .declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) if def.qualifier == "run" => Some(def.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    shorten(
+        &mut actions,
+        &mut rules,
+        &mut eventually,
+        &mut scripts,
+        &runs,
+    );
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()

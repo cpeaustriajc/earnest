@@ -941,10 +941,14 @@ impl<'a> Reader<'a> {
             .collect();
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;
         if !self.unnamed.contains(&def.id) {
+            let written = self.written_arguments(def, &given);
             for path in &mut paths {
                 if path.name.is_some() {
                     let outer = path.branch.len().saturating_sub(path.named_branches);
                     path.branch.truncate(outer);
+                }
+                if let Some(written) = &written {
+                    path.branch.insert(0, written.clone());
                 }
                 path.named_branches = path.branch.len();
                 path.name = Some(def.name.clone());
@@ -952,6 +956,27 @@ impl<'a> Reader<'a> {
             }
         }
         Self::checked(paths)
+    }
+
+    fn written_arguments(&self, def: &Def, given: &[Option<Expr>]) -> Option<String> {
+        let Quint::Lambda { params, .. } = &def.expr else {
+            return None;
+        };
+        let shown: Vec<String> = params
+            .iter()
+            .zip(given)
+            .filter_map(|(param, passed)| {
+                let passed = passed.as_ref()?;
+                if matches!(passed, Expr::Local(_)) {
+                    return None;
+                }
+                let value = constant(passed, self.slots).ok().flatten()?;
+                let name = base_name(&param.name);
+                let name = name.rsplit_once("::").map_or(name, |(_, last)| last);
+                Some(format!("{name} = {}", self.symbols.show(&value)))
+            })
+            .collect();
+        (!shown.is_empty()).then(|| format!(" {}", shown.join("  ")))
     }
 
     fn assign(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {
