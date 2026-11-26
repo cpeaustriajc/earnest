@@ -418,6 +418,9 @@ fn quint_place(said: &str, job: &Job) -> (String, Place) {
         let (Ok(column), Ok(number)) = (column.parse::<u32>(), number.parse::<u32>()) else {
             continue;
         };
+        if !file.ends_with(".qnt") {
+            continue;
+        }
         return (
             shown_in(Path::new(file), job),
             Place {
