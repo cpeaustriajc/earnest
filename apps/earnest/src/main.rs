@@ -22,6 +22,7 @@ mod select;
 mod sources;
 mod typecheck;
 mod verify;
+mod view_marks;
 mod workers;
 
 use arguments::{Arguments, Command};

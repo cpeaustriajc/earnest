@@ -11,6 +11,10 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod views;
+
+pub(crate) use views::{Labels, Viewing};
+
 const VALUES: [&str; 4] = ["val", "def", "pureval", "puredef"];
 const TEMPORAL: &str = "temporal";
 const DOC_SLASHES: &str = "///";
@@ -31,6 +35,7 @@ pub(crate) struct Plan {
     pub(crate) reachable: Vec<String>,
     pub(crate) said: Vec<(String, String)>,
     pub(crate) runs: Runs,
+    pub(crate) labels: Labels,
 }
 
 #[derive(Debug, Default)]
@@ -39,6 +44,7 @@ pub(crate) struct Planned {
     pub(crate) problems: Vec<(Option<String>, Problem)>,
     pub(crate) seen: BTreeSet<Spot>,
     pub(crate) marked: Vec<(Spot, Problem)>,
+    pub(crate) viewing: Viewing,
 }
 
 struct Judged {
@@ -427,6 +433,7 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         text: fs::read_to_string(real_file).unwrap_or_default(),
     };
     let mut planned = Planned::default();
+    views::view_definitions(&locator, &mut planned);
     for each in places.marks_in(real_file) {
         let doc = read_doc(each.doc);
         if !doc.is_marked() {
@@ -473,6 +480,7 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
             .iter()
             .map(|(line, message)| at(*line, message))
             .collect();
+        problems.extend(views::module_views(&locator, (module.name, text), &doc));
         if doc.marks.is_empty() {
             if doc.wrong.is_empty()
                 && hands_over_unspaced(&doc)
@@ -502,12 +510,13 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         }
         if problems.is_empty() {
             match plan_of(&locator, (module.name, text, &doc), &mut planned.seen) {
-                Ok(plan) => planned.plans.push(plan),
+                Ok(plan) => views::push_labelled(&locator, plan, &mut planned, &mut problems),
                 Err(found) => problems.extend(found),
             }
         } else {
             let _ = plan_of(&locator, (module.name, text, &doc), &mut planned.seen);
         }
+        views::seen_if_refused(&locator, (module.name, &problems), &mut planned.viewing);
         planned.problems.extend(
             problems
                 .into_iter()
