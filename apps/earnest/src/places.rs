@@ -25,7 +25,6 @@ pub(crate) struct Places {
     files: HashMap<String, String>,
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
-    #[serde(default)]
     qualifiers: HashMap<u64, String>,
 }
 
