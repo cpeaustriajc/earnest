@@ -50,8 +50,8 @@ impl Kettle {
     }
 
     #[witness("The water starts cold")]
-    fn starts_cold(&self) -> Option<bool> {
-        Some(self.phase == Phase::Cold)
+    fn starts_cold(&self) -> bool {
+        self.phase == Phase::Cold
     }
 
     #[witness("One heat makes the water hot")]

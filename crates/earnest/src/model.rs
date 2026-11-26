@@ -172,8 +172,9 @@ pub struct Witnessed {
     /// witness from. `None` for the model's own start states.
     pub setup: Option<&'static str>,
     /// What the method returned when played from this state: `None` when a step can't happen,
-    /// else whether what it expects is true after the last step. From a start state (of its
-    /// setup, when it names one), `Some(true)` is the checker's `holds`. A step that takes a
+    /// else whether what it expects is true after the last step. A witness that returns `bool`,
+    /// because none of its steps can fail, gives `Some` of its result. From a start state (of
+    /// its setup, when it names one), `Some(true)` is the checker's `holds`. A step that takes a
     /// field outside the values it declares breaks the witness for the checker, where the
     /// method can still give `Some(true)`.
     pub played: Option<bool>,

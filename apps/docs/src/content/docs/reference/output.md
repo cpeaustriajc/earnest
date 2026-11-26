@@ -34,7 +34,7 @@ unreadable  src/clock.model.ts
   - `start` lists every field of the start state.
   - Each numbered step gives the action id, its inputs as `name = value` if any, and every changed field as `field: before -> after`.
   - `end` lists every field of the violating state. A 0-step path prints only `start`.
-- **`broken` witness:** a [witness](/reference/typescript/#witnesses) (TypeScript models only) prints like a rule: its id, its sentence, and the path played from the first start state that breaks it, followed by a `why` line at the depth of the path:
+- **`broken` witness:** a witness ([TypeScript](/reference/typescript/#witnesses), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) prints like a rule: its id, its sentence, and the path played from the first start state that breaks it, followed by a `why` line at the depth of the path:
 
   ```text
   fail        Lift  6 states  0 ms

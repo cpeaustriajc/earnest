@@ -77,7 +77,7 @@ export const reopens = m.witness(Panel, "Open, show more, close, open: the panel
 
 A witness makes the file `unreadable` when a step is not an action of this model declared above the witness (another model's action, a rule, an unknown name, a spread, a hole, or any other expression), when `steps` is not a list written out, when `steps` or `expect` is missing, when it has another key, or when it is not exported. `earnest verify` also refuses an input the action does not declare, an input given twice, an input left without a value (including a bare action that takes inputs), an input value outside the input's declaration, and an `expect` that does not give a boolean.
 
-Rust models have no witnesses yet.
+A Rust model writes a witness as a method marked `#[witness("...")]`: see [Rust models](/reference/rust/#rules-about-runs-witnesses-and-setups).
 
 ## What a model file may contain
 

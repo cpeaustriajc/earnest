@@ -1123,7 +1123,7 @@ pub(super) const CASES: &[Case] = &[
     },
     Case {
         name: "witness without steps ok",
-        method: r#"#[witness("nothing yet")] fn w(&self) -> Option<bool> { Some(self.n == 0) }"#,
+        method: r#"#[witness("nothing yet")] fn w(&self) -> bool { self.n == 0 }"#,
         call: r"true",
         rustc: "",
         group: Group::Borrow,
@@ -1139,7 +1139,7 @@ pub(super) const CASES: &[Case] = &[
     Case {
         name: "witness in a setup ok",
         method: r#"#[setup("one up")] fn s(&self) -> Self { Self { n: 1, ..self.clone() } }
- #[witness("starts at one", setup = s)] fn w(&self) -> Option<bool> { Some(self.n == 1) }"#,
+ #[witness("starts at one", setup = s)] fn w(&self) -> bool { self.n == 1 }"#,
         call: r"true",
         rustc: "",
         group: Group::Borrow,
@@ -1167,14 +1167,14 @@ pub(super) const CASES: &[Case] = &[
     },
     Case {
         name: "witness condition not a boolean",
-        method: r#"#[witness("a count")] fn w(&self) -> Option<bool> { Some(self.n) }"#,
+        method: r#"#[witness("a count")] fn w(&self) -> bool { self.n }"#,
         call: r"true",
         rustc: "E0308",
         group: Group::Types,
     },
     Case {
-        name: "witness returns a boolean",
-        method: r#"#[witness("plain")] fn w(&self) -> bool { self.n == 0 }"#,
+        name: "witness returns a number",
+        method: r#"#[witness("plain")] fn w(&self) -> u8 { self.n }"#,
         call: r"true",
         rustc: "E0308",
         group: Group::Types,
@@ -1210,14 +1210,14 @@ pub(super) const CASES: &[Case] = &[
     },
     Case {
         name: "witness setup names no method",
-        method: r#"#[witness("nothing yet", setup = nobody)] fn w(&self) -> Option<bool> { Some(self.n == 0) }"#,
+        method: r#"#[witness("nothing yet", setup = nobody)] fn w(&self) -> bool { self.n == 0 }"#,
         call: r"true",
         rustc: "E0599",
         group: Group::Types,
     },
     Case {
         name: "witness setup names a rule",
-        method: r#"#[witness("nothing yet", setup = fine)] fn w(&self) -> Option<bool> { Some(self.n == 0) }"#,
+        method: r#"#[witness("nothing yet", setup = fine)] fn w(&self) -> bool { self.n == 0 }"#,
         call: r"true",
         rustc: "E0308",
         group: Group::Types,
@@ -1227,6 +1227,43 @@ pub(super) const CASES: &[Case] = &[
         method: r#"#[setup("none")] fn s(&self) -> Option<Self> { None }"#,
         call: r"true",
         rustc: "E0308",
+        group: Group::Types,
+    },
+    Case {
+        name: "witness of actions that give back the state ok",
+        method: r#"#[action("reset")] fn t(&self) -> Self { Self { n: 0, ..self.clone() } }
+ #[witness("reset twice")] fn w(&self) -> bool { let after = self.t().t(); after.n == 0 }"#,
+        call: r"true",
+        rustc: "",
+        group: Group::Borrow,
+    },
+    Case {
+        name: "witness condition calls a helper on the bound state ok",
+        method: r#"fn started(&self) -> bool { self.n > 0 }
+ #[witness("a bump starts it")] fn w(&self) -> Option<bool> { let after = self.bump(1)?; Some(after.started()) }"#,
+        call: r"true",
+        rustc: "",
+        group: Group::Borrow,
+    },
+    Case {
+        name: "witness returns a boolean after a question mark",
+        method: r#"#[witness("a bump")] fn w(&self) -> bool { let after = self.bump(1)?; after.n == 1 }"#,
+        call: r"true",
+        rustc: "E0277",
+        group: Group::Types,
+    },
+    Case {
+        name: "witness wraps a condition it returns as a boolean",
+        method: r#"#[witness("nothing yet")] fn w(&self) -> bool { Some(self.n == 0) }"#,
+        call: r"true",
+        rustc: "E0308",
+        group: Group::Types,
+    },
+    Case {
+        name: "witness condition calls no helper on the bound state",
+        method: r#"#[witness("a bump")] fn w(&self) -> Option<bool> { let after = self.bump(1)?; Some(after.nobody()) }"#,
+        call: r"true",
+        rustc: "E0599",
         group: Group::Types,
     },
 ];

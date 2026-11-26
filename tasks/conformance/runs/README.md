@@ -56,3 +56,43 @@ What each file is there for:
 |---|---|
 | `panel.model.ts` | A witness with a step that takes an input (`m.step`); a witness with no steps; a rule before the witnesses; an optional enum field set by an input |
 | `lift.model.ts` | Several start states; each broken reason that needs no fault; the first start state that breaks a witness; an empty path |
+
+## Rust twins
+
+`gate.rs`, `kettle.rs` and `../setups/clock.rs` are Rust models, each with a TypeScript twin of
+the same name (`gate.model.ts`, `kettle.model.ts`, `../setups/clock.model.ts`). The clock pair sits
+in `../setups` because `apps/earnest/tests/reference` compares every TypeScript file in this
+folder with `explore`, which it runs without a setup. `apps/earnest/tests/behavior/runs_rust.rs`
+checks that each file and its twin give the same text, JSON and exit code, and
+`apps/earnest/tests/rust_models/runs.rs` builds the Rust files with the repository's lints and
+checks that each witness method gives `Some(true)` (or `true`) from every start state exactly
+where the table says the witness holds. A run never stops while an action can still change the
+state, and never puts off forever an action declared fair that stays possible.
+
+| File | Model | States | Status | Why that many states |
+|---|---|---|---|---|
+| `gate.rs` | `Gate` | 6 | `fail` | `(door, paid, light)`, one start `(Locked, false, false)`. Unpaid at the locked door, `blink` gives both lights: 2. `pay` keeps the light: `(Locked, true, ·)`, 2. `push` opens: `(Open, true, ·)`, 2. `enter` goes back to unpaid. `blink` needs `!paid`, so no other state. 2 + 2 + 2 = 6, none stuck |
+| `kettle.rs` | `Kettle` | 4 | `fail` | `phase` from `Cold`: `heat` to `Warm`, `boil` to `Hot`, `unplug` to `Off`. `Hot` and `Off` end the model |
+| `../setups/clock.rs` | `Clock` | 6 | `fail` | `(skew, synced)` from `(0, false)`: `drift` by -1 or 1 reaches every skew from -2 to 2 unsynced (5), `sync` gives `(0, true)` from each, which ends the model. 5 + 1 = 6 |
+| `clock.rs` | `Clock (behind)` | 6 | `fail` | Starts at `(-2, false)`: the same 6 states |
+| `clock.rs` | `Clock (synced_already)` | 1 | `pass` | Starts at `(0, true)`, where nothing can happen and the model ends |
+
+| Model | Id | Kind | Verdict | Path | Reason | Why |
+|---|---|---|---|---|---|---|
+| `Gate` | `opens` | eventually | holds | | | A run that never pays blinks forever, but `pay` is fair and stays possible there. Once paid only `push` can happen, and it opens. Without `fair` it is broken: `blink`, `blink`, ``steps 1 to 2 can repeat forever`` |
+| `Gate` | `opens_once_paid` | eventually | holds | | | `after = paid_up`: from a paid locked gate only `push` can happen; a paid open gate is open |
+| `Gate` | `lit_and_paid` | eventually | broken | `pay`, `push`, `enter`, repeating from 0 | `steps 1 to 3 can repeat forever` | That loop never lights a paid gate, and `pay` is taken in it |
+| `Gate` | `pay_then_push` | witness | holds | | | `(Locked, true, false)`, then `(Open, true, false)`, which `after.is_open()` reads |
+| `Gate` | `push_first` | witness | broken | no steps | ``step 1, `push`, can't happen here`` | `push` needs `paid` |
+| `Kettle` | `boils` | eventually | broken | `unplug` | `nothing changes the state from here, so the run can stay in it forever` | An unplugged kettle stops cold |
+| `Kettle` | `settles` | eventually | holds | | | Every run ends at `Hot` or `Off` |
+| `Kettle` | `starts_cold` | witness | holds | | | No steps; the start is cold. The Rust method returns `bool` |
+| `Kettle` | `hot_at_once` | witness | broken | `heat` | `what the witness expects is false here` | One heat makes it warm |
+| `Clock` | `shows_zero` | rule | holds | | | `sync` sets the skew to 0, and nothing changes a synced clock |
+| `Clock` | `syncs` | eventually | broken | `drift[by = -1]`, `drift[by = 1]`, repeating from 0 | `steps 1 to 2 can repeat forever` | `sync` is not fair, so drifting can go on |
+| `Clock` | `drifts_ahead` | witness | holds | | | `drift[by = 1]` from 0 gives 1 |
+| `Clock (behind)` | `syncs` | eventually | broken | `drift[by = 1]`, `drift[by = -1]`, repeating from 0 | `steps 1 to 2 can repeat forever` | As above, from -2 |
+| `Clock (behind)` | `catches_up` | witness | holds | | | `setup = behind`: `drift[by = 1]` to -1, then `sync` to `(0, true)`. It is played only in this setup |
+| `Clock (synced_already)` | `syncs` | eventually | holds | | | The start is synced |
+
+Totals for a run over the three Rust files: 5 models, 1 pass, 4 fail.

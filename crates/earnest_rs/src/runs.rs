@@ -5,14 +5,15 @@ use earnest_ast::{
     ConditionDraft, EventuallyDraft, HelperKind, RunsDraft, SetupDraft, StepDraft, TermKind,
     WitnessDraft,
 };
-use proc_macro2::{Ident, TokenStream, TokenTree};
+use earnest_diagnostics::Place;
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::ext::IdentExt;
 use syn::parse::ParseStream;
 use syn::spanned::Spanned;
 use syn::{
-    Attribute, Expr, ExprMethodCall, FnArg, ImplItemFn, LitStr, Member, Pat, Signature, Stmt,
-    Token, Type,
+    Attribute, Expr, ExprMethodCall, FnArg, ImplItemFn, LitStr, Member, Pat, ReturnType, Signature,
+    Stmt, Token, Type,
 };
 
 const STATE: &str = "self";
@@ -24,9 +25,17 @@ const OPTIONS: [(&str, &str, bool); 3] = [
     ("eventually", AFTER, true),
     ("witness", SETUP, true),
 ];
-const WITNESS_BODY: &str = "a witness's body is `Some(condition)` on `self`, or `let after = \
-    self.first()?.second()?;` followed by `Some(condition)` on that name: a chain of the model's \
-    actions from `self`, with `?` after each one that returns `Option<Self>`";
+const WITNESS_BODY: &str = "a witness's body is its condition on `self`, or `let after = \
+    self.first()?.second();` followed by its condition on that name: a chain of the model's \
+    actions from `self`, with `?` after each one that returns `Option<Self>`. With a `?`, the \
+    witness returns `Option<bool>` and its condition is written `Some(condition)`";
+const WITNESS_RESULT: &str = "a witness returns `bool`, or `Option<bool>` when a step of it is \
+    followed by `?`";
+const NOTHING_STOPS_IT: &str = "no step of this witness is followed by `?`, so it always gives \
+    `Some`, as `clippy::unnecessary_wraps` says: return `bool` and write the condition without \
+    `Some(..)`";
+const NO_OPTION: &str = "a `?` after a step needs a witness that returns `Option<bool>`, and \
+    `rustc` refuses it in one that returns `bool` (E0277)";
 const SETUP_BODY: &str = "a setup's body is `Self { field: value, ..self.clone() }`, where each \
     value is a constant: the fields written start there, and every other field where the model \
     declares";
@@ -324,25 +333,94 @@ impl Reader<'_> {
         let signature = &method.sig;
         let id = name_of(&signature.ident);
         self.only_the_state(signature, "a witness");
-        self.returns(signature, "Option<bool>", "a witness");
-        let setup = match &written.setup {
-            Some(named) if known.setups.contains(&name_of(named)) => {
-                Some((name_of(named), place_of(named.span())))
-            }
-            Some(named) => {
-                self.refuse(
-                    named.span(),
-                    &name_of(named),
-                    "`setup` names a method of the model marked `#[setup(\"...\")]`, whose start \
-                     states the witness is played from",
-                );
-                None
-            }
-            None => None,
+        let (output_span, gives) = match &signature.output {
+            ReturnType::Type(_, ty) => (ty.span(), self.text(ty.span()).replace(' ', "")),
+            ReturnType::Default => (signature.ident.span(), String::new()),
         };
-        let block_span = method.block.span();
-        let (state, steps, last) = match method.block.stmts.as_slice() {
-            [Stmt::Expr(last, None)] => (STATE.to_owned(), Vec::new(), last),
+        let wraps = match gives.as_str() {
+            "bool" => false,
+            "Option<bool>" => true,
+            _ => {
+                self.refuse(output_span, &format!("fn {id}"), WITNESS_RESULT);
+                return None;
+            }
+        };
+        let setup = self.setup_named(written.setup.as_ref(), known);
+        let mut tried = Vec::new();
+        let (state, steps, last) = self.played(method, known, &mut tried)?;
+        if wraps && tried.is_empty() {
+            self.refuse(output_span, &format!("fn {id}"), NOTHING_STOPS_IT);
+            return None;
+        }
+        if let (false, Some(first)) = (wraps, tried.first()) {
+            self.refuse(*first, "?", NO_OPTION);
+            return None;
+        }
+        let condition = if wraps {
+            let inside = match unwrapped(last) {
+                Expr::Call(call)
+                    if call.args.len() == 1
+                        && matches!(unwrapped(&call.func), Expr::Path(path) if path.path.is_ident("Some")) =>
+                {
+                    call.args.first()
+                }
+                _ => None,
+            };
+            let Some(inside) = inside else {
+                self.refuse(last.span(), &self.short_text(last.span()), WITNESS_BODY);
+                return None;
+            };
+            inside
+        } else {
+            last
+        };
+        self.walk_condition(&state, condition);
+        let kept = self.bound.len();
+        if state != STATE {
+            let model = self
+                .model_name
+                .clone()
+                .and_then(|model| syn::parse_str::<Type>(&model).ok());
+            self.bound.push(plain(state.clone(), model));
+            self.witness_state = Some(state.clone());
+        }
+        let expect = self.term(condition);
+        self.witness_state = None;
+        self.bound.truncate(kept);
+        Some(WitnessDraft {
+            id,
+            says: written.says,
+            place: place_of(signature.fn_token.span),
+            setup,
+            steps,
+            state_name: Some(state),
+            expect,
+        })
+    }
+
+    fn setup_named(&mut self, named: Option<&Ident>, known: &Known) -> Option<(String, Place)> {
+        let named = named?;
+        let name = name_of(named);
+        if known.setups.contains(&name) {
+            return Some((name, place_of(named.span())));
+        }
+        self.refuse(
+            named.span(),
+            &name,
+            "`setup` names a method of the model marked `#[setup(\"...\")]`, whose start states \
+             the witness is played from",
+        );
+        None
+    }
+
+    fn played<'m>(
+        &mut self,
+        method: &'m ImplItemFn,
+        known: &Known,
+        tried: &mut Vec<Span>,
+    ) -> Option<(String, Vec<StepDraft>, &'m Expr)> {
+        match method.block.stmts.as_slice() {
+            [Stmt::Expr(last, None)] => Some((STATE.to_owned(), Vec::new(), last)),
             [Stmt::Local(local), Stmt::Expr(last, None)] => {
                 let named = match &local.pat {
                     Pat::Ident(named)
@@ -362,7 +440,7 @@ impl Reader<'_> {
                     self.refuse(local.span(), &self.short_text(local.span()), WITNESS_BODY);
                     return None;
                 };
-                let steps = self.chain(&init.expr, known)?;
+                let steps = self.chain(&init.expr, known, tried)?;
                 if steps.is_empty() {
                     self.refuse(
                         init.expr.span(),
@@ -371,59 +449,38 @@ impl Reader<'_> {
                     );
                     return None;
                 }
-                (name_of(&named.ident), steps, last)
+                Some((name_of(&named.ident), steps, last))
             }
             _ => {
-                self.refuse(block_span, &id, WITNESS_BODY);
-                return None;
+                self.refuse(
+                    method.block.span(),
+                    &name_of(&method.sig.ident),
+                    WITNESS_BODY,
+                );
+                None
             }
-        };
-        let condition = match unwrapped(last) {
-            Expr::Call(call)
-                if call.args.len() == 1
-                    && matches!(unwrapped(&call.func), Expr::Path(path) if path.path.is_ident("Some")) =>
-            {
-                call.args.first()
-            }
-            _ => None,
-        };
-        let Some(condition) = condition else {
-            self.refuse(last.span(), &self.short_text(last.span()), WITNESS_BODY);
-            return None;
-        };
-        self.walk_condition(&state, condition);
-        let kept = self.bound.len();
-        if state != STATE {
-            let model = self
-                .model_name
-                .clone()
-                .and_then(|model| syn::parse_str::<Type>(&model).ok());
-            self.bound.push(plain(state.clone(), model));
         }
-        let expect = self.term(condition);
-        self.bound.truncate(kept);
-        Some(WitnessDraft {
-            id,
-            says: written.says,
-            place: place_of(signature.fn_token.span),
-            setup,
-            steps,
-            state_name: Some(state),
-            expect,
-        })
     }
 
-    fn chain(&mut self, expr: &Expr, known: &Known) -> Option<Vec<StepDraft>> {
+    fn chain(
+        &mut self,
+        expr: &Expr,
+        known: &Known,
+        tried: &mut Vec<Span>,
+    ) -> Option<Vec<StepDraft>> {
         match unwrapped(expr) {
             found if is_the_state(found) => Some(Vec::new()),
-            Expr::Try(tried) => match unwrapped(&tried.expr) {
-                Expr::MethodCall(call) => self.link(call, known, Called::WithQuestionMark),
+            Expr::Try(question) => match unwrapped(&question.expr) {
+                Expr::MethodCall(call) => {
+                    tried.push(question.question_token.span);
+                    self.link(call, known, Called::WithQuestionMark, tried)
+                }
                 other => {
                     self.refuse(other.span(), &self.short_text(other.span()), WITNESS_BODY);
                     None
                 }
             },
-            Expr::MethodCall(call) => self.link(call, known, Called::Bare),
+            Expr::MethodCall(call) => self.link(call, known, Called::Bare, tried),
             other => {
                 self.refuse(other.span(), &self.short_text(other.span()), WITNESS_BODY);
                 None
@@ -435,7 +492,8 @@ impl Reader<'_> {
         &mut self,
         call: &ExprMethodCall,
         known: &Known,
-        tried: Called,
+        called: Called,
+        tried: &mut Vec<Span>,
     ) -> Option<Vec<StepDraft>> {
         let name = name_of(&call.method);
         let feature = format!(".{name}()");
@@ -449,7 +507,7 @@ impl Reader<'_> {
             );
             return None;
         };
-        let refusal = match (shape.gives_self, tried) {
+        let refusal = match (shape.gives_self, called) {
             (Some(true), Called::WithQuestionMark) => Some(
                 "this action gives back `Self`, so it is not followed by `?`, and `rustc` \
                  refuses the `?` (E0277)",
@@ -478,7 +536,7 @@ impl Reader<'_> {
             self.refuse(span, &feature, &message);
             return None;
         }
-        let mut steps = self.chain(&call.receiver, known)?;
+        let mut steps = self.chain(&call.receiver, known, tried)?;
         let inputs = shape
             .inputs
             .iter()

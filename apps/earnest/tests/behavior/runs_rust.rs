@@ -8,7 +8,15 @@ const DIFFERS_BY_LANGUAGE: [&str; 4] = ["file", "line", "milliseconds", "cached"
 const PAIRS: [&str; 3] = ["gate", "kettle", "clock"];
 
 fn runs_fixture(file: &str) -> String {
-    let path = repository().join("tasks/conformance/runs").join(file);
+    let folder = if file.starts_with("clock") {
+        "setups"
+    } else {
+        "runs"
+    };
+    let path = repository()
+        .join("tasks/conformance")
+        .join(folder)
+        .join(file);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
 }

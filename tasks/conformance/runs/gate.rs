@@ -59,6 +59,10 @@ impl Gate {
         self.paid
     }
 
+    fn is_open(&self) -> bool {
+        self.door == Door::Open
+    }
+
     #[eventually("Every run comes to an open gate")]
     fn opens(&self) -> bool {
         self.door == Door::Open
@@ -77,7 +81,7 @@ impl Gate {
     #[witness("Pay, then push: the gate opens")]
     fn pay_then_push(&self) -> Option<bool> {
         let after = self.pay()?.push()?;
-        Some(after.door == Door::Open)
+        Some(after.is_open())
     }
 
     #[witness("Push before paying: the gate opens")]

@@ -70,12 +70,22 @@ impl Shop {
         let after = self.deliver(1)?;
         Some(after.stock == 3)
     }
+
+    #[witness("Closing twice leaves the shop closed")]
+    fn closed_twice(&self) -> bool {
+        let after = self.close().close();
+        !after.open
+    }
 }
 
 #[test]
 fn a_witness_method_plays_its_steps_and_gives_none_where_one_can_not_happen() {
     let start = Shop::starts().remove(0);
     assert_eq!(start.two_boxes(), Some(true), "the steps can be taken");
+    assert!(
+        start.closed_twice(),
+        "a witness no step of which can fail gives a `bool`"
+    );
     assert_eq!(
         start.witnesses(),
         [
@@ -90,6 +100,12 @@ fn a_witness_method_plays_its_steps_and_gives_none_where_one_can_not_happen() {
                 says: "A full shop takes no delivery",
                 setup: Some("full"),
                 played: Some(false),
+            },
+            Witnessed {
+                id: "closed_twice",
+                says: "Closing twice leaves the shop closed",
+                setup: None,
+                played: Some(true),
             },
         ],
         "from the model's start, a delivery of one is no full shop"

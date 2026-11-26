@@ -235,13 +235,12 @@ fn eventually_of(method: &ImplItemFn, role: &Role) -> TokenStream {
     }
 }
 
-fn witness_of(method: &mut ImplItemFn, role: &Role) -> TokenStream {
-    let played = &method.block;
-    method.block = syn::parse_quote! {
-        {
-            ::core::convert::identity(#played)
-        }
-    };
+fn gives_bool(signature: &syn::Signature) -> bool {
+    matches!(&signature.output, syn::ReturnType::Type(_, ty)
+        if matches!(ty.as_ref(), syn::Type::Path(path) if path.qself.is_none() && path.path.is_ident("bool")))
+}
+
+fn witness_of(method: &ImplItemFn, role: &Role) -> TokenStream {
     let name = &method.sig.ident;
     let id = name.unraw().to_string();
     let sentence = &role.sentence;
@@ -257,12 +256,17 @@ fn witness_of(method: &mut ImplItemFn, role: &Role) -> TokenStream {
             }
         },
     );
+    let played = if gives_bool(&method.sig) {
+        quote! { ::core::option::Option::Some(Self::#name(self)) }
+    } else {
+        quote! { Self::#name(self) }
+    };
     quote! {
         ::earnest::model::Witnessed {
             id: #id,
             says: #sentence,
             setup: #setup,
-            played: Self::#name(self),
+            played: #played,
         }
     }
 }
@@ -531,6 +535,11 @@ mod tests {
                         let after = self.pay()?;
                         Some(after.opens())
                     }
+
+                    #[witness("The gate starts open")]
+                    fn opened(&self) -> bool {
+                        self.opens()
+                    }
                 }
             },
         )
@@ -542,6 +551,7 @@ mod tests {
             "# [setup",
             "# [witness",
             "fair",
+            "identity",
         ] {
             assert!(!expanded.contains(gone), "{gone} in {expanded}");
         }
@@ -560,12 +570,12 @@ mod tests {
             quote! { played: Self::pays(self), },
             quote! {
                 fn pays(&self) -> Option<bool> {
-                    ::core::convert::identity({
-                        let after = self.pay()?;
-                        Some(after.opens())
-                    })
+                    let after = self.pay()?;
+                    Some(after.opens())
                 }
             },
+            quote! { fn opened(&self) -> bool { self.opens() } },
+            quote! { played: ::core::option::Option::Some(Self::opened(self)), },
         ];
         for piece in wanted {
             let text = piece.to_string();

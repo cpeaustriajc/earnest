@@ -81,11 +81,11 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 /// `#[action("sentence", fair)]` says the action is never put off forever.
 /// `#[eventually("sentence")]` and `#[eventually("sentence", after = helper)]` go on a method
 /// that takes `&self` and returns `bool`, `#[witness("sentence")]` and
-/// `#[witness("sentence", setup = name)]` on one that returns `Option<bool>`, and
-/// `#[setup("sentence")]` on one that returns `Self`; `Behavior::eventually`, `witnesses` and
-/// `setups` call them, and the helper and the setup they name. A witness's body is passed
-/// through `core::convert::identity`, so a witness with no step that can fail draws no
-/// `clippy::unnecessary_wraps`.
+/// `#[witness("sentence", setup = name)]` on one that returns `Option<bool>` when a step is
+/// followed by `?` and `bool` when none is, and `#[setup("sentence")]` on one that returns
+/// `Self`; `Behavior::eventually`, `witnesses` and `setups` call them, and the helper and the
+/// setup they name. `Witnessed::played` is `Some` of the result of a witness that returns
+/// `bool`.
 /// A method without one of the six attributes is a helper: it is left as it is, takes its
 /// parameters as plain Rust, and needs no `#[range]`, which Rust would not accept there.
 #[proc_macro_attribute]

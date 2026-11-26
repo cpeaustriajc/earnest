@@ -175,19 +175,29 @@ impl Gate {
 | `#[action("...", fair)]` | A run never puts the action off forever while it stays possible |
 | `#[eventually("...")]` on `fn(&self) -> bool` | Every run from every start state comes to a state where the method is true |
 | `#[eventually("...", after = name)]` | The same, from every reachable state where the helper method `name` is true |
-| `#[witness("...")]` on `fn(&self) -> Option<bool>` | From every start state, each step can happen in turn and the condition is true after the last |
+| `#[witness("...")]` on `fn(&self) -> Option<bool>`, or `fn(&self) -> bool` when no step can fail | From every start state, each step can happen in turn and the condition is true after the last |
 | `#[witness("...", setup = name)]` | The same, played from the start states of the setup `name` |
 | `#[setup("...")]` on `fn(&self) -> Self` | The model is checked once more with the fields written starting there, as `Model (name)` |
 
 Ids are the method names. A run never stops while an action can still change the state.
 
 - **`after`:** names a helper method of the same block that takes only `&self` and returns `bool`. A name that is no method (`E0599`), an action, a rule, an end, another rule about runs, a witness, a setup, or a helper with parameters or another result is refused.
-- **Witness body:** either `Some(condition)` on `self`, or `let name = chain;` followed by `Some(condition)` on `name`. The chain starts at `self` and calls the model's actions in order: write `?` after an action that returns `Option<Self>` and nothing after one that returns `Self`. An action with inputs takes constant values in parameter order: `self.drift(1)?`. Anything else is refused, including a missing `?` (`E0599`), a `?` after an action that returns `Self` (`E0277`), a wrong number of inputs (`E0061`), and a condition that is not a `bool` (`E0308`).
-- **Witness result:** called on a start state (of its setup, when it names one), the method gives `Some(true)` exactly where `earnest verify` says the witness holds, and `None` where a step can't happen. The one difference: a step that takes a field outside its declared values breaks the witness for the checker, where the method can still give `Some(true)`.
+- **Witness body:** either a condition on `self`, or `let name = chain;` followed by a condition on `name`. The chain starts at `self` and calls the model's actions in order: write `?` after an action that returns `Option<Self>` and nothing after one that returns `Self`. An action with inputs takes constant values in parameter order: `self.drift(1)?`. The condition may call a helper method on `name` as on `self` (`after.is_open()`).
+- **Witness result:** with a `?` in the chain, the method returns `Option<bool>` and the condition is written `Some(condition)`. Without one (no steps, or only actions that return `Self`), it returns `bool` and the condition is written alone:
+
+  ```rust
+  #[witness("The water starts cold")]
+  fn starts_cold(&self) -> bool {
+      self.phase == Phase::Cold
+  }
+  ```
+
+  `Option<bool>` without a `?` is refused, as `clippy::unnecessary_wraps` flags it. Also refused: a `?` in a witness that returns `bool` (`E0277`), a missing `?` (`E0599`), a `?` after an action that returns `Self` (`E0277`), a wrong number of inputs (`E0061`), a condition that is not a `bool` (`E0308`), and any other body.
+- **Playing it in a test:** called on a start state (of its setup, when it names one), the method gives `Some(true)` (or `true`) exactly where `earnest verify` says the witness holds, and `None` where a step can't happen. The one difference: a step that takes a field outside its declared values breaks the witness for the checker, where the method can still give `Some(true)`.
 - **Setup body:** exactly `Self { field: value, ..self.clone() }` with at least one field, where every value is a constant. A value that reads `self`, a missing `..self.clone()`, or a statement before the struct is refused. A value outside the field's declared values is refused when the model is checked.
 - **Options:** each attribute takes only its own option, once. `#[rule("...", fair)]` and `#[witness("...", after = name)]` are refused by the reader and by `#[model]`.
 
-`#[model]` removes the attributes and leaves each method callable as written. It also implements `state.eventually()`, `state.witnesses()`, and `state.setups()` from `earnest::model::Behavior`, which give `Eventually`, `Witnessed`, and `Setup` values, so a test can read every method's result in one state. Those calls make `rustc` refuse an `after` or a `setup` that names no method, and keep the methods from being dead code. A witness method passes `clippy::unnecessary_wraps` even when no step can fail.
+`#[model]` removes the attributes and leaves each method callable as written. It also implements `state.eventually()`, `state.witnesses()`, and `state.setups()` from `earnest::model::Behavior`, which give `Eventually`, `Witnessed`, and `Setup` values, so a test can read every method's result in one state. Those calls make `rustc` refuse an `after` or a `setup` that names no method, and keep the methods from being dead code. `Witnessed::played` is an `Option<bool>` for every witness: `Some` of the result for one that returns `bool`.
 
 ## Statechart views (`#[view]`)
 
@@ -444,7 +454,7 @@ The Rust reader accepts the idioms that `cargo clippy -- -D warnings` and pedant
 
 - Avoid `fn_params_excessive_bools` and `struct_excessive_bools` with two-variant enums (`enum Toggle { On, Off }`) or `Domain` structs.
 - Avoid `too_many_arguments` by passing a `#[derive(Domain)]` record (`fn order(&self, line: &Line)`).
-- Return `Self` instead of `Option<Self>` for unguarded actions (`unnecessary_wraps`). A witness keeps `Option<bool>`: `#[model]` keeps it clear of the lint.
+- Return `Self` instead of `Option<Self>` for unguarded actions (`unnecessary_wraps`). Likewise a witness returns `bool` when no step of it is followed by `?`.
 - Use `u8::from(flag)` and `u16::from(x)` (`bool_to_int_with_if`, `cast_lossless`).
 - Use `let x = value?;` instead of `let Some(x) = value else { return None; };` (`question_mark`).
 - Combine identical `match` arms with `A | B` and name single remaining variants instead of `_` (`match_same_arms`, `match_wildcard_for_single_variants`, `unnested_or_patterns`).

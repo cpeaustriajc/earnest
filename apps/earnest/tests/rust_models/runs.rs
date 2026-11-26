@@ -3,17 +3,21 @@ use std::fmt::Write as _;
 use crate::crates::{Crate, fixtures};
 use crate::support::{Sandbox, source};
 
-const MODELS: [(&str, &str); 3] = [("clock", "Clock"), ("gate", "Gate"), ("kettle", "Kettle")];
+const MODELS: [(&str, &str, &str); 3] = [
+    ("setups", "clock", "Clock"),
+    ("runs", "gate", "Gate"),
+    ("runs", "kettle", "Kettle"),
+];
 
 struct Checked {
     witnesses: Vec<(Option<String>, String, bool)>,
     eventually: Vec<String>,
 }
 
-fn checked(module: &str) -> Checked {
+fn checked(folder: &str, module: &str) -> Checked {
     let sandbox = Sandbox::new();
     let file = format!("{module}.rs");
-    sandbox.write(&file, &source(&format!("runs/{file}")));
+    sandbox.write(&file, &source(&format!("{folder}/{file}")));
     let run = sandbox.earnest(&["verify", &file, "--json", "--no-cache"]);
     let report = run.json();
     let models = report["models"]
@@ -76,7 +80,9 @@ fn played_test(model: &str, wanted: &Checked) -> String {
 
 #[test]
 fn the_rust_models_with_runs_build_pass_clippy_under_the_repository_lints_and_are_rustfmt_clean() {
-    let runs = Crate::make("runs-check", &fixtures("runs"), None);
+    let mut files = fixtures("runs");
+    files.extend(fixtures("setups"));
+    let runs = Crate::make("runs-check", &files, None);
     if let Err(output) = runs.builds() {
         panic!("the models with runs do not build\n{output}");
     }
@@ -101,13 +107,13 @@ fn the_rust_models_with_runs_build_pass_clippy_under_the_repository_lints_and_ar
 #[test]
 fn a_witness_method_gives_some_true_from_every_start_exactly_where_the_checker_says_it_holds() {
     let mut modules = Vec::new();
-    for (module, model) in MODELS {
-        let wanted = checked(module);
+    for (folder, module, model) in MODELS {
+        let wanted = checked(folder, module);
         assert!(
             !wanted.witnesses.is_empty(),
             "{module} has witnesses to compare"
         );
-        let text = source(&format!("runs/{module}.rs"));
+        let text = source(&format!("{folder}/{module}.rs"));
         modules.push((
             module.to_owned(),
             format!("{text}{}", played_test(model, &wanted)),
@@ -117,7 +123,7 @@ fn a_witness_method_gives_some_true_from_every_start_exactly_where_the_checker_s
     let output = playing
         .test_output()
         .unwrap_or_else(|output| panic!("what rustc plays differs from the checker\n{output}"));
-    for (module, _) in MODELS {
+    for (_, module, _) in MODELS {
         let name = format!("{module}::played::rustc_plays_each_witness_as_the_checker_does");
         assert!(output.contains(&name), "{module} was played\n{output}");
     }

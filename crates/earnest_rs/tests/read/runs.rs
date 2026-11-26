@@ -6,7 +6,7 @@ use earnest_semantic::lower;
 
 const GATE: &str = include_str!("../../../../tasks/conformance/runs/gate.rs");
 const KETTLE: &str = include_str!("../../../../tasks/conformance/runs/kettle.rs");
-const CLOCK: &str = include_str!("../../../../tasks/conformance/runs/clock.rs");
+const CLOCK: &str = include_str!("../../../../tasks/conformance/setups/clock.rs");
 
 fn with(source: &str, from: &str, to: &str) -> String {
     assert!(source.contains(from), "{from} is in the model");
@@ -121,7 +121,7 @@ fn a_witness_is_a_chain_of_actions_from_self_and_a_condition_on_the_name_bound()
     assert_eq!(witness.setup, None, "the model's own start states");
     let kettle = only_draft("kettle.rs", KETTLE);
     let bare = &kettle.runs.witnesses[0];
-    assert_eq!(bare.steps, [], "`Some(condition)` alone has no steps");
+    assert_eq!(bare.steps, [], "a condition alone has no steps");
     assert_eq!(bare.state_name.as_deref(), Some("self"), "on `self`");
 }
 
@@ -327,8 +327,115 @@ fn a_witness_body_that_is_not_a_chain_and_a_condition_is_refused() {
             "fn drifts_ahead(&self) -> Option<bool> {",
             "fn drifts_ahead(&self) -> bool {",
         ),
+        "?",
+        "E0277",
+    );
+    refused_once(
+        &with(
+            CLOCK,
+            "fn drifts_ahead(&self) -> Option<bool> {",
+            "fn drifts_ahead(&self) -> u8 {",
+        ),
         "fn drifts_ahead",
-        "returns `Option<bool>`",
+        "returns `bool`, or `Option<bool>`",
+    );
+}
+
+#[test]
+fn a_witness_no_step_of_which_can_fail_returns_bool() {
+    let wrapped = with(
+        KETTLE,
+        "    fn starts_cold(&self) -> bool {\n        self.phase == Phase::Cold\n    }",
+        "    fn starts_cold(&self) -> Option<bool> {\n        Some(self.phase == Phase::Cold)\n    }",
+    );
+    refused_once(&wrapped, "fn starts_cold", "return `bool`");
+    let bare_some = with(
+        KETTLE,
+        "        self.phase == Phase::Cold\n    }\n\n    #[witness(\"One heat",
+        "        Some(self.phase == Phase::Cold)\n    }\n\n    #[witness(\"One heat",
+    );
+    refused_once(&bare_some, "Some(self.phase == Phase::Cold)", "E0308");
+    let tick = with(
+        KETTLE,
+        "    #[end(",
+        "    #[action(\"the clock ticks\")]\n    fn tick(&self) -> Self {\n        Self { phase: self.phase }\n    }\n\n    #[end(",
+    );
+    let twice = with(
+        &tick,
+        "    fn starts_cold(&self) -> bool {\n        self.phase == Phase::Cold\n    }",
+        "    fn starts_cold(&self) -> bool {\n        let after = self.tick().tick();\n        after.phase == Phase::Cold\n    }",
+    );
+    let draft = only_draft("kettle.rs", &twice);
+    let witness = &draft.runs.witnesses[0];
+    let steps: Vec<&str> = witness
+        .steps
+        .iter()
+        .map(|step| step.action.as_str())
+        .collect();
+    assert_eq!(
+        steps,
+        ["tick", "tick"],
+        "a chain of actions that give back `Self`"
+    );
+    assert_eq!(
+        witness.state_name.as_deref(),
+        Some("after"),
+        "the bound name"
+    );
+    let wrapped_chain = with(
+        &twice,
+        "    fn starts_cold(&self) -> bool {\n        let after = self.tick().tick();\n        after.phase == Phase::Cold",
+        "    fn starts_cold(&self) -> Option<bool> {\n        let after = self.tick().tick();\n        Some(after.phase == Phase::Cold)",
+    );
+    refused_once(&wrapped_chain, "fn starts_cold", "return `bool`");
+}
+
+#[test]
+fn a_helper_method_called_on_the_bound_state_is_read_as_on_self() {
+    let draft = only_draft("gate.rs", GATE);
+    let expect = &draft.runs.witnesses[0].expect;
+    assert!(
+        matches!(&expect.kind, TermKind::Helper { kind: HelperKind::Method, name, arguments }
+            if name == "is_open"
+                && matches!(arguments.as_slice(), [Term { kind: TermKind::Name(state), .. }] if state == "after")),
+        "`after.is_open()` calls the helper on the bound state: {:?}",
+        expect.kind
+    );
+    let paid = with(
+        GATE,
+        "Some(after.is_open())",
+        "Some(after.paid_up() && after.is_open())",
+    );
+    assert_eq!(
+        verdicts(&paid)[3],
+        (
+            "pay_then_push".to_owned(),
+            RuleKind::Witness,
+            Verdict::Holds
+        ),
+        "the helpers read the state after the steps"
+    );
+    let unpaid = with(GATE, "Some(after.is_open())", "Some(!after.paid_up())");
+    assert_eq!(
+        verdicts(&unpaid)[3],
+        (
+            "pay_then_push".to_owned(),
+            RuleKind::Witness,
+            Verdict::Broken
+        ),
+        "the state after paying is paid"
+    );
+    refused_once(
+        &with(GATE, "Some(after.is_open())", "Some(after.opens())"),
+        "after.opens()",
+        "no helper method with this name",
+    );
+    let found = refused(&with(GATE, "Some(after.is_open())", "Some(after.nobody())"));
+    assert!(
+        found
+            .iter()
+            .any(|(_, message)| message.contains("no helper method with this name")),
+        "{found:?}"
     );
 }
 
