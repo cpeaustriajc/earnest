@@ -16,6 +16,7 @@ mod quint_checks;
 mod quint_data;
 mod quint_first;
 mod quint_picks;
+mod quint_problems;
 mod quint_reads;
 mod quint_runs;
 mod quint_setups;
