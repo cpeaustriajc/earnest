@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 12] = [
+const SETS: [&str; 16] = [
     "samename",
     "exported",
     "nospace",
@@ -68,6 +68,10 @@ const SETS: [&str; 12] = [
     "onename",
     "importedtests",
     "importedrun",
+    "specassume",
+    "spechelper",
+    "twosetups",
+    "commasentence",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -350,6 +354,63 @@ fn a_run_marked_in_an_imported_module_is_judged_or_said_how_to_judge_it() {
             "{file} {feature}: `Plain` names no run, `skips` is marked `@check broken` on its \
              own line in `Counter`, and the message says neither why it can't be played nor \
              what to write: {message}"
+        );
+    }
+}
+
+fn played_and_broken(report: &Value, main: &str, run: &str) {
+    let found = model(report, main);
+    assert_eq!(
+        found["status"], "fail",
+        "`quint test --main {main} --backend typescript` fails `{run}`: {found}"
+    );
+    assert!(
+        verdicts(found)
+            .iter()
+            .any(|(id, verdict)| id.ends_with(run) && verdict == "broken"),
+        "{found}"
+    );
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_holds_an_assumption_is_played_in_the_check_that_imports_it() {
+    let report = Quint::new().report("specassume");
+    played_and_broken(&report, "Setup", "upTest");
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_imports_a_helper_under_a_name_is_played_in_the_check_that_imports_it()
+ {
+    let report = Quint::new().report("spechelper");
+    played_and_broken(&report, "Setup", "upTest");
+}
+
+#[test]
+fn a_check_that_imports_a_spec_whole_is_judged_when_another_check_of_the_file_imports_it_under_a_name()
+ {
+    let report = Quint::new().report("twosetups");
+    let whole = find_model(&report, "Whole").unwrap_or_else(|| {
+        panic!(
+            "`Whole` is `import Spec.*` beside `Named`'s `import Spec as S`, no module exports \
+             anything, and the message blames an export; earnest builds `Whole` once `Spec` has \
+             a run ending in `Test`: {report}"
+        )
+    });
+    assert!(
+        verdicts(whole).contains(&("small".to_owned(), "broken".to_owned())),
+        "{whole}"
+    );
+}
+
+#[test]
+fn a_name_list_whose_comma_is_followed_by_a_sentence_is_not_called_an_unknown_mark() {
+    let report = Quint::new().report("commasentence");
+    for (file, feature, message) in unreadable(&report) {
+        assert!(
+            !message.contains("not a mark the checker knows"),
+            "{file} {feature}: `/// @check broken small,` then `/// which the third step \
+             breaks.` uses a known word; the message sends the author to the three words and \
+             not to the trailing comma: {message}"
         );
     }
 }
