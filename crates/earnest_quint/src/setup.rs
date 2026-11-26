@@ -183,7 +183,7 @@ struct Filler<'t> {
 fn plain_import<'t>(
     typechecked: &'t Typechecked,
     declaration: &Value,
-    runs_only: bool,
+    kept: &[&str],
 ) -> Fill<Vec<&'t Value>> {
     let whole = matches!(
         (
@@ -199,9 +199,8 @@ fn plain_import<'t>(
     let mut definitions = Vec::new();
     for each in list(module, "declarations") {
         match text(each, "kind")? {
-            "def" => definitions.push(each),
-            "var" if runs_only => definitions.push(each),
             "typedef" => {}
+            kind if kept.contains(&kind) => definitions.push(each),
             _ => return None,
         }
     }
@@ -281,7 +280,8 @@ impl<'t> Filler<'t> {
                             return None;
                         }
                     }
-                    let definitions = plain_import(typechecked, declaration, runs_only)?;
+                    let kept: &[&str] = if runs_only { &["def", "var"] } else { &["def"] };
+                    let definitions = plain_import(typechecked, declaration, kept)?;
                     match text(declaration, "qualifiedName") {
                         None => {
                             for definition in definitions {
