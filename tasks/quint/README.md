@@ -3885,3 +3885,25 @@ some of the variables.
   `fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action`.
 - `quint_actions::fairness_over_a_named_tuple_and_not_at_the_top_of_a_property_are_judged_as_tlc_judges_them`:
   `halflisted` holds where it was refused.
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `6cd635b`:
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
+  warnings. `just lint-library`: no warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2094 passed, 0
+  failed.
+- `cargo test -p earnest_break_it --features tlc --test tlc` (`tla2tools.jar` 1.8 at
+  `target/tools`): 13 passed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every row `met` (largest change `+0.39%`, `mixed/shelf`).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.798 s, 1 worker 2.331 s).
+- `just same-answers 6cd635b`: every sweep and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
+  `cart_broken.model.ts` and `clock.model.ts` only, which also differ on the integration head.
+- `tests_kept.py --base origin/main`: `tests kept: 1661 tests, 4813 assertions (base: 1304,
+  3798)`.
+- `earnest confirm --tlc target/tools/tla2tools.jar`: `same` for `FairnessVal`,
+  `FairnessInAnd`, `fairshapes`, `buyers`, `fairtuple` and `halflisted`.
