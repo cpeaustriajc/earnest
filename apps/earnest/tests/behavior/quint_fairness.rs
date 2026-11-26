@@ -178,3 +178,22 @@ fn the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tu
         "the fairness is over the tuple the file wrote\n{module}"
     );
 }
+
+#[test]
+fn the_owners_fairness_per_buyer_of_an_action_given_the_buyer_holds_and_one_buyer_alone_does_not() {
+    let sandbox = with_compiled(&["fairargs"]);
+    let run = verify(&sandbox, "fairargs", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    assert_eq!(model(&report, "FairArgs")["states"], 4, "{run}");
+    assert_eq!(
+        verdicts(&report, "FairArgs"),
+        pairs(&[
+            ("EveryBuyerFinishes", "holds"),
+            ("EveryBuyerFinishes#2", "holds"),
+            ("OnlyBuyerOne", "holds"),
+            ("OnlyBuyerOne#2", "broken"),
+        ]),
+        "TLC: EveryBuyerFinishes holds; fair to `finish(1)` alone, buyer 2 may never finish\n{run}"
+    );
+}

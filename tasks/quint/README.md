@@ -3851,6 +3851,8 @@ some of the variables.
 | | `unfairAllReach`, `noisy`, `bobReaches`, `overPeer` | violated | broken | same |
 | | `annReaches`, `parts` (2), `stepOverSome` | ok | holds | same |
 | | `allForms` (2): an `and`, `forall` per buyer, `reachDeadline(buyer)`, over `{ c: controls, peers: (lastBuyer, Set(previousPeer)) }` | ok | holds, holds | same |
+| FairArgs (4), the owner's sample | `EveryBuyerFinishes` (2 parts, all under every buyer's fairness) | ok | holds, holds | same |
+| | `OnlyBuyerOne` (fair to `finish(1)` only) | violated; buyer 2's part alone violated | holds, broken | same |
 | fairtuple (4) | `halfListed` (was refused) | ok | holds | same |
 | properties (6) | `some`, `given` (were refused) | ok | holds | not run (the file keeps refused properties) |
 
