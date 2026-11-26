@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: pin a nightly build
+
+Each nightly is now also published as `v0.1.0-nightly.YYYYMMDD`, a release that is never replaced. `install.sh` and `install.ps1` install it when `EARNEST_VERSION` names the tag, after checking its SHA-256. `earnest --version` of a nightly prints the commit it was built from. Dated nightlies older than 90 days are removed. See [Install](/start/install/#pin-a-build).
+
 ## November 2026: check an XState machine from a test
 
 The new `@earnestjs/xstate` package runs Earnest's search on a machine written with [XState](https://stately.ai/docs) v5. `model.getPaths(earnestPaths)` replaces `getShortestPaths()` in a test built on `createTestModel` from `@xstate/graph`. `checkMachine(machine, { events, rules })` gives the state count, `pass`, `fail` or `unfinished`, each rule's verdict with the shortest path of events, and the first stuck state. Declarations written with `m` bound the context and list each event's payloads. The machine needs no change. The [XState page](/integrations/xstate/) has the examples and the limits.

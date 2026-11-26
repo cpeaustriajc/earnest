@@ -2,7 +2,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 function Install-Earnest {
-    $downloadUrl = if ($env:EARNEST_DOWNLOAD_URL) { $env:EARNEST_DOWNLOAD_URL } else { 'https://github.com/cpeaustriajc/earnest/releases/download/v0.1.0-nightly' }
+    $defaultReleasesUrl = 'https://github.com/cpeaustriajc/earnest/releases/download'
+    $defaultVersion = 'v0.1.0-nightly'
+    $releasesUrl = if ($env:EARNEST_DOWNLOAD_URL) { $env:EARNEST_DOWNLOAD_URL } else { $defaultReleasesUrl }
+    $version = if ($env:EARNEST_VERSION) { $env:EARNEST_VERSION } else { $defaultVersion }
+    $downloadUrl = "$releasesUrl/$version"
     $installDir = if ($env:EARNEST_INSTALL_DIR) { $env:EARNEST_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\earnest' }
 
     $cpu = $env:PROCESSOR_ARCHITECTURE

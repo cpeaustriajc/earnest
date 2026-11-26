@@ -1,5 +1,6 @@
 //! Gives the binary its engine version: the package version and a fingerprint of the checker's
-//! sources, so a cached result is never served by a build whose code differs.
+//! sources, so a cached result is never served by a build whose code differs. It also names the
+//! commit in `earnest --version` when `EARNEST_BUILD_COMMIT` is set for the build.
 
 #[path = "src/sources.rs"]
 mod sources;
@@ -24,5 +25,14 @@ fn main() -> io::Result<()> {
         writeln!(cargo, "cargo::rerun-if-changed={}", root.display())?;
     }
     writeln!(cargo, "cargo::rerun-if-changed=build.rs")?;
+    writeln!(cargo, "cargo::rerun-if-env-changed=EARNEST_BUILD_COMMIT")?;
+    let commit_suffix = match env::var("EARNEST_BUILD_COMMIT") {
+        Ok(commit) if !commit.trim().is_empty() => format!(" (commit {})", commit.trim()),
+        _ => String::new(),
+    };
+    writeln!(
+        cargo,
+        "cargo::rustc-env=EARNEST_COMMIT_SUFFIX={commit_suffix}"
+    )?;
     writeln!(cargo, "cargo::rustc-env=EARNEST_ENGINE={engine}")
 }

@@ -29,6 +29,7 @@ jobs:
     outputs:
       build: ${{ steps.decide.outputs.build }}
       tag: ${{ steps.tag.outputs.tag }}
+      dated_tag: ${{ steps.decide.outputs.dated_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,8 +46,8 @@ jobs:
           [ -n "$version" ] || { echo "no workspace version in Cargo.toml"; exit 1; }
           tag="v$version-nightly"
           for script in install.sh install.ps1; do
-            grep -qF "releases/download/$tag" "$script" ||
-              { echo "$script does not download from the $tag release"; exit 1; }
+            grep -qE "[\"']${tag}[\"']" "$script" ||
+              { echo "$script does not default to the $tag release"; exit 1; }
           done
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - id: decide
@@ -55,7 +56,17 @@ jobs:
           EVENT: ${{ github.event_name }}
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
+          dated_tag="$RELEASE_TAG.$(date -u +%Y%m%d)"
           build=true
+          if [ "$EVENT" != pull_request ] &&
+            dated=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$dated_tag" --jq .object.sha 2>/dev/null); then
+            if [ "$dated" != "$GITHUB_SHA" ]; then
+              echo "The $dated_tag release holds $dated, not $GITHUB_SHA, and a dated release is never replaced."
+              exit 1
+            fi
+            echo "The $dated_tag release already holds $GITHUB_SHA."
+            build=false
+          fi
           if [ "$EVENT" = schedule ] &&
             published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null) &&
             [ "$published" = "$GITHUB_SHA" ]; then
@@ -63,6 +74,7 @@ jobs:
             build=false
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "dated_tag=$dated_tag" >> "$GITHUB_OUTPUT"
 
   build:
     needs: decide
@@ -110,6 +122,7 @@ jobs:
       TARGET: ${{ matrix.target }}
       BINARY: ${{ matrix.binary }}
       ARCHIVE: ${{ matrix.archive }}
+      EARNEST_BUILD_COMMIT: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,10 +158,14 @@ jobs:
       - name: Install from the archive with install.sh
         if: matrix.runs_here && runner.os != 'Windows'
         env:
-          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/dist
+          EARNEST_DOWNLOAD_URL: file://${{ github.workspace }}/releases
+          EARNEST_VERSION: ${{ needs.decide.outputs.dated_tag }}
           EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
         run: |
+          mkdir -p "releases/$EARNEST_VERSION"
+          cp dist/* "releases/$EARNEST_VERSION/"
           sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" --version | grep -F "(commit $GITHUB_SHA)"
           "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
       - uses: actions/upload-artifact@v4
         with:
@@ -173,12 +190,24 @@ jobs:
         working-directory: dist
         run: sha256sum --check ./*.sha256
       - name: Write the release notes
+        env:
+          RELEASE_TAG: ${{ needs.decide.outputs.tag }}
+          DATED_TAG: ${{ needs.decide.outputs.dated_tag }}
         run: |
           {
             echo "The tip of \`main\` at commit $GITHUB_SHA ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA), built on $(date -u +%Y-%m-%d)."
+            echo
+            echo "\`earnest --version\` of these archives prints that commit."
+          } > common.md
+          {
+            cat common.md
             cat <<'NOTES'
 
-          This is not a release: it is replaced every night that `main` has moved, and it has had no more checking than `main` itself.
+          This is not a release: it is replaced every night that `main` has moved, and it has had no more checking than `main` itself. To pin a build, use the dated release of the same night: its tag ends in `-nightly.` and the date.
+          NOTES
+            echo
+            echo "That is \`$DATED_TAG\`."
+            cat <<'NOTES'
 
           Each archive holds one binary, `earnest` (`earnest.exe` on Windows), and has a `.sha256` file beside it. To check a download, keep both in one folder and run:
 
@@ -190,6 +219,36 @@ jobs:
           On Windows, compare `(Get-FileHash earnest-win32-x64-msvc.zip).Hash` in PowerShell with the first word of `earnest-win32-x64-msvc.zip.sha256`; case does not matter.
           NOTES
           } > notes.md
+          {
+            cat common.md
+            cat <<'NOTES'
+
+          This release is never replaced, so its tag names one build. The workflow removes it 90 days after its date. It is not a release and has had no more checking than `main` itself.
+
+          Install it with `EARNEST_VERSION` set to this tag, for `install.sh` or `install.ps1`.
+
+          Each archive holds one binary, `earnest` (`earnest.exe` on Windows), and has a `.sha256` file beside it. To check a download, keep both in one folder and run:
+
+          ```sh
+          sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256      # Linux
+          shasum -a 256 --check earnest-darwin-arm64.tar.gz.sha256   # macOS
+          ```
+
+          On Windows, compare `(Get-FileHash earnest-win32-x64-msvc.zip).Hash` in PowerShell with the first word of `earnest-win32-x64-msvc.zip.sha256`; case does not matter.
+          NOTES
+          } > dated-notes.md
+      - name: Publish the dated release, which is never replaced
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DATED_TAG: ${{ needs.decide.outputs.dated_tag }}
+        run: |
+          gh release create "$DATED_TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false \
+            --title "$DATED_TAG: nightly build of main" \
+            --notes-file dated-notes.md
       - name: Replace the nightly release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -207,10 +266,23 @@ jobs:
             --prerelease \
             --title "$RELEASE_TAG: nightly build of main" \
             --notes-file notes.md
-
+      - name: Remove dated nightlies older than 90 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DAYS_KEPT: "90"
+        run: |
+          oldest_kept=$(date -u -d "$DAYS_KEPT days ago" +%Y%m%d)
+          gh release list --limit 1000 --json tagName --jq '.[].tagName' |
+            grep -E -- '-nightly\.[0-9]{8}$' |
+            while read -r tag; do
+              if [ "${tag##*.}" -lt "$oldest_kept" ]; then
+                gh release delete "$tag" --cleanup-tag --yes
+              fi
+            done
 
   installed:
-    needs: publish
+    needs: [decide, publish]
     strategy:
       fail-fast: false
       matrix:
@@ -224,16 +296,20 @@ jobs:
       - name: Install the published nightly with install.sh
         if: runner.os != 'Windows'
         env:
+          EARNEST_VERSION: ${{ needs.decide.outputs.dated_tag }}
           EARNEST_INSTALL_DIR: ${{ runner.temp }}/installed
         run: |
           sh install.sh
+          "$EARNEST_INSTALL_DIR/earnest" --version | grep -F "(commit $GITHUB_SHA)"
           "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
       - name: Install the published nightly with install.ps1
         if: runner.os == 'Windows'
         shell: pwsh
         env:
+          EARNEST_VERSION: ${{ needs.decide.outputs.dated_tag }}
           EARNEST_INSTALL_DIR: ${{ runner.temp }}\installed
         run: |
           ./install.ps1
+          if (-not ((& "$env:EARNEST_INSTALL_DIR\earnest.exe" --version) -like "*(commit $env:GITHUB_SHA)*")) { throw "version does not name the commit" }
           & "$env:EARNEST_INSTALL_DIR\earnest.exe" verify --no-cache $env:SMOKE_MODEL
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
