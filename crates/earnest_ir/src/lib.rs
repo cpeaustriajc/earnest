@@ -355,7 +355,8 @@ pub struct End {
 /// One rule about whole runs: a state every run reaches.
 ///
 /// A run never stops while an action can still change the state, and it does not put off
-/// forever an action listed in [`Runs::fair`] that stays possible. Every such run from a state
+/// forever an action listed in [`Runs::fair`] that stays possible, unless `fair` gives the
+/// rule's own [`Fairness`]. Every such run from a state
 /// the rule starts from must come to a state where `reaches` is true, which may be that state.
 #[derive(Clone, Debug)]
 pub struct Eventually {
@@ -372,6 +373,23 @@ pub struct Eventually {
     pub reaches: Code,
     /// How many local slots `after` and `reaches` need.
     pub slots: usize,
+    /// The runs this rule is judged over, when the rule says so itself. `None` is the model's:
+    /// a run never stops while an action can change the state, and [`Runs::fair`] is fair.
+    pub fair: Option<Fairness>,
+}
+
+/// Which runs a rule about runs is judged over, when the rule says so itself.
+///
+/// It is the TLA+ weak fairness of each part: a part that can change the state from some point
+/// on forever does so infinitely often. A run that is fair to all of it may stay in one state
+/// forever when no fair part can change the state there.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Fairness {
+    /// Whether the whole step is fair: a run never stops while an action can change the state.
+    pub step: bool,
+    /// The fair parts of the step, each the positions in [`Model::actions`] of the actions it
+    /// is made of. A part is taken when any one of its actions is.
+    pub actions: Vec<Vec<usize>>,
 }
 
 /// One step of a [`Witness`].

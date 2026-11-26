@@ -1076,6 +1076,376 @@ table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/sr
   `0 differences`. The 64 are the 16 model files of the integration branch that are not on
   `origin/main` (4 runs each: `tasks/conformance/runs/cart.model.ts`, `cart_broken`, `clock` and
   the rest of that folder's witness and setup models), which `origin/main` cannot read.
+
+## Slice 5: what is checked
+
+`earnest verify <file>.json` reads the temporal properties a module was compiled with
+(`quint compile --target json --main M --temporal p,q …`, issue #57) and checks each with the
+liveness pass of `earnest_check`; `earnest confirm --tlc` compares every verdict with TLC.
+
+Compiled with Quint 0.33.1:
+
+```sh
+cd tasks/quint/probe
+quint compile --target json --main fair2 --temporal hearFairOnly,tickFairOnly,bothFair,stepFairH fair2.qnt > fair2.json
+cd ../models
+quint compile --target json --main SmallBits --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > smallbits.json
+quint compile --target json --main LargeBits --invariant inv --temporal allHeard,timeAdvances,fairHear,leads clockbits.qnt > largebits.json
+quint compile --target json --main swing --temporal swingFair,outFair,stepFair,safe swing.qnt > swing.json
+```
+
+`models/clock.qnt` keeps `seen: Set[str]` and `Nodes: Set[str]`, which slice 1 does not read
+(sets and text are slice 2), so `models/clockbits.qnt` is the same `Clock` with each node one
+bit of an `int` (`Nodes` is 3 in `SmallBits` and 7 in `LargeBits`). TLC gives the two files the
+same counts and the same verdicts, below. `LargeBits` names the four properties of its instance
+`C` as its own, because `--temporal` takes names of the main module. `swing.qnt` is new: its
+broken runs are loops.
+
+### Fairness when the step is not fair
+
+TLA+ meaning, which TLC checks: `WF_vars(A)` is `<>[]ENABLED <A>_vars => []<><A>_vars`, where
+`<A>_vars` is an `A` step that changes `vars`. With `vars` every state variable, an `A` step that
+leaves the state as it is does not count, which is why the liveness pass drops such edges. A
+behaviour that stays in one state forever takes only stuttering steps.
+
+A rule is broken when some fair behaviour from a state where it starts never reaches what it
+wants. In a finite graph such a behaviour, from some point on, either
+
+1. **stays in one state `s` forever.** `WF_vars(A)` then holds exactly when `<A>_vars` is not
+   enabled at `s`: it is enabled forever otherwise, and never taken. `WF_vars(Next)` holds
+   exactly when `s` has no edge to another state. So `s` is a place to stay when no fair part
+   (and, if the step is fair, no action at all) can change the state there; or
+2. **moves forever inside one group** (strongly connected set of states that do not reach the
+   goal), visiting a set `S` of at least two states and taking a set of edges infinitely often.
+   `WF_vars(A)` then holds exactly when `A` is disabled at some state of `S` (it is then not
+   enabled from some point on forever) or an `A` edge inside `S` is taken infinitely often.
+   Taking `S` as the whole group is never worse: it adds states where `A` may be disabled and
+   edges that take `A`, and a tour of a strongly connected group can visit all its states and
+   take all its edges. Stuttering steps in between change nothing: `A` stays enabled across
+   them. `WF_vars(Next)` holds in this case too, so whole-step fairness adds nothing here.
+
+So a state is "doomed" (a run can stay there or around it forever) when case 1 holds for it or
+case 2 holds for its group, which is `doomed` in `eventually.rs` with one more check for case 1
+(`Hunt::stays`). Two remarks:
+
+- For a group of two states or more, case 1 at a state `s` implies case 2: every fair part is
+  disabled at `s`, which is in the group. So the groups `doomed` picks are the ones it picked
+  before, as the spike said; what is new is case 1 for states that have ways out, singletons and
+  states in groups alike. Where case 1 holds the run is reported as a stop, not as a loop.
+- With the whole step fair, case 1 is "no way out", which is the old test: earnest's own models
+  give the same verdicts, paths and sentences, and pay one match per state.
+
+A fair part is a set of actions: `weakFair(hear, vars)` is fair to every action the step unfolds
+from `hear` (`hear`, `hear#2`, …), as one disjunction, which is weaker than each alone. The model's
+`Runs::fair` stays one action per part.
+
+The new sentence for case 1 at a state with ways out is "the run may stop here, because no step
+it must take can change the state from here". A state with no way out keeps "nothing changes the
+state from here, so the run can stay in it forever".
+
+The TLA+ export: when a rule has its own fairness, `Spec` is `Init /\ [][Next]_vars` and each
+property is `(fairness) => (property)`, with the model's own fairness (`WF_vars(Next)` and each
+fair action) for a rule that has none. `earnest confirm --tlc` checks each property in its own
+run of TLC as before. A model whose rules have no fairness of their own is written byte for byte
+as before.
+
+### Each property: by hand, TLC, earnest
+
+By hand:
+
+- **fair2** (`t` 0 to 3, `h` either: 4 × 2 = **8** states). `tick` adds 1 to `t` below 3, `hear`
+  sets `h` once.
+  - `hearFairOnly`: after `hear`, only `tick` can change the state and it is not fair, so the run
+    may stop at `t = 0`: **broken**. (TLC's run ticks twice first, then hears and stutters; both
+    are fair to `hear`.)
+  - `tickFairOnly`: `tick` stays possible until `t = 3`, so it happens: **holds**.
+  - `bothFair` (`eventually(t == 3)` and `eventually(h)`): each fair action is possible until
+    taken: both **hold**.
+  - `stepFairH`: the whole step is fair, and every run ends at `t = 3, h`, the one state with no
+    way out: **holds**.
+- **SmallBits** (`time` 0 to 3, `seen` 0 to 3: **16** states) and **LargeBits** (`time` 0 to 8,
+  `seen` 0 to 7: **72**).
+  - `allHeard`: nothing is fair, so a run may stop in the start state, where `seen` is 0:
+    **broken**, with a path of no steps.
+  - `timeAdvances`, `leads`: the step is fair; `time` and `seen` only grow, so every run ends at
+    `time == MaxTime` and all heard: **hold**.
+  - `fairHear`: `tick` is possible until `MaxTime`, `hear` until all are heard, so both happen,
+    and the run then stays at `seen == Nodes`: **holds**.
+  - `inv` (LargeBits): `time` never passes 8: **holds**.
+- **swing** (`n` 0 to 2: **3** states). `a` takes 0 to 1, `b` 1 to 0, `out` 0 or 1 to 2.
+  - `swingFair`: the run `a, b, a, …` is fair to `a` and to `b` and never takes `out`: **broken**,
+    a loop of steps 1 to 2.
+  - `outFair`: `out` is possible in both states of the loop, so it happens: **holds**.
+  - `stepFair`: the same loop is fair to the whole step: **broken**.
+  - `safe` (`always(n <= 2)`, a plain rule): **holds**.
+
+| Module | Property | By hand | `quint verify --backend tlc` | `earnest confirm --tlc` |
+|---|---|---|---|---|
+| fair2 (8) | `hearFairOnly` | broken | violated, 8 states | same |
+| | `tickFairOnly` | holds | ok | same |
+| | `bothFair` (two rules) | holds, holds | ok | same |
+| | `stepFairH` | holds | ok | same |
+| SmallBits (16) | `allHeard` | broken | violated (stutters after 4 steps), 16 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| LargeBits (72) | `allHeard` | broken | violated, 72 states | same |
+| | `timeAdvances`, `fairHear`, `leads` | hold | ok | same |
+| swing (3) | `swingFair` | broken, loop | violated, "Back to state 1" | same |
+| | `outFair` | holds | ok | same |
+| | `stepFair` | broken, loop | violated, "Back to state 1" | same |
+| | `safe` | holds | ok | same |
+
+The original `clock.qnt` gives TLC the same lines: `Small` 16 states, `allHeard` violated and the
+other three ok; `Large` (`--temporal C::allHeard` and so on) 72 states, the same verdicts.
+
+TLC, as Quint runs it (one command per property; each output cut to the verdict, the state count
+and the counterexample's actions):
+
+```text
+=== quint verify --backend tlc --main fair2 --temporal hearFairOnly probe/fair2.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 3: <tick line 25, col 9 to line 25, col 39 of module fair2>
+State 4: <hear line 30, col 9 to line 30, col 35 of module fair2>
+State 5: Stuttering
+11 states generated, 8 distinct states found, 0 states left on queue.
+[violation] Found an issue (684ms).
+=== quint verify --backend tlc --main fair2 --temporal tickFairOnly probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main fair2 --temporal bothFair probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (579ms).
+=== quint verify --backend tlc --main fair2 --temporal stepFairH probe/fair2.qnt
+11 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (615ms).
+=== quint verify --backend tlc --main Small --temporal allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 3: <Small_Clock_hear line 45, col 5 to line 47, col 46 of module Small>
+State 4: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 5: <Small_Clock_tick line 36, col 3 to line 38, col 44 of module Small>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (628ms).
+=== quint verify --backend tlc --main Small --temporal timeAdvances models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (608ms).
+=== quint verify --backend tlc --main Small --temporal fairHear models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (575ms).
+=== quint verify --backend tlc --main Small --temporal leads models/clock.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (646ms).
+=== quint verify --backend tlc --main SmallBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 3: <SmallBits_ClockBits_hear line 46, col 5 to line 50, col 62 of module SmallBits>
+State 4: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 5: <SmallBits_ClockBits_tick line 37, col 3 to line 39, col 60 of module SmallBits>
+State 6: Stuttering
+29 states generated, 16 distinct states found, 0 states left on queue.
+[violation] Found an issue (673ms).
+=== quint verify --backend tlc --main SmallBits --temporal timeAdvances models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (604ms).
+=== quint verify --backend tlc --main SmallBits --temporal fairHear models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (577ms).
+=== quint verify --backend tlc --main SmallBits --temporal leads models/clockbits.qnt
+29 states generated, 16 distinct states found, 0 states left on queue.
+[ok] No violation found (606ms).
+=== quint verify --backend tlc --main LargeBits --temporal allHeard models/clockbits.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, tick, tick, tick, hear, tick, tick, tick, hear, tick
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (650ms).
+=== quint verify --backend tlc --main LargeBits --temporal timeAdvances models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (720ms).
+=== quint verify --backend tlc --main LargeBits --temporal fairHear models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (668ms).
+=== quint verify --backend tlc --main LargeBits --temporal leads models/clockbits.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (672ms).
+=== quint verify --backend tlc --main Large --temporal C::allHeard models/clock.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1 to 11: <Initial predicate>, tick, hear, hear, tick × 7
+State 12: Stuttering
+173 states generated, 72 distinct states found, 0 states left on queue.
+[violation] Found an issue (660ms).
+=== quint verify --backend tlc --main Large --temporal C::timeAdvances models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (678ms).
+=== quint verify --backend tlc --main Large --temporal C::fairHear models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (645ms).
+=== quint verify --backend tlc --main Large --temporal C::leads models/clock.qnt
+173 states generated, 72 distinct states found, 0 states left on queue.
+[ok] No violation found (671ms).
+=== quint verify --backend tlc --main swing --temporal swingFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (649ms).
+=== quint verify --backend tlc --main swing --temporal outFair swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (657ms).
+=== quint verify --backend tlc --main swing --temporal stepFair swing.qnt
+Error: Temporal property q_temporalProps was violated.
+State 1: <Initial predicate>
+State 2: <a line 25, col 6 to line 25, col 40 of module swing>
+Back to state 1: <b line 30, col 6 to line 30, col 40 of module swing>
+5 states generated, 3 distinct states found, 0 states left on queue.
+[violation] Found an issue (621ms).
+=== quint verify --backend tlc --main swing --temporal safe swing.qnt
+5 states generated, 3 distinct states found, 0 states left on queue.
+[ok] No violation found (628ms).
+```
+
+The two LargeBits/Large counterexamples are shortened to their action names; the full traces
+have the same shape as the Small ones.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+fail        LargeBits  72 states  1 ms
+  broken  allHeard  "The Quint temporal property `allHeard` holds"
+    start  LargeBits::C::time = 0, LargeBits::C::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        SmallBits  16 states  0 ms
+  broken  SmallBits::ClockBits::allHeard  "The Quint temporal property `SmallBits::ClockBits::allHeard` holds"
+    start  SmallBits::ClockBits::time = 0, SmallBits::ClockBits::seen = 0
+    why    the run may stop here, because no step it must take can change the state from here
+fail        swing  3 states  0 ms
+  broken  swingFair  "The Quint temporal property `swingFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+  broken  stepFair  "The Quint temporal property `stepFair` holds"
+    start  n = 0, spare = false
+    1. a  n: 0 -> 1
+    2. b  n: 1 -> 0
+    end    n = 0, spare = false
+    why    steps 1 to 2 can repeat forever
+fail        fair2  8 states  0 ms
+  broken  hearFairOnly  "The Quint temporal property `hearFairOnly` holds"
+    start  t = 0, h = false
+    1. hear  h: false -> true
+    end    t = 0, h = true
+    why    the run may stop here, because no step it must take can change the state from here
+4 models: 0 pass, 4 fail, 0 unfinished
+$ earnest confirm --tlc target/tools/tla2tools.jar tasks/quint/probe/fair2.json tasks/quint/models/smallbits.json tasks/quint/models/largebits.json tasks/quint/models/swing.json
+same     LargeBits  72 states  fail
+same     SmallBits  16 states  fail
+same     swing  3 states  fail
+same     fair2  8 states  fail
+```
+
+In JSON each property is a rule with `"kind": "eventually"`, its path, and `repeatsFrom` for a
+loop or the stop sentence as `reason`; `safe` (`always(n <= 2)`) is a plain rule.
+
+The tests:
+
+- `crates/earnest_check/tests/explore/fairness.rs`: a state without ways out (nothing fair, the
+  step fair), a stop where an unfair action could go on, the model's fairness kept for a rule
+  without its own, a loop that needs each fair action's turn (and `WF(out \/ a)` weaker than
+  `WF(out) /\ WF(a)`), and a fair action that is not always possible. Every model is searched with
+  1 and 4 workers, which must agree.
+- `crates/earnest_quint/src/temporal/tests.rs` on `fixtures/properties.qnt`: each shape that is
+  read and each refusal, one property at a time.
+- `apps/earnest/tests/behavior/quint_temporal.rs`: the CLI on fair2, SmallBits and swing, and
+  `--rule` on one property.
+- `tasks/break_it/tests/tlc/stutters.rs`: 40 seeds of small generated Quint JSON (one to three
+  `int` variables, one to five actions, one to four properties, each with no fairness, the step,
+  one action, two actions, or the step and one action, and each of `eventually`, `leadsTo`,
+  `always(eventually)` and the spelled-out leads-to), each through `earnest confirm --tlc`, which
+  must say `same`. It asserts at least one broken and one holding property for every kind of
+  fairness. Generating the JSON was less code than building `earnest_ir::Model`s and driving
+  TLC by hand, and it covers the reader too. A deliberate break (the step fair for every rule)
+  fails it at seed 7: `rule p1: the checker says holds, TLC says broken`.
+
+## Slice 5: report
+
+### Done
+
+- `earnest_ir::Fairness { step, actions: Vec<Vec<usize>> }` and `Eventually::fair:
+  Option<Fairness>`. `None` keeps the model's fairness, and the TypeScript and Rust readers give
+  `None`. A fair part is a list of actions, not one action, because a Quint action unfolds into
+  several (`weakFair(hear)` is one disjunction). No field of `Model`, `Field` or `Action` changed.
+- `earnest_check::eventually`: fair parts in place of fair actions, and `Stops` (where nothing
+  changes the state, or where nothing fair does) for each rule; a rule with its own fairness
+  gets its own `possible` flags. Case 1 above is reported as a stop with the new sentence when
+  the state has ways out.
+- `earnest_tla`: `Spec` without fairness and `(fairness) => (property)` for every property, when
+  any rule has its own fairness; otherwise unchanged.
+- `earnest_quint::temporal` (new): reads `q::temporalProps`, unfolds names of temporal
+  definitions, and gives rules about runs and plain rules. `scan.rs` no longer refuses temporal
+  definitions; `model.rs` passes the step's actions by top-level name, and follows the whole
+  chain of aliases from `q::step` (`LargeBits::step = C::step`), so that actions are named after
+  `tick` and `hear` and not all after `C::step`.
+- Samples: `models/clockbits.qnt` (with `smallbits.json`, `largebits.json`), `models/swing.qnt`
+  (with `swing.json`), `probe/fair2.json`.
+
+### Slice 1 tests changed
+
+`crates/earnest_quint/src/tests.rs`: `a_temporal_property_is_refused_and_named` asserted the
+refusal "temporal properties are not read yet" for `fixtures/later.qnt`
+(`eventually(x > 3)`), which this slice lifts. With the orchestrator's agreement, `later.qnt`
+is now `eventually(always(x > 3))` and the test asserts `` `always` `` with "`eventually(always(…))`
+is not read"; the new test `a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs`
+reads the old property from `fixtures/grows.qnt`. No line of a test on `origin/main` changed;
+two existing test files got one line each (`fair: None,` in an `Eventually` literal) and two
+`mod` lines were added.
+
+### Refused
+
+In a temporal property, naming the operator and the property: `strongFair`, `next`, `orKeep`,
+`mustChange`, `enabled`, `eventually(always(…))`, a temporal operator under `not`, `or`, `iff`
+or any other operator, an `implies` inside `G` (`F implies (P implies eventually(Q))`), a
+state condition outside `always`/`eventually` (TLC judges it in the start states only),
+fairness over only some variables or over something that is not a tuple of variables, fairness
+of an action given arguments (`weakFair(move(1), vars)`) or of an action with parameters, and
+fairness of anything but the step (or a name it aliases) and its top-level actions. A temporal
+definition that `--temporal` does not list is ignored, as an unused `val` is.
+
+### Doubts
+
+- Names stay qualified as slice 1 has them: a property of `SmallBits` is
+  `SmallBits::ClockBits::allHeard`, while `LargeBits`, which defines its own, gets `allHeard`.
+  Slice 3 or 4 (setups) should decide what a user sees.
+- A rule about runs whose `G` has several conjuncts gives `name`, `name#2`, …, as repeated
+  actions do. The TLA+ export spells `#` as `_` (`Eventually_bothFair_2`).
+- The step's fallback name for paths that reach no named action (an inline `any { all {…} }`)
+  is the step's name; `weakFair(step)` is the whole step, so such a path is never a fair part of
+  its own. That is right, but untested by TLC.
+- `quint verify` checks all listed properties as one conjunction; earnest and `confirm` judge
+  each alone, which gives the same verdict per property and finer output.
+
+### Checks, each with its last line
+
+- `cargo test --locked` (after `bun install --frozen-lockfile`), whole workspace before the
+  approved change to the `later` test: 70 suites, 1821 passed, 1 failed (that test); after it,
+  `earnest_quint` 40 passed, 0 failed.
+- `cargo test --locked -p earnest-cli --test reference`: `test result: ok. 5 passed; 0 failed`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,639,543 | +0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores, load 2.9): last line `wide, search time with all cores (0.095 s)
+  over search time with 1 worker (0.265 s): 0.36x, budget at most 0.75x: met`; every line `met`,
+  `grid_10m` with 4 workers 0.766 s.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps `0
+  differences`. The 64 are 4 runs each of the 16 conformance files `origin/main` does not have
+  (`tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,stove,ticket,worker}.model.ts`,
+  `runs/gate.rs`, `runs/kettle.rs`, `setups/clock.model.ts`, `setups/clock.rs`).
   `just same-answers fdbd03a` (this branch's base): `every model file: 392 runs, 0 differences`,
   every sweep 0.
 - `cargo fmt --check`: exit 0.
@@ -1156,3 +1526,22 @@ beyond records, tuples, sets, maps, lists, text, variants and `ipow` is still re
 - Next: slice 3 (`oneOf` over a set computed from the state, and lines from the source map).
   `picked_from` in `reader.rs` already works out any set that does not change; slice 3 replaces
   its `computed` refusal.
+
+- `tests_kept.py --base origin/main`: `tests kept: 1490 tests, 4372 assertions (base: 1304, 3798)`.
+- `just tlc`: every model it confirms prints `same` (49 lines, ending `same     Outcome  7222 states  pass`);
+  its clippy step first found two `needless_pass_by_value` in the new `stutters.rs`, fixed; then
+  `cargo test --locked -p earnest_break_it --features tlc --test tlc`: `test result: ok. 9
+  passed; 0 failed`, with `runs::tlc_judges_every_rule_about_runs_of_small_generated_models_as_earnest_does`
+  and the new `stutters::tlc_judges_every_quint_temporal_property_with_its_own_fairness_as_earnest_does`.
+
+### Unfinished, and the next step
+
+- `models/clock.qnt` itself becomes readable when slice 2 (sets and text) merges; then check its
+  `Small` and `Large` against the verdicts above, and retire `clockbits.qnt` or keep it as the
+  int-only sample.
+- Problems are still at line 1, column 1 (slice 3).
+- `quint verify` without `--temporal` but with temporal definitions in the module: they are
+  ignored, as Quint's TLC ignores them.
+- The user docs (`apps/docs`) do not mention Quint yet; they wait for slice 7, as slice 1 said.
+- Next: slice 3 (source places) or slice 4 (setups), which also decides the qualified names
+  above.

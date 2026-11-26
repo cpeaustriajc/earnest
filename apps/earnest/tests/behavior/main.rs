@@ -11,6 +11,7 @@ mod limits;
 mod offline;
 mod quint;
 mod quint_data;
+mod quint_temporal;
 mod replay;
 mod results;
 mod runs;

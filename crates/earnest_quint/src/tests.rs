@@ -9,6 +9,7 @@ const MIXED: &str = include_str!("../../../tasks/quint/models/mixed.json");
 const STARTS: &str = include_str!("../../../tasks/quint/models/starts.json");
 const PARAMS: &str = include_str!("../fixtures/params.json");
 const LATER: &str = include_str!("../fixtures/later.json");
+const GROWS: &str = include_str!("../fixtures/grows.json");
 const TESTED: &str = include_str!("../fixtures/tested.json");
 const TEXT: &str = include_str!("../fixtures/text.json");
 const SET_VARIABLE: &str = include_str!("../fixtures/setvar.json");
@@ -204,10 +205,26 @@ fn every_state_is_an_end_so_none_is_stuck() {
 
 #[test]
 fn a_temporal_property_is_refused_and_named() {
-    refused_with(
-        LATER,
-        "`temporal grows`",
-        "temporal properties are not read yet",
+    refused_with(LATER, "`always`", "`eventually(always(…))` is not read");
+}
+
+#[test]
+fn a_temporal_property_slice_1_refused_is_read_as_a_rule_about_runs() {
+    let read = model(GROWS);
+    let ids: Vec<&str> = read
+        .runs
+        .eventually
+        .iter()
+        .map(|rule| rule.id.as_str())
+        .collect();
+    assert_eq!(ids, ["grows"], "`eventually(x > 3)` is one rule about runs");
+    assert_eq!(
+        read.runs
+            .eventually
+            .first()
+            .and_then(|rule| rule.fair.clone()),
+        Some(earnest_ir::Fairness::default()),
+        "without `weakFair` nothing is fair"
     );
 }
 
