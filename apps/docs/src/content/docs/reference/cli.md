@@ -33,7 +33,7 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | Flag | Default | Commands | Meaning |
 |---|---|---|---|
 | `PATH...` | current directory | all | Files or folders to search for models |
-| `--model <name>` | all | all | Check only the model with this name, and each of its setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) |
+| `--model <name>` | all | all | Check only the model with this name, and each of its setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)). A Quint check's name is its `name`, or its `main` ([Quint](/reference/quint/#the-checks-file)) |
 | `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule, rule about runs, or witness, in each result that lists it (requires `--model` when two models share the id; the setups of one model do not count as other models) |
 | `--json` | off | `verify` | Print results as JSON instead of text |
 | `--max-states <n>` | `5000000` | `verify`, `chart`, `report`, `confirm` | Stop a model after this many distinct states; every counted state has its rules judged |

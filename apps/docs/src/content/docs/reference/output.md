@@ -29,7 +29,8 @@ unreadable  src/clock.model.ts
 ### Statuses and findings
 
 - **Status words:** `pass`, `fail`, `unfinished`, or `unreadable`.
-- **Model line:** status, model name, `<n> states` (or `<n> states so far` when stopped early), `<n> ms`, and `(cached)` when served from `.earnest/`.
+- **Model line:** status, model name, `<n> states` (or `<n> states so far` when stopped early), `<n> ms`, and `(cached)` when served from `.earnest/`. A Quint check that stopped because it found every [expected counterexample](/reference/quint/#expected-counterexamples) prints `<n> states` and `(every expected counterexample was found)`.
+- **Expected counterexamples:** in a Quint check, a property listed in `expectCounterexample` prints `broken  <id>  (expected)` when it is broken, with no path, and `holds  <id>  a counterexample was expected` when it holds, which makes the model `fail`. These lines come before the other broken rules and findings.
 - **Setups:** a model with setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) prints one line for the model as declared, then one per setup in declaration order, named with the setup's id in brackets: `fail  Clock (behind)  6 states  0 ms`. Each line has its own state count, broken rules and findings, and the summary counts each of them as a model.
 - **`broken`:** names the rule id and its sentence, followed by the shortest path to the first violating state:
   - `start` lists every field of the start state.
@@ -146,6 +147,8 @@ Field meanings:
   - `"unknown"` when not seen broken, but the model was unfinished, the rule faulted, or another fault/out-of-range state left states unreached or unjudged.
 - `rules[].kind`: `"eventually"` for a rule about runs and `"witness"` for a witness, in a TypeScript or a [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups) model. A plain rule has no `kind` key. Rules about runs are listed after the plain rules and before the witnesses.
 - `rules[].reason`: present only on a broken rule about runs or a broken witness, with the text of its `why` line.
+- `rules[].expected`: present only on a property of a Quint check listed in `expectCounterexample`, as `"broken"`. Its `verdict`, `path`, `reason` and `repeatsFrom` are as for any rule. Such a rule makes the model `fail` when its verdict is `"holds"`, and does not when it is `"broken"`. A rule not listed there has no `expected` key.
+- `reason` of a model: `"every expected counterexample was found"` when a Quint check stopped once it found each of them, with `status` `"pass"`.
 - `rules[].repeatsFrom`: present only on a rule about runs broken by a loop: the 0-based position in `path.steps` of the first step of the loop. The steps from there to the last can repeat forever. A run that stays in the last state of the path has no `repeatsFrom`.
 - A rule about runs is `"holds"` only when the search finished every reachable state and no state went out of range, no action or `end` faulted, and the rule's `after` and `reaches` had a value in every state. It is `"unknown"` otherwise: a run that breaks it is looked for only after such a search, so a search that stopped early never gives `"broken"` for a rule about runs. When `after` or `reaches` faults, a `fault` finding names the rule, unless the model already has a fault.
 - A witness's `verdict` is `"holds"` when it plays to the end from every start state, `"broken"` when a start state breaks it (`path` is then the path played until it broke), and `"unknown"` only when the model has more start states than `--max-states` and none of the ones played broke it.
