@@ -2927,3 +2927,43 @@ pass at c5d2751:
   `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
   `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
 - `tests_kept.py --base origin/main`: `tests kept: 1740 tests, 4987 assertions (base: 1304, 3798)`.
+
+## Fifth Quint pass
+
+An adversarial pass over what #79 changed (fairness of a named action judged by the action
+alone, `FairStep::alone`; specs reaching a module both whole and under a name) and over `earnest
+confirm --quint` (#73), made on commit 8fe5534 of the integration branch with Quint 0.33.1 from
+npm. Its tests are in `tests/break_it/quint_fifth.rs` and its files in `models/quint_fifth/`: each
+`.qnt` beside the JSON Quint wrote for it, to a file, so the tests need no Node. The oracles:
+`quint verify --backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts,
+invariants and temporal properties, and `quint test --backend typescript` for runs; `confirm
+--tlc` with the `v1.8.0` release's `tla2tools.jar` at `target/tools/`. Only cases where earnest
+matches neither backend, or contradicts its own docs, are findings.
+
+### Fairness of the step beside fairness of an action lets a run stop where the action could happen
+
+`models/quint_fifth/step_fair/step_fair.qnt`: two buyers, `pay(b) = all { not(paid.get(b)),
+paid' = paid.set(b, true), closed' = closed }`, `close`, `wait` (keeps everything), and the step
+`any { all { not(closed), any { nondet b = BUYERS.oneOf() pay(b), close } }, all { closed, wait }
+}`, so once `close` is taken only `wait` is left. The property `pays` is `(weakFair(step, vars)
+and weakFair(pay(1), vars)) implies eventually(paid.get(1))`; `everyonePays` the same with
+`BUYERS.forall(b => weakFair(pay(b), vars))`. A run that closes before buyer 1 pays stays in the
+closed state, where `pay(1)` alone is possible (`not(paid.get(1))`) forever and never taken: as
+the docs read it ("where `pay` alone could happen and the step never lets it, no run is fair to
+`weakFair(pay, vars)`, and what the fairness implies holds there"), and as TLC reads `WF_vars(pay(1))`,
+it is not fair. `quint verify --backend tlc --temporal pays step_fair.qnt` prints `8 distinct
+states found` and `[ok] No violation found`, and the same for `everyonePays`. Earnest: `broken
+pays` and `broken everyonePays`, the path `close` then `end closed = true, paid = Map(1 -> false,
+2 -> false)` with `nothing changes the state from here, so the run can stay in it forever`.
+Without the step's fairness (`paysWithoutStep = weakFair(pay(1), vars) implies
+eventually(paid.get(1))`) earnest says `holds`, as TLC. `confirm --tlc` and `confirm --quint`
+both say `differs` (`rule pays: the checker says broken, TLC says holds`), so the export is right
+and the search is not. Cause: in `crates/earnest_check/src/eventually.rs`, a rule whose fairness
+includes the whole step over every variable is hunted with `Stops::WhereNothingChangesTheState`,
+and `Hunt::stays` then lets a run stop wherever the step has no arrow out, without asking the
+other parts' `possible`. Before #79 every fair action was possible only where the step had an arrow
+for it, so this was the same; an action alone can now be possible where the step has none.
+`weakFair(step, vars) and weakFair(A, vars)`, with a phase in which the step only waits, is how a
+project writes liveness. The seeded comparison below meets it on its own (seeds 16 and 28). Right
+result: the four properties hold. Test:
+`fairness_of_the_step_beside_fairness_of_an_action_does_not_let_a_run_stop_where_the_action_could_happen`.

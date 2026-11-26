@@ -223,11 +223,12 @@ impl Part {
 
 impl Hunt<'_> {
     fn stays(&self, state: u32) -> bool {
+        let nothing_fair_could_happen = !self.possible.iter().any(|flags| at(flags, state));
         match self.stops {
-            Stops::WhereNothingFairChangesTheState => {
-                !self.possible.iter().any(|flags| at(flags, state))
+            Stops::WhereNothingFairChangesTheState => nothing_fair_could_happen,
+            Stops::WhereNothingChangesTheState => {
+                self.edges.out(state).is_empty() && nothing_fair_could_happen
             }
-            Stops::WhereNothingChangesTheState => self.edges.out(state).is_empty(),
         }
     }
 
