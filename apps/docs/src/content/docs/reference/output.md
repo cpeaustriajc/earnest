@@ -164,7 +164,7 @@ Field meanings:
 
 ## Rule changes (`--base`)
 
-With `--base <git ref>`, `earnest verify` and `earnest report` also read each model file at that commit and compare its rules against the current working tree.
+With `--base <git ref>`, `earnest verify` and `earnest report` also read each model file and each `.qnt` file at that commit and compare its rules against the current working tree.
 
 Text output adds a section before the summary line:
 
@@ -232,6 +232,27 @@ Additional rules for `--base`:
 - Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
 - With `--model <name>`, removed models matching `<name>` are still reported even if the model no longer exists in the working tree; exit `2` occurs only when neither the working tree nor `--base` contains `<name>`.
 - With `--rule <id>`, every change of each model where some run lists `<id>` is reported, including a witness of a setup. A rule, rule about runs or witness `<id>` that exists only at `--base` is still reported as `removed`; exit `2` occurs only when neither the working tree nor `--base` contains `<id>`.
+
+### Quint checks
+
+A [Quint check](/reference/quint/#checks-marked-in-the-model) is listed as its module, and its rules are the properties and runs it judges. They are listed after the rules of the native models:
+
+```text
+rule changes since origin/main
+  added      Small.atTop  "The clock shows the limit."  specs/clock.qnt
+  changed    Small.belowLimit  specs/clock.qnt
+    was  "The time reaches the limit, so it is not always below it."  broken: time < Limit
+    now  "The time reaches the limit, so it is not always below it."  broken: time <= Limit
+  removed    Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+```
+
+- The id is the name the check sees, as the result lists it. A run has the kind `witness`. A property or a run with no sentence has the sentence the result gives it, as ``The Quint invariant `inRange` holds``.
+- `holds` is the definition's source with each run of white space as one space, after `broken: ` or `reachable: ` when it is marked so.
+- A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison and each lambda's parameters are numbered, so a reformatted file, a comment or a renamed parameter lists nothing. An edit of a helper or of the model under a rule lists nothing either.
+- Every rule of a check in a `.qnt` file the base does not have is `added`, and every rule of a file only the base has is `removed`.
+- The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base starts no `quint` for the base. Any other file starts `quint parse` once, and the result is cached for the next run against the same commit.
+- A file the base holds beside an `earnest.quint.json`, a file that `quint parse` refuses at the base, a base check with a problem in its marks, and a run with no `quint` installed print the warning `warning: <file> is unreadable at <base>, so its rule changes are not listed`.
+- `--model` and `--rule` narrow the checks as they narrow native models: `--rule belowSix` lists every change of each check that judges `belowSix`, at the working tree or at the base.
 
 ## Statecharts and PR reports
 

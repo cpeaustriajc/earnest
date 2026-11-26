@@ -5,6 +5,24 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `--base` lists the rule changes of Quint checks
+
+`earnest verify --base origin/main` said `rule changes since origin/main` and `none` for a `.qnt` model, even one the base did not have. It now compares each check marked `/// @check` with the same file at the base:
+
+```text
+rule changes since origin/main
+  added      Small.inRange  "The time stays between zero and the limit."  specs/clock.qnt
+  added      Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+```
+
+- Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
+- A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
+- The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
+- A base that holds an `earnest.quint.json`, does not parse, or can't be read because `quint` is not installed prints `warning: <file> is unreadable at <base>, so its rule changes are not listed`.
+- `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
+
+See [Rule changes](/reference/output/#quint-checks).
+
 ## November 2026: Quint fairness of the step beside fairness of an action
 
 A temporal property under `weakFair(step, vars)` together with `weakFair(A, vars)` was judged broken where Quint's TLC run says it holds, when a run could stop in a state where the step can do nothing more and `A` alone could still happen. Such a run is not fair to `A`, so it no longer counts. Fairness of the step alone, and of an action alone, are judged as before.

@@ -42,7 +42,7 @@ earnest confirm --quint specs/
 | `--jobs <n>` | all cores | `verify`, `chart`, `report`, `confirm` | Total worker threads for the run |
 | `--no-cache` | off | `verify` | Recheck every matched model even when unchanged; cached results for unchecked models stay stored |
 | `--max-arrows <n>` | `20` | `chart`, `report` | Maximum arrows drawn per chart (at least `1`) |
-| `--base <git ref>` | none | `verify`, `report` | Compare each model's rules with the same file at this commit |
+| `--base <git ref>` | none | `verify`, `report` | Compare each model's rules, and each Quint check's properties and runs, with the same file at this commit ([rule changes](/reference/output/#rule-changes---base)) |
 | `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` (and `<Model>_<setup>.tla` and `.cfg` per setup) are written |
 | `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc`, `--tla-rs` or `--quint` is required) |
 | `--tla-rs <path>` | none | `confirm` | Path to the `tla-rs` binary (needs no Java) |
@@ -146,7 +146,7 @@ Rules for test files:
 - An unreadable test file (such as a broken symlink under `tests/`) is skipped and listed in `skipped`, not reported as `unreadable`, because the checker cannot tell whether it uses the library.
 - If `--model` or `--rule` asks for a model that exists only in a skipped test file, every command prints the `skipped` line, names the file, explains how to include it, and exits `2`. Any skipped no-model Rust files are also printed and named in the error.
 - A `#[cfg(test)]` module inside a Rust model file is ignored.
-- `--base` applies the same discovery and test-file conventions to files in the base commit.
+- `--base` applies the same discovery and test-file conventions to files in the base commit. A `.qnt` file at the base is read with `quint parse` only when it, or a file it imports, differs from the working tree.
 
 ### Command-line paths, deduplication, and unreadable files
 
