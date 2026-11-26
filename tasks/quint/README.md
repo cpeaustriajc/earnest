@@ -28,9 +28,18 @@ taken on it and win where they differ:
   `earnest_ir::Model`. No second evaluator.
 - Explicit start states and the stuttering mode live in `earnest_ir::Runs` (`starts`,
   `stutters`), beside the setups, so no other struct of the checked model changes.
-- The first version reads JSON the user compiled (`quint compile --target json`). Calling
-  `quint` from earnest, and where each setup's invariants and temporal properties are listed,
-  wait for the owner's answer (slice 7).
+- The first slices read JSON the user compiled (`quint compile --target json`), and that path
+  stays: it needs no Node.
+- The owner agreed on 2026-11-26 that `earnest verify` starts `quint` itself when it is given
+  a `.qnt` file, and only then, with the result cached by the files' content and
+  `quint --version`. The README's "no Node" line becomes "no Node unless you check `.qnt`
+  files" in slice 7.
+- The owner agreed on the same day that each setup's invariants and temporal properties are
+  listed in one small file beside the specs, so the whole check is one command. It is JSON,
+  named `earnest.quint.json`: a list of checks, each with the `.qnt` file, the setup's module,
+  its invariants, its temporal properties, `init` and `step` when they are not named so, and
+  which runs of the module to play (Quint's `--match`, by default the names that end in
+  `Test`). Slice 7 fixes the exact keys.
 - Only `models/counter.json` is kept as a compiled sample; compile the other models again with
   Quint `0.33.1` when a slice needs them.
 
