@@ -284,3 +284,34 @@ test("a path may end out of range, and nothing can follow that state", () => {
     /Climb: step 4 \(up\): the state before it is out of range at `n`, so no action can follow/,
   );
 });
+
+test("a path of a setup begins at the setup's start state when the setup is passed", () => {
+  const { Hops, ...exports } = hops();
+  const high = m.setup(Hops, "n starts at three", { n: 3 });
+  const path = { start: n(3), steps: [{ action: "two", state: n(5) }] };
+  expect(replay(Hops, path, { exports, setup: high })).toStrictEqual([{ n: 3 }, { n: 5 }]);
+  expect(() => replay(Hops, path, { exports })).toThrow(
+    "Hops: the path does not begin at a start state of the model",
+  );
+  expect(() => replay(Hops, { start: n(0), steps: [] }, { exports, setup: high })).toThrow(
+    "Hops: the path does not begin at a start state of the setup",
+  );
+});
+
+test("a path of a setup from explore replays with that setup", () => {
+  const { Hops, ...exports } = hops();
+  const high = m.setup(Hops, "n starts at three", { n: 3 });
+  const found = explore(Hops, { exports: { ...exports, high }, setup: high });
+  const broken = found.rules.find((rule) => rule.id === "belowFour");
+  assert(broken?.path !== undefined, "one step from n = 3 breaks the rule");
+  expect(replay(Hops, broken.path, { exports, setup: high })).toStrictEqual([{ n: 3 }, { n: 4 }]);
+});
+
+test("a setup of another model is refused", () => {
+  const { Hops } = hops();
+  const { Hops: Other } = hops();
+  const elsewhere = m.setup(Other, "n starts at one", { n: 1 });
+  expect(() => replay(Hops, { start: n(1), steps: [] }, { setup: elsewhere })).toThrow(
+    "Hops: the setup given to replay is not one declared on this model",
+  );
+});
