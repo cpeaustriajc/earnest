@@ -1,6 +1,6 @@
 use crate::json::{Def, Entry, Expr as Quint, Param};
-use crate::reader::{Read, Reader, constant};
-use earnest_ir::{Code, Eventually, Expr, Fairness, Op, Rule};
+use crate::reader::{Path, Read, Reader, constant};
+use earnest_ir::{Code, Eventually, Expr, FairStep, Fairness, Op, Rule};
 use earnest_value::Value;
 use std::collections::HashMap;
 
@@ -31,12 +31,25 @@ const ONLY_WEAK_FAIRNESS: &str = "only `weakFair(A, vars)` is read as fairness";
 pub(crate) struct Temporal {
     pub(crate) eventually: Vec<Eventually>,
     pub(crate) rules: Vec<Rule>,
+    pub(crate) fair_steps: Vec<FairStep>,
+}
+
+type Named<'a> = Vec<(usize, &'a str)>;
+
+enum Fair<'a> {
+    Step,
+    Actions {
+        def: &'a Def,
+        given: Vec<Value>,
+        part: Vec<(usize, Vec<(usize, Value)>)>,
+    },
 }
 
 pub(crate) struct Step<'s> {
     pub(crate) defs: Vec<u64>,
     pub(crate) parts: &'s HashMap<String, Vec<usize>>,
     pub(crate) fields: &'s [String],
+    pub(crate) paths: &'s [Path],
 }
 
 enum Goal {
@@ -49,6 +62,7 @@ struct Properties<'r, 'a> {
     reader: &'r mut Reader<'a>,
     table: &'a HashMap<String, Entry>,
     defs: &'r HashMap<u64, &'a Def>,
+    fair_steps: Vec<FairStep>,
 }
 
 fn conjuncts(expr: &Quint) -> &[Quint] {
@@ -290,17 +304,50 @@ impl<'a> Properties<'_, 'a> {
         let [action, vars] = args.as_slice() else {
             return self.reader.refuse("`weakFair`", ONLY_WEAK_FAIRNESS);
         };
-        let listed = self.over_every_variable(vars, step.fields)?;
-        match self.fair_part(action, step)? {
-            None => fairness.step = true,
-            Some(part) => {
-                self.assigns_every_variable(action, &listed)?;
-                if !fairness.actions.contains(&part) {
-                    fairness.actions.push(part);
-                }
+        let (listed, over) = self.variables_of(vars, step.fields)?;
+        let part = match self.fair_part(action, step)? {
+            Fair::Step if over.is_empty() => {
+                fairness.step = true;
+                return Ok(());
             }
+            Fair::Step => (0..step.paths.len())
+                .map(|position| (position, Vec::new()))
+                .collect(),
+            Fair::Actions { def, given, part } => {
+                self.assigns_every_variable(def, &given, &listed)?;
+                part
+            }
+        };
+        let narrowed = !over.is_empty() || part.iter().any(|(_, inputs)| !inputs.is_empty());
+        let part: Vec<usize> = if narrowed {
+            part.into_iter()
+                .map(|(action, inputs)| {
+                    self.fair_step(
+                        FairStep {
+                            action,
+                            inputs,
+                            over: over.clone(),
+                        },
+                        step.paths.len(),
+                    )
+                })
+                .collect()
+        } else {
+            part.into_iter().map(|(action, _)| action).collect()
+        };
+        if !fairness.actions.contains(&part) {
+            fairness.actions.push(part);
         }
         Ok(())
+    }
+
+    fn fair_step(&mut self, wanted: FairStep, actions: usize) -> usize {
+        let known = self.fair_steps.iter().position(|known| *known == wanted);
+        let position = known.unwrap_or_else(|| {
+            self.fair_steps.push(wanted);
+            self.fair_steps.len().saturating_sub(1)
+        });
+        actions.saturating_add(position)
     }
 
     fn named_value(&self, expr: &'a Quint) -> &'a Quint {
@@ -321,30 +368,23 @@ impl<'a> Properties<'_, 'a> {
         found
     }
 
-    fn over_every_variable(
+    fn variables_of(
         &mut self,
         vars: &'a Quint,
         fields: &[String],
-    ) -> Read<Vec<(usize, &'a str)>> {
+    ) -> Read<(Named<'a>, Vec<usize>)> {
         let mut named = Vec::new();
         self.mentioned(vars, &mut named, 0)?;
-        let missing: Vec<String> = fields
-            .iter()
-            .enumerate()
-            .filter(|(position, _)| named.iter().all(|(listed, _)| listed != position))
-            .map(|(_, name)| format!("`{name}`"))
-            .collect();
-        if missing.is_empty() {
-            return Ok(named);
+        let mut over: Vec<usize> = Vec::with_capacity(named.len());
+        for (position, _) in &named {
+            if !over.contains(position) {
+                over.push(*position);
+            }
         }
-        self.reader.refuse(
-            "`weakFair`",
-            &format!(
-                "fairness over only some of the state variables is not read: the tuple leaves \
-                 out {}, so list every variable",
-                missing.join(", ")
-            ),
-        )
+        if over.len() == fields.len() {
+            over.clear();
+        }
+        Ok((named, over))
     }
 
     fn mentioned(
@@ -395,14 +435,26 @@ impl<'a> Properties<'_, 'a> {
         )
     }
 
-    fn assigns_every_variable(&mut self, action: &'a Quint, listed: &[(usize, &str)]) -> Read<()> {
-        let Quint::Name { id, name } = action else {
-            return Ok(());
+    fn assigns_every_variable(
+        &mut self,
+        def: &'a Def,
+        given: &[Value],
+        listed: &[(usize, &str)],
+    ) -> Read<()> {
+        let name = &def.name;
+        let paths = match &def.expr {
+            Quint::Lambda { params, expr } => {
+                let values = params
+                    .iter()
+                    .zip(given)
+                    .map(|(param, value)| (param.id, Expr::Const(value.clone())))
+                    .collect();
+                self.reader
+                    .with_values(values, |reader| reader.paths(expr))?
+            }
+            other => self.reader.paths(other)?,
         };
-        let Some(def) = self.def_of(*id) else {
-            return Ok(());
-        };
-        for path in self.reader.paths(&def.expr)? {
+        for path in paths {
             let open = listed
                 .iter()
                 .find(|(position, _)| path.assigns.iter().all(|(given, _)| given != position));
@@ -412,7 +464,7 @@ impl<'a> Properties<'_, 'a> {
                     &format!(
                         "`weakFair({name}, …)`, where `{name}` alone does not give `{variable}'`, \
                          is not read: Quint's TLC runs stop on such a formula. Make `{name}` \
-                         assign every variable, or make the whole step fair"
+                         assign every variable the fairness names, or make the whole step fair"
                     ),
                 );
             }
@@ -420,36 +472,135 @@ impl<'a> Properties<'_, 'a> {
         Ok(())
     }
 
-    fn fair_part(&mut self, action: &'a Quint, step: &Step<'_>) -> Read<Option<Vec<usize>>> {
-        let Quint::Name { id, name } = action else {
-            return self.reader.refuse(
-                "`weakFair`",
-                "fairness of an action given arguments is not read: name the step or one of \
-                 its actions",
-            );
+    fn fair_part(&mut self, action: &'a Quint, step: &Step<'_>) -> Read<Fair<'a>> {
+        let (id, name, args): (u64, &str, &'a [Quint]) = match action {
+            Quint::Name { id, name } => (*id, name, &[]),
+            Quint::App { id, opcode, args } => (*id, opcode, args),
+            _ => {
+                return self.reader.refuse(
+                    "`weakFair`",
+                    "fairness of something that is not the step or one of its top-level \
+                     actions: name the step or one of its actions, given its arguments",
+                );
+            }
         };
-        let Some(def) = self.def_of(*id) else {
+        let Some(def) = self.def_of(id) else {
             return self.reader.refuse(
                 &format!("`{name}`"),
                 "fairness of something that is not the step or one of its top-level actions",
             );
         };
-        if step.defs.contains(&def.id) {
-            return Ok(None);
+        if step.defs.contains(&def.id) && args.is_empty() {
+            return Ok(Fair::Step);
         }
-        if matches!(def.expr, Quint::Lambda { .. }) {
+        let takes = match &def.expr {
+            Quint::Lambda { params, .. } => params.len(),
+            _ => 0,
+        };
+        if takes != args.len() {
             return self.reader.refuse(
                 &format!("`{name}`"),
-                "fairness of an action that takes arguments is not read",
+                "fairness of an action that takes arguments, without them, is not read: give \
+                 it its arguments, as `weakFair(A(c), vars)`",
             );
         }
-        match step.parts.get(&def.name) {
-            Some(part) => Ok(Some(part.clone())),
-            None => self.reader.refuse(
+        let Some(paths) = step.parts.get(&def.name) else {
+            return self.reader.refuse(
                 &format!("`{name}`"),
                 "fairness of something that is not the step or one of its top-level actions",
-            ),
+            );
+        };
+        let mut given = Vec::with_capacity(args.len());
+        for arg in args {
+            let read = self.reader.pure(arg)?;
+            let Some(value) = constant(&read, self.reader.slots)? else {
+                return self.reader.refuse(
+                    &format!("`{name}`"),
+                    "fairness of an action given an argument that changes with the state is \
+                     not read: give it values that do not, such as a constant or an item of a \
+                     `forall` over a set that does not change",
+                );
+            };
+            given.push(value);
         }
+        let mut part = Vec::with_capacity(paths.len());
+        for position in paths {
+            let Some(path) = step.paths.get(*position) else {
+                continue;
+            };
+            if let Some(inputs) = self.inputs_of(path, &given, name)? {
+                part.push((*position, inputs));
+            }
+        }
+        if part.is_empty() {
+            return self.reader.refuse(
+                &format!("`{name}`"),
+                &format!(
+                    "fairness of `{name}` given arguments the step never gives it is not read: \
+                     TLC holds such a step possible where the step never takes it"
+                ),
+            );
+        }
+        Ok(Fair::Actions { def, given, part })
+    }
+
+    fn inputs_of(
+        &mut self,
+        path: &Path,
+        given: &[Value],
+        name: &str,
+    ) -> Read<Option<Vec<(usize, Value)>>> {
+        let mut inputs = Vec::new();
+        for (at, value) in given.iter().enumerate() {
+            let passed = path.given.get(at).cloned().flatten();
+            if let Some(Expr::Local(slot)) = passed
+                && let Some((input, choice)) = path
+                    .choices
+                    .iter()
+                    .enumerate()
+                    .find(|(_, choice)| choice.slot == slot)
+            {
+                if choice.from.is_some() {
+                    return self.reader.refuse(
+                        &format!("`{name}`"),
+                        &format!(
+                            "fairness of `{name}` given an argument the step picks from a set \
+                             that changes with the state is not read: pick `{}` from a set \
+                             that does not change",
+                            choice.name
+                        ),
+                    );
+                }
+                if !choice.values.contains(value) {
+                    return self.reader.refuse(
+                        &format!("`{name}`"),
+                        &format!(
+                            "fairness of `{name}` given a value the step never picks for `{}` \
+                             is not read: TLC holds such a step possible where the step never \
+                             takes it",
+                            choice.name
+                        ),
+                    );
+                }
+                inputs.push((input, value.clone()));
+                continue;
+            }
+            match passed.map(|expr| constant(&expr, self.reader.slots)) {
+                Some(Ok(Some(fixed))) if fixed == *value => {}
+                Some(Ok(Some(_))) => return Ok(None),
+                _ => {
+                    return self.reader.refuse(
+                        &format!("`{name}`"),
+                        &format!(
+                            "fairness of `{name}` given arguments is read only where the step \
+                             calls `{name}` with a `nondet` it picks or a value that does not \
+                             change, so that its steps can be told apart"
+                        ),
+                    );
+                }
+            }
+        }
+        Ok(Some(inputs))
     }
 
     fn goal(&mut self, each: &'a Quint) -> Read<Goal> {
@@ -557,6 +708,7 @@ pub(crate) fn temporal<'a>(
     let mut read = Temporal {
         eventually: Vec::new(),
         rules: Vec::new(),
+        fair_steps: Vec::new(),
     };
     let Some(listed) = defs.values().find(|def| def.name == PROPERTIES) else {
         return Ok(read);
@@ -565,6 +717,7 @@ pub(crate) fn temporal<'a>(
         reader,
         table,
         defs,
+        fair_steps: Vec::new(),
     };
     for conjunct in conjuncts(&listed.expr) {
         let Some(def) = properties.temporal_def(conjunct) else {
@@ -579,6 +732,7 @@ pub(crate) fn temporal<'a>(
         let mut parts = Vec::new();
         properties.property(&def.expr, step, None, &mut parts)?;
         let count = parts.len();
+        let slots = properties.reader.slots;
         for (index, (fair, goal)) in parts.into_iter().enumerate() {
             let number = index.saturating_add(1);
             let id = numbered(name, number);
@@ -590,7 +744,7 @@ pub(crate) fn temporal<'a>(
                     line: DECLARED_ON,
                     after: after.map(Code::new),
                     reaches: Code::new(reaches),
-                    slots: 0,
+                    slots,
                     fair: Some(fair),
                 }),
                 Goal::Initially(holds) => read.eventually.push(Eventually {
@@ -599,7 +753,7 @@ pub(crate) fn temporal<'a>(
                     line: DECLARED_ON,
                     after: None,
                     reaches: Code::new(holds),
-                    slots: 0,
+                    slots,
                     fair: Some(Fairness::default()),
                 }),
                 Goal::Always(holds) => read.rules.push(Rule {
@@ -608,11 +762,12 @@ pub(crate) fn temporal<'a>(
                     line: DECLARED_ON,
                     text: name.clone(),
                     holds: Code::new(holds),
-                    slots: 0,
+                    slots,
                 }),
             }
         }
     }
+    read.fair_steps = properties.fair_steps;
     Ok(read)
 }
 

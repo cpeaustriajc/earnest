@@ -59,6 +59,7 @@ pub(crate) struct Path {
     pub(crate) choices: Vec<Choice>,
     pub(crate) guards: Vec<Expr>,
     pub(crate) assigns: Vec<(usize, Expr)>,
+    pub(crate) given: Vec<Option<Expr>>,
 }
 
 impl Path {
@@ -72,6 +73,9 @@ impl Path {
     fn joined(&self, other: &Self) -> Self {
         let mut both = self.clone();
         both.name = self.name.clone().or_else(|| other.name.clone());
+        if self.name.is_none() {
+            both.given.clone_from(&other.given);
+        }
         both.choices.extend(other.choices.iter().cloned());
         both.guards.extend(other.guards.iter().cloned());
         both.assigns.extend(other.assigns.iter().cloned());
@@ -769,10 +773,18 @@ impl<'a> Reader<'a> {
     }
 
     fn action(&mut self, def: &'a Def, arguments: Vec<Bound<'a>>) -> Read<Vec<Path>> {
+        let given: Vec<Option<Expr>> = arguments
+            .iter()
+            .map(|argument| match argument {
+                Bound::Value(value) => Some(value.clone()),
+                Bound::Operator(_) | Bound::Lambda(..) => None,
+            })
+            .collect();
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;
         if !self.unnamed.contains(&def.id) {
             for path in &mut paths {
                 path.name = Some(def.name.clone());
+                path.given.clone_from(&given);
             }
         }
         Self::checked(paths)

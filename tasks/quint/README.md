@@ -3347,3 +3347,108 @@ On the tree merged with the integration head `a94146b`:
 - A module that writes a record shaped like a variant prints all its variants as records. A
   typed printer (walking each field's Quint type) would avoid it; it was not worth the size.
 - Action ids of `match` branches are numbered (`follow#2`), as `any` branches already are.
+
+## Real project 3 (#68): fairness over any shape of the variables, and a property that is an `and`
+
+The owner ran the branch build on a real project's setups. Five setups wrote fairness in forms
+earnest refused: `tick.weakFair(Set(st))`, a property `and { always(P), fair.implies(eventually(Q))
+}`, and fairness per buyer inside a `forall`, for an action given an argument, over a tuple of
+some of the variables.
+
+### What Quint and TLC do [ran: Quint 0.33.1, `quint verify --backend tlc` and Apalache 0.62.4]
+
+- A bare condition in a `temporal`, `temporal p = x == 0`: TLC checks it in the start states
+  ("violated by the initial state" for `x == 1`), and Apalache (`--temporal`, answering its
+  prompt about experimental support) gives the same three answers on `x == 0`, `x == 1` and
+  `and { x == 0, always(x <= 2) }`. Earnest judges such a part in the start states:
+  `eventually(P)` with no fairness, where a run may stop at once.
+- `weakFair(A, vars)` with `A` given an argument, `A` assigning every variable of `vars` but not
+  the others (`noise`, `log` in `buyers.qnt`, which the rest of the step gives): TLC runs, no
+  error, so earnest reads it. With `A` leaving a variable of `vars` open TLC throws ("TLC threw
+  an unexpected exception"), so that stays refused (#63).
+- `weakFair(reachDeadline("cid"), …)` with `"cid"` outside the set the step picks from: TLC
+  says ok, because `reachDeadline("cid")` is possible forever and never taken, so no run is fair
+  and the implication holds for nothing. Earnest refuses it by name.
+- `weakFair(reachDeadline, vars)` without the argument: Quint's typechecker refuses it.
+- `weakFair(up, x + y)` holds in TLC on `fairshapes` (every `up` changes `x + y`), but in general
+  `x + y` can stay while `x` and `y` change, so earnest refuses it with the expression.
+
+### earnest
+
+- `temporal.rs` reads a property as a list of parts, each with its fairness: `and` gives its
+  items, `F.implies(G)` with `F` fairness adds `F` to what `G`'s parts are fair to, and
+  `S.forall(x => …)` over a constant set gives one part per item (the item held as the
+  parameter's value), at the top or inside fairness. Parts are numbered `P`, `P#2`, … as slice 5
+  numbered conjunctions.
+- `vars` is walked through `val`s, tuples, records, lists and `Set(x)` of one item; a leaf must
+  be a state variable. The variables found, in the order written, are the fairness's `over`;
+  every variable is `over` empty.
+- Fairness of `A(c)` or over some variables is a `FairStep { action, inputs, over }` in the new
+  `Runs::fair_steps`, which a part of `Fairness::actions` names at `actions.len() + k`.
+  `Fairness` and `Eventually` keep their fields, because tests on `main` build them by literal.
+  The reader keeps on each `Path` the arguments its action was called with (`Path::given`): a
+  `nondet` local becomes the input of that slot, a value must equal `c` (else that path is not
+  `A(c)`).
+- The liveness pass turns a part with a fair step into a flag per arrow of the kept graph: the
+  action is the fair step's, some field of `over` differs between the two states, and one of
+  the action's input combinations that gives that arrow (`Search::inputs_by`) holds the given
+  values. A part of plain actions is judged as before, with no flags.
+- The TLA+ export writes each fair step as `Fair_<action>_<k>`, the action with the given input
+  picked from `{c}`, and its fairness as `WF_<<over>>(…)`.
+- `--rule P` selects `P` and `P#2`, `P#3`, … (`limits::asked`).
+- Found on the way: rules about runs were built with `slots: 0`, so a lambda in
+  `eventually(S.forall(b => …))` was a fault; they take the reader's slots now. And
+  `confirm --tlc` with `tla2tools.jar` 1.8 said `differs` on every broken rule about runs: that
+  TLC writes `Temporal property Eventually_x was violated.`, the one in Apalache's jar `Temporal
+  properties were violated.`, and only the second was read. This is the `differs` the #65 report
+  left open.
+
+### Each property, TLC and earnest
+
+| Fixture (states) | Property | `quint verify --backend tlc` | earnest | `confirm --tlc` |
+|---|---|---|---|---|
+| fairnessval (3) | `ReachesTwo` | ok | holds | same |
+| fairnessinand (3) | `ReachesTwo`, `#2` | ok; each part alone ok | holds, holds | same |
+| fairshapes (6) | `overPair`, `overRecord`, `overNested`, `overList`, `overSetOfOne` | ok | holds | same |
+| | `parts` (4 parts) | violated; parts alone: ok, ok, ok, violated | holds, holds, holds, broken | same |
+| | `infix` (3), `nestedParts` (3) | ok; violated (part 3 alone violated) | holds ×3; holds, holds, broken | same |
+| | `startsAtOne` | violated by the initial state | broken | same |
+| | `eachTarget` (2), `fairEach`, `unfairEach` (2) | ok, ok, violated (each part alone violated) | holds ×2, holds, broken ×2 | same |
+| buyers (18) | `allReach` | ok | holds | same |
+| | `unfairAllReach`, `noisy`, `bobReaches`, `overPeer` | violated | broken | same |
+| | `annReaches`, `parts` (2), `stepOverSome` | ok | holds | same |
+| | `allForms` (2): an `and`, `forall` per buyer, `reachDeadline(buyer)`, over `{ c: controls, peers: (lastBuyer, Set(previousPeer)) }` | ok | holds, holds | same |
+| fairtuple (4) | `halfListed` (was refused) | ok | holds | same |
+| properties (6) | `some`, `given` (were refused) | ok | holds | not run (the file keeps refused properties) |
+
+### Still refused, with their messages
+
+- `` `weakFair`  fairness over `x + y`, which is not the state variables and can stay the same
+  while one of them changes, is not read: write `weakFair(A, vars)` with `vars` a tuple of the
+  variables, such as `(x, y)`, or a `val` that is one`` (also `Set(x, y)`, `Set(x, y).size()`).
+- `` `exists`  fairness under `exists` is not read: a run must then be fair to one item the run
+  does not name. Write `forall`, or the fairness of each item``.
+- `` `forall`  a `forall` over more than 1000 items in a temporal property, more than the
+  checker reads as one property each``.
+- `` `reachDeadline`  fairness of an action given an argument that changes with the state is
+  not read: give it values that do not, such as a constant or an item of a `forall` over a set
+  that does not change``.
+- `` `reachDeadline`  fairness of `reachDeadline` given a value the step never picks for
+  `buyer` is not read: TLC holds such a step possible where the step never takes it``, and the
+  same when no path of the step calls it with those values.
+- `` fairness of `A` given an argument the step picks from a set that changes with the state``,
+  and `` … read only where the step calls `A` with a `nondet` it picks or a value that does not
+  change``.
+- The #63 refusal, now "Make `A` assign every variable the fairness names, or make the whole
+  step fair".
+- The left-out message ("the tuple leaves out `y`") is gone: fairness over some variables is
+  read.
+
+### Tests of earlier slices changed
+
+- `temporal::tests::fairness_over_some_variables_is_refused` became
+  `fairness_over_some_variables_is_fair_to_the_steps_that_change_them`.
+- `temporal::tests::fairness_of_an_action_given_arguments_is_refused` became
+  `fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action`.
+- `quint_actions::fairness_over_a_named_tuple_and_not_at_the_top_of_a_property_are_judged_as_tlc_judges_them`:
+  `halflisted` holds where it was refused.

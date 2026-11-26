@@ -58,6 +58,7 @@ Eventually_offered ==
 ```
 
 - **`Spec`:** `Init`, then `[][Next]_vars`, then `WF_vars(Next)`, which says a run never stops while some action can change the state, then `WF_vars(Action_id)` for each fair action (`fair: true` in TypeScript, `#[action("...", fair)]` in Rust), in declaration order. An action with inputs is one `Action_id` that picks its input with `\E`, so its fairness is fairness of the action as a whole. A step that keeps every variable as it is is stuttering, which `[Next]_vars` allows and weak fairness ignores, as earnest does.
+- **Fairness of one argument:** a Quint rule fair to an action given an argument, or over some of the variables, gets a definition `Fair_id_k`, the action with each given input picked from a set of that one value, and its fairness is `WF_<<x, y>>(Fair_id_k)` with the variables the Quint file named, in its order.
 - **Properties:** each rule `id` is `Eventually_id`: `<>(reaches)` without `after`, and `(after) ~> (reaches)` with it. A condition that reads no variable is written `vars = vars /\ condition`, because TLC misjudges a temporal property over a constant.
 - **Configuration:** `<Model>.cfg` names `SPECIFICATION Spec` in place of `INIT Init` and `NEXT Next`, keeps `CHECK_DEADLOCK FALSE`, lists the invariants, and then one `PROPERTY Eventually_id` line per rule. `earnest confirm` checks the invariants from `INIT Init` and `NEXT Next` as before, and each property alone with `SPECIFICATION Spec`.
 - A model without a rule about runs is exported exactly as before, whether or not it has fair actions.

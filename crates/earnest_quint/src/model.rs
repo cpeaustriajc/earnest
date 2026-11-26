@@ -8,7 +8,8 @@ use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, Field, Input, Model, Pick, Rule, Runs, Script, View,
+    Action, Code, End, Eventually, Expr, FairStep, Field, Input, Model, Pick, Rule, Runs, Script,
+    View,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
@@ -235,7 +236,7 @@ type Parts = (
     Vec<Vec<Value>>,
     Vec<Action>,
     Vec<Rule>,
-    Vec<Eventually>,
+    (Vec<Eventually>, Vec<FairStep>),
     Vec<Pick>,
 );
 
@@ -271,6 +272,7 @@ fn parts<'a>(
         defs: aliases(reader, step),
         parts: &parts,
         fields: names,
+        paths: &stepping,
     };
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step)?;
@@ -280,7 +282,13 @@ fn parts<'a>(
         .enumerate()
         .flat_map(|(position, path)| picks(None, position, path))
         .collect();
-    Ok((starts, actions, rules, read.eventually, picks))
+    Ok((
+        starts,
+        actions,
+        rules,
+        (read.eventually, read.fair_steps),
+        picks,
+    ))
 }
 
 fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
@@ -386,7 +394,7 @@ fn built(
         }));
     };
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
-    let (starts, mut actions, mut rules, mut eventually, picks) =
+    let (starts, mut actions, mut rules, (mut eventually, fair_steps), picks) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
     let imported = imported_runs(&compiled.table, &compiled.main);
@@ -438,6 +446,7 @@ fn built(
             eventually,
             scripts,
             picks,
+            fair_steps,
             ..Runs::default()
         },
     })

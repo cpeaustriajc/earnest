@@ -542,6 +542,26 @@ pub struct Runs {
     /// model lists them. `None` starts from every combination of the fields' `starts`. A
     /// setup does not change a listed start state.
     pub starts: Option<Vec<Vec<Value>>>,
+    /// The fair steps narrower than an action, which a rule's own [`Fairness`] may be fair to.
+    /// A part of [`Fairness::actions`] names fair step `k` by the position
+    /// `actions.len() + k`, where `actions` is [`Model::actions`].
+    pub fair_steps: Vec<FairStep>,
+}
+
+/// A step a part of a [`Fairness`] is fair to that is narrower than an action: TLA+'s
+/// `<<A(c)>>_e`, a step of one action, with some of its inputs given, that changes `e`.
+///
+/// An arrow counts as such a step when the action gives it with an input combination that
+/// holds the given values, and some field of `over` differs between its two states.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FairStep {
+    /// The position of the action in [`Model::actions`].
+    pub action: usize,
+    /// The inputs the step takes, each the position in [`Action::inputs`] and its value.
+    pub inputs: Vec<(usize, Value)>,
+    /// The positions in [`Model::fields`] of which the step must change one, in the order the
+    /// fairness named them. Empty is any field.
+    pub over: Vec<usize>,
 }
 
 /// One part of a chart label.

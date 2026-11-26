@@ -130,3 +130,51 @@ fn a_rule_named_on_the_command_line_selects_every_part_of_that_property() {
         "{run}"
     );
 }
+
+#[test]
+fn fairness_of_an_action_given_each_buyer_over_some_variables_is_judged_as_tlc_judges_it() {
+    let sandbox = with_compiled(&["buyers"]);
+    let run = verify(&sandbox, "buyers", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    assert_eq!(model(&report, "buyers")["states"], 18, "{run}");
+    let mut found = verdicts(&report, "buyers");
+    found.sort();
+    let mut expected = pairs(&[
+        ("allReach", "holds"),
+        ("unfairAllReach", "broken"),
+        ("noisy", "broken"),
+        ("annReaches", "holds"),
+        ("bobReaches", "broken"),
+        ("overPeer", "broken"),
+        ("parts", "holds"),
+        ("parts#2", "holds"),
+        ("stepOverSome", "holds"),
+        ("allForms", "holds"),
+        ("allForms#2", "holds"),
+    ]);
+    expected.sort();
+    assert_eq!(
+        found, expected,
+        "each verdict is the one quint verify --backend tlc gives the property\n{run}"
+    );
+}
+
+#[test]
+fn the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tuple_written() {
+    let sandbox = with_compiled(&["buyers"]);
+    let run = sandbox.earnest(&["tla", "models/buyers.json", "--out", "exported"]);
+    run.exits(0);
+    let module = fs::read_to_string(sandbox.path().join("exported/buyers.tla"))
+        .unwrap_or_else(|error| panic!("the module is written: {error}\n{run}"));
+    assert!(
+        module.contains("Fair_reachDeadline_1 ==\n    \\E buyer \\in {\"ann\"} :"),
+        "the action given `ann` picks `ann` alone\n{module}"
+    );
+    assert!(
+        module.contains(
+            "Eventually_annReaches ==\n    (WF_<<controls, lastBuyer, previousPeer>>(Fair_reachDeadline_1)) =>"
+        ),
+        "the fairness is over the tuple the file wrote\n{module}"
+    );
+}
