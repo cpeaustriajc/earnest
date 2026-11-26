@@ -20,10 +20,19 @@ const UNKNOWN: &str = "unknown";
 const EVENTUALLY: &str = "eventually";
 const TLC_STATES: &str = "states";
 const JAVA_TEMPORARY_FILES: &str = "java";
-const PROPERTY_BROKEN: &str = "Temporal properties were violated.";
-const ONE_PROPERTY_BROKEN: (&str, &str) = ("Temporal property ", " was violated.");
+const PROPERTIES_BROKEN: &str = "Temporal properties were violated.";
+const PROPERTY_NAMED: &str = "Temporal property ";
+const PROPERTY_NAMED_BROKEN: &str = " was violated.";
+const PROPERTIES_NAMED: &str = "Temporal properties ";
+const PROPERTIES_NAMED_BROKEN: &str = " were violated.";
+const CONSTANT_INVARIANT: &str = "The invariant of ";
+const CONSTANT_FALSE: &str = " is equal to FALSE";
+const CONSTANT_LEVEL_INVARIANT: &str = "The invariant ";
+const CONSTANT_LEVEL: &str = " is a constant-level formula ";
+const CONSTANT_LEVEL_FALSE: &str = "evaluates to FALSE.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
+const JVM_NOTICE: &str = "Picked up ";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TlcRun {
@@ -54,9 +63,38 @@ fn final_distinct_states(line: &str) -> Option<u64> {
 }
 
 fn violated_invariant(line: &str) -> Option<&str> {
-    let rest = line.strip_prefix(INVARIANT_ERROR)?;
-    let (name, _) = rest.split_once(VIOLATED)?;
-    Some(name)
+    if let Some(rest) = line.strip_prefix(INVARIANT_ERROR) {
+        let (name, _) = rest.split_once(VIOLATED)?;
+        return Some(name);
+    }
+    let error = line.strip_prefix(ERROR)?;
+    if let Some(name) = error
+        .strip_prefix(CONSTANT_INVARIANT)
+        .and_then(|rest| rest.strip_suffix(CONSTANT_FALSE))
+    {
+        return Some(name);
+    }
+    let (name, rest) = error
+        .strip_prefix(CONSTANT_LEVEL_INVARIANT)?
+        .split_once(CONSTANT_LEVEL)?;
+    rest.contains(CONSTANT_LEVEL_FALSE).then_some(name)
+}
+
+fn property_broken(error: &str) -> bool {
+    error == PROPERTIES_BROKEN
+        || error
+            .strip_prefix(PROPERTY_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTY_NAMED_BROKEN))
+        || error
+            .strip_prefix(PROPERTIES_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTIES_NAMED_BROKEN))
+}
+
+fn first_said(errors: &str) -> Option<&str> {
+    errors
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with(JVM_NOTICE))
 }
 
 pub(crate) fn read_tlc(output: &str) -> TlcRun {
@@ -181,18 +219,8 @@ pub(crate) struct RunsRun {
     pub(crate) run: TlcRun,
 }
 
-fn says_broken(error: &str) -> bool {
-    let (before, after) = ONE_PROPERTY_BROKEN;
-    error == PROPERTY_BROKEN
-        || error
-            .strip_prefix(before)
-            .and_then(|rest| rest.strip_suffix(after))
-            .is_some_and(|name| !name.is_empty() && !name.contains(' '))
-}
-
 fn runs_verdict(rule: &RunsRun) -> &'static str {
-    let broke = |error: &String| says_broken(error);
-    if rule.run.errors.iter().any(broke) {
+    if rule.run.errors.iter().any(|error| property_broken(error)) {
         BROKEN
     } else if rule.run.errors.is_empty() && rule.run.distinct_states.is_some() {
         HOLDS
@@ -222,7 +250,7 @@ pub(crate) fn runs_differences(checked: &Checked, rules: &[RunsRun], tool: Tool)
                 .run
                 .errors
                 .iter()
-                .find(|error| !says_broken(error))
+                .find(|error| !property_broken(error))
                 .map_or_default(|error| format!(" ({error})"));
             found.push(format!(
                 "rule {}: the checker says {}, {name} says {verdict}{error}",
@@ -344,12 +372,8 @@ impl Checker<'_> {
         if run.distinct_states.is_none() && run.errors.is_empty() {
             let said = String::from_utf8_lossy(&output.stderr);
             run.errors.push(
-                said.lines()
-                    .find(|line| !line.trim().is_empty())
-                    .map_or_else(
-                        || format!("{name} printed no state count"),
-                        |line| line.trim().to_owned(),
-                    ),
+                first_said(&said)
+                    .map_or_else(|| format!("{name} printed no state count"), str::to_owned),
             );
         }
         Ok(run)
@@ -557,6 +581,55 @@ State 1: <Initial predicate>
     }
 
     #[test]
+    fn an_invariant_tlc_finds_false_before_any_state_is_named() {
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_never is equal to FALSE\n").violated,
+            ["Rule_never"]
+        );
+        assert_eq!(
+            read_tlc(
+                "Error: The invariant Rule_never is a constant-level formula (i.e., it contains \
+                 no variables) and evaluates to FALSE. To assert ...\n"
+            )
+            .violated,
+            ["Rule_never"]
+        );
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_ok is equal to TRUE\n").violated,
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn every_wording_tlc_has_for_a_violated_temporal_property_is_broken() {
+        for line in [
+            "Temporal properties were violated.",
+            "Temporal property Eventually_p0 was violated.",
+            "Temporal properties Eventually_a, Eventually_b were violated.",
+        ] {
+            assert!(super::property_broken(line), "{line}");
+        }
+        assert!(!super::property_broken(
+            "Temporal property Eventually_p0 was not checked."
+        ));
+    }
+
+    #[test]
+    fn the_java_notices_before_tlc_s_error_are_not_its_error() {
+        assert_eq!(
+            super::first_said(
+                "Picked up JAVA_TOOL_OPTIONS: -Dhttps.proxyHost=x\nPicked up _JAVA_OPTIONS: \
+                 -Xmx1g\n\nError: Unable to access jarfile x\n"
+            ),
+            Some("Error: Unable to access jarfile x")
+        );
+        assert_eq!(
+            super::first_said("Picked up JAVA_TOOL_OPTIONS: -Dx=y\n"),
+            None
+        );
+    }
+
+    #[test]
     fn output_that_is_not_from_tlc_gives_nothing() {
         assert_eq!(
             read_tlc("Error: Unable to access jarfile x\n").errors.len(),
@@ -583,6 +656,7 @@ State 1: <Initial predicate>
                 milliseconds: 1,
                 cached: false,
                 reason: None,
+                runs_not_played: Vec::new(),
                 rules: rules
                     .iter()
                     .map(|(id, verdict)| RuleResult {

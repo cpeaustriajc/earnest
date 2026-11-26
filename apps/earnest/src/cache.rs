@@ -168,6 +168,7 @@ mod tests {
                 milliseconds: 7,
                 cached: false,
                 reason: None,
+                runs_not_played: Vec::new(),
                 rules: Vec::new(),
                 findings: Vec::new(),
             },

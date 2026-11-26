@@ -146,6 +146,7 @@ pub(crate) struct Scribe<'a> {
     labels: BTreeMap<Sym, String>,
     label_names: Names,
     in_tlc_order: bool,
+    tuple_items: Vec<Sym>,
 }
 
 impl<'a> Scribe<'a> {
@@ -156,11 +157,17 @@ impl<'a> Scribe<'a> {
             labels: BTreeMap::new(),
             label_names: labels,
             in_tlc_order: false,
+            tuple_items: Vec::new(),
         }
     }
 
     pub(crate) fn variables(&self) -> &[Variable] {
         &self.variables
+    }
+
+    pub(crate) fn label_written(&self, text: &str) -> Option<String> {
+        let name = self.symbols.find(text)?;
+        self.labels.get(&name).cloned()
     }
 
     fn label(&mut self, name: Sym) -> String {
@@ -554,11 +561,26 @@ impl<'a> Scribe<'a> {
         body: &Expr,
         scope: &mut Scope,
     ) -> Written {
-        let (declared, source, in_tlc_order) = match source {
-            Expr::Apply(Op::InTlcOrder, inner) if declared == Shelf::Seq && inner.len() == 1 => {
-                (Shelf::Set, &inner[0], true)
+        let (declared, source, in_tlc_order, tuple_items) = match source {
+            Expr::Apply(Op::InTlcOrder, inner) if declared == Shelf::Seq => {
+                match inner.as_slice() {
+                    [set] => (Shelf::Set, set, true, Vec::new()),
+                    [set, Expr::Const(Value::Seq(items))] => (
+                        Shelf::Set,
+                        set,
+                        true,
+                        items
+                            .iter()
+                            .filter_map(|item| match item {
+                                Value::Str(name) => Some(*name),
+                                _ => None,
+                            })
+                            .collect(),
+                    ),
+                    _ => (declared, source, false, Vec::new()),
+                }
             }
-            _ => (declared, source, false),
+            _ => (declared, source, false, Vec::new()),
         };
         let over = self.expr(source, scope);
         let first = self.expr(start, scope);
@@ -584,8 +606,10 @@ impl<'a> Scribe<'a> {
                 let other = scope.claim("other");
                 let pick = scope.claim("pick");
                 self.in_tlc_order = in_tlc_order;
+                self.tuple_items = tuple_items;
                 let before = self.before(inner, &pick, &other, scope);
                 self.in_tlc_order = false;
+                self.tuple_items = Vec::new();
                 let least = before.map_or_else(
                     || "TRUE".to_owned(),
                     |before| format!("\\A {other} \\in ({rest} \\ {{{pick}}}) : {before}"),
@@ -702,6 +726,16 @@ impl<'a> Scribe<'a> {
     ) -> Option<String> {
         let mut named: Vec<&(Sym, Kind)> = fields.iter().collect();
         named.sort_by(|first, second| self.symbols.name(first.0).cmp(self.symbols.name(second.0)));
+        let positions: Option<Vec<usize>> = named
+            .iter()
+            .map(|(name, _)| self.tuple_items.iter().position(|item| item == name))
+            .collect();
+        if let Some(positions) = positions {
+            let mut by_position: Vec<(usize, &(Sym, Kind))> =
+                positions.into_iter().zip(named).collect();
+            by_position.sort_by_key(|(position, _)| *position);
+            named = by_position.into_iter().map(|(_, field)| field).collect();
+        }
         let mut text = "FALSE".to_owned();
         for (name, kind) in named.into_iter().rev() {
             let label = self.label(*name);

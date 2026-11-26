@@ -187,7 +187,7 @@ First, earnest runs `quint parse` once for each listed `.qnt` file, to learn whi
 quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
 ```
 
-Then, for each file with a check of a setup module, or a check of runs only whose module declares no `init` or no `step` of its own, it runs `quint typecheck` once, whatever the number of checks in the file. A setup module instantiates a spec:
+Then, for each file with a check of a setup module, or a check of runs only whose module declares no `init` or no `step` of its own, it runs `quint typecheck` once, whatever the number of checks in the file. A setup module instantiates a spec, with `.*` or under a name (`as C`):
 
 ```sh
 quint typecheck specs/clock.qnt --out .earnest/quint/...
@@ -200,7 +200,7 @@ module Small {
 }
 ```
 
-For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one. No compile runs. Earnest builds a setup module made of any of these:
+For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one, and its module may also declare variables of its own, with no instance at all. No compile runs. Earnest builds a setup module made of any of these:
 
 | In the setup module | Example | Names |
 |---|---|---|
@@ -295,7 +295,7 @@ The full lists are in the reports of [the data types](https://github.com/cpeaust
 Quint's TLC run and its TypeScript evaluator give different answers to a few expressions. Earnest gives the answer of the TLC run, or names the expression:
 
 - `range(s, e)` is every number from `s` up to, not including, `e`, so `range(3, 1)` is `[]`, as Quint's TLC run gives. Quint leaves `range` undefined when `s` is greater than `e`, and the TypeScript evaluator gives `[3, 2]`.
-- `S.fold(v, f)` takes the items of `S` in the order TLC takes them. A set, a list, a map, a tuple or a record with fewer items comes first, and two of one size are compared item by item: a set's items in this same order, a map's keys and then their values, a tuple's items by position, a record's fields by name. Numbers and booleans go from low to high. Texts and record field names go alphabetically, where TLC takes them in the order it first met them, so a fold over texts whose answer depends on the order can differ from TLC's. A tuple of ten or more items compares its tenth item before its second. A `nondet` that picks from a set that does not change tries its values in the same order.
+- `S.fold(v, f)` takes the items of `S` in the order TLC takes them. A set, a list, a map, a tuple or a record with fewer items comes first, and two of one size are compared item by item: a set's items in this same order, a map's keys and then their values, a tuple's items by position, a record's fields by name. Numbers and booleans go from low to high. Texts and record field names go alphabetically, where TLC takes them in the order it first met them, so a fold over texts whose answer depends on the order can differ from TLC's. A `nondet` that picks from a set that does not change tries its values in the same order.
 - `S.setToMap()` where two pairs of `S` have the same key is a fault, because TLC keeps the first pair in its order and the evaluator the last one written: ``the rule `firstKept` gives `setToMap` two pairs with one key, which Quint's backends keep differently (TLC the first in its order, the evaluator the last written) in this state``. With each key once, it is the map of the pairs.
 - `weakFair(A, vars)`, where `A` on its own does not give every variable of `vars` its next value, is refused with the first variable it leaves open. TLC stops on such a formula. Fairness of the whole step, and of an action that assigns every variable, is read.
 
@@ -362,7 +362,12 @@ The runs of the spec module are played in a setup that earnest builds from `quin
 
 With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3) as R`, the run `P::upTest` starts with `P::init` and is played over `P::v` alone, as `quint test --main Pair` plays it.
 
-A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
+A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why. With `"runs": true`, the check plays the runs the compiled module holds and says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as `quint test` names them: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note.
+
+```text
+pass        Plays  0 states  0 ms
+  note  runs not played: S::upTest (written in a module this one imports, whose runs `quint compile` drops: the checker plays them only in a setup it builds itself, so write them in this module to play them here)
+```
 
 ## How values print
 
@@ -397,7 +402,7 @@ Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with n
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON, `name`, played runs and `expectCounterexample` are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` (its `name`, `expectCounterexample` and expressions among them) are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 

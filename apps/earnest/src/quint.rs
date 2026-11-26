@@ -892,6 +892,23 @@ fn compiled_once(
         .collect()
 }
 
+fn runs_not_played(
+    checks: &[Job],
+    compiled: &[Result<(String, bool), Problem>],
+    places: &HashMap<PathBuf, Places>,
+) -> Vec<Vec<String>> {
+    checks
+        .iter()
+        .zip(compiled)
+        .map(|(job, compiled)| match (compiled, places.get(&job.real)) {
+            (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
+                found.runs_not_played(&job.check.main, json)
+            }
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
 fn named_as_written(job: &Job, model: &mut earnest_ir::Model) -> Result<(), Vec<Located>> {
     for (item, rule) in job.check.invariants.iter().zip(model.rules.iter_mut()) {
         let written = job.written.iter().find(|written| written.is == *item);
@@ -944,6 +961,35 @@ fn read_check(job: &Job, compiled: Result<String, Problem>) -> Result<Compiled, 
     Ok((json, model, expected))
 }
 
+fn compiled_all(
+    checks: &[Job],
+    refusals: &[Option<Problem>],
+    (typechecked, places): (&HashMap<PathBuf, Typechecked>, &HashMap<PathBuf, Places>),
+    jobs: usize,
+) -> Vec<Result<(String, bool), Problem>> {
+    let paired: Vec<(&Job, Option<&Problem>)> = checks
+        .iter()
+        .zip(refusals.iter().map(Option::as_ref))
+        .collect();
+    let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
+        Some(problem) => (Some(Err((*problem).clone())), false),
+        None => match filled(job, typechecked.get(&job.real)) {
+            Some(json) => (Some(Ok(json)), true),
+            None => (
+                lacks_a_search(&job.check, places.get(&job.real))
+                    .then(|| compiled_for_runs(job, places.get(&job.real))),
+                false,
+            ),
+        },
+    });
+    let (built, from_typecheck): (Vec<_>, Vec<bool>) = built.into_iter().unzip();
+    compiled_once(checks, built, jobs)
+        .into_iter()
+        .zip(from_typecheck)
+        .map(|(compiled, from)| compiled.map(|json| (json, from)))
+        .collect()
+}
+
 pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut files = Vec::new();
     let mut checks = jobs_of(asked(listed), &mut files);
@@ -989,28 +1035,19 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .zip(typechecks)
         .filter_map(|((file, ..), read)| Some((file, read?)))
         .collect();
-    let paired: Vec<(&Job, Option<&Problem>)> = checks
-        .iter()
-        .zip(refusals.iter().map(Option::as_ref))
-        .collect();
-    let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
-        Some(problem) => Some(Err((*problem).clone())),
-        None => filled(job, typechecked.get(&job.real)).map(Ok).or_else(|| {
-            lacks_a_search(&job.check, places.get(&job.real))
-                .then(|| compiled_for_runs(job, places.get(&job.real)))
-        }),
-    });
-    let compiled = compiled_once(&checks, built, jobs);
+    let compiled = compiled_all(&checks, &refusals, (&typechecked, &places), jobs);
+    let not_played = runs_not_played(&checks, &compiled, &places);
+    let compiled = compiled.into_iter().map(|each| each.map(|(json, _)| json));
     let read: Vec<Result<Compiled, Vec<Located>>> = checks
         .iter()
         .zip(compiled)
         .map(|(job, compiled)| read_check(job, compiled))
         .collect();
-    for (job, read) in checks.iter().zip(read) {
+    for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
         files.push(match read {
             Ok((json, model, expected)) => ModelFile {
                 path: job.shown.clone(),
-                source: json,
+                source: format!("{json}\n{:?}", job.check),
                 declared: vec![Declared {
                     name: model.name.clone(),
                     rules: model.rule_ids().map(str::to_owned).collect(),
@@ -1020,6 +1057,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     model,
                     position: 0,
                     expected,
+                    runs_not_played,
                 }]),
             },
             Err(located) => {

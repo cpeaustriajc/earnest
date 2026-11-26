@@ -10,6 +10,7 @@ mod fourth_a;
 mod fourth_b;
 mod ninth;
 mod quint_first;
+mod quint_second;
 mod second;
 mod seventh;
 mod sixth;

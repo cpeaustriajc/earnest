@@ -14,6 +14,7 @@ pub(crate) struct Readable {
     pub(crate) model: Model,
     pub(crate) position: usize,
     pub(crate) expected: Vec<String>,
+    pub(crate) runs_not_played: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -179,12 +180,14 @@ fn understand(reading: Reading) -> Content {
                     model,
                     position,
                     expected: Vec::new(),
+                    runs_not_played: Vec::new(),
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
                     draft: Some(draft.clone()),
                     model,
                     position,
                     expected: Vec::new(),
+                    runs_not_played: Vec::new(),
                 }));
             }
             Err(found) => problems.extend(found),
@@ -210,6 +213,7 @@ fn quint(path: String, source: String) -> ModelFile {
                 model,
                 position: 0,
                 expected: Vec::new(),
+                runs_not_played: Vec::new(),
             }]),
         ),
         Err(problems) => (Vec::new(), Content::Unreadable(problems)),

@@ -318,6 +318,12 @@ pub(crate) struct ModelResult {
     pub(crate) reason: Option<String>,
     pub(crate) rules: Vec<RuleResult>,
     pub(crate) findings: Vec<FindingResult>,
+    #[serde(
+        rename = "runsNotPlayed",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub(crate) runs_not_played: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -386,6 +392,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             reason: searched.reason,
             rules: searched.rules,
             findings: searched.findings,
+            runs_not_played: readable.runs_not_played.clone(),
         },
         detail: detail_of(&ran.outcome, &readable.expected),
         position: readable.position,

@@ -534,7 +534,22 @@ pub(crate) fn applied<T>(
             narrow(lo, hi)?;
             Ok(Value::seq((lo..hi).map(Value::Int).collect()))
         }
-        Op::InTlcOrder => Ok(Value::seq(crate::tlc_order::listed(set_in(&first)?))),
+        Op::InTlcOrder => {
+            let tuple_items: Vec<Sym> = match &second {
+                Some(Value::Seq(items)) => items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Value::Str(name) => Some(*name),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            Ok(Value::seq(crate::tlc_order::listed(
+                set_in(&first)?,
+                &tuple_items,
+            )))
+        }
         Op::Assert if as_bool(&first)? => Ok(first),
         Op::Assert => Err(Fault::Asserted),
     }

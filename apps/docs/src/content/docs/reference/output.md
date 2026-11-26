@@ -157,6 +157,7 @@ Field meanings:
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
 - `summary`: `models` counts models only; `unreadable` counts unreadable files separately. A model with setups counts once for itself and once for each setup.
 - `models[].setup`: present only on the result of a model in a setup ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
+- `models[].runsNotPlayed`: present only on a [Quint check](/reference/quint/#runs) with `"runs": true` whose module `quint compile` wrote, when a module it imports has runs whose name ends in `Test`: those runs, named as `quint test` names them (`["S::upTest"]`). `quint compile` drops them, so they were not played, and `status` is what the played runs and the rules give. The text output says the same on a `note` line under the result line.
 - **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects. In a Quint check a tuple is `{"#tup": [1, 5]}` and a variant `{"tag": "Some", "value": 3}`, as Quint's ITF traces write them.
 - Two runs on the same files produce identical JSON apart from `milliseconds` and `cached`.
 

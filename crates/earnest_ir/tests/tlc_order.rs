@@ -161,3 +161,40 @@ fn a_range_of_the_most_numbers_is_built_and_a_wider_one_is_a_fault() {
             .contains("`a.to(b)` or `range(a, b)`) of more than the 1000000 numbers")
     );
 }
+
+#[test]
+fn a_tuple_given_its_item_names_compares_its_items_by_position() {
+    let mut met = Symbols::default();
+    for position in 1..=10 {
+        met.intern(&format!("_{position}"));
+    }
+    let mut symbols = met.alphabetical();
+    let names: Vec<_> = (1..=10)
+        .map(|position| symbols.intern(&format!("_{position}")))
+        .collect();
+    let tuple = |one_at: usize| {
+        Value::record(
+            names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| (*name, int(i64::from(index == one_at))))
+                .collect(),
+        )
+    };
+    let (second, tenth) = (tuple(1), tuple(9));
+    let items = set(&[second.clone(), tenth.clone()]);
+    let positions = seq(&names.iter().copied().map(Value::Str).collect::<Vec<_>>());
+    assert_eq!(
+        both(&Expr::Apply(
+            Op::InTlcOrder,
+            vec![Expr::Const(items.clone()), Expr::Const(positions)]
+        )),
+        Ok(seq(&[tenth.clone(), second.clone()])),
+        "TLC compares a tuple from its first item: a 1 in the tenth comes before a 1 in the second"
+    );
+    assert_eq!(
+        both(&Expr::Apply(Op::InTlcOrder, vec![Expr::Const(items)])),
+        Ok(seq(&[second, tenth])),
+        "without the item names a record compares its fields by name, `_10` before `_2`"
+    );
+}
