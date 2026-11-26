@@ -852,3 +852,204 @@ and names the construct and the definition it is in.
 - Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
   general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
   `scan.rs`.
+
+## Slice 7: what is checked
+
+`earnest verify` starts the project's own `quint` for the modules listed in `earnest.quint.json`
+(issue #60). Quint 0.33.1 from npm in a scratch folder outside the repository, linked as
+`node_modules`, Java 21 on PATH, 4 cores.
+
+A folder with two spec files and five checks, using only what the reader reads today (`int`,
+`bool`, invariants, `nondet` over a set, an instance with a constant):
+
+```quint
+// A dimmer: a level that goes up to a constant and back to zero.
+module Lamp {
+  const Max: int
+
+  var level: int
+  var on: bool
+
+  action init = all { level' = 0, on' = false }
+
+  action toggle = all { on' = not(on), level' = level }
+  action brighter = all { on, level < Max, level' = level + 1, on' = on }
+  action off = all { on, level == Max, level' = 0, on' = false }
+  action step = any { toggle, brighter, off }
+
+  val levelOk = level <= 6
+  val darkWhenOff = not(on) implies level <= Max
+}
+
+module Dim {
+  import Lamp(Max = 2).*
+}
+
+module Bright {
+  import Lamp(Max = 5).*
+}
+
+module Blinding {
+  import Lamp(Max = 9).*
+}
+```
+
+```quint
+// Two counters that move together or apart.
+module tally {
+  var a: int
+  var b: int
+
+  action init = all { a' = 0, b' = 0 }
+  action both = all { a < 4, a' = a + 1, b' = b + 1 }
+  action left = all { a < 4, a' = a + 1, b' = b }
+  action reset = all { a == 4, a' = 0, b' = 0 }
+  action step = any { both, left, reset }
+
+  val bBelowA = b <= a
+  val small = a + b < 8
+}
+
+module fast {
+  var n: int
+  var even: bool
+
+  action start = all { n' = 0, even' = true }
+  action go = {
+    nondet d = Set(1, 2).oneOf()
+    all { n + d <= 6, n' = n + d, even' = (n + d) % 2 == 0 }
+  }
+
+  val parity = even iff n % 2 == 0
+}
+```
+
+```json
+{ "checks": [
+  { "file": "lamp.qnt", "main": "Dim", "invariants": ["levelOk", "darkWhenOff"] },
+  { "file": "lamp.qnt", "main": "Bright", "invariants": ["levelOk"] },
+  { "file": "lamp.qnt", "main": "Blinding", "invariants": ["levelOk"] },
+  { "file": "tally.qnt", "main": "tally", "invariants": ["bBelowA", "small"] },
+  { "file": "tally.qnt", "main": "fast", "init": "start", "step": "go", "invariants": ["parity"] }
+] }
+```
+
+### By hand
+
+- **Dim** (`Max = 2`): `level` only rises while `on`, `off` takes `Max` back to `(0, false)`, and
+  `toggle` gives every level with `on` false: `(0..2) × on/off` = **6**. `levelOk` and
+  `darkWhenOff` hold.
+- **Bright** (`Max = 5`): **12**; `levelOk` (`level <= 6`) holds.
+- **Blinding** (`Max = 9`): **20**; `levelOk` is broken at level 7: `toggle`, then 7 `brighter`,
+  **8 steps**.
+- **tally**: every `(a, b)` with `0 <= b <= a <= 4`: **15**. `bBelowA` holds; `small`
+  (`a + b < 8`) is broken at `(4, 4)` after 4 `both`.
+- **fast** (`init` `start`, `step` `go`): `n` from 0 to 6 with `even` right: **7**; `parity`
+  holds.
+
+### TLC, as Quint runs it
+
+One command per check (per invariant for `tally`). The lines kept are TLC's counts and verdicts
+and the steps of each violation; the rest is Apalache's and TLC's start-up text:
+
+```text
+=== quint verify --backend tlc --main Dim --invariant levelOk,darkWhenOff lamp.qnt
+10 states generated, 6 distinct states found, 0 states left on queue.
+[ok] No violation found (624ms).
+=== quint verify --backend tlc --main Bright --invariant levelOk lamp.qnt
+19 states generated, 12 distinct states found, 0 states left on queue.
+[ok] No violation found (587ms).
+=== quint verify --backend tlc --main Blinding --invariant levelOk lamp.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <Blinding_Lamp_toggle line 31, col 3 to line 32, col 50 of module Blinding>
+State 3: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+...                                                     (States 4 to 8 the same)
+State 9: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+22 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (624ms).
+=== quint verify --backend tlc --main tally --invariant bBelowA tally.qnt
+26 states generated, 15 distinct states found, 0 states left on queue.
+[ok] No violation found (588ms).
+=== quint verify --backend tlc --main tally --invariant small tally.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <both line 25, col 9 to line 25, col 43 of module tally>
+State 3: <both line 25, col 9 to line 25, col 43 of module tally>
+State 4: <both line 25, col 9 to line 25, col 43 of module tally>
+State 5: <both line 25, col 9 to line 25, col 43 of module tally>
+24 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (662ms).
+=== quint verify --backend tlc --main fast --init start --step go --invariant parity tally.qnt
+12 states generated, 7 distinct states found, 0 states left on queue.
+[ok] No violation found (486ms).
+```
+
+TLC stops at the first violation, so the counts of `Blinding` and of `tally` with `small` are
+partial; `tally`'s full 15 is from `bBelowA`.
+
+### earnest
+
+```text
+$ earnest verify          (in the folder, with nothing cached: 1.2 s)
+pass        Dim  6 states  0 ms
+pass        Bright  12 states  0 ms
+fail        Blinding  20 states  0 ms
+  broken  Blinding::Lamp::levelOk  "The Quint invariant `Blinding::Lamp::levelOk` holds"
+    start  Blinding::Lamp::level = 0, Blinding::Lamp::on = false
+    1. Blinding::Lamp::toggle  Blinding::Lamp::on: false -> true
+    2. Blinding::Lamp::brighter  Blinding::Lamp::level: 0 -> 1
+    ...                                    (steps 3 to 7 the same, one level each)
+    8. Blinding::Lamp::brighter  Blinding::Lamp::level: 6 -> 7
+    end    Blinding::Lamp::level = 7, Blinding::Lamp::on = true
+fail        tally  15 states  0 ms
+  broken  small  "The Quint invariant `small` holds"
+    start  a = 0, b = 0
+    1. both  a: 0 -> 1, b: 0 -> 1
+    2. both  a: 1 -> 2, b: 1 -> 2
+    3. both  a: 2 -> 3, b: 2 -> 3
+    4. both  a: 3 -> 4, b: 3 -> 4
+    end    a = 4, b = 4
+pass        fast  7 states  0 ms
+5 models: 3 pass, 2 fail, 0 unfinished
+```
+
+| Check | By hand | TLC | earnest | Invariant | By hand | TLC | earnest |
+|---|---|---|---|---|---|---|---|
+| Dim | 6 | 6 | 6 | `levelOk`, `darkWhenOff` | hold | ok | hold |
+| Bright | 12 | 12 | 12 | `levelOk` | holds | ok | holds |
+| Blinding | 20 | 15 (stopped) | 20 | `levelOk` | broken, 8 steps | violation, 8 steps | broken, 8 steps |
+| tally | 15 | 15 | 15 | `bBelowA` | holds | ok | holds |
+| | | | | `small` | broken, 4 steps | violation, 4 steps | broken, 4 steps |
+| fast | 7 | 7 | 7 | `parity` | holds | ok | holds |
+
+The same samples with refused constructs (`clock.qnt`, `record.qnt` from `models/`), with real
+Quint, give each problem at its line:
+
+```text
+unreadable  record.qnt
+  record.qnt:3:3  `var r`  a variable that holds records: only `int` and `bool` variables are read yet
+  record.qnt:5:22  `Rec`  records are not read yet, in the definition `init`
+  record.qnt:7:22  `Rec`  records are not read yet, in the definition `step`
+  record.qnt:9:12  `field`  records are not read yet, in the definition `ok`
+unreadable  clock.qnt
+  clock.qnt:5:3  text  text is not read yet, in the definition `Large::C::Nodes`
+  clock.qnt:8:3  `var Large::C::seen`  a variable that holds sets: only `int` and `bool` variables are read yet
+  clock.qnt:13:10  `contains`  sets are not read yet, in the definition `Large::C::hear`
+  clock.qnt:42:7  `run largeTick`  runs are not read yet, in the definition `largeTick`
+```
+
+### Timing: 17 checks of one file
+
+`many.qnt`: the `Lamp` module above plus 17 setup modules `S1`..`S17`
+(`module S5 { import Lamp(Max = 5).* }`), one check each with `darkWhenOff`, the shape of
+section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores, load average
+2.0 to 2.4:
+
+| Run | Time |
+|---|---|
+| nothing cached, `--jobs` all cores (4 compiles at a time) | 4.06 s |
+| nothing cached, `--jobs 1` | 8.36 s |
+| the second run, nothing changed (no Node started) | 0.040 s |
+
+The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
