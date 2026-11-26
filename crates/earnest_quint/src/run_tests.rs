@@ -249,7 +249,7 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
     assert_eq!(
         named,
         [
-            ("a run", true),
+            ("`y`", true),
             ("`reps`", true),
             ("`fail`", true),
             ("`assert`", true)
@@ -261,7 +261,10 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
             .iter()
             .any(|problem| problem.feature == feature && problem.message.contains(why))
     };
-    assert!(says("a run", "does not start with `init`"), "{problems:?}");
+    assert!(
+        says("`y`", "starts with `step`, which reads this variable"),
+        "{problems:?}"
+    );
     assert!(says("`reps`", "repeats 0 times"), "{problems:?}");
     assert!(
         says("`fail`", "not the run's last operator"),
