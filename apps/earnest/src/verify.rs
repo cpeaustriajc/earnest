@@ -3,15 +3,19 @@ use crate::cache::{Cache, Key};
 use crate::changes::{Compare, check_base, rule_changes};
 use crate::commands::{Exit, Gathered, gather, limits_of, refusing, say_what_is_unread};
 use crate::print::{Since, Verified, to_stderr, to_stdout};
+use crate::reading::ModelFile;
 use crate::run::{Bounds, Checked, Graphs, Search, checked, explore_each};
 use crate::select::{Target, select_with_removed};
 use earnest_check::stopped_by_time_limit;
 use std::path::Path;
+use std::ptr;
 
 const HERE: &str = ".";
+const QUINT_EXTENSION: &str = "qnt";
 
 #[derive(Debug)]
 struct Entry<'a> {
+    file: &'a ModelFile,
     path: &'a str,
     key: Key,
     stored: Vec<Checked>,
@@ -39,12 +43,16 @@ fn entries<'a>(
     let mut entries: Vec<Entry<'a>> = Vec::new();
     for target in targets {
         let path = target.file.path.as_str();
-        if entries.last().is_some_and(|entry| entry.path == path) {
+        if entries
+            .last()
+            .is_some_and(|entry| ptr::eq(entry.file, target.file))
+        {
             continue;
         }
-        let key = Key::new(path, &target.file.source, bounds, rule);
+        let key = Key::new(&cached_as(target.file), &target.file.source, bounds, rule);
         let stored = cache.load(&key);
         entries.push(Entry {
+            file: target.file,
             path,
             key,
             stored,
@@ -52,6 +60,16 @@ fn entries<'a>(
         });
     }
     entries
+}
+
+fn cached_as(file: &ModelFile) -> String {
+    let is_quint_check = Path::new(&file.path)
+        .extension()
+        .is_some_and(|extension| extension == QUINT_EXTENSION);
+    match file.declared.first() {
+        Some(check) if is_quint_check => format!("{}\n{}", file.path, check.name),
+        _ => file.path.clone(),
+    }
 }
 
 fn keep(entry: &Entry<'_>, cache: &Cache) {
@@ -92,7 +110,7 @@ fn check_all(
     let entry_of = |entries: &[Entry<'_>], target: &Target<'_>| {
         entries
             .iter()
-            .position(|entry| entry.path == target.file.path)
+            .position(|entry| ptr::eq(entry.file, target.file))
     };
     let mut results: Vec<Option<Checked>> = targets
         .iter()
@@ -146,7 +164,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.selection.models)?;
+    } = gather(&arguments.selection.models, bounds.jobs)?;
     let model = arguments.selection.models.model.as_deref();
     let rule = arguments.selection.rule.as_deref();
     let selected = select_with_removed(&files, model, rule, arguments.base.as_deref())

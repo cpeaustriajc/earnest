@@ -33,6 +33,7 @@ pub fn is_compiled_quint(source: &str) -> bool {
 /// The reader takes it and does not play runs yet: a `run` definition in the module is still
 /// refused.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Runs {
     /// No run is played.
     #[default]
@@ -46,6 +47,7 @@ pub enum Runs {
 /// A problem with what is known of where it comes from, so a caller that has the `.qnt` file's
 /// source map can move it to its line.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Located {
     /// The problem, at line 1, column 1.
     pub problem: Problem,
@@ -56,6 +58,18 @@ pub struct Located {
     /// The definition or declaration the problem is in, as the compiled module names it:
     /// `step`, or `Small::Clock::step` for one flattened in from an instance.
     pub definition: Option<String>,
+}
+
+impl Located {
+    /// `problem`, found at the expression with the Quint id `id`, in `definition`.
+    #[must_use]
+    pub fn new(problem: Problem, id: Option<u64>, definition: Option<&str>) -> Self {
+        Self {
+            problem,
+            id,
+            definition: definition.map(str::to_owned),
+        }
+    }
 }
 
 /// Reads the compiled Quint module in `source`, from the file at `path`.
@@ -79,8 +93,8 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
 /// reader knows them.
 pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec<Located>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
-        vec![Located {
-            problem: Problem::new(
+        vec![Located::new(
+            Problem::new(
                 path,
                 TOP_OF_FILE,
                 "the JSON",
@@ -89,17 +103,19 @@ pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec
                      can't read it: {error}"
                 ),
             ),
-            id: None,
-            definition: None,
-        }]
+            None,
+            None,
+        )]
     })?;
     model::model(path, &compiled).map_err(|refused| {
         refused
             .into_iter()
-            .map(|refusal| Located {
-                problem: Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why),
-                id: refusal.id,
-                definition: refusal.within.filter(|name| !name.is_empty()),
+            .map(|refusal| {
+                Located::new(
+                    Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why),
+                    refusal.id,
+                    refusal.within.as_deref().filter(|name| !name.is_empty()),
+                )
             })
             .collect()
     })
