@@ -62,10 +62,7 @@ fn membership_in_a_range_compares_and_any_other_wide_range_is_a_fault() {
         "subsetWide",
         "notSubsetWide",
     ]);
-    assert_eq!(
-        at_start(&fixes(), "sizeWide"),
-        Err(Fault::TooWide(0, 1_000_000_000))
-    );
+    assert_eq!(at_start(&fixes(), "sizeWide"), Err(Fault::TooWide));
 }
 
 #[test]

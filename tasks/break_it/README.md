@@ -1681,8 +1681,10 @@ the `setToMap` test asserts something else than it did.
   action that assigns every variable is read as before.
 - `x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends.
   `Op::Interval` and `Op::Ascending` of more than 1 000 000 numbers (`MOST_RANGE_VALUES`) are
-  `Fault::TooWide`, ``builds the range of numbers from 0 to 1000000000, more than the 1000000
-  numbers a range may hold``: one comparison before the set is built. `wide_range` passes with
+  `Fault::TooWide`, ``builds a range (`a.to(b)` or `range(a, b)`) of more than the 1000000
+  numbers a range may hold``: one comparison before the set is built. The fault does not carry
+  the two ends: with them `Fault` grew from 1 to 24 bytes and `wide` ran 3.3 % more
+  instructions, past its budget. `wide_range` passes with
   3 states in 5 ms.
 
 Unit tests: `crates/earnest_ir/tests/tlc_order.rs` and `crates/earnest_quint/src/fixes_tests.rs`

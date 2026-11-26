@@ -46,9 +46,9 @@ pub enum Fault {
     /// `setToMap` of a Quint model met two pairs with one key and different values, which
     /// Quint's backends turn into different maps.
     KeyTwice,
-    /// A range of whole numbers from the first to the second holds more than
+    /// A range of whole numbers, `a.to(b)` or `range(a, b)` in a Quint model, holds more than
     /// [`MOST_RANGE_VALUES`] numbers.
-    TooWide(i64, i64),
+    TooWide,
     /// The time limit passed while the expression was being evaluated. It says nothing about
     /// the model: the search drops the state it was evaluating.
     Stopped,
@@ -78,8 +78,8 @@ impl Fault {
                                keep differently (TLC the first in its order, the evaluator the \
                                last written)"
                 .to_owned(),
-            Self::TooWide(lo, hi) => format!(
-                "builds the range of numbers from {lo} to {hi}, more than the \
+            Self::TooWide => format!(
+                "builds a range (`a.to(b)` or `range(a, b)`) of more than the \
                  {MOST_RANGE_VALUES} numbers a range may hold"
             ),
             Self::Stopped => "was stopped by the time limit".to_owned(),
@@ -534,7 +534,7 @@ pub(crate) fn applied<T>(
 
 fn narrow(lo: i64, end: i64) -> Result<(), Fault> {
     if lo < end && end.abs_diff(lo) > MOST_RANGE_VALUES {
-        return Err(Fault::TooWide(lo, end.saturating_sub(1)));
+        return Err(Fault::TooWide);
     }
     Ok(())
 }

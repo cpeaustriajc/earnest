@@ -141,11 +141,11 @@ fn a_range_of_the_most_numbers_is_built_and_a_wider_one_is_a_fault() {
     assert!(matches!(built, Ok(Value::Set(items)) if items.len() == 1_000_000));
     assert_eq!(
         apply(Op::Interval, &[int(0), int(most)]),
-        Err(Fault::TooWide(0, most))
+        Err(Fault::TooWide)
     );
     assert_eq!(
         apply(Op::Interval, &[int(0), int(i64::MAX)]),
-        Err(Fault::TooWide(0, i64::MAX - 1))
+        Err(Fault::TooWide)
     );
     assert_eq!(
         apply(Op::Interval, &[int(5), int(-5_000_000)]),
@@ -153,11 +153,11 @@ fn a_range_of_the_most_numbers_is_built_and_a_wider_one_is_a_fault() {
     );
     assert_eq!(
         apply(Op::Ascending, &[int(-1), int(most)]),
-        Err(Fault::TooWide(-1, most - 1))
+        Err(Fault::TooWide)
     );
     assert!(
-        Fault::TooWide(0, most)
+        Fault::TooWide
             .describe()
-            .contains("from 0 to 1000000, more than the 1000000 numbers")
+            .contains("`a.to(b)` or `range(a, b)`) of more than the 1000000 numbers")
     );
 }

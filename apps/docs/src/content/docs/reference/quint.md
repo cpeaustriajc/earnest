@@ -128,7 +128,7 @@ Quint's TLC run and its TypeScript evaluator give different answers to a few exp
 - `S.setToMap()` where two pairs of `S` have the same key is a fault, because TLC keeps the first pair in its order and the evaluator the last one written: ``the rule `firstKept` gives `setToMap` two pairs with one key, which Quint's backends keep differently (TLC the first in its order, the evaluator the last written) in this state``. With each key once, it is the map of the pairs.
 - `weakFair(A, vars)`, where `A` on its own does not give every variable of `vars` its next value, is refused with the first variable it leaves open. TLC stops on such a formula. Fairness of the whole step, and of an action that assigns every variable, is read.
 
-`x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends of the range and never build it, so `n.in(0.to(1000000000))` costs as much as `0 <= n and n <= 1000000000`. Any other range of more than 1,000,000 numbers is a fault, ``the rule `wide` builds the range of numbers from 0 to 1000000000, more than the 1000000 numbers a range may hold in this state``, where it would take the machine's memory.
+`x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends of the range and never build it, so `n.in(0.to(1000000000))` costs as much as `0 <= n and n <= 1000000000`. Any other range of more than 1,000,000 numbers is a fault, ``the rule `wide` builds a range (`a.to(b)` or `range(a, b)`) of more than the 1000000 numbers a range may hold in this state``, where it would take the machine's memory.
 
 ## Runs
 
