@@ -468,20 +468,65 @@ fn lacks_a_search(check: &Check, places: Option<&Places>) -> bool {
         })
 }
 
-fn unbuilt(job: &Job) -> Problem {
-    Problem::new(
-        &job.shown,
-        TOP_OF_FILE,
-        &format!("`{}`", job.check.main),
-        &format!(
-            "the check lists only runs, and the module declares no `{}` or no `{}` of its own, \
-             so the checker builds the module from `quint typecheck` and plays its runs from \
-             their first actions: it builds a module of instances, imports and definitions of its \
-             own, and this module is of another shape. Name an `init` and a `step` the module \
-             has in the check, so that `quint compile` takes it",
-            job.check.init, job.check.step
+fn unbuilt(job: &Job, problem: Problem) -> Problem {
+    let check = &job.check;
+    Problem {
+        message: format!(
+            "the check lists only runs, and the module `{}` sees no `{}` and `{}` that `quint \
+             compile` takes, nor does it import a module that has an `init` and a `step`: name \
+             in the check an `init` and a `step` the module sees, such as `A::init` of an \
+             `import Spec as A`. Quint said: {}",
+            check.main, check.init, check.step, problem.message
         ),
-    )
+        ..problem
+    }
+}
+
+fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Problem> {
+    let check = &job.check;
+    let entry = (check.init.clone(), check.step.clone());
+    let mut tried: Vec<(String, String)> = Vec::new();
+    if places
+        .is_none_or(|found| found.sees(&check.main, &entry.0) && found.sees(&check.main, &entry.1))
+    {
+        tried.push(entry.clone());
+    }
+    for each in places.map_or_else(Vec::new, |found| found.imported_init_and_step(&check.main)) {
+        if !tried.contains(&each) {
+            tried.push(each);
+        }
+    }
+    if tried.is_empty() {
+        tried.push(entry);
+    }
+    let mut first = None;
+    for (init, step) in tried {
+        let attempt = Job {
+            shown: job.shown.clone(),
+            real: job.real.clone(),
+            check: Check {
+                init,
+                step,
+                ..check.clone()
+            },
+            name: job.name.clone(),
+            expected: job.expected.clone(),
+            read: job.read,
+            quint: job.quint.clone(),
+        };
+        match compile(&attempt) {
+            Ok(json) => return Ok(json),
+            Err(problem) => {
+                first.get_or_insert(problem);
+            }
+        }
+    }
+    Err(unbuilt(
+        job,
+        first.unwrap_or_else(|| {
+            Problem::new(&job.shown, TOP_OF_FILE, "`quint`", "nothing was compiled")
+        }),
+    ))
 }
 
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
@@ -621,19 +666,8 @@ fn segments_end_alike(first: &str, second: &str) -> bool {
 }
 
 fn expected_ids(job: &Job, model: &earnest_ir::Model) -> Result<Vec<String>, Problem> {
-    let eventually: Vec<&str> = model
-        .runs
-        .eventually
-        .iter()
-        .map(|rule| rule.id.as_str())
-        .collect();
     let mut ids: Vec<String> = Vec::new();
-    for id in model.rule_ids() {
-        let id = if eventually.contains(&id) {
-            whole_of(id)
-        } else {
-            id
-        };
+    for id in model.rule_ids().map(whole_of) {
         if !ids.iter().any(|kept| kept == id) {
             ids.push(id.to_owned());
         }
@@ -865,7 +899,8 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
         Some(problem) => Some(Err((*problem).clone())),
         None => filled(job, typechecked.get(&job.real)).map(Ok).or_else(|| {
-            lacks_a_search(&job.check, places.get(&job.real)).then(|| Err(unbuilt(job)))
+            lacks_a_search(&job.check, places.get(&job.real))
+                .then(|| compiled_for_runs(job, places.get(&job.real)))
         }),
     });
     let compiled = compiled_once(&checks, built, jobs);

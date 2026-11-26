@@ -1,9 +1,7 @@
 use crate::reading::Readable;
 use crate::workers::run_each;
 use earnest_chart::{chart_outline, chart_with_limit, detail_lines, one_line};
-use earnest_check::{
-    EVERY_EXPECTED_FOUND, Limits, Outcome, RuleKind, Status as Judged, Verdict, explore,
-};
+use earnest_check::{EVERY_EXPECTED_FOUND, Limits, Outcome, Status as Judged, Verdict, explore};
 use earnest_ir::Model;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -91,11 +89,7 @@ pub(crate) fn whole_of(id: &str) -> &str {
 }
 
 fn base_id(rule: &earnest_check::RuleOutcome) -> &str {
-    if rule.kind == RuleKind::Eventually {
-        whole_of(&rule.id)
-    } else {
-        &rule.id
-    }
+    whole_of(&rule.id)
 }
 
 fn is_expected(expected: &[String], rule: &earnest_check::RuleOutcome) -> bool {
@@ -105,14 +99,23 @@ fn is_expected(expected: &[String], rule: &earnest_check::RuleOutcome) -> bool {
 fn stop_once_broken(search: &Search<'_>, expected: &[String]) -> Vec<String> {
     let wanted = |id: &str| search.only_rule.is_none_or(|only| only == id);
     let model = search.model;
-    let eventually_wanted = model.runs.eventually.iter().any(|rule| wanted(&rule.id));
+    let eventually_wanted = model
+        .runs
+        .eventually
+        .iter()
+        .any(|rule| wanted(&rule.id) || wanted(whole_of(&rule.id)));
     let always: Vec<String> = model
         .rules
         .iter()
         .filter(|rule| wanted(&rule.id))
         .map(|rule| rule.id.clone())
         .collect();
-    if eventually_wanted || always.is_empty() || !always.iter().all(|id| expected.contains(id)) {
+    if eventually_wanted
+        || always.is_empty()
+        || !always
+            .iter()
+            .all(|id| expected.iter().any(|name| name == whole_of(id)))
+    {
         return Vec::new();
     }
     always
@@ -390,12 +393,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
 }
 
 pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool {
-    let base = if rule.kind.as_deref() == Some("eventually") {
-        whole_of(&rule.id)
-    } else {
-        &rule.id
-    };
-    expected.iter().any(|name| name == base)
+    expected.iter().any(|name| name == whole_of(&rule.id))
 }
 
 fn detail_of(outcome: &Outcome, expected: &[String]) -> Vec<String> {

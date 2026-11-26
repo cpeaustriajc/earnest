@@ -50,8 +50,10 @@ case "$1" in
 esac
 "##;
 
-const COMPILED: [(&str, &str); 6] = [
+const COMPILED: [(&str, &str); 8] = [
     ("expect@small@", "expect-small.json"),
+    ("parts@@partly", "parts-partly.json"),
+    ("parts@@wholly", "parts-wholly.json"),
     ("expect@small,tiny@", "expect-small-tiny.json"),
     ("expect@nonNegative,small@", "expect-nonNegative-small.json"),
     ("counter@inRange@", "counter-inRange.json"),
@@ -59,7 +61,7 @@ const COMPILED: [(&str, &str); 6] = [
     ("stuck@ok@", "stuck.json"),
 ];
 
-const MODULES: [&str; 4] = ["expect", "counter", "swing", "stuck"];
+const MODULES: [&str; 5] = ["expect", "counter", "swing", "stuck", "parts"];
 
 const NO_END: &str = "every expected counterexample was found";
 
@@ -501,5 +503,55 @@ fn editing_the_runs_alone_checks_again() {
             .model_line("stuck")
             .contains(&"(cached)".to_owned()),
         "the result with the runs is not served for the check without them\n{without_runs}"
+    );
+}
+
+#[test]
+fn a_temporal_property_in_parts_is_met_when_one_part_is_broken() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "parts.qnt", "main": "parts", "expectCounterexample": ["partly"] }"#,
+    );
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(0);
+    let report = run.json();
+    let found = model(&report, "parts");
+    let parts: Vec<(String, String, String)> = found["rules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|each| {
+            (
+                each["id"].as_str().unwrap_or_default().to_owned(),
+                each["verdict"].as_str().unwrap_or_default().to_owned(),
+                each["expected"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parts,
+        [
+            ("partly".to_owned(), "holds".to_owned(), "broken".to_owned()),
+            (
+                "partly#2".to_owned(),
+                "broken".to_owned(),
+                "broken".to_owned()
+            ),
+        ],
+        "each part carries the expectation, and one broken part meets it\n{run}"
+    );
+    let text = quint.earnest(&["verify"]);
+    assert_eq!(
+        text.detail("parts"),
+        ["broken  partly  (expected)"],
+        "{text}"
+    );
+    quint.checks(r#"{ "file": "parts.qnt", "main": "parts", "expectCounterexample": ["wholly"] }"#);
+    let held = quint.earnest(&["verify"]);
+    held.exits(1);
+    assert_eq!(
+        held.detail("parts"),
+        ["holds  wholly  a counterexample was expected"],
+        "{held}"
     );
 }

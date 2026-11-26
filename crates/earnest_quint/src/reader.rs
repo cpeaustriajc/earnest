@@ -240,7 +240,7 @@ pub(crate) fn constant(expr: &Expr, slots: usize) -> Read<Option<Value>> {
         .map_err(fault_refusal)
 }
 
-fn too_many_actions() -> Refusal {
+pub(crate) fn too_many_actions() -> Refusal {
     refusal(
         "`step`",
         &format!(
@@ -820,6 +820,27 @@ impl<'a> Reader<'a> {
                 Ok(vec![Path::guarded(self.pure(expr)?)])
             }
         }
+    }
+
+    pub(crate) fn alternatives(&mut self, def: &'a Def) -> Vec<(&'a Quint, Read<Vec<Path>>)> {
+        self.enter(def, |reader| {
+            let alias = match &def.expr {
+                Quint::Name { name, .. } => reader
+                    .top(name)
+                    .filter(|found| found.qualifier == ACTION && found.id != def.id),
+                _ => None,
+            };
+            Ok(match (alias, &def.expr) {
+                (Some(alias), _) => reader.alternatives(alias),
+                (None, Quint::App { opcode, args, .. })
+                    if builtin(opcode) == Some(Builtin::ActionAny) =>
+                {
+                    args.iter().map(|each| (each, reader.paths(each))).collect()
+                }
+                (None, body) => vec![(body, reader.paths(body))],
+            })
+        })
+        .unwrap_or_default()
     }
 
     pub(crate) fn all_paths(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {
