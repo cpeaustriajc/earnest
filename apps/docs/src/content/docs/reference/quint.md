@@ -437,6 +437,8 @@ A step plays every way its action can happen: each branch of an `any` or a `matc
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
+The `nondet`s written at the top of a run may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the check is `unreadable`, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
+
 A run that reads a variable its first action gives no value is `unreadable`, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`).
 
 ```text

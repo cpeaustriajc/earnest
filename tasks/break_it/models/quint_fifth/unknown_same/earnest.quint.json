@@ -1,0 +1,1 @@
+{ "checks": [ { "file": "sg2.qnt", "main": "sg2", "invariants": ["ok"], "temporal": ["t", "v"] } ] }

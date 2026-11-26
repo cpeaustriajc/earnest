@@ -156,7 +156,12 @@ impl<'a> Run<'_, 'a> {
         if self.plans.len() >= MOST_PLANS {
             return self.refuse(
                 "`nondet`",
-                &format!("the run's own choices give more than {MOST_PLANS} plans"),
+                &format!(
+                    "the `nondet`s written at the top of the run pick among more than \
+                     {MOST_PLANS} combinations, and each one is played as a run of its own: \
+                     pick from smaller sets, or pick inside a step, as in `nondet x = \
+                     S.oneOf() act(x)`, where every value is tried too"
+                ),
             );
         }
         self.plans.push(plan);
