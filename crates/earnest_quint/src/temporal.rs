@@ -1,5 +1,5 @@
 use crate::json::{Def, Entry, Expr as Quint, Param};
-use crate::reader::{Path, Read, Reader, constant};
+use crate::reader::{Path, Read, Reader, Refusal, constant};
 use earnest_ir::{Code, Eventually, Expr, FairStep, Fairness, Op, Rule};
 use earnest_value::Value;
 use std::collections::HashMap;
@@ -532,7 +532,7 @@ impl<'a> Properties<'_, 'a> {
                 part.push((*position, inputs));
             }
         }
-        if part.is_empty() {
+        if part.is_empty() && !paths.is_empty() {
             return self.reader.refuse(
                 &format!("`{name}`"),
                 &format!(
@@ -704,7 +704,7 @@ pub(crate) fn temporal<'a>(
     table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     step: &Step<'_>,
-) -> Read<Temporal> {
+) -> Result<Temporal, Vec<Refusal>> {
     let mut read = Temporal {
         eventually: Vec::new(),
         rules: Vec::new(),
@@ -719,18 +719,28 @@ pub(crate) fn temporal<'a>(
         defs,
         fair_steps: Vec::new(),
     };
+    let mut refused = Vec::new();
     for conjunct in conjuncts(&listed.expr) {
         let Some(def) = properties.temporal_def(conjunct) else {
             PROPERTIES.clone_into(&mut properties.reader.within);
-            return properties.reader.refuse(
-                "a temporal property",
-                "a temporal property that is not the name of a definition",
+            refused.extend(
+                properties
+                    .reader
+                    .refuse::<()>(
+                        "a temporal property",
+                        "a temporal property that is not the name of a definition",
+                    )
+                    .err(),
             );
+            continue;
         };
         let name = &def.name;
         name.clone_into(&mut properties.reader.within);
         let mut parts = Vec::new();
-        properties.property(&def.expr, step, None, &mut parts)?;
+        if let Err(refusal) = properties.property(&def.expr, step, None, &mut parts) {
+            refused.push(refusal);
+            continue;
+        }
         let count = parts.len();
         let slots = properties.reader.slots;
         for (index, (fair, goal)) in parts.into_iter().enumerate() {
@@ -768,7 +778,11 @@ pub(crate) fn temporal<'a>(
         }
     }
     read.fair_steps = properties.fair_steps;
-    Ok(read)
+    if refused.is_empty() {
+        Ok(read)
+    } else {
+        Err(refused)
+    }
 }
 
 #[cfg(test)]

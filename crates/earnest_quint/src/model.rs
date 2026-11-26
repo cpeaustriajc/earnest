@@ -2,8 +2,9 @@ use crate::Runs as Chosen;
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::names::Short;
 use crate::notation::notation;
-use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
-use crate::runs::scripts;
+use crate::reach::variables_reached;
+use crate::reader::{MOST_ACTIONS, Path, Read, Reader, Refusal, all_of, refusal, too_many_actions};
+use crate::runs::{Variables, scripts};
 use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
@@ -12,11 +13,12 @@ use earnest_ir::{
     View,
 };
 use earnest_value::{Domain, Symbols, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const INIT: &str = "q::init";
 const STEP: &str = "q::step";
 const INVARIANTS: &str = "q::inv";
+const PROPERTIES: &str = "q::temporalProps";
 const STOPS_ANYWHERE: &str = "stops_anywhere";
 const STOPS_ANYWHERE_SAYS: &str =
     "A run may stop in any state, as in Quint's TLC runs, which do not check deadlock";
@@ -64,6 +66,18 @@ pub(crate) fn assigned(path: &Path, fields: &[String], within: &str) -> Read<Vec
 
 fn named<'a>(defs: &HashMap<u64, &'a Def>, name: &str) -> Option<&'a Def> {
     defs.values().find(|def| def.name == name).copied()
+}
+
+fn unsearched(name: &str) -> Vec<Refusal> {
+    let shown = name.strip_prefix("q::").unwrap_or(name);
+    vec![refusal(
+        &format!("`{shown}`"),
+        &format!(
+            "the check lists invariants or temporal properties, which are checked on the states \
+             that `init` and `step` reach, and the module has no `{shown}`: name the module's \
+             `init` and `step` in the check, or list only `runs`"
+        ),
+    )]
 }
 
 fn missing(name: &str) -> Vec<Refusal> {
@@ -159,24 +173,38 @@ pub(crate) fn action(id: String, path: &Path, fields: &[String], slots: usize) -
     })
 }
 
-fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<Rule>> {
+fn kept<T>(read: Read<T>, refused: &mut Vec<Refusal>) -> Option<T> {
+    read.map_err(|refusal| refused.push(refusal)).ok()
+}
+
+fn rules<'a>(
+    reader: &mut Reader<'a>,
+    defs: &HashMap<u64, &'a Def>,
+    refused: &mut Vec<Refusal>,
+) -> Vec<Rule> {
     let Some(invariants) = named(defs, INVARIANTS) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    INVARIANTS.clone_into(&mut reader.within);
     let conjuncts: &[Quint] = match &invariants.expr {
         Quint::App { opcode, args, .. } if opcode == "and" => args,
         other => std::slice::from_ref(other),
     };
     let mut rules = Vec::with_capacity(conjuncts.len());
     for conjunct in conjuncts {
+        INVARIANTS.clone_into(&mut reader.within);
         let Quint::Name { name, .. } = conjunct else {
-            return reader.refuse(
-                "an invariant",
-                "an invariant that is not the name of a definition",
+            kept(
+                reader.refuse::<()>(
+                    "an invariant",
+                    "an invariant that is not the name of a definition",
+                ),
+                refused,
             );
+            continue;
         };
-        let holds = reader.pure(conjunct)?;
+        let Some(holds) = kept(reader.pure(conjunct), refused) else {
+            continue;
+        };
         let slots = reader.slots;
         rules.push(Rule {
             id: name.clone(),
@@ -187,7 +215,7 @@ fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<
             slots,
         });
     }
-    Ok(rules)
+    rules
 }
 
 fn aliases<'a>(reader: &Reader<'a>, root: &'a Def) -> Vec<u64> {
@@ -240,33 +268,65 @@ type Parts = (
     Vec<Pick>,
 );
 
+fn stepped<'a>(
+    reader: &mut Reader<'a>,
+    step: &'a Def,
+    refused: &mut Vec<Refusal>,
+) -> (Vec<Path>, Vec<String>) {
+    let chain = aliases(reader, step);
+    reader.unnamed.extend(chain);
+    reader.within.clone_from(&step.name);
+    let mut stepping = Vec::new();
+    let mut unread = Vec::new();
+    for (written, read) in reader.alternatives(step) {
+        match read {
+            Ok(paths) => stepping.extend(paths),
+            Err(refusal) => {
+                refused.push(refusal);
+                if let Quint::Name { name, .. } = written {
+                    unread.push(name.clone());
+                }
+            }
+        }
+    }
+    if stepping.len() > MOST_ACTIONS {
+        refused.push(too_many_actions());
+    }
+    (stepping, unread)
+}
+
 fn parts<'a>(
     reader: &mut Reader<'a>,
     table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     (init, step): (&'a Def, &'a Def),
     names: &[String],
-) -> Read<Parts> {
-    let rules = rules(reader, defs)?;
+) -> Result<Parts, Vec<Refusal>> {
+    let mut refused = Vec::new();
+    let rules = rules(reader, defs, &mut refused);
     reader.in_init = true;
-    let starting = unfolded(reader, init)?;
+    let starting = kept(unfolded(reader, init), &mut refused);
     reader.in_init = false;
-    let starts = start_states(&starting, names, reader.slots)?;
-    let stepping = unfolded(reader, step)?;
+    let starts = starting
+        .and_then(|starting| kept(start_states(&starting, names, reader.slots), &mut refused));
+    let (stepping, unread) = stepped(reader, step, &mut refused);
     let fallback = match &step.expr {
         Quint::Name { name, .. } => name.clone(),
         _ => step.name.clone(),
     };
-    let actions = ids(&stepping, &fallback)
+    let actions: Vec<Action> = ids(&stepping, &fallback)
         .into_iter()
         .zip(&stepping)
-        .map(|(id, path)| action(id, path, names, reader.slots))
-        .collect::<Read<Vec<Action>>>()?;
+        .filter_map(|(id, path)| kept(action(id, path, names, reader.slots), &mut refused))
+        .collect();
     let mut parts: HashMap<String, Vec<usize>> = HashMap::new();
     for (position, path) in stepping.iter().enumerate() {
         if let Some(name) = &path.name {
             parts.entry(name.clone()).or_default().push(position);
         }
+    }
+    for name in unread {
+        parts.entry(name).or_default();
     }
     let step = Step {
         defs: aliases(reader, step),
@@ -275,7 +335,10 @@ fn parts<'a>(
         paths: &stepping,
     };
     let mut rules = rules;
-    let read = temporal(reader, table, defs, &step)?;
+    let read = temporal(reader, table, defs, &step).map_err(|mut found| refused.append(&mut found));
+    let (Some(starts), Ok(read), true) = (starts, read, refused.is_empty()) else {
+        return Err(refused);
+    };
     rules.extend(read.rules);
     let picks = stepping
         .iter()
@@ -289,6 +352,42 @@ fn parts<'a>(
         (read.eventually, read.fair_steps),
         picks,
     ))
+}
+
+fn both<A, B>(
+    first: Result<A, Vec<Refusal>>,
+    second: Result<B, Vec<Refusal>>,
+    defs: &HashMap<u64, &Def>,
+) -> Result<(A, B), Vec<Refusal>> {
+    match (first, second) {
+        (Ok(first), Ok(second)) => Ok((first, second)),
+        (first, second) => {
+            let refused = first
+                .err()
+                .into_iter()
+                .chain(second.err())
+                .flatten()
+                .collect();
+            Err(listed(refused, defs))
+        }
+    }
+}
+
+fn listed(mut refused: Vec<Refusal>, defs: &HashMap<u64, &Def>) -> Vec<Refusal> {
+    let mut seen = HashSet::new();
+    refused.retain(|each| {
+        let within = each.id.is_none().then(|| each.within.clone());
+        seen.insert((each.feature.clone(), each.id, within))
+    });
+    refused.sort_by_key(|each| {
+        each.id
+            .or_else(|| {
+                let within = each.within.as_deref()?;
+                named(defs, within).map(|def| def.id)
+            })
+            .unwrap_or(u64::MAX)
+    });
+    refused
 }
 
 fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
@@ -337,18 +436,83 @@ fn shorten(
     }
 }
 
-pub(crate) fn model(path: &str, compiled: &Compiled, runs: &Chosen) -> Result<Model, Vec<Refusal>> {
-    let met = built(path, compiled, Symbols::default(), runs)?;
-    let mut read = built(path, compiled, met.symbols.alphabetical(), runs)?;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Wanted {
+    Search,
+    Runs,
+}
+
+pub(crate) fn model(
+    path: &str,
+    compiled: &Compiled,
+    runs: &Chosen,
+    wanted: Wanted,
+) -> Result<Model, Vec<Refusal>> {
+    let met = built(path, compiled, Symbols::default(), (runs, wanted))?;
+    let mut read = built(path, compiled, met.symbols.alphabetical(), (runs, wanted))?;
     read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
     Ok(read)
+}
+
+type Layout<'a> = (Vec<(u64, String, Domain)>, Vec<(Variable<'a>, String)>);
+
+fn layout<'a>(
+    compiled: &Compiled,
+    defs: &HashMap<u64, &'a Def>,
+    declarations: &'a [Declaration],
+    wanted: Wanted,
+) -> Layout<'a> {
+    let every_variable = variables(declarations);
+    let short_fields = Short::of(every_variable.iter().map(|each| each.name));
+    let checked: Vec<&Quint> = [INIT, STEP, INVARIANTS, PROPERTIES]
+        .iter()
+        .filter(|_| wanted == Wanted::Search)
+        .filter_map(|name| named(defs, name))
+        .map(|def| &def.expr)
+        .collect();
+    let reached = variables_reached(&compiled.table, defs, &checked);
+    let every = every_variable
+        .iter()
+        .map(|each| (each.id, short_fields.name(each.name), each.domain.clone()))
+        .collect();
+    let searched = every_variable
+        .into_iter()
+        .filter(|each| reached.contains(&each.id))
+        .map(|each| {
+            let name = short_fields.name(each.name);
+            (each, name)
+        })
+        .collect();
+    (every, searched)
+}
+
+type Searched<'a> = Option<(&'a Def, &'a Def)>;
+
+fn search_of<'a>(
+    defs: &HashMap<u64, &'a Def>,
+    (runs, wanted): (&Chosen, Wanted),
+) -> Result<Searched<'a>, Vec<Refusal>> {
+    match (named(defs, INIT), named(defs, STEP)) {
+        _ if wanted == Wanted::Runs => Ok(None),
+        (Some(init), Some(step)) => Ok(Some((init, step))),
+        (init, _) => {
+            let absent = if init.is_none() { INIT } else { STEP };
+            if named(defs, INVARIANTS).is_some() || named(defs, PROPERTIES).is_some() {
+                return Err(unsearched(absent));
+            }
+            if matches!(runs, Chosen::None) {
+                return Err(missing(absent));
+            }
+            Ok(None)
+        }
+    }
 }
 
 fn built(
     path: &str,
     compiled: &Compiled,
     symbols: Symbols,
-    runs: &Chosen,
+    (runs, wanted): (&Chosen, Wanted),
 ) -> Result<Model, Vec<Refusal>> {
     if !compiled.errors.is_empty() {
         return Err(vec![refusal(
@@ -375,41 +539,39 @@ fn built(
             _ => None,
         })
         .collect();
-    let variables = variables(&module.declarations);
-    let short_fields = Short::of(variables.iter().map(|each| each.name));
-    let names: Vec<String> = variables
-        .iter()
-        .map(|each| short_fields.name(each.name))
-        .collect();
-    let positions = variables
+    let (every, variables) = layout(compiled, &defs, &module.declarations, wanted);
+    let searched: Vec<u64> = variables.iter().map(|(each, _)| each.id).collect();
+    let names: Vec<String> = variables.iter().map(|(_, name)| name.clone()).collect();
+    let positions = searched
         .iter()
         .enumerate()
-        .map(|(position, each)| (each.id, position))
+        .map(|(position, id)| (*id, position))
         .collect();
-    let (Some(init), Some(step)) = (named(&defs, INIT), named(&defs, STEP)) else {
-        return Err(missing(if named(&defs, INIT).is_none() {
-            INIT
-        } else {
-            STEP
-        }));
-    };
+    let search = search_of(&defs, (runs, wanted))?;
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
-    let (starts, mut actions, mut rules, (mut eventually, fair_steps), picks) =
-        parts(&mut reader, &compiled.table, &defs, (init, step), &names)
-            .map_err(|refusal| vec![refusal])?;
+    let read = match search {
+        Some(search) => parts(&mut reader, &compiled.table, &defs, search, &names),
+        None => Ok(Default::default()),
+    };
     let imported = imported_runs(&compiled.table, &compiled.main);
-    let (mut scripts, script_picks) = scripts(
+    let played = scripts(
         &mut reader,
         (&module.declarations, &imported),
-        (init, runs),
-        &names,
-    )?;
+        (search.map(|(init, _)| init), runs),
+        &Variables {
+            every: &every,
+            searched: &searched,
+        },
+    );
+    let (
+        (starts, mut actions, mut rules, (mut eventually, fair_steps), picks),
+        (mut scripts, script_picks),
+    ) = both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
     shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
-        .zip(&names)
         .enumerate()
         .map(|(position, (variable, name))| {
             let mut values: Vec<Value> = starts
@@ -419,8 +581,8 @@ fn built(
             values.sort();
             values.dedup();
             Field {
-                name: name.clone(),
-                sym: symbols.intern(name),
+                sym: symbols.intern(&name),
+                name,
                 domain: variable.domain,
                 starts: values,
             }

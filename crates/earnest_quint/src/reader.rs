@@ -1,9 +1,10 @@
 use crate::builtins::{Builtin, builtin, not_read};
 use crate::data::{ANY_OTHER_TAG, TAG, VALUE, data_builtin};
 use crate::json::{Compiled, Def, Entry, Expr as Quint, Param, Scheme};
+use crate::reach::variables_reached;
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub(crate) struct Refusal {
     pub(crate) feature: String,
@@ -85,21 +86,38 @@ impl Path {
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
 const MATCH: &str = "matchVariant";
-const ACTION_AS_A_VALUE: &str = "an action where Quint wants a value, such as an operator's \
-                                 argument or a condition: an action is read as a part of `init`, \
-                                 `step` or a run, of `all`, `any`, `if` or a `match`";
+const ALL_ACTION: &str = "an `all { … }` with an assignment in it is an action, not a condition";
+const ANY_ACTION: &str = "an `any { … }` with an assignment in it is an action, not a condition";
+const ASSIGNMENT: &str = "an assignment is an action, not a condition";
+const ACTION_AS_A_VALUE: &str = ", and it stands where Quint wants a value, such as a `val`, a \
+                                 `def`, an invariant or a guard: an action is read as a part of \
+                                 `init`, `step` or a run, of `all`, `any`, `if` or a `match`, or \
+                                 as the argument of an action; write the condition without the \
+                                 assignment, or move the assignment into an action";
+const NAMED_ACTION: &str = "an action, used where Quint wants a value, such as a `val`, a `def`, \
+                            an invariant or a guard: an action is read as a part of `init`, \
+                            `step` or a run, of `all`, `any`, `if` or a `match`, or as the \
+                            argument of an action; for a condition, write a `def` or a `val`";
 const DEBUG: &str = "q::debug";
 const GENERATED: &str = "q::";
+pub(crate) const READ_BEFORE_SET: &str = "`init` reads a variable before it has a value";
 const ACTION: &str = "action";
 const LAMBDA: &str = "def";
 const OPERATOR_AS_VALUE: &str = "an operator used as a value, which the checker does not hold: \
                                  call it, or give it to a definition or a builtin that calls it";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Acting {
+    AllAndAny,
+    Assignments,
+}
 
 #[derive(Clone)]
 pub(crate) enum Bound<'a> {
     Value(Expr),
     Operator(&'a Def),
     Lambda(&'a [Param], &'a Quint),
+    Action(&'a Quint),
 }
 
 const BOOLEANS: &str = "Bool";
@@ -226,7 +244,7 @@ pub(crate) fn constant(expr: &Expr, slots: usize) -> Read<Option<Value>> {
         .map_err(fault_refusal)
 }
 
-fn too_many_actions() -> Refusal {
+pub(crate) fn too_many_actions() -> Refusal {
     refusal(
         "`step`",
         &format!(
@@ -288,6 +306,14 @@ impl<'a> Reader<'a> {
 
     pub(crate) fn type_of(&self, id: u64) -> Option<&'a Scheme> {
         self.types.get(&id.to_string())
+    }
+
+    pub(crate) fn variables_reached(&self, roots: &[&Quint]) -> BTreeSet<u64> {
+        variables_reached(self.table, &self.defs, roots)
+    }
+
+    pub(crate) fn place_fields(&mut self, fields: HashMap<u64, usize>) -> HashMap<u64, usize> {
+        std::mem::replace(&mut self.fields, fields)
     }
 
     pub(crate) fn variable_id(&self, position: usize) -> Option<u64> {
@@ -484,14 +510,29 @@ impl<'a> Reader<'a> {
         result
     }
 
+    fn called_action(
+        &mut self,
+        name: &str,
+        (parameters, body): (&'a [Param], &'a Quint),
+        args: &'a [Quint],
+    ) -> Read<Vec<Path>> {
+        let arguments = self.passed(args)?;
+        let outer = self.bind_parameters((name, LAMBDA), parameters, arguments)?;
+        let result = self.paths(body);
+        self.unbind(outer);
+        result
+    }
+
     fn passed(&mut self, args: &'a [Quint]) -> Read<Vec<Bound<'a>>> {
         args.iter()
             .map(|each| match each {
                 Quint::Lambda { params, expr } => Ok(Bound::Lambda(params, expr)),
                 Quint::Name { id, .. } => match self.callable(*id) {
                     Some(operator) => Ok(operator),
+                    None if self.is_action(each) => Ok(Bound::Action(each)),
                     None => self.pure(each).map(Bound::Value),
                 },
+                _ if self.is_action(each) => Ok(Bound::Action(each)),
                 _ => self.pure(each).map(Bound::Value),
             })
             .collect()
@@ -565,10 +606,7 @@ impl<'a> Reader<'a> {
         let entry = self.entry(id, name)?;
         match entry.kind.as_str() {
             "var" => match self.fields.get(&entry.id) {
-                Some(_) if self.in_init => self.refuse(
-                    &format!("`{name}`"),
-                    "`init` reads a variable before it has a value",
-                ),
+                Some(_) if self.in_init => self.refuse(&format!("`{name}`"), READ_BEFORE_SET),
                 Some(position) => Ok(Expr::Field(*position)),
                 None => self.refuse(&format!("`{name}`"), "an unknown variable"),
             },
@@ -579,6 +617,7 @@ impl<'a> Reader<'a> {
             _ => {
                 match self.bound.get(&entry.id) {
                     Some(Bound::Value(value)) => return Ok(value.clone()),
+                    Some(Bound::Action(given)) => return self.pure(given),
                     Some(Bound::Lambda(..)) => {
                         return self.refuse(&format!("`{name}`"), OPERATOR_AS_VALUE);
                     }
@@ -586,8 +625,7 @@ impl<'a> Reader<'a> {
                 }
                 let def = self.operator(entry, name)?;
                 if def.qualifier == "action" {
-                    return self
-                        .refuse(&format!("`{name}`"), "an action used inside an expression");
+                    return self.refuse(&format!("`{name}`"), NAMED_ACTION);
                 }
                 if matches!(def.expr, Quint::Lambda { .. }) {
                     return self.refuse(&format!("`{name}`"), OPERATOR_AS_VALUE);
@@ -618,19 +656,19 @@ impl<'a> Reader<'a> {
             let entry = self.entry(id, opcode)?;
             let def = self.operator(entry, opcode)?;
             if def.qualifier == "action" {
-                return self.refuse(
-                    &format!("`{opcode}`"),
-                    "an action used inside an expression",
-                );
+                return self.refuse(&format!("`{opcode}`"), NAMED_ACTION);
             }
             let arguments = self.passed(args)?;
             return self.with_arguments(def, arguments, Self::pure);
         };
+        if let Some(refused) = self.action_as_a_value(found, args) {
+            return Err(refused);
+        }
         let mut arguments = self.arguments(args)?;
         let built = match (found, arguments.len()) {
             (Builtin::Unary(op), 1) | (Builtin::Binary(op), 2) => Expr::Apply(op, arguments),
-            (Builtin::And, _) => all_of(arguments),
-            (Builtin::Or, _) => fold(arguments, Value::Bool(false), Expr::Or),
+            (Builtin::And | Builtin::ActionAll, _) => all_of(arguments),
+            (Builtin::Or | Builtin::ActionAny, _) => fold(arguments, Value::Bool(false), Expr::Or),
             (Builtin::Implies, 2) => {
                 let second = arguments.pop().unwrap_or(Expr::Const(Value::Bool(true)));
                 let first = arguments.pop().unwrap_or(Expr::Const(Value::Bool(true)));
@@ -645,15 +683,6 @@ impl<'a> Reader<'a> {
                 let then = arguments.pop().unwrap_or(Expr::Const(Value::Null));
                 let test = arguments.pop().unwrap_or(Expr::Const(Value::Null));
                 Expr::Choose(Box::new(test), Box::new(then), Box::new(otherwise))
-            }
-            (Builtin::ActionAll | Builtin::ActionAny | Builtin::Assign, _) => {
-                let written = match (found, args) {
-                    (Builtin::ActionAll, _) => "`all { … }`".to_owned(),
-                    (Builtin::ActionAny, _) => "`any { … }`".to_owned(),
-                    (_, [Quint::Name { name, .. }, ..]) => format!("`{name}' = …`"),
-                    _ => "an assignment".to_owned(),
-                };
-                return self.refuse(&written, ACTION_AS_A_VALUE);
             }
             (Builtin::OneOf, _) => {
                 return self.refuse(
@@ -671,27 +700,59 @@ impl<'a> Reader<'a> {
         Ok(built)
     }
 
+    fn action_as_a_value(&self, found: Builtin, args: &[Quint]) -> Option<Refusal> {
+        let (written, what) = match (found, args) {
+            (Builtin::ActionAll | Builtin::ActionAny, _)
+                if !args.iter().any(|each| self.assigns(each)) =>
+            {
+                return None;
+            }
+            (Builtin::ActionAll, _) => ("`all { … }`".to_owned(), ALL_ACTION),
+            (Builtin::ActionAny, _) => ("`any { … }`".to_owned(), ANY_ACTION),
+            (Builtin::Assign, [Quint::Name { name, .. }, ..]) => {
+                (format!("`{}' = …`", base_name(name)), ASSIGNMENT)
+            }
+            (Builtin::Assign, _) => ("an assignment".to_owned(), ASSIGNMENT),
+            _ => return None,
+        };
+        self.refuse::<()>(&written, &format!("{what}{ACTION_AS_A_VALUE}"))
+            .err()
+    }
+
     fn arguments(&mut self, args: &'a [Quint]) -> Read<Vec<Expr>> {
         args.iter().map(|each| self.pure(each)).collect()
     }
 
     pub(crate) fn is_action(&self, expr: &Quint) -> bool {
+        self.acts(expr, Acting::AllAndAny)
+    }
+
+    fn assigns(&self, expr: &Quint) -> bool {
+        self.acts(expr, Acting::Assignments)
+    }
+
+    fn acts(&self, expr: &Quint, counted: Acting) -> bool {
         match expr {
             Quint::App { opcode, args, .. } if opcode == MATCH => {
                 args.iter().skip(1).any(|case| match case {
-                    Quint::Lambda { expr, .. } => self.is_action(expr),
-                    _ => self.is_action(case),
+                    Quint::Lambda { expr, .. } => self.acts(expr, counted),
+                    _ => self.acts(case, counted),
                 })
             }
             Quint::App { id, opcode, args } => match builtin(opcode) {
-                Some(Builtin::ActionAll | Builtin::ActionAny | Builtin::Assign) => true,
-                Some(Builtin::And | Builtin::Or) => args.iter().any(|each| self.is_action(each)),
-                Some(Builtin::Ite) => args.iter().skip(1).any(|each| self.is_action(each)),
+                Some(Builtin::Assign) => true,
+                Some(Builtin::ActionAll | Builtin::ActionAny) if counted == Acting::AllAndAny => {
+                    true
+                }
+                Some(Builtin::ActionAll | Builtin::ActionAny | Builtin::And | Builtin::Or) => {
+                    args.iter().any(|each| self.acts(each, counted))
+                }
+                Some(Builtin::Ite) => args.iter().skip(1).any(|each| self.acts(each, counted)),
                 Some(_) => false,
                 None => self.is_action_name(*id),
             },
             Quint::Name { id, .. } => self.is_action_name(*id),
-            Quint::Let { opdef, expr } => opdef.qualifier == "nondet" || self.is_action(expr),
+            Quint::Let { opdef, expr } => opdef.qualifier == "nondet" || self.acts(expr, counted),
             Quint::Int { .. } | Quint::Bool { .. } | Quint::Str { .. } | Quint::Lambda { .. } => {
                 false
             }
@@ -704,7 +765,9 @@ impl<'a> Reader<'a> {
         };
         let def = match self.bound.get(&entry.id) {
             Some(Bound::Operator(def)) => Some(*def),
-            Some(Bound::Value(_) | Bound::Lambda(..)) => None,
+            Some(Bound::Action(_)) => return true,
+            Some(Bound::Lambda(_, body)) => return self.is_action(body),
+            Some(Bound::Value(_)) => None,
             None => self.defs.get(&entry.id).copied(),
         };
         def.is_some_and(|found| found.qualifier == "action")
@@ -738,6 +801,9 @@ impl<'a> Reader<'a> {
                 Some(Builtin::Assign) => self.assign(args),
                 Some(Builtin::Ite) => self.branches(args),
                 _ => {
+                    if let Some(lambda) = self.given_lambda(*id) {
+                        return self.called_action(opcode, lambda, args);
+                    }
                     let entry = self.entry(*id, opcode)?;
                     let def = self.operator(entry, opcode)?;
                     let arguments = self.passed(args)?;
@@ -746,6 +812,9 @@ impl<'a> Reader<'a> {
             },
             Quint::Name { id, name } => {
                 let entry = self.entry(*id, name)?;
+                if let Some(Bound::Action(given)) = self.bound.get(&entry.id) {
+                    return self.paths(given);
+                }
                 let def = self.operator(entry, name)?;
                 self.action(def, Vec::new())
             }
@@ -755,6 +824,27 @@ impl<'a> Reader<'a> {
                 Ok(vec![Path::guarded(self.pure(expr)?)])
             }
         }
+    }
+
+    pub(crate) fn alternatives(&mut self, def: &'a Def) -> Vec<(&'a Quint, Read<Vec<Path>>)> {
+        self.enter(def, |reader| {
+            let alias = match &def.expr {
+                Quint::Name { name, .. } => reader
+                    .top(name)
+                    .filter(|found| found.qualifier == ACTION && found.id != def.id),
+                _ => None,
+            };
+            Ok(match (alias, &def.expr) {
+                (Some(alias), _) => reader.alternatives(alias),
+                (None, Quint::App { opcode, args, .. })
+                    if builtin(opcode) == Some(Builtin::ActionAny) =>
+                {
+                    args.iter().map(|each| (each, reader.paths(each))).collect()
+                }
+                (None, body) => vec![(body, reader.paths(body))],
+            })
+        })
+        .unwrap_or_default()
     }
 
     pub(crate) fn all_paths(&mut self, args: &'a [Quint]) -> Read<Vec<Path>> {
@@ -777,7 +867,7 @@ impl<'a> Reader<'a> {
             .iter()
             .map(|argument| match argument {
                 Bound::Value(value) => Some(value.clone()),
-                Bound::Operator(_) | Bound::Lambda(..) => None,
+                Bound::Operator(_) | Bound::Lambda(..) | Bound::Action(_) => None,
             })
             .collect();
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;

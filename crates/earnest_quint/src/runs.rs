@@ -1,10 +1,12 @@
 use crate::Runs;
-use crate::json::{Declaration, Def, Expr as Quint};
+use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
-use crate::reader::{Picked, Read, Reader, Refusal, all_of, constant, refusal};
-use earnest_ir::{Action, Code, Expr, Pick, Plan, Script, Stage};
-use earnest_value::Value;
+use crate::reader::{Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, refusal};
+use crate::starts::start_states;
+use earnest_ir::{Action, Code, Expr, Field, Pick, Plan, Script, Stage};
+use earnest_value::{Domain, Value};
+use std::collections::BTreeSet;
 
 const TESTS_END_WITH: &str = "Test";
 const DECLARED_ON: u32 = 1;
@@ -12,6 +14,9 @@ const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
 const MOST_ALIASES: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
+const CHAINS: [&str; 4] = ["then", "reps", "expect", "fail"];
+
+type Helper<'a> = (&'a Def, &'a [Param], &'a Quint, &'a [Quint]);
 
 struct Step {
     choices: Vec<usize>,
@@ -29,15 +34,23 @@ enum Place {
 #[derive(Default)]
 struct Drawn {
     started: bool,
+    starts: Option<Vec<Vec<Value>>>,
     start: Option<Expr>,
     steps: Vec<Step>,
     must_not_finish: bool,
 }
 
+pub(crate) struct Variables<'v> {
+    pub(crate) every: &'v [(u64, String, Domain)],
+    pub(crate) searched: &'v [u64],
+}
+
 struct Run<'r, 'a> {
     reader: &'r mut Reader<'a>,
-    fields: &'r [String],
-    init: &'a Def,
+    fields: Vec<String>,
+    own: bool,
+    differs: Option<String>,
+    init: Option<&'a Def>,
     name: &'a str,
     actions: Vec<Action>,
     plans: Vec<Plan>,
@@ -81,6 +94,64 @@ impl<'a> Run<'_, 'a> {
             .filter(|def| def.qualifier == "run" && !matches!(def.expr, Quint::Lambda { .. }))
     }
 
+    fn helper(&self, expr: &'a Quint, depth: usize) -> Option<Helper<'a>> {
+        let (id, name, args): (u64, &str, &'a [Quint]) = match expr {
+            Quint::Name { id, name } => (*id, name, &[]),
+            Quint::App { id, opcode, args } if !CHAINS.contains(&opcode.as_str()) => {
+                (*id, opcode, args)
+            }
+            _ => return None,
+        };
+        let def = self.reader.definition(id, name).ok()?;
+        let (params, body): (&'a [Param], &'a Quint) = match &def.expr {
+            Quint::Lambda { params, expr } => (params, expr),
+            body => (&[], body),
+        };
+        (params.len() == args.len() && self.chains(body, depth))
+            .then_some((def, params, body, args))
+    }
+
+    fn chains(&self, expr: &'a Quint, depth: usize) -> bool {
+        match expr {
+            Quint::App { opcode, .. } if CHAINS.contains(&opcode.as_str()) => true,
+            _ => depth < MOST_ALIASES && self.helper(expr, depth.saturating_add(1)).is_some(),
+        }
+    }
+
+    fn walk_helper(
+        &mut self,
+        (def, params, body, args): Helper<'a>,
+        place: Place,
+        drawn: &mut Drawn,
+    ) -> Read<bool> {
+        let mut held = Vec::with_capacity(params.len());
+        for (param, arg) in params.iter().zip(args) {
+            let value = self.reader.pure(arg)?;
+            if constant(&value, self.reader.slots)?.is_none() {
+                return self.refuse_at(
+                    arg,
+                    &format!("`{}`", def.name),
+                    &format!(
+                        "an argument of `{}`, a chain of steps, that reads the state: give it a \
+                         value that is known before the run starts, such as a constant or the \
+                         run's own `nondet`",
+                        def.name
+                    ),
+                );
+            }
+            held.push((param.id, value));
+        }
+        let mut was = Vec::with_capacity(held.len());
+        for (id, value) in held {
+            was.push((id, self.reader.hold(id, value)));
+        }
+        let walked = self.walk(body, place, drawn);
+        for (id, before) in was.into_iter().rev() {
+            self.reader.release(id, before);
+        }
+        walked
+    }
+
     fn push(&mut self, plan: Plan) -> Read<()> {
         if self.plans.len() >= MOST_PLANS {
             return self.refuse(
@@ -96,6 +167,7 @@ impl<'a> Run<'_, 'a> {
         Plan {
             chosen: chosen.to_vec(),
             start: None,
+            starts: None,
             steps: Vec::new(),
             must_not_finish: false,
         }
@@ -148,7 +220,9 @@ impl<'a> Run<'_, 'a> {
             {
                 self.plan(expr, chosen)
             }
-            _ if self.reader.is_action(expr) => self.plan(expr, chosen),
+            _ if self.reader.is_action(expr) || self.helper(expr, 0).is_some() => {
+                self.plan(expr, chosen)
+            }
             _ => {
                 let holds = self.reader.pure(expr)?;
                 match constant(&holds, self.reader.slots)? {
@@ -171,6 +245,7 @@ impl<'a> Run<'_, 'a> {
         let plan = Plan {
             chosen: chosen.to_vec(),
             start: drawn.start.map(Code::new),
+            starts: drawn.starts,
             steps: drawn
                 .steps
                 .into_iter()
@@ -189,6 +264,9 @@ impl<'a> Run<'_, 'a> {
     fn walk(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
         if let Some(def) = self.called_run(expr) {
             return self.walk(&def.expr, place, drawn);
+        }
+        if let Some(helper) = self.helper(expr, 0) {
+            return self.walk_helper(helper, place, drawn);
         }
         let Quint::App { opcode, args, .. } = expr else {
             return self.leaf(expr, drawn);
@@ -290,25 +368,87 @@ impl<'a> Run<'_, 'a> {
     }
 
     fn is_init(&self, expr: &Quint) -> bool {
-        let Quint::Name { id, name } = expr else {
+        let (Quint::Name { id, name }, Some(init)) = (expr, self.init) else {
             return false;
         };
         self.reader
             .definition(*id, name)
-            .is_ok_and(|def| self.aliased(def).id == self.aliased(self.init).id)
+            .is_ok_and(|def| self.aliased(def).id == self.aliased(init).id)
+    }
+
+    fn action_name(&self, expr: &Quint) -> String {
+        match expr {
+            Quint::Name { name, .. } => format!("`{name}`"),
+            Quint::App { id, opcode, .. } if self.reader.definition(*id, opcode).is_ok() => {
+                format!("`{opcode}`")
+            }
+            _ => "an action written in place".to_owned(),
+        }
+    }
+
+    fn first_states(&mut self, expr: &'a Quint) -> Read<Vec<Vec<Value>>> {
+        let first = self.action_name(expr);
+        self.reader.in_init = true;
+        let paths = self.reader.paths(expr);
+        self.reader.in_init = false;
+        let paths = paths.map_err(|mut refused| {
+            if refused.why.starts_with(READ_BEFORE_SET) {
+                refused.why = format!(
+                    "the run starts with {first}, which reads this variable before anything gives \
+                     it a value, and Quint stops the run there (\"not set\"): start the run with \
+                     an action that gives each variable a value without reading one, in the run \
+                     `{}`",
+                    self.name
+                );
+                refused.within = Some(self.name.to_owned());
+                refused.id = refused.id.or(match expr {
+                    Quint::App { id, .. } | Quint::Name { id, .. } => Some(*id),
+                    Quint::Let { opdef, .. } => Some(opdef.id),
+                    _ => None,
+                });
+            }
+            refused
+        })?;
+        for path in &paths {
+            let unset = self
+                .fields
+                .iter()
+                .enumerate()
+                .find(|(position, _)| !path.assigns.iter().any(|(at, _)| at == position));
+            if let Some((_, field)) = unset {
+                return self.refuse_at(
+                    expr,
+                    &format!("`{field}`"),
+                    &format!(
+                        "the run reads this variable, and it starts with {first}, which gives it \
+                         no value, so Quint stops the run where it is read (\"not set\"): start \
+                         the run with an action that assigns it too"
+                    ),
+                );
+            }
+        }
+        start_states(&paths, &self.fields, self.reader.slots).map_err(|refused| {
+            let why = format!("{}, in the run `{}`", refused.why, self.name);
+            Refusal { why, ..refused }.within(self.name)
+        })
     }
 
     fn leaf(&mut self, expr: &'a Quint, drawn: &mut Drawn) -> Read<bool> {
         if !drawn.started {
-            if !self.is_init(expr) {
-                return self.refuse_at(
-                    expr,
-                    "a run",
-                    "a run that does not start with `init`: Quint plays a run from no state, so \
-                     write `init.then(...)`",
-                );
-            }
             drawn.started = true;
+            if self.is_init(expr) {
+                if let Some(field) = &self.differs {
+                    return self.refuse_at(
+                        expr,
+                        &format!("`{field}`"),
+                        "the run reads this variable, and it starts with `init`, which gives it \
+                         no value, so Quint stops the run where it is read (\"not set\"): start \
+                         the run with an action that assigns it",
+                    );
+                }
+                return Ok(false);
+            }
+            drawn.starts = Some(self.first_states(expr)?);
             return Ok(false);
         }
         if drawn.steps.len() >= MOST_STEPS {
@@ -350,7 +490,7 @@ impl<'a> Run<'_, 'a> {
         };
         let first = self.actions.len();
         for (id, path) in ids(&paths, fallback).into_iter().zip(&paths) {
-            let taken = action(id, path, self.fields, self.reader.slots)?;
+            let taken = action(id, path, &self.fields, self.reader.slots)?;
             self.picks
                 .extend(picks(Some(self.number), self.actions.len(), path));
             self.actions.push(taken);
@@ -365,16 +505,73 @@ impl<'a> Run<'_, 'a> {
     }
 }
 
+fn own_fields(run: &mut Run<'_, '_>, touched: &[&(u64, String, Domain)]) -> Vec<Field> {
+    if !run.own {
+        return Vec::new();
+    }
+    touched
+        .iter()
+        .enumerate()
+        .map(|(position, (_, name, domain))| {
+            let mut values: Vec<Value> = run
+                .plans
+                .iter()
+                .filter_map(|plan| plan.starts.as_ref())
+                .flatten()
+                .filter_map(|state| state.get(position).cloned())
+                .collect();
+            values.sort();
+            values.dedup();
+            Field {
+                name: name.clone(),
+                sym: run.reader.symbols.intern(name),
+                domain: domain.clone(),
+                starts: values,
+            }
+        })
+        .collect()
+}
+
 fn script<'a>(
     reader: &mut Reader<'a>,
     (def, number): (&'a Def, usize),
-    init: &'a Def,
-    fields: &[String],
+    init: Option<&'a Def>,
+    variables: &Variables<'_>,
 ) -> Read<(Script, Vec<Pick>)> {
     def.name.clone_into(&mut reader.within);
+    let reached = reader.variables_reached(&[&def.expr]);
+    let touched: Vec<&(u64, String, Domain)> = variables
+        .every
+        .iter()
+        .filter(|(id, ..)| reached.contains(id))
+        .collect();
+    let searched: BTreeSet<u64> = variables.searched.iter().copied().collect();
+    let differs = variables
+        .every
+        .iter()
+        .find(|(id, ..)| reached.contains(id) && !searched.contains(id))
+        .or_else(|| {
+            variables
+                .every
+                .iter()
+                .find(|(id, ..)| searched.contains(id) && !reached.contains(id))
+        })
+        .map(|(_, name, _)| name.clone());
+    let own = differs.is_some();
+    let outer = own.then(|| {
+        reader.place_fields(
+            touched
+                .iter()
+                .enumerate()
+                .map(|(position, (id, ..))| (*id, position))
+                .collect(),
+        )
+    });
     let mut run = Run {
         reader,
-        fields,
+        fields: touched.iter().map(|(_, name, _)| name.clone()).collect(),
+        own,
+        differs,
         init,
         name: &def.name,
         actions: Vec::new(),
@@ -382,7 +579,12 @@ fn script<'a>(
         number,
         picks: Vec::new(),
     };
-    run.plans(&def.expr, &mut Vec::new())?;
+    let played = run.plans(&def.expr, &mut Vec::new());
+    if let Some(outer) = outer {
+        run.reader.place_fields(outer);
+    }
+    played?;
+    let fields = own_fields(&mut run, &touched);
     let slots = run.reader.slots;
     let picked = std::mem::take(&mut run.picks);
     let script = Script {
@@ -390,6 +592,7 @@ fn script<'a>(
         says: format!("The Quint run `{}` passes", def.name),
         line: DECLARED_ON,
         actions: run.actions,
+        fields,
         plans: run.plans,
         slots,
     };
@@ -452,15 +655,15 @@ fn chosen<'a>(
 pub(crate) fn scripts<'a>(
     reader: &mut Reader<'a>,
     declarations: (&'a [Declaration], &[String]),
-    (init, runs): (&'a Def, &Runs),
-    fields: &[String],
+    (init, runs): (Option<&'a Def>, &Runs),
+    variables: &Variables<'_>,
 ) -> Result<(Vec<Script>, Vec<Pick>), Vec<Refusal>> {
     let played_runs = chosen(declarations, runs)?;
     let mut played = Vec::with_capacity(played_runs.len());
     let mut picked = Vec::new();
     let mut refused = Vec::new();
     for def in played_runs {
-        match script(reader, (def, played.len()), init, fields) {
+        match script(reader, (def, played.len()), init, variables) {
             Ok((script, picks)) => {
                 played.push(script);
                 picked.extend(picks);

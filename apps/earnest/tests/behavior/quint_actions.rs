@@ -348,7 +348,7 @@ esac
         assert_eq!(
             places(&run.json()),
             [
-                ("models/runplace.qnt".to_owned(), 9, 25, "a run".to_owned()),
+                ("models/runplace.qnt".to_owned(), 9, 25, "`x`".to_owned()),
                 (
                     "models/runplace.qnt".to_owned(),
                     10,

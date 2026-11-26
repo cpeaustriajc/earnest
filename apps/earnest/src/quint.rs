@@ -453,6 +453,76 @@ fn compile(job: &Job) -> Result<String, Problem> {
     Ok(json)
 }
 
+fn runs_only(check: &Check) -> bool {
+    check.invariants.is_empty() && check.temporal.is_empty() && check.runs != Runs::None
+}
+
+fn lacks_a_search(check: &Check, places: Option<&Places>) -> bool {
+    runs_only(check)
+        && places.is_some_and(|found| {
+            !found.declares(&check.main, &check.init) || !found.declares(&check.main, &check.step)
+        })
+}
+
+fn unbuilt(job: &Job, problem: Problem) -> Problem {
+    let check = &job.check;
+    Problem {
+        message: format!(
+            "the check lists only runs, and the module `{}` sees no `{}` and `{}` that `quint \
+             compile` takes, nor does it import a module that has an `init` and a `step`: name \
+             in the check an `init` and a `step` the module sees, such as `A::init` of an \
+             `import Spec as A`. Quint said: {}",
+            check.main, check.init, check.step, problem.message
+        ),
+        ..problem
+    }
+}
+
+fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Problem> {
+    let check = &job.check;
+    let entry = (check.init.clone(), check.step.clone());
+    let mut tried: Vec<(String, String)> = Vec::new();
+    if places
+        .is_none_or(|found| found.sees(&check.main, &entry.0) && found.sees(&check.main, &entry.1))
+    {
+        tried.push(entry.clone());
+    }
+    for each in places.map_or_else(Vec::new, |found| found.imported_init_and_step(&check.main)) {
+        if !tried.contains(&each) {
+            tried.push(each);
+        }
+    }
+    if tried.is_empty() {
+        tried.push(entry);
+    }
+    let mut first = None;
+    for (init, step) in tried {
+        let attempt = Job {
+            shown: job.shown.clone(),
+            real: job.real.clone(),
+            check: Check {
+                init,
+                step,
+                ..check.clone()
+            },
+            read: job.read,
+            quint: job.quint.clone(),
+        };
+        match compile(&attempt) {
+            Ok(json) => return Ok(json),
+            Err(problem) => {
+                first.get_or_insert(problem);
+            }
+        }
+    }
+    Err(unbuilt(
+        job,
+        first.unwrap_or_else(|| {
+            Problem::new(&job.shown, TOP_OF_FILE, "`quint`", "nothing was compiled")
+        }),
+    ))
+}
+
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
     let check = &job.check;
     typechecked?.setup(&Setup::new(
@@ -646,9 +716,9 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
     for job in &checks {
         if let Ok(quint) = &job.quint
-            && places
-                .get(&job.real)
-                .is_some_and(|found| found.may_be_a_setup(&job.check.main))
+            && places.get(&job.real).is_some_and(|found| {
+                found.may_be_a_setup(&job.check.main) || lacks_a_search(&job.check, Some(found))
+            })
             && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
         {
             to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
@@ -663,12 +733,25 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .filter_map(|((file, ..), read)| Some((file, read?)))
         .collect();
     let compiled = run_each(&checks, jobs, |job, _| {
-        filled(job, typechecked.get(&job.real)).map_or_else(|| compile(job), Ok)
+        filled(job, typechecked.get(&job.real)).map_or_else(
+            || {
+                if lacks_a_search(&job.check, places.get(&job.real)) {
+                    compiled_for_runs(job, places.get(&job.real))
+                } else {
+                    compile(job)
+                }
+            },
+            Ok,
+        )
     });
     let read: Vec<Result<(String, earnest_ir::Model), Vec<Located>>> = checks
         .iter()
         .zip(compiled)
         .map(|(job, compiled)| match compiled {
+            Ok(json) if runs_only(&job.check) => {
+                earnest_quint::read_runs(&job.shown, &json, &job.check.runs)
+                    .map(|model| (json, model))
+            }
             Ok(json) => earnest_quint::read_located(&job.shown, &json, &job.check.runs)
                 .map(|model| (json, model)),
             Err(problem) => Err(vec![Located::new(problem, None, None)]),

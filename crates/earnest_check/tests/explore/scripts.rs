@@ -1,6 +1,6 @@
 use crate::build::{Sketch, apply, below, int, is, plus, steps, texts, yes};
 use earnest_check::{Limits, Outcome, RuleKind, RuleOutcome, Status, Verdict, explore};
-use earnest_ir::{Code, Expr, Math, Model, Op, Order, Plan, Script, Stage, Witness};
+use earnest_ir::{Code, Expr, Field, Math, Model, Op, Order, Plan, Script, Stage, Witness};
 use earnest_value::{Domain, Value};
 
 const UP: usize = 0;
@@ -54,6 +54,7 @@ fn plan(steps: Vec<Stage>) -> Plan {
     Plan {
         chosen: Vec::new(),
         start: None,
+        starts: None,
         steps,
         must_not_finish: false,
     }
@@ -69,6 +70,7 @@ fn played(sketch: Sketch, scripts: Vec<(&str, Vec<Plan>)>) -> Model {
             says: format!("The Quint run `{id}` passes"),
             line: 1,
             actions: actions.clone(),
+            fields: Vec::new(),
             plans,
             slots: 0,
         })
@@ -464,4 +466,83 @@ fn a_witness_with_more_start_states_than_the_limit_leaves_the_model_unfinished()
         "never pass: {outcome:?}"
     );
     assert!(outcome.reason.is_some(), "a reason: {outcome:?}");
+}
+
+fn with_own_field(mut model: Model, starts: &[i64]) -> Model {
+    let sym = model.symbols.intern("m");
+    let domain = model.fields[0].domain.clone();
+    for script in &mut model.runs.scripts {
+        script.fields = vec![Field {
+            name: "m".to_owned(),
+            sym,
+            domain: domain.clone(),
+            starts: numbers(starts),
+        }];
+    }
+    model
+}
+
+fn starting(starts: &[i64], plan: Plan) -> Plan {
+    Plan {
+        starts: Some(starts.iter().map(|start| numbers(&[*start])).collect()),
+        ..plan
+    }
+}
+
+#[test]
+fn a_script_with_fields_of_its_own_plays_from_its_plan_s_starts_and_prints_its_own_fields() {
+    let (sketch, n) = ladder(&[0]);
+    let model = played(
+        sketch,
+        vec![
+            (
+                "own",
+                vec![starting(&[2], plan(vec![expecting(&[UP], is(&n, 3))]))],
+            ),
+            ("past", vec![starting(&[2, 3], plan(vec![stage(&[UP])]))]),
+        ],
+    );
+    let outcome = explore(&with_own_field(model, &[2, 3]), &Limits::default());
+    holds(&outcome, "own");
+    assert_eq!(
+        broken(&outcome, "past"),
+        (
+            vec!["m = 3".to_owned()],
+            Vec::new(),
+            "step 1, `up`, can't happen here".to_owned()
+        ),
+        "the plan starts at 2 and at 3, not at the model's 0, and its path names `m`"
+    );
+    assert_eq!(
+        outcome.states, 4,
+        "the search still walks the model's own field"
+    );
+}
+
+#[test]
+fn a_plan_whose_listed_starts_are_empty_breaks_unless_its_fail_expects_that() {
+    let (sketch, _) = ladder(&[0]);
+    let model = played(
+        sketch,
+        vec![
+            ("nowhere", vec![starting(&[], plan(vec![stage(&[UP])]))]),
+            (
+                "refused",
+                vec![Plan {
+                    must_not_finish: true,
+                    ..starting(&[], plan(Vec::new()))
+                }],
+            ),
+        ],
+    );
+    let outcome = explore(&with_own_field(model, &[]), &Limits::default());
+    assert_eq!(
+        broken(&outcome, "nowhere"),
+        (
+            Vec::new(),
+            Vec::new(),
+            "the run's first action can't happen: it gives no state to start from".to_owned()
+        )
+    );
+    holds(&outcome, "refused");
 }
