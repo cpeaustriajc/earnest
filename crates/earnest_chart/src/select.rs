@@ -1,4 +1,5 @@
 use crate::plot::Plot;
+use earnest_check::PremiseKind;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 
@@ -86,6 +87,7 @@ fn arrows_into(plot: &impl Plot, leaving: &Leaving) -> Into {
 
 struct Spending<'p, P> {
     plot: &'p P,
+    leaving: &'p Leaving,
     into: Into,
     limit: usize,
     count: usize,
@@ -96,12 +98,12 @@ struct Spending<'p, P> {
 }
 
 impl<P: Plot> Spending<'_, P> {
-    fn route_to(&mut self, target: usize) -> bool {
+    fn route_to(&mut self, target: usize) {
         let into = &self.into.arrow;
         let room = self.limit.saturating_sub(self.count);
         if room == 0 {
             self.drawn[target] |= into[target].is_none_or(|arrow| self.kept[arrow]);
-            return self.drawn[target];
+            return;
         }
         self.route.clear();
         let mut at = target;
@@ -122,29 +124,105 @@ impl<P: Plot> Spending<'_, P> {
             self.drawn[to] = true;
             self.reached[to] = true;
         }
-        self.drawn[target]
     }
 
-    fn nearest(&self, premise: usize, wanted: impl Fn(usize) -> bool) -> Option<usize> {
-        self.plot
+    fn keep_whole(&mut self, target: usize, route: &[usize]) -> Found {
+        let new = route.iter().filter(|arrow| !self.kept[**arrow]).count();
+        if new > self.limit.saturating_sub(self.count) {
+            return Found::Beyond;
+        }
+        self.count = self.count.saturating_add(new);
+        for arrow in route {
+            let (from, to) = self.plot.ends(*arrow);
+            self.kept[*arrow] = true;
+            self.drawn[from] = true;
+            self.drawn[to] = true;
+            self.reached[to] = true;
+        }
+        self.drawn[target] = true;
+        Found::Drawn(target)
+    }
+
+    fn nearest_to_a_start(&mut self, premise: usize) -> Option<Found> {
+        let boxes = self.drawn.len();
+        let target = self
+            .plot
             .holding(premise)
-            .filter(|at| *at < self.drawn.len() && wanted(*at))
+            .filter(|at| *at < boxes)
             .filter_map(|at| self.into.rank[at].map(|rank| (rank, at)))
             .min()
-            .map(|(_, at)| at)
+            .map(|(_, at)| at)?;
+        if self.drawn[target] {
+            return Some(Found::Drawn(target));
+        }
+        let mut route = Vec::new();
+        let mut at = target;
+        while let Some(arrow) = self.into.arrow[at].filter(|arrow| !self.kept[*arrow]) {
+            route.push(arrow);
+            at = self.plot.ends(arrow).0;
+        }
+        Some(self.keep_whole(target, &route))
     }
 
-    fn premise(&mut self, premise: usize) -> Option<Found> {
-        if let Some(drawn) = self.nearest(premise, |at| self.drawn[at]) {
-            return Some(Found::Drawn(drawn));
+    fn nearest_after(&mut self, origin: usize, premise: usize) -> Option<Found> {
+        let boxes = self.drawn.len();
+        let mut holds = vec![false; boxes];
+        for at in self.plot.holding(premise).filter(|at| *at < boxes) {
+            holds[at] = true;
         }
-        let target = self.nearest(premise, |_| true)?;
-        Some(if self.route_to(target) {
-            Found::Drawn(target)
-        } else {
-            Found::Beyond
-        })
+        if holds[origin] {
+            return Some(Found::Drawn(origin));
+        }
+        let mut parent: Vec<Option<usize>> = vec![None; boxes];
+        let mut seen = vec![false; boxes];
+        seen[origin] = true;
+        let mut queue = VecDeque::from([origin]);
+        let mut found = None;
+        'walk: while let Some(at) = queue.pop_front() {
+            for arrow in self.leaving.of(at) {
+                let (_, to) = self.plot.ends(*arrow);
+                if seen[to] {
+                    continue;
+                }
+                seen[to] = true;
+                parent[to] = Some(*arrow);
+                if holds[to] {
+                    found = Some(to);
+                    break 'walk;
+                }
+                queue.push_back(to);
+            }
+        }
+        let target = found?;
+        let mut path = Vec::new();
+        let mut at = target;
+        while let Some(arrow) = parent[at] {
+            path.push(arrow);
+            at = self.plot.ends(arrow).0;
+        }
+        Some(self.keep_whole(target, &path))
     }
+}
+
+fn premise_targets<P: Plot>(spending: &mut Spending<'_, P>) -> Vec<Option<Found>> {
+    let premises = spending.plot.premises();
+    let mut found: Vec<Option<Found>> = Vec::with_capacity(premises.len());
+    for (at, premise) in premises.iter().enumerate() {
+        let started = at
+            .checked_sub(1)
+            .and_then(|before| premises.get(before).zip(found.get(before)))
+            .filter(|(before, _)| before.rule == premise.rule && before.kind == PremiseKind::After)
+            .map(|(_, start)| *start);
+        let target = match (premise.kind, started) {
+            (PremiseKind::Reaches, Some(Some(Found::Drawn(origin)))) => {
+                spending.nearest_after(origin, at)
+            }
+            (PremiseKind::Reaches, Some(_)) => None,
+            _ => spending.nearest_to_a_start(at),
+        };
+        found.push(target);
+    }
+    found
 }
 
 pub(crate) fn select(plot: &impl Plot, limit: usize) -> Selection {
@@ -154,6 +232,7 @@ pub(crate) fn select(plot: &impl Plot, limit: usize) -> Selection {
     let marked = |at: usize| plot.look(at).marked;
     let mut spending = Spending {
         plot,
+        leaving: &leaving,
         into: arrows_into(plot, &leaving),
         limit,
         count: 0,
@@ -169,9 +248,7 @@ pub(crate) fn select(plot: &impl Plot, limit: usize) -> Selection {
             spending.route_to(target);
         }
     }
-    let premises = (0..plot.premises().len())
-        .map(|premise| spending.premise(premise))
-        .collect();
+    let premises = premise_targets(&mut spending);
     let Spending {
         into,
         mut count,

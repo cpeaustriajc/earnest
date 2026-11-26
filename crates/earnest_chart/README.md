@@ -47,9 +47,13 @@ A chart draws at most `ARROW_LIMIT` arrows, not counting the `[*]` arrows.
 2. For each broken state, in the graph's order, the arrows of its route are kept when all of them
    still fit. Of a route that does not fit, the arrows nearest the start are kept as far as the
    limit allows, and the broken state itself is not drawn.
-3. For each premise in `Graph::premises`, in order: when it holds in a box already drawn, nothing
-   is kept. Otherwise the route to the box where it holds that the walk of step 1 reaches first
-   is kept as in step 2. A start box costs no arrow.
+3. For each premise in `Graph::premises`, in order, the target is the box where it holds that
+   the walk of step 1 reaches first, drawn or not. Its route is kept whole when it fits in what
+   is left, and otherwise nothing is kept for it; a target already drawn, or a start box, costs
+   no arrow. The `Reaches` premise of an eventually rule whose `After` premise comes just before
+   it is instead the first box where it holds in a breadth-first walk from the `After` target,
+   with that walk's path kept whole or not at all. It has no target when the `After` premise has
+   none or was not drawn.
 4. The rest is filled one arrow at a time: the first arrow in the graph's order that is not kept
    and leaves a state the chart already reaches from a start.
 5. A state is drawn when a kept arrow touches it, when it is a broken state or a premise's box
@@ -65,7 +69,11 @@ broken state lies beyond what is shown.` or `2 more broken states lie beyond wha
 so a drawn broken state is never one of those it says lie beyond. The same graph always gives
 the same chart.
 
-When a premise holds in a box the walk reaches, one more line follows after a blank line, naming
-the box of each: ``The premise of `paid` first holds in `x5 y5`.`` for an always rule, and
-``` `settles` starts in `x1 y1` and is met in `x5 y5`.``` for an eventually rule, or `beyond what
-is shown` in place of the box when its route did not fit.
+When a premise has a target, one more line follows after a blank line, one sentence per rule:
+``The premise of `paid` first holds in `x5 y5`.``, ``` `settles` starts in `x1 y1`; what it
+must reach holds in `x5 y5`.```, ``` `settles` starts in `x5 y5`, where what it must reach holds
+too.```, ``` `settles` starts in `x1 y1`.``` when no box of `reaches` follows the start, and
+``What `grows` must reach first holds in `x5 y5`.`` for an eventually rule without `after`.
+`beyond what is shown` takes the place of `in` and the box when the route did not fit. The
+sentences never say that a rule holds. A label longer than `LONGEST_NOTE_LABEL` (80) characters
+is cut there with `…` in this line only.

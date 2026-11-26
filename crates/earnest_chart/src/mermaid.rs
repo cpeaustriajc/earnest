@@ -1,4 +1,4 @@
-use crate::markdown::code_span;
+use crate::markdown::{code_span, one_line};
 use crate::plot::{Look, Plot};
 use crate::select::{ARROW_LIMIT, Found, Selection, select};
 use earnest_check::{Graph, Outline, PremiseKind};
@@ -12,6 +12,29 @@ const DECODED_BY_MERMAID: [char; 2] = ['\u{fb02}', '\u{b6}'];
 const ZERO_WIDTH_SPACE: char = '\u{200b}';
 const LONGEST_COLOR_NAME: usize = 32;
 const DARK_TEXT_FROM: u32 = 128_000;
+const LONGEST_NOTE_LABEL: usize = 80;
+const ELLIPSIS: char = '\u{2026}';
+const BEYOND: &str = "beyond what is shown";
+
+#[derive(Default)]
+struct Targets {
+    implies: Option<Found>,
+    has_after: bool,
+    after: Option<Found>,
+    reaches: Option<Found>,
+}
+
+fn note_label(text: &str) -> String {
+    let line = one_line(text);
+    if line.chars().count() <= LONGEST_NOTE_LABEL {
+        return line;
+    }
+    let kept: String = line
+        .chars()
+        .take(LONGEST_NOTE_LABEL.saturating_sub(1))
+        .collect();
+    format!("{}{ELLIPSIS}", kept.trim_end())
+}
 
 struct Class {
     name: &'static str,
@@ -313,9 +336,33 @@ impl<'a, P: Plot> Drawing<'a, P> {
 
     fn place(&self, found: Found) -> String {
         match found {
-            Found::Drawn(at) => format!("in {}", code_span(self.plot.label(at))),
-            Found::Beyond => "beyond what is shown".to_owned(),
+            Found::Drawn(at) => format!("in {}", code_span(&note_label(self.plot.label(at)))),
+            Found::Beyond => BEYOND.to_owned(),
         }
+    }
+
+    fn rule_sentence(&self, rule: &str, of_rule: &Targets) -> Option<String> {
+        let rule = code_span(rule);
+        let place = |found: Option<Found>| found.map(|found| self.place(found));
+        if let Some(implied) = place(of_rule.implies) {
+            return Some(format!("The premise of {rule} first holds {implied}."));
+        }
+        if !of_rule.has_after {
+            return place(of_rule.reaches)
+                .map(|reached| format!("What {rule} must reach first holds {reached}."));
+        }
+        let start = of_rule.after?;
+        let started = self.place(start);
+        Some(match of_rule.reaches {
+            Some(reached) if reached == start => {
+                format!("{rule} starts {started}, where what it must reach holds too.")
+            }
+            Some(reached) => format!(
+                "{rule} starts {started}; what it must reach holds {}.",
+                self.place(reached)
+            ),
+            None => format!("{rule} starts {started}."),
+        })
     }
 
     fn premise_note(&self) -> Option<String> {
@@ -324,27 +371,21 @@ impl<'a, P: Plot> Drawing<'a, P> {
         let mut at = 0;
         while let Some(first) = premises.get(at) {
             let rule = &first.rule;
-            let mut pieces: Vec<String> = Vec::new();
-            let mut implied = None;
+            let mut of_rule = Targets::default();
             while let Some(premise) = premises.get(at).filter(|premise| premise.rule == *rule) {
-                if let Some(Some(found)) = self.selection.premises.get(at) {
-                    let place = self.place(*found);
-                    match premise.kind {
-                        PremiseKind::After => pieces.push(format!("starts {place}")),
-                        PremiseKind::Reaches => pieces.push(format!("is met {place}")),
-                        PremiseKind::Implies => implied = Some(place),
-                        _ => {}
+                let found = self.selection.premises.get(at).copied().flatten();
+                match premise.kind {
+                    PremiseKind::Implies => of_rule.implies = found,
+                    PremiseKind::After => {
+                        of_rule.has_after = true;
+                        of_rule.after = found;
                     }
+                    PremiseKind::Reaches => of_rule.reaches = found,
+                    _ => {}
                 }
                 at = at.saturating_add(1);
             }
-            let rule = code_span(rule);
-            if let Some(place) = implied {
-                sentences.push(format!("The premise of {rule} first holds {place}."));
-            }
-            if !pieces.is_empty() {
-                sentences.push(format!("{rule} {}.", pieces.join(" and ")));
-            }
+            sentences.extend(self.rule_sentence(rule, &of_rule));
         }
         (!sentences.is_empty()).then(|| sentences.join(" "))
     }
@@ -395,14 +436,16 @@ impl<'a, P: Plot> Drawing<'a, P> {
 /// state is drawn, it says `Another broken state lies beyond what is shown.` or `2 more broken
 /// states lie beyond what is shown.`, so it never reads as if the drawn one were missing.
 ///
-/// After the routes to broken states, the arrows left go to the route to the nearest box where
-/// each of [`Graph::premises`] holds, in that order; a premise that holds in a box already
-/// drawn costs none. When any premise holds in a box a start leads to, the text ends with a
-/// blank line and one line naming, per rule, the box where it first holds, such as
+/// After the routes to broken states, each of [`Graph::premises`] in turn gets the route to the
+/// nearest box where it holds, whole when it fits in the arrows left and not at all otherwise;
+/// a box already drawn costs none. An eventually rule's `reaches` is routed from the box where
+/// its `after` holds. When any premise has a box, the text ends with a blank line and one line
+/// naming, per rule, where its conditions hold, such as
 /// ``The premise of `paid` first holds in `Paid`.`` or
-/// ``` `settles` starts in `Busy` and is met in `Idle`.```, with `beyond what is shown` in place
-/// of a box whose route did not fit. A graph with no premise gets the chart it got before
-/// premises.
+/// ``` `settles` starts in `Busy`; what it must reach holds in `Idle`.```, with
+/// `beyond what is shown` in place of a box whose route did not fit. That line never says that
+/// a rule holds, and cuts a label past 80 characters. A graph with no premise gets the chart it
+/// got before premises.
 #[must_use]
 pub fn chart(graph: &Graph) -> String {
     chart_with_limit(graph, ARROW_LIMIT)
