@@ -2347,3 +2347,60 @@ Constructs `quint typecheck` accepts, beyond the earlier tables and the docs' li
   checks, 8 to 25 states), on a module of variants with different payload types inside a map, a
   set, map keys and a list (101 states, two invariants broken), on `empty_forall` (both leave
   the property out), and on all six checks of the project model below.
+
+### The project model, extended
+
+`models/quint_third/project/`: the second pass's `types.qnt` and `lock.qnt`, with `requestBy(n)`
+and `releaseBy(n)` (an action per node, guards inside), `stepEach` (`nondet n = NODES.oneOf()`
+before each), a witness helper `startWith(n)`, `val Guard = NODES.size() > 2` and `val
+GuardedBreak = Guard implies neverTwoGrants`, the fairness `fairEach` (an `and` of
+`NODES.forall(n => weakFair(requestBy(n), (peers, net)))`, `weakFair(deliver, vars)`,
+`weakFair(grant, vars)` and the same per node for `releaseBy`), and three properties over it,
+one an `and` of `always`, `always(eventually)` and an `eventually` under `deliver`'s fairness
+alone. `setups.qnt`: `three` and `two` (`.*` setups), `pair` (two copies of the spec, `as L` and
+`as R`, each step of one keeping the other's variables, and a run over both), and `witness`, a
+module of runs only on `import lock(…) as W`, whose runs start with `W::startWith("a")`, with
+helpers that chain steps and take a node (`serveFrom(n)`, `requestTwice(n)`), a `nondet` node
+passed to a helper, `reps`, a `fail()` and two that break. One `earnest.quint.json` of six checks,
+two of them named checks of `three` and `two` with `GuardedBreak` in `expectCounterexample`.
+
+| Check | earnest | `quint verify --backend tlc` / `quint test` |
+|---|---|---|
+| `three` (stepEach) | 314 states; 3 invariants hold, `GuardedBreak` broken (expected, 9 steps), `everyoneRequests` and `everyoneHolds` hold (3 parts each), `eachDrains#3` broken, `oneEachTest` holds | 314; ok ×3; violation at State 10; ok, ok; violation; `oneEachTest` ok |
+| `threeKnown` | `pass`, 253 states, stopped (`every expected counterexample was found`) | 223 states before TLC's stop |
+| `two` | 179 states; 4 invariants and 4 parts hold, `eachDrains#3` broken | 179; ok ×4 (and `GuardedBreak` ok); violation |
+| `twoGuard` | `fail`: `holds  GuardedBreak  a counterexample was expected` | ok: no counterexample, as `Guard` is false with two nodes |
+| `pair` | 322 states; `bothMutex` holds, `fewGrants` broken after 12 steps; `bothTest` holds | 322; ok; violation at State 13; `bothTest` ok |
+| `witness` | `wrongHolderTest` and `tooManyTest` broken, the other five hold, `0 states` | 2 failed, 5 ok |
+
+`earnest confirm --tlc` says `same` on all six (39 s). The same with `--jobs` 1, 2 and 4: every
+path byte for byte equal. Times on 4 cores, with the random comparison running beside it:
+`earnest verify --no-cache` of all six checks 2.6 s (one typecheck and two compiles), and
+1.6 s for `three` alone; `quint verify --backend tlc` 112 s for the 14 runs it takes to judge each
+property alone (about 8 s each, most of it Apalache's start), and `quint test` 2 to 5 s per
+module.
+
+Awkward on the way, none a wrong answer: a property over `weakFair(step, vars)` in a check whose
+step is `stepEach` is refused, and the refusal names `three::lock::step` with Quint's long names;
+`twoGuard` is where a guard written as a `val` meets `expectCounterexample`: with two nodes the
+guard is false, so the known bug can't appear, and the check fails with no hint that the guard is
+why (the same as `quint verify`, which simply finds no violation).
+
+### Usability notes
+
+- A path step of an action called with a written argument prints no argument: `buy(1)` and
+  `buy(R.who)` in one `any` print as `buy` and `buy#2`, where a `nondet` argument prints `b = 1`.
+- With `"runs": ["M::aTest"]` in a module that also has its own `aTest`, the played run prints as
+  `aTest` (the short name, since only one is played), the name of the module's other run.
+- `--rule upTest` on a check that searches plays the run and still searches: on a model with no
+  end the check is `unfinished` at `--max-states` though the only rule judged is a run. With
+  `expectCounterexample` on that run it is met and the check still ends `unfinished`.
+- A refusal inside an action argument or a lambda written in `step` is reported "in the
+  definition `wrap`, which `step` uses" (the callee), though the line and column are those of the
+  argument in `step`.
+- A property in parts with a bare condition (`and { x == 1, always(x < 2) }`) in
+  `expectCounterexample` never stops the search, even when both parts are broken after level 2;
+  the docs' "such parts" says so, but the bare part is judged in the start states and is known
+  from the first level.
+- Messages still name a setup's definitions by Quint's long names (`three::lock::requestBy`), as
+  the second pass noted.
