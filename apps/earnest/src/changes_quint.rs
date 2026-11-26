@@ -732,4 +732,33 @@ mod tests {
             "a rule is known by its name"
         );
     }
+
+    fn unsaid(name: &str, id: &str) -> Judged {
+        Judged {
+            id: id.to_owned(),
+            sentence: None,
+            ..judged(name, Expected::Holds, "", 1)
+        }
+    }
+
+    #[test]
+    fn only_the_sentence_of_the_rule_s_own_doc_comment_rewords_it() {
+        assert_eq!(
+            kinds(&unsaid("C::a", "a"), &unsaid("C::a", "C::a")),
+            [],
+            "with no sentence of its own at either end, the sentence made up from its id does \
+             not count, though the id it is made up from is another"
+        );
+        let said = judged("C::a", Expected::Holds, "one", 1);
+        assert_eq!(
+            kinds(&unsaid("C::a", "C::a"), &said),
+            [("C::a".to_owned(), Kind::Reworded)],
+            "it gained a sentence of its own"
+        );
+        assert_eq!(
+            kinds(&said, &unsaid("C::a", "C::a")),
+            [("C::a".to_owned(), Kind::Reworded)],
+            "it lost its sentence"
+        );
+    }
 }
