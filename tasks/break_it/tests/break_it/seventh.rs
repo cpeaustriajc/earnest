@@ -42,6 +42,12 @@ impl Ran {
 }
 
 fn run_in_folder(files: &[(&str, &str)], arguments: &[&str]) -> Ran {
+    runs_in_folder(files, &[arguments])
+        .pop()
+        .expect("one run was asked for")
+}
+
+fn runs_in_folder(files: &[(&str, &str)], runs: &[&[&str]]) -> Vec<Ran> {
     let binary = binary();
     let folder = TempDir::new().expect("a temporary folder can be made");
     for (name, text) in files {
@@ -51,16 +57,20 @@ fn run_in_folder(files: &[(&str, &str)], arguments: &[&str]) -> Ran {
         }
         fs::write(path, text).expect("a file in the sandbox can be written");
     }
-    let output = Command::new(binary)
-        .args(arguments)
-        .current_dir(folder.path())
-        .output()
-        .expect("earnest starts");
-    Ran {
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        code: output.status.code(),
-    }
+    runs.iter()
+        .map(|arguments| {
+            let output = Command::new(&binary)
+                .args(*arguments)
+                .current_dir(folder.path())
+                .output()
+                .expect("earnest starts");
+            Ran {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                code: output.status.code(),
+            }
+        })
+        .collect()
 }
 
 fn run_of<'a>(json: &'a Value, name: &str, setup: Option<&str>) -> &'a Value {
@@ -138,4 +148,27 @@ fn a_rule_loosened_in_the_states_of_a_setup_is_listed_as_loosened() {
          `loosened` is \"some reachable state of the new model satisfies the new rule and breaks \
          the old rule\"\n{report}"
     );
+}
+
+#[test]
+fn two_models_of_one_name_on_one_line_keep_their_own_cached_results() {
+    let runs = runs_in_folder(
+        &[(FILE, include_str!("../../models/seventh/one_line.model.ts"))],
+        &[&["verify", "--json"], &["verify", "--json"]],
+    );
+    for ran in &runs {
+        let json = ran.json();
+        let statuses: Vec<&Value> = json["models"]
+            .as_array()
+            .map(|models| models.iter().map(|model| &model["status"]).collect())
+            .unwrap_or_default();
+        assert!(
+            ran.code == Some(1) && statuses == ["pass", "fail"],
+            "`A` and `B` are both named `Jar` and declared on line 3: `A` passes with 3 states \
+             and `B` breaks `lowB` after one step, on the first run and when the second run \
+             reads both from the cache\nexit {:?}\n{}",
+            ran.code,
+            ran.said()
+        );
+    }
 }
