@@ -71,11 +71,7 @@ fn definition(def: &Def) -> Option<Refusal> {
             "temporal properties are not read yet",
             &def.name,
         )),
-        "run" => Some(in_definition(
-            &format!("`run {}`", def.name),
-            "runs are not read yet",
-            &def.name,
-        )),
+        "run" => None,
         _ => body(def, &def.name),
     }
 }

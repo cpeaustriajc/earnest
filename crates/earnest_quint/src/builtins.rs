@@ -130,7 +130,7 @@ pub(crate) fn kind_of_builtin(opcode: &str) -> Option<&'static str> {
         (&LISTS, "lists"),
         (&VARIANTS, "variants and `match`"),
         (&TEMPORAL, "temporal properties"),
-        (&RUNS, "runs"),
+        (&RUNS, "run operators outside a `run`"),
     ];
     if opcode == "ipow" {
         return Some("integer powers");

@@ -1,5 +1,6 @@
 use crate::json::{Compiled, Declaration, Def, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
+use crate::runs::scripts;
 use crate::scan::refused;
 use crate::starts::start_states;
 use earnest_ir::{Action, Code, End, Expr, Field, Input, Model, Rule, Runs, View};
@@ -63,7 +64,7 @@ fn missing(name: &str) -> Vec<Refusal> {
     )]
 }
 
-fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
+pub(crate) fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
     let mut seen: HashMap<String, usize> = HashMap::new();
     paths
         .iter()
@@ -80,7 +81,7 @@ fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
         .collect()
 }
 
-fn action(id: String, path: &Path, fields: &[String]) -> Read<Action> {
+pub(crate) fn action(id: String, path: &Path, fields: &[String]) -> Read<Action> {
     let updates = assigned(path, fields, &id)?;
     let changed: Vec<bool> = updates
         .iter()
@@ -262,6 +263,12 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions);
     let (starts, actions, rules) =
         parts(&mut reader, &defs, (init, step), &names).map_err(|refusal| vec![refusal])?;
+    let started_by = match &init.expr {
+        Quint::Name { name, .. } => named(&defs, name).map_or(init.id, |def| def.id),
+        _ => init.id,
+    };
+    let scripts = scripts(&mut reader, &module.declarations, started_by, &names)
+        .map_err(|refusal| vec![refusal])?;
     let mut symbols = Symbols::default();
     let fields = variables
         .into_iter()
@@ -298,6 +305,7 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
         view: View::default(),
         runs: Runs {
             starts: Some(starts),
+            scripts,
             ..Runs::default()
         },
     })

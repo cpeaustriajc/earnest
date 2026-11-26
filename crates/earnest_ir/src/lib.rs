@@ -358,6 +358,56 @@ pub struct Witness {
     pub slots: usize,
 }
 
+/// One step of a [`Plan`]: the actions it may take, and what is checked around it.
+#[derive(Clone, Debug)]
+pub struct Stage {
+    /// The positions in [`Script::actions`] of the actions the step may take. Each action
+    /// with each combination of its inputs' values is one alternative: the step can happen
+    /// when at least one alternative can, and every alternative that can is played.
+    pub choices: Vec<usize>,
+    /// A condition on the state before the step, checked before any alternative. False is a
+    /// failed assertion, not a step that can't happen. It must give a boolean.
+    pub asserts: Option<Code>,
+    /// A condition on the state after the step. It must give a boolean.
+    pub expect: Option<Code>,
+    /// Whether the step must not be able to happen. Only the last step of a plan is refused:
+    /// the plan holds where no alternative can happen and breaks where one can.
+    pub refused: bool,
+}
+
+/// One way to play a [`Script`], from every start state of the model.
+#[derive(Clone, Debug)]
+pub struct Plan {
+    /// The values the run chose before its first step, each with its name, printed with a
+    /// broken plan. Empty when the run chooses nothing.
+    pub chosen: Vec<(String, Value)>,
+    /// A condition on the start state, before the first step. It must give a boolean.
+    pub start: Option<Code>,
+    /// The steps, first to last.
+    pub steps: Vec<Stage>,
+    /// Whether a branch that gets through every step breaks the plan: the run is false there.
+    pub must_not_finish: bool,
+}
+
+/// A generalised witness: steps that each choose among alternatives, with conditions after
+/// any step, played along every resolution of the choices. A [`Witness`] is the case of one
+/// alternative per step, with its inputs given, and one condition at the end.
+#[derive(Clone, Debug)]
+pub struct Script {
+    /// The run's name.
+    pub id: String,
+    /// The run's sentence.
+    pub says: String,
+    /// The line it is declared on, counted from 1.
+    pub line: u32,
+    /// The actions the steps take. They are the script's own, not the model's.
+    pub actions: Vec<Action>,
+    /// The plans. The script holds when every plan holds.
+    pub plans: Vec<Plan>,
+    /// How many local slots the conditions of the plans need.
+    pub slots: usize,
+}
+
 /// One setup: other values for some fields to start at.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Setup {
@@ -381,6 +431,8 @@ pub struct Runs {
     pub eventually: Vec<Eventually>,
     /// The witnesses.
     pub witnesses: Vec<Witness>,
+    /// The generalised witnesses, played from the model's own start states only.
+    pub scripts: Vec<Script>,
     /// The setups the model is also checked in.
     pub setups: Vec<Setup>,
     /// The position in `setups` of the setup this model starts in: [`Model::in_setup`] gave
@@ -453,7 +505,8 @@ pub struct Model {
 
 impl Model {
     /// The id of everything this model is checked for and reported by its id: each rule, then
-    /// each rule about runs, then each witness that is played from this model's start states.
+    /// each rule about runs, then each witness that is played from this model's start states,
+    /// then each script when the model is in no setup.
     pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
         let always = self.rules.iter().map(|rule| rule.id.as_str());
         let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
@@ -463,7 +516,13 @@ impl Model {
             .iter()
             .filter(|witness| witness.setup == self.runs.chosen)
             .map(|witness| witness.id.as_str());
-        always.chain(eventually).chain(witnesses)
+        let scripts = self
+            .runs
+            .scripts
+            .iter()
+            .filter(|_| self.runs.chosen.is_none())
+            .map(|script| script.id.as_str());
+        always.chain(eventually).chain(witnesses).chain(scripts)
     }
 
     /// The setup this model starts in, when [`Self::in_setup`] gave it.
