@@ -46,6 +46,10 @@ case "$1" in
     ;;
   compile)
     fixture="$here/fixtures/compiled/$set/$main@$invariants@$temporal.json"
+    if [ -f "$fixture.stderr" ]; then
+      sed "s#@FOLDER@#$folder#g" "$fixture.stderr" >&2
+      exit 1
+    fi
     if [ ! -f "$fixture" ]; then
       echo "no fixture for $set/$main@$invariants@$temporal" >&2
       exit 1
@@ -58,7 +62,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 12] = [
+const SETS: [&str; 15] = [
     "labels",
     "bare",
     "kinds",
@@ -71,6 +75,9 @@ const SETS: [&str; 12] = [
     "numbers",
     "numbers_bare",
     "defs",
+    "override",
+    "near",
+    "quintrefuses",
 ];
 
 const SHOP_HOLDS: &str = "[TLC] Running TLC model checker...\n\
@@ -418,29 +425,21 @@ fn a_view_mark_that_labels_nothing_is_unreadable_at_its_line() {
 }
 
 #[test]
-fn a_check_that_sees_two_labels_of_one_part_names_both_and_is_refused() {
+fn the_labels_of_a_check_win_over_those_of_a_module_it_imports_plainly() {
     let quint = Quint::new();
     let run = quint.earnest(&["verify", "twice", "--json"]);
-    run.exits(1);
+    run.exits(0);
     let report = run.json();
-    let found = problems(&report);
-    assert_eq!(
-        problem_at(&found, 21),
-        "`count` the check `twice` sees two definitions marked `@view state`, `parity` and \
-         `count`, and a chart takes one: keep the mark on one of them"
-    );
-    assert_eq!(
-        problem_at(&found, 24),
-        "`bigness` the check `twice` sees two definitions marked `@view group`, `sign` and \
-         `bigness`, and a chart takes one: keep the mark on one of them"
-    );
-    assert_eq!(model(&report, "once")["status"], "pass", "{report}");
+    assert!(problems(&report).is_empty(), "{report}");
+    let own = quint.earnest(&["chart", "twice", "--model", "twice"]);
+    assert_eq!(groups_drawn(&own.stdout), ["small", "big"], "{own}");
+    assert_eq!(states_drawn(&own.stdout), ["0", "1", "2", "3"], "{own}");
     let chart = quint.earnest(&["chart", "twice", "--model", "once"]);
     assert_eq!(groups_drawn(&chart.stdout), ["zero", "above"], "{chart}");
     assert_eq!(
         states_drawn(&chart.stdout),
         ["even", "odd", "even"],
-        "a check that sees one of each uses the module it imports: {chart}"
+        "a check with no label of its own uses the one of the module it imports: {chart}"
     );
 }
 
@@ -765,5 +764,147 @@ fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
     assert!(
         said.contains("Quint said: no fixture for labels/shop@"),
         "{said}"
+    );
+}
+
+#[test]
+fn a_label_of_the_checks_own_module_wins_over_the_labels_it_imports() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "override", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    for name in ["Inherits", "Overrides", "Chooses", "Once"] {
+        assert_eq!(model(&report, name)["status"], "pass", "{name}: {report}");
+    }
+    let chart = |name: &str| {
+        let run = quint.earnest(&["chart", "override", "--model", name]);
+        (states_drawn(&run.stdout), groups_drawn(&run.stdout))
+    };
+    assert_eq!(
+        chart("Inherits"),
+        (
+            vec!["0".to_owned(), "1".to_owned(), "2".to_owned()],
+            vec!["early".to_owned(), "late".to_owned()]
+        ),
+        "a setup with no label of its own takes the spec's"
+    );
+    assert_eq!(
+        chart("Overrides"),
+        (
+            vec!["zero".to_owned(), "more".to_owned(), "more".to_owned()],
+            vec!["early".to_owned(), "late".to_owned()]
+        ),
+        "its own state label wins over the spec's, and the spec's group is still used"
+    );
+    let (states, groups) = chart("Chooses");
+    assert!(states.contains(&"(0, 2)".to_owned()), "{states:?}");
+    assert_eq!(groups, ["level", "apart"], "its own labels choose");
+    assert_eq!(
+        chart("Once").0,
+        ["none", "some"],
+        "one module brought whole, under a name and exported is one label"
+    );
+    let found = problems(&report);
+    let two: Vec<String> = found
+        .iter()
+        .filter(|each| each.1 == 35)
+        .map(|each| format!("{} {}", each.2, each.3))
+        .collect();
+    assert_eq!(
+        two,
+        [
+            "`module Two` the check `Two` sees 2 definitions marked `@view state` in the modules \
+             it imports, `S::specView` and `T::specView`, and a chart takes one: mark a `val` of \
+             `Two` itself `/// @view state` to choose its label, and the imported ones are not \
+             used",
+            "`module Two` the check `Two` sees 2 definitions marked `@view group` in the modules \
+             it imports, `S::specGroup` and `T::specGroup`, and a chart takes one: mark a `val` \
+             of `Two` itself `/// @view group` to choose its label, and the imported ones are not \
+             used",
+        ],
+        "two instances of one spec bring two labels: {found:?}"
+    );
+    assert_eq!(
+        problem_at(&found, 71),
+        "`second` the check `TwoOwn` sees two definitions marked `@view state`, `first` and \
+         `second`, and a chart takes one: keep the mark on one of them"
+    );
+    let compiled: Vec<String> = quint
+        .calls()
+        .into_iter()
+        .filter(|call| call.starts_with("compile"))
+        .filter(|call| !call.contains("--main Once"))
+        .collect();
+    assert!(
+        compiled.is_empty(),
+        "the setups are built from the typecheck: {compiled:?}"
+    );
+}
+
+#[test]
+fn a_view_mark_in_another_case_or_in_a_comment_quint_drops_is_unreadable_at_its_line() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "near", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let found = problems(&report);
+    assert_eq!(
+        problem_at(&found, 11),
+        "`@view` the doc comment holds `@View state`, which is not a mark: a mark is written in \
+         small letters, `/// @view state`, or it is read as a sentence and the chart is not \
+         labelled"
+    );
+    assert!(
+        problem_at(&found, 14).contains("`@VIEW group`, which is not a mark"),
+        "{found:?}"
+    );
+    assert_eq!(
+        problem_at(&found, 17),
+        "`@view` `// @view state` is a comment that `quint parse` does not hand over, so the \
+         chart is not labelled: write the mark in a doc comment, with three slashes, `/// @view \
+         state`, on the line above the `val`"
+    );
+    assert_eq!(
+        problem_at(&found, 20),
+        "`@view` `@view group` is in a `/* */` comment, which `quint parse` does not hand over, \
+         so the chart is not labelled: write the mark in a doc comment, with three slashes, `/// \
+         @view group`, on the line above the `val`"
+    );
+    assert!(
+        problem_at(&found, 24).contains("`/// @view state`"),
+        "{found:?}"
+    );
+    assert_eq!(
+        problem_at(&found, 2),
+        "`x` `x` is a `nondet` definition, which gives no value to label the chart with: mark a \
+         `val` with no parameters `/// @view state`"
+    );
+    assert_eq!(
+        found.len(),
+        6,
+        "`@vew` is a sentence, and a comment with a blank line under it is above nothing: \
+         {found:?}"
+    );
+    assert_eq!(model(&report, "near")["status"], "pass");
+}
+
+#[test]
+fn a_label_quint_itself_refuses_is_named_in_quints_error() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "quintrefuses", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    assert_eq!(
+        found
+            .iter()
+            .map(|each| (each.1, each.2.clone(), each.3.clone()))
+            .collect::<Vec<_>>(),
+        [(
+            12,
+            "`quint compile --main refused`".to_owned(),
+            "`quint compile --main refused` fails in the chart label `shown`: Error [QNT203]: \
+             'oneOf' must be used inside a nondet definition"
+                .to_owned()
+        )]
     );
 }
