@@ -252,7 +252,7 @@ fn rules<'a>(
         let slots = reader.slots;
         rules.push(Rule {
             id: name.clone(),
-            says: format!("The Quint invariant `{name}` holds"),
+            says: format!("Quint invariant `{name}`"),
             line: DECLARED_ON,
             text: name,
             holds: Code::new(holds),

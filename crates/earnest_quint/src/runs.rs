@@ -594,7 +594,7 @@ fn script<'a>(
     let picked = std::mem::take(&mut run.picks);
     let script = Script {
         id: def.name.clone(),
-        says: format!("The Quint run `{}` passes", def.name),
+        says: format!("Quint run `{}`", def.name),
         line: DECLARED_ON,
         actions: run.actions,
         fields,

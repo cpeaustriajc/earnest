@@ -90,12 +90,14 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A list of names goes on over the next doc line when its line ends with a comma: `/// @check inRange,` then `///   small, tiny` judges all three, and `/// @check,` or `/// @check broken,` then `/// small` starts the list on the next line. A mark whose comma is followed by a line that is not names, such as a sentence, is `unreadable` at the mark, and the message says the comma made the list go on. A doc line of a check's module made only of names the module sees, with no comma at the end of the line before, is `unreadable` at that line: it would be read as the check's sentence and judge nothing.
 - A name a module's doc lists after two marks, as `/// @check small` and `/// @check broken small`, is `unreadable`. A mark on the definition and another word for that name in a check's doc are not two marks: the check's doc wins, and that is how one setup says a property of the spec breaks there.
 - A check plays every run it sees whose name ends in `Test`, as `quint test --main` plays them, and every marked or named run. The runs of a module it imports are played as described in [Runs](#runs).
-- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has `0 states`.
+- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has no states field: `pass  OnlyRuns  0 ms  0 rules, 4 runs`. Its JSON keeps `"states": 0`.
 - A mark may stand on any line of a doc comment, and a definition's doc comment holds one mark.
 - The result line of each `.qnt` model counts its rules and its runs, `5 rules, 2 runs`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
 - Each of these is `unreadable`, at the line of the mark:
   - `@check` followed by a word earnest does not know, such as `@check reachble`;
   - `///@check` with no space after the slashes, which `quint parse` hands over as `check`, with or without names after it: earnest reads the `///@` in the source line;
+  - `@Check` or `@CHECK`, a doc line whose first word is `@check` in another case: the message says the mark is written `@check`;
+  - a `//` or `/* */` comment that starts with `@check` on the lines directly above a module, a `val`, a `temporal` definition or a run: a mark is a doc comment, `/// @check`, and a mark is removed by deleting it, not by commenting it out. A `@check` elsewhere in a comment, as in a URL or the middle of a line, is not read;
   - a second mark in one doc comment;
   - names after a mark on a definition: names go in a module's doc comment;
   - a mark on something no check judges: an `action`, a `var`, a `const`, an `import` or `instance`, a `type`, or a definition with parameters;
@@ -485,11 +487,11 @@ Quint's TLC run and its TypeScript evaluator give different answers to a few exp
 
 A check plays the `run` definitions it sees whose name ends in `Test`, as `quint test` picks them, and every run marked `/// @check` or `/// @check broken` or named in the check's doc comment, in the order of the file. A compiled `.json` named on the command line plays the runs whose name ends in `Test`.
 
-Each run is listed after the invariants and temporal properties, with `"kind": "witness"`, the run's name as its id, and the sentence ``The Quint run `name` passes``. A broken run shows the path it broke on and a `why` line:
+Each run is listed after the invariants and temporal properties, with `"kind": "witness"`, the run's name as its id, and the `says` text ``Quint run `name` ``, which states no verdict. A run, an invariant or a temporal property with no sentence of its own prints no quoted sentence after `broken`. A broken run shows the path it broke on and a `why` line:
 
 ```text
 fail        runs  12 states  0 ms
-  broken  pickSomeTest  "The Quint run `pickSomeTest` passes"
+  broken  pickSomeTest
     start  y = 0, picked = 0
     1. pick  v = 1  picked: 0 -> 1
     end    y = 0, picked = 1
@@ -501,7 +503,7 @@ A run starts with its first action, which `quint test` plays from no state. It m
 Each run is played over its own variables: the ones it reaches through its actions and `expect`s. A variable the run never reaches does not exist for it, so `Before::init.then(Before::step)` is played over `Before::n` alone in a module whose `init` sets only `Fixed::n`. Its path prints only its own variables, from the state its first action gave:
 
 ```text
-  broken  pickOverTest  "The Quint run `pickOverTest` passes"
+  broken  pickOverTest
     start  Other::n = 3
     1. Other::step  Other::n: 3 -> 4
     end    Other::n = 4
@@ -547,7 +549,7 @@ With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3
 A check that plays a run declared in a module it imports, one whose name ends in `Test` or one that is marked or named, is built from `quint typecheck` when its imports are of a shape earnest builds, `import Spec.*` among them, so the run is played as `quint test --main` plays it. A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there, so the check does not pass: a check that would pass is `unfinished`, with `(runs not played: specTest)` on its line, followed by the declaration that kept the checker from building it and its line when the checker knows it, and exits `1`; a broken rule still makes it `fail`. A marked or named run the compiled module does not hold is one of those runs, and the check's properties are still judged. The check plays the runs the compiled module holds that `quint test --main` plays (a module that writes `export Spec.specTest` holds `Spec`'s other runs too, and they are not played), and says which runs `quint test --main` would play that it did not, named as `quint test` names them: for `import Spec.specTest` only `specTest`, for `import Spec.*`, `import Spec as S` and an instance every run of `Spec` whose name ends in `Test`, and the runs a module reaches through `export`; a module reached only through another module's imports adds none: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note. A module that writes `import Spec as S` and `export S.*` holds each run of `Spec` once, and earnest plays it once, under its short name (`specTest`), where `quint test` plays it twice, as `S::specTest` and `specTest`: the two are one run, with one verdict.
 
 ```text
-unfinished  OneName  0 states  0 ms  0 rules, 1 run  (runs not played: specTest: the checker does not build `import Spec.specTest` at `one_name.qnt:10` from `quint typecheck`)
+unfinished  OneName  0 ms  0 rules, 1 run  (runs not played: specTest: the checker does not build `import Spec.specTest` at `one_name.qnt:10` from `quint typecheck`)
   note  runs not played: specTest (written in a module this one imports, whose runs `quint compile` drops: the checker plays them only in a setup it builds itself; as a last resort, write them in this module to play them here)
 ```
 

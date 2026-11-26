@@ -186,9 +186,13 @@ fn the_owner_s_samples_pass_and_a_failing_test_run_fails_its_check_with_its_path
         ("fail", "OnlyRuns"),
     ] {
         assert_eq!(
-            run.model_line(main)[..3],
-            [status, main, "0 states"],
+            run.model_line(main)[..2],
+            [status, main],
             "a check of runs only searches nothing\n{run}"
+        );
+        assert!(
+            !run.model_line(main)[2].contains("states"),
+            "a check of runs only prints no states field\n{run}"
         );
     }
     let detail = run.detail("OnlyRuns");
@@ -409,10 +413,7 @@ fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck()
     let quint = Quint::new();
     let run = quint.earnest(&["verify", "specs/OwnRuns.qnt"]);
     run.exits(1);
-    assert_eq!(
-        run.model_line("OwnRuns")[..3],
-        ["fail", "OwnRuns", "0 states"]
-    );
+    assert_eq!(run.model_line("OwnRuns")[..3], ["fail", "OwnRuns", "0 ms"]);
     let report = quint
         .earnest(&["verify", "--json", "specs/OwnRuns.qnt"])
         .json();
@@ -428,7 +429,7 @@ fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck()
     assert_eq!(
         run.detail("OwnRuns"),
         [
-            "broken  wrongTest  \"The Quint run `wrongTest` passes\"",
+            "broken  wrongTest",
             "start  open = true, count = 0",
             "1. bump  count: 0 -> 1",
             "end    open = true, count = 1",
