@@ -139,6 +139,70 @@ fn r09_a_chart_never_has_more_than_twenty_arrows() {
     );
 }
 
+const FAR_CORNER: &str = r#"import { m } from "@earnestjs/model";
+
+export const Square = m.model("Square", {
+	x: m.int(0, 5).initial(0),
+	y: m.int(0, 5).initial(0),
+});
+
+export const east = m.action(Square, "the point moves east", {
+	when: (s) => s.x < 5,
+	changes: (s) => ({ x: s.x + 1 }),
+});
+
+export const north = m.action(Square, "the point moves north", {
+	when: (s) => s.y < 5,
+	changes: (s) => ({ y: s.y + 1 }),
+});
+
+export const cornered = m.rule(
+	Square,
+	"At the far corner the point has gone ten steps",
+	(s) => !(s.x === 5 && s.y === 5) || s.x + s.y === 10,
+);
+
+export const done = m.end(Square, "The point is at the far corner", (s) => s.x === 5 && s.y === 5);
+
+export type State = m.Infer<typeof Square>;
+"#;
+
+#[test]
+fn r09_a_chart_where_every_rule_holds_draws_the_route_to_the_premise_of_a_rule() {
+    let sandbox = Sandbox::empty();
+    sandbox.write("models/square.model.ts", FAR_CORNER);
+    let verified = sandbox.earnest(&["verify", "models/square.model.ts"]);
+    verified.exits(0);
+    let run = sandbox.earnest(&["chart", "models/square.model.ts"]);
+    let block = mermaid_block(&run);
+    assert_eq!(
+        arrows(&block).len(),
+        ARROW_LIMIT,
+        "the model has 60 arrows\n{run}"
+    );
+    assert_has_label(&block, "x = 5, y = 5", &run);
+    assert!(
+        !gives_a_state_the_class_broken(&block),
+        "nothing is broken\n{run}"
+    );
+    let after: Vec<&str> = run
+        .stdout
+        .lines()
+        .skip_while(|line| line.trim() != "```")
+        .skip(1)
+        .collect();
+    assert_eq!(
+        after,
+        [
+            "",
+            "Not shown: 18 of 36 states and 40 of 60 arrows.",
+            "",
+            "The premise of `cornered` first holds in `x = 5, y = 5`.",
+        ],
+        "the note names the box where the rule's premise first holds\n{run}"
+    );
+}
+
 #[test]
 fn r09_a_model_without_a_view_still_has_a_chart() {
     let sandbox = Sandbox::with(&["turnstile.model.ts"]);
