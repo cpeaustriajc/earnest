@@ -667,7 +667,10 @@ fn a_check_whose_marks_are_unreadable_at_the_base_does_not_hide_the_others_of_it
     );
     assert_eq!(
         section(&run)[3],
-        fields("  not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD"),
+        fields(
+            "  not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD: 10:1 the doc \
+             comment of `Bad` names `nosuch`, which the module does not see"
+        ),
         "{run}"
     );
     assert!(
@@ -680,7 +683,20 @@ fn a_check_whose_marks_are_unreadable_at_the_base_does_not_hide_the_others_of_it
     let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
     assert_eq!(
         json["notCompared"],
-        json!([{ "file": "specs/a.qnt", "model": "Bad", "reason": "marks" }])
+        json!([{
+            "file": "specs/a.qnt",
+            "model": "Bad",
+            "reason": "marks",
+            "problem": {
+                "file": "specs/a.qnt",
+                "line": 10,
+                "column": 1,
+                "message": "the doc comment of `Bad` names `nosuch`, which the module does not see: \
+                            name a definition or a run of `Bad`, or of a module it imports, as \
+                            `Bad` writes it",
+                "more": 0,
+            },
+        }])
     );
 }
 
@@ -751,4 +767,96 @@ fn a_renamed_local_of_a_block_lists_nothing() {
     );
     let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
     assert_eq!(heads(&run), listed(&[("changed", "Small.ahead")]), "{run}");
+}
+
+const VIEWED_AT_BASE: &str = "module Core {
+  var n: int
+  action init = n' = 0
+  action step = n' = (n + 1) % 3
+  /// @check
+  val a = n >= 0
+}
+/// @check
+module Good { import Core.* }
+
+/// @check
+module Other {
+  var k: int
+  action init = k' = 0
+  action step = k' = (k + 1) % 3
+  /// @check
+  val b = k >= 0
+  /// @View state
+  val v = k
+}
+";
+
+#[test]
+fn a_mark_of_no_check_unreadable_at_the_base_is_named_and_every_check_is_compared() {
+    let repo = Repo::committed(&[("m.qnt", VIEWED_AT_BASE)]);
+    repo.write(
+        "m.qnt",
+        &VIEWED_AT_BASE
+            .replace("val a = n >= 0", "val a = n >= 1")
+            .replace("@View state", "@view state"),
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        heads(&run),
+        listed(&[("changed", "Good.a"), ("not compared", "m.qnt")]),
+        "the base judges `Good` and `Other` as `earnest verify` would, so `Good.a` is listed\n{run}"
+    );
+    assert_eq!(
+        section(&run)[3],
+        fields(
+            "  not compared  m.qnt  its marks are unreadable at HEAD: 18:1 the doc comment holds \
+             `@View state`, which is not a mark"
+        ),
+        "the line names the mark and its place in the base's file\n{run}"
+    );
+    assert!(
+        run.stderr.contains(
+            "warning: a mark of m.qnt is unreadable at HEAD, 18:1 the doc comment holds `@View \
+             state`, which is not a mark, so what it marks is not compared"
+        ),
+        "{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(json["notCompared"][0]["reason"], "marks", "{json}");
+    assert_eq!(json["notCompared"][0]["problem"]["line"], 18, "{json}");
+    assert_eq!(json["notCompared"][0]["problem"]["column"], 1, "{json}");
+    assert!(
+        json["notCompared"][0]["problem"]["message"]
+            .as_str()
+            .is_some_and(|message| message.starts_with("the doc comment holds `@View state`")),
+        "{json}"
+    );
+    assert!(
+        json["notCompared"][0].get("model").is_none(),
+        "the mark belongs to no check: {json}"
+    );
+}
+
+#[test]
+fn several_unreadable_marks_of_one_check_name_the_first_and_count_the_others() {
+    let repo = Repo::committed(&[(
+        "specs/a.qnt",
+        &MARKED_AT_BASE.replace("@check nosuch", "@check nosuch, nothing"),
+    )]);
+    repo.write(
+        "specs/a.qnt",
+        &MARKED_AT_BASE.replace("@check nosuch", "@check b"),
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    let line = section(&run)
+        .into_iter()
+        .find(|line| line.first().is_some_and(|word| word == "not compared"))
+        .unwrap_or_default();
+    assert!(
+        line.last().is_some_and(
+            |said| said.starts_with("its marks are unreadable at HEAD: 10:1 ")
+                && said.ends_with(", and 1 more")
+        ),
+        "{run}"
+    );
 }

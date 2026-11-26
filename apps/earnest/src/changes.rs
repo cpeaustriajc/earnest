@@ -650,11 +650,56 @@ pub(crate) enum Why {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct FirstProblem {
+    pub(crate) file: String,
+    pub(crate) line: u32,
+    pub(crate) column: u32,
+    pub(crate) message: String,
+    pub(crate) more: usize,
+}
+
+const SHORTEST_CUT: usize = 20;
+const LONGEST_SAID: usize = 120;
+
+impl FirstProblem {
+    fn said(&self, of: &str) -> String {
+        let message = self
+            .message
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let cut = message
+            .find(": ")
+            .filter(|at| *at >= SHORTEST_CUT)
+            .map_or(message.as_str(), |at| message.get(..at).unwrap_or(&message));
+        let short: String = if cut.chars().count() > LONGEST_SAID {
+            let kept: String = cut.chars().take(LONGEST_SAID).collect();
+            format!("{kept}...")
+        } else {
+            cut.to_owned()
+        };
+        let place = if self.file == of {
+            format!("{}:{}", self.line, self.column)
+        } else {
+            format!("{}:{}:{}", self.file, self.line, self.column)
+        };
+        let more = match self.more {
+            0 => String::new(),
+            1 => ", and 1 more".to_owned(),
+            more => format!(", and {more} more"),
+        };
+        format!("{place} {short}{more}")
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub(crate) struct NotRead {
     pub(crate) file: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) model: Option<String>,
     pub(crate) reason: Why,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) problem: Option<FirstProblem>,
 }
 
 impl NotRead {
@@ -663,6 +708,7 @@ impl NotRead {
             file,
             model: None,
             reason,
+            problem: None,
         }
     }
 
@@ -671,7 +717,13 @@ impl NotRead {
             Why::Unreadable => format!("unreadable at {base}"),
             Why::ChecksFile => format!("an earnest.quint.json lists its checks at {base}"),
             Why::QuintNotFound => format!("no quint was found to read it at {base}"),
-            Why::Marks => format!("its marks are unreadable at {base}"),
+            Why::Marks => match &self.problem {
+                Some(problem) => format!(
+                    "its marks are unreadable at {base}: {}",
+                    problem.said(&self.file)
+                ),
+                None => format!("its marks are unreadable at {base}"),
+            },
         }
     }
 }
@@ -687,6 +739,16 @@ impl Compared {
         self.not_compared
             .iter()
             .map(|each| {
+                if each.model.is_none()
+                    && let Some(problem) = &each.problem
+                {
+                    return format!(
+                        "warning: a mark of {} is unreadable at {base}, {}, so what it marks is \
+                         not compared",
+                        each.file,
+                        problem.said(&each.file)
+                    );
+                }
                 let what = each.model.as_ref().map_or_else(
                     || each.file.clone(),
                     |model| format!("the check `{model}` of {}", each.file),

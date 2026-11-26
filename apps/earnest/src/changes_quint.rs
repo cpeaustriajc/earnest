@@ -1,12 +1,14 @@
 use crate::cache::fingerprint_of;
 use crate::changes::{
-    Compare, Difference, Kind, NotRead, Part, Why, Wording, bytes_at, git, names_from, real,
+    Compare, Difference, FirstProblem, Kind, NotRead, Part, Why, Wording, bytes_at, git,
+    names_from, real,
 };
 use crate::checks::CHECKS_FILE;
 use crate::discovery::{discover, is_skipped_folder};
 use crate::places::Places;
 use crate::plan::{Plan, planned};
 use crate::quint::{Quint, cache_path, parsed, program_for};
+use earnest_diagnostics::Problem;
 use earnest_quint::Runs;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -305,7 +307,7 @@ fn judging(places: &Places, plan: &Plan, texts: &mut Texts) -> Judging {
 struct Side {
     checks: Vec<Judging>,
     refused: Vec<String>,
-    faulty: bool,
+    problems: Vec<(Option<String>, Problem)>,
 }
 
 fn checks_in(places: &Places, real_file: &Path, shown: &str) -> Side {
@@ -319,12 +321,12 @@ fn checks_in(places: &Places, real_file: &Path, shown: &str) -> Side {
             .collect(),
         ..Side::default()
     };
-    for (module, _) in found.problems {
-        match module {
-            Some(name) => push_new(&mut side.refused, &name),
-            None => side.faulty = true,
+    for (module, _) in &found.problems {
+        if let Some(name) = module {
+            push_new(&mut side.refused, name);
         }
     }
+    side.problems = found.problems;
     side
 }
 
@@ -577,12 +579,7 @@ impl Reader<'_> {
         let inside = folder.strip_prefix(&top).map_err(|_| Why::Unreadable)?;
         let file = real(&tree.join(inside).join(below));
         let places = parsed(&file, &file.to_string_lossy(), &quint).map_err(|_| Why::Unreadable)?;
-        let side = checks_in(&places, &file, shown);
-        if side.faulty {
-            Err(Why::Marks)
-        } else {
-            Ok(side)
-        }
+        Ok(checks_in(&places, &file, shown))
     }
 }
 
@@ -644,16 +641,43 @@ fn quint_files_at_base(base: &str, roots: &[PathBuf], present: &BTreeSet<PathBuf
     only_at_base.into_values().collect()
 }
 
-fn refused_checks(compare: &Compare<'_>, file: &str, refused: &[String]) -> Vec<NotRead> {
-    refused
+fn first_of(side: &Side, module: Option<&str>) -> Option<FirstProblem> {
+    let mut found: Vec<&Problem> = side
+        .problems
+        .iter()
+        .filter(|(each, _)| each.as_deref() == module)
+        .map(|(_, problem)| problem)
+        .collect();
+    found.sort_by_key(|problem| problem.place());
+    let first = found.first()?;
+    Some(FirstProblem {
+        file: first.file.clone(),
+        line: first.line,
+        column: first.column,
+        message: first.message.clone(),
+        more: found.len().saturating_sub(1),
+    })
+}
+
+fn refused_checks(compare: &Compare<'_>, file: &str, side: &Side) -> Vec<NotRead> {
+    let mut not_compared: Vec<NotRead> = side
+        .refused
         .iter()
         .filter(|name| compare.model.is_none_or(|model| model == name.as_str()))
         .map(|name| NotRead {
             file: file.to_owned(),
             model: Some(name.clone()),
             reason: Why::Marks,
+            problem: first_of(side, Some(name)),
         })
-        .collect()
+        .collect();
+    not_compared.extend(first_of(side, None).map(|problem| NotRead {
+        file: file.to_owned(),
+        model: None,
+        reason: Why::Marks,
+        problem: Some(problem),
+    }));
+    not_compared
 }
 
 fn compared_at_base(
@@ -665,7 +689,7 @@ fn compared_at_base(
     match at_base {
         Ok(old) => (
             file_changes(compare, file, (&old.checks, &old.refused), now),
-            refused_checks(compare, file, &old.refused),
+            refused_checks(compare, file, &old),
         ),
         Err(why) => (Vec::new(), vec![NotRead::file(file.to_owned(), why)]),
     }
