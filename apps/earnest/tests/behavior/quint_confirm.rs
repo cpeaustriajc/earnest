@@ -639,3 +639,62 @@ fn quint_given_by_a_relative_path_runs_for_confirm_as_it_runs_for_verify() {
         "`quint` is found from the folder earnest was started in\n{run}"
     );
 }
+
+fn a_difference_in_lift_compiled_as(fixture: &str) -> Run {
+    let quint = Quint::new();
+    quint.sandbox.write(
+        "fake/compiled/lift.json",
+        &fs::read_to_string(
+            repository()
+                .join("tasks/quint/confirm/fixtures")
+                .join(fixture),
+        )
+        .expect("the compiled `lift` can be read"),
+    );
+    quint.confirm("lift").exits(0);
+    let cache = quint.sandbox.path().join(".earnest/quint");
+    let compiled: Vec<PathBuf> = fs::read_dir(&cache)
+        .expect("the compiled JSON is cached")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            fs::read_to_string(path).is_ok_and(|text| text.contains("\"name\":\"lift\""))
+        })
+        .collect();
+    assert_eq!(
+        compiled.len(),
+        1,
+        "one compiled JSON of `lift`: {compiled:?}"
+    );
+    let text = fs::read_to_string(&compiled[0]).expect("the cache can be read");
+    let top = r#"{"id":8,"kind":"int","value":3}"#;
+    assert!(text.contains(top), "the bound of `up` is in the JSON");
+    fs::write(
+        &compiled[0],
+        text.replace(top, r#"{"id":8,"kind":"int","value":5}"#),
+    )
+    .expect("the cache can be written");
+    quint.confirm("lift")
+}
+
+#[test]
+fn a_fold_over_numbers_that_nothing_calls_does_not_hide_a_model_changed_by_hand() {
+    let run = a_difference_in_lift_compiled_as("lift-with-fold.json");
+    run.exits(1);
+    assert_eq!(
+        run.stdout.lines().next(),
+        Some("differs  lift  6 states  fail  (Quint)"),
+        "`total` folds a set of numbers, whose order changes no answer, and nothing calls it\n{run}"
+    );
+}
+
+#[test]
+fn a_range_in_another_module_of_the_file_does_not_hide_a_model_changed_by_hand() {
+    let run = a_difference_in_lift_compiled_as("lift-beside-ranges.json");
+    run.exits(1);
+    assert_eq!(
+        run.stdout.lines().next(),
+        Some("differs  lift  6 states  fail  (Quint)"),
+        "only the module `ranges` uses `range`, and Quint's compile of `lift` lists it in its table\n{run}"
+    );
+}
