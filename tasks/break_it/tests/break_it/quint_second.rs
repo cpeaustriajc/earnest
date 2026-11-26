@@ -115,7 +115,8 @@ fn a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them() {
         "holds",
         "TLC compares two tuples item by item from the first, so `(0, ..., 0, 1)` comes before \
          `(0, 1, 0, ..., 0)`: `quint verify --backend tlc --invariant lastFirst` and `quint \
-         run --backend typescript` both find no violation\n{report}"
+         run --backend typescript` both find no violation (the Rust simulator finds one); the \
+         docs promise the order TLC takes\n{report}"
     );
 }
 

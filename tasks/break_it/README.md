@@ -1874,15 +1874,18 @@ branch's `nondet` is a pick of the path, whose set the search works out before i
 guard. Right result: `pass`, 4 states, `small` holds. Test:
 `a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`.
 
-### `fold` over tuples of ten or more items takes an order neither backend takes
+### `fold` over tuples of ten or more items does not take TLC's order, which the docs promise
 
 `models/quint_second/fold_tuple10.qnt`: `Wide = Set((0, 0, 0, 0, 0, 0, 0, 0, 0, 1), (0, 1, 0,
 0, 0, 0, 0, 0, 0, 0))`, and the invariant `lastFirst` is `Wide.fold(List(), (l, t) =>
 l.append(t))[0] == (0, 0, 0, 0, 0, 0, 0, 0, 0, 1)`. `quint verify --backend tlc --invariant
 lastFirst` prints `[ok] No violation found`; so does `quint run --backend typescript` (the REPL
-prints the other order for the same fold, `[(0, 1, …), (0, …, 1)]`, so the evaluator's order is
-not the written one either). Earnest: `lastFirst` broken in the start state. The docs say "A
-tuple of ten or more items compares its tenth item before its second". Apalache writes a Quint
+prints the other order for the same fold, `[(0, 1, …), (0, …, 1)]`). `quint run --backend rust`
+finds a violation, as earnest does. Earnest: `lastFirst` broken in the start state. This one is
+borderline by the pass's rule, since one backend agrees: it is written up because the docs
+promise "the items of `S` in the order TLC takes them" and then describe, as TLC's, an order
+TLC does not take ("A tuple of ten or more items compares its tenth item before its second").
+Either the order or that sentence is wrong. Apalache writes a Quint
 tuple as a TLA+ tuple, a function on `1..n`, and TLC compares it item by item from the first:
 folding five 11-item tuples into a list, TLC's state prints `<<0, …, 0, 1>>, <<0, …, 1, 0>>,
 <<0, 0, 1, …>>, <<0, 1, …>>, <<1, …>>`, where earnest prints `(0, 0, 1, …), (0, 1, …), (0, …,
@@ -1891,7 +1894,8 @@ confirm --tlc` can't see it: the export writes the same order (`pick.v_1 < other
 … v_2`), and on a copy of the module whose invariant reads a variable (`n == 0 implies …`) it
 says `same` while Quint's TLC run holds. Cause: earnest holds a Quint tuple as a record of the
 fields `_1`, `_2`, …, and `Op::InTlcOrder` (`crates/earnest_ir`) compares a record's fields by
-name. Right result: `lastFirst` holds. Test:
+name. Right result: `lastFirst` holds, as TLC's order gives it (the test asserts that), or the
+docs say the order differs from TLC's for such tuples. Test:
 `a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`.
 
 ### The runs of a spec imported only under a name are dropped
@@ -2050,7 +2054,10 @@ likely to write it; *unclear* where the message does not say what to write inste
   values, a set of tuples, records named `{ tag, value }` and `{ _1 }`, in text, JSON, chart and
   `earnest report`, as the docs' table says; `confirm --tlc` says `same` for both modules.
 - Paths: every broken invariant's path has as many steps as TLC's breadth-first counterexample
-  (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 43).
+  (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 44).
+  The one mismatch, seed 67's `inv2` (2 steps in earnest, 3 in the batch), came from TLC running
+  with four workers, whose counterexample need not be the shortest: run again, TLC's trace has
+  the same 2 steps.
 - `confirm --tlc` says `same` on 11 of the samples above (`ByOuter`, `Whole`, `Setup2`, `op`,
   `OverName`, `Both`, `Dot`, `Cap`, `CapLambda`, and the printing samples `pr` and `tagrec`);
   where it says
@@ -2058,6 +2065,35 @@ likely to write it; *unclear* where the message does not say what to write inste
   variants of different value types, the `match` sample has broken rules about runs).
 - The cache and `--rule`: 68 rules in 7 folders, a second cached run and `--rule` for each rule
   give the verdict and the path length of a full `--no-cache` run.
+
+### A seeded random comparison
+
+`models/quint_second/random/generate.py SEED [plain]` prints a spec module `SpecSEED` and a setup
+`HSEED`, either `import SpecSEED(…).*` or `import SpecSEED(LIM = Lim, …) as C` with the setup's
+own `pure val Lim`. The spec has three constants (`LIM: int`, `KEYS: Set[str]`, `START: (int,
+str)`), a sum type `Cmd = Inc(int) | Put((str, int)) | Clear`, six variables (a map, a queue of
+`Cmd`, a variant, a tuple, a boolean picked in `init` with `Bool.oneOf()`), two operators that
+take operators (`useOp(f, v)`, `both(g, a, b)` with its parameters reversed), two `match`
+helpers, and three to five actions: `enqueue` (`oneOf` a written set of variants), `process` (a
+`match` on the queue's head), `spend` (`oneOf` the keys of the map with a positive value, then
+`1.to(m.get(nk))`), `lower` (`0.to(n)`), `toggle`, `drop` (`oneOf` the queue's indices). Three
+random invariants, five temporal properties (`eventually`, fairness of the step and of one random
+action, `always(eventually)`, leads-to, `not(eventually)`) and four runs (`then`, `reps`,
+`expect`, `fail()`). With `plain`, the temporal properties use no lambda and no `match`, so the
+first finding does not hide the rest. Each seed was compared with `quint verify --backend tlc`
+(one run for the state count, one for each property; earnest's path of a broken invariant
+against the length of TLC's counterexample from seed 44 on and in the `plain` seeds), with `quint test --main HSEED` for the
+runs, and with earnest reading the same check from `quint compile --main HSEED`.
+
+SEED_RESULTS
+
+Ten that agree on everything are committed: seeds 14, 25, 37, 45, 54 and 63, and 1002, 1006,
+1010 and 1013 made with `plain`, all `.*` setups of 98 to 1 560 states, each `.qnt` beside the
+`quint typecheck` output earnest builds it from, and `expected.json`, Quint's answers (80
+verdicts, 40 runs). `every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test`
+plays them through a fake `quint` that hands back the recorded typecheck, so the setup is built
+by earnest, and passes today. To make another: `python3 generate.py SEED [plain] > HSEED.qnt`
+and `quint typecheck HSEED.qnt --out HSEED.typecheck.json`.
 
 ### A model written as a project writes one
 
