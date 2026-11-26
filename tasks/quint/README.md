@@ -1318,7 +1318,8 @@ exactly the base's instructions, and every case of `just counts` is within 0.3%.
   `0 differences`. Every difference is in `tasks/conformance/runs/` (`cart.model.ts`,
   `cart_broken.model.ts`, `clock.model.ts` and the rest of that folder), the 16 files of the
   integration branch that `origin/main` cannot read, as in slice 2.
-  SAME_BASE_LINE
+  `just same-answers 62a6f50` (this branch's base): `every model file: 392 runs, 0 differences`, every
+  sweep 0.
 - `cargo test --locked -p earnest-cli --test reference`: 5 passed.
 - `cargo fmt --check`: exit 0.
 - `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
