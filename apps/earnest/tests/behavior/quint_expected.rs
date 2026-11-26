@@ -486,3 +486,20 @@ fn editing_the_expectations_or_the_name_checks_again_without_compiling_again() {
         "`small` is no longer expected to break\n{ordinary}"
     );
 }
+
+#[test]
+fn editing_the_runs_alone_checks_again() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "stuck.qnt", "main": "stuck", "invariants": ["ok"], "runs": true }"#,
+    );
+    quint.earnest(&["verify"]).exits(1);
+    quint.checks(r#"{ "file": "stuck.qnt", "main": "stuck", "invariants": ["ok"] }"#);
+    let without_runs = quint.earnest(&["verify"]);
+    without_runs.exits(0);
+    assert!(
+        !without_runs
+            .model_line("stuck")
+            .contains(&"(cached)".to_owned()),
+        "the result with the runs is not served for the check without them\n{without_runs}"
+    );
+}

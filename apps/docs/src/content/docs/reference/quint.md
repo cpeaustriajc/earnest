@@ -309,7 +309,7 @@ Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with n
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON, `name` and `expectCounterexample` are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON, `name`, played runs and `expectCounterexample` are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 

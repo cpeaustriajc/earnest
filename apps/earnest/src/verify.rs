@@ -64,12 +64,16 @@ fn entries<'a>(
 fn cached_as(file: &ModelFile) -> String {
     match file.quint_check() {
         Some(check) => match file.models().first() {
-            Some(readable) if !readable.expected.is_empty() => format!(
-                "{}\n{check}\nexpected:{}",
-                file.path,
-                readable.expected.join(",")
-            ),
-            _ => format!("{}\n{check}", file.path),
+            Some(readable) => {
+                let judged: Vec<&str> = readable.model.rule_ids().collect();
+                format!(
+                    "{}\n{check}\njudged:{}\nexpected:{}",
+                    file.path,
+                    judged.join(","),
+                    readable.expected.join(",")
+                )
+            }
+            None => format!("{}\n{check}", file.path),
         },
         None => file.path.clone(),
     }

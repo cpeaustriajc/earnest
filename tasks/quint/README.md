@@ -3347,3 +3347,82 @@ On the tree merged with the integration head `a94146b`:
 - A module that writes a record shaped like a variant prints all its variants as records. A
   typed printer (walking each field's Quint type) would avoid it; it was not worth the size.
 - Action ids of `match` branches are numbered (`follow#2`), as `any` branches already are.
+
+## The checks file for a real project (#69): report
+
+### Done
+
+1. **`name`** (`checks.rs` `Entry`, `quint.rs` `Job::model_name`): optional text on one line with
+   no space at either end; it becomes the model's name (`model.name`), so the result line, the
+   JSON, `--model`, the chart, `earnest report`, `confirm` and the result cache use it. Two checks
+   of one `file` and `main` are read when their names differ from each other and from every other
+   check's name in the file; otherwise the file is `unreadable` at `` `checks[1]` `` (no name) or
+   `` `checks[1].name` `` (a name another check has), and the message says to give each its own
+   `name`. A compiled module is now cached under its file and what `quint compile` is given
+   (`main`, `init`, `step`, invariants, temporal), not under `main` alone, so two checks of one
+   module no longer overwrite each other's compile, and checks that compile alike start one
+   compile in a run (`compiled_once`). `runs` left the compile key: the JSON does not depend on
+   it. Tests: `quint_expected::two_named_checks_...`, `::two_checks_that_compile_alike_...`,
+   `::two_checks_of_one_module_without_names_...`.
+2. **`expectCounterexample`** (`quint.rs` `widened`, `expected_ids`; `run.rs` `judge`,
+   `detail_of`; `print.rs` `Expecting`): each name is classified by the qualifier `quint parse`
+   gives it (`places.rs` now keeps qualifiers): a `val`/`def` is added to the invariants, a
+   `temporal` to the temporal properties, a `run` to the runs (`Runs::None` becomes the named
+   run; with `"runs": true` a run not ending in `Test` is refused with a message to list runs by
+   name). A name `quint parse` does not know goes to `quint compile` as an invariant, so Quint's
+   own error is reported. After reading, each name is matched to a printed rule id (exactly, else
+   the one id whose `::` segments end alike); none makes the check `unreadable`, naming it. The
+   model's status is judged again in `explore_expecting`, so `verify`, `report`, `chart` and
+   `confirm` agree: broken is met, holds is `fail`, unknown is `unfinished` (`fail` when a fault
+   or another rule already fails). A temporal property in parts `P`, `P#2`, … is met when at
+   least one part is broken, as `quint verify` expects of the whole property. Tests:
+   `quint_expected::a_met_expectation_...`, `::an_expected_invariant_that_holds_...`,
+   `::an_expected_invariant_not_reached_...`, `::an_expected_temporal_property_...`,
+   `::an_expected_run_...`, `::a_name_the_module_does_not_have_...`.
+3. **Stopping early** (`earnest_check` `Limits::stop_once_broken`, `EVERY_EXPECTED_FOUND`;
+   `explore.rs` `every_wanted_broken`): the caller lists rules; after each level, and at the
+   state limit, the search stops when every listed rule has a first broken state. The check runs
+   once per level, not per state. `first_broken` is filled level by level, so each path is the
+   shortest a full search gives. `run.rs` lists the rules only when every always-rule the check
+   still judges (after `--rule`) is expected and no rule about runs is judged; runs are played
+   apart from the search. `confirm` never stops early, so its count can be set beside TLC's. No
+   field of `Model`, `Field` or `Action` changed. Tests:
+   `quint_expected::a_model_with_no_end_passes_by_stopping_...`,
+   `::rule_selects_an_expected_and_an_ordinary_property`.
+4. **Cache, `--rule`, `--json`, `--jobs`**: the result cache key of a Quint check adds its
+   expected names and the ids it judges; a `name` is already in it. The ids fix an older stale
+   result: editing only `runs` served the result with the old runs, since the key held the
+   compiled JSON, which does not change with `runs`
+   (`quint_expected::editing_the_runs_alone_checks_again`). A rename or an edit of `expectCounterexample` that
+   does not change what Quint is given checks again with no compile. Tests:
+   `quint_expected::a_cached_run_and_any_number_of_jobs_...`, `::editing_the_expectations_...`.
+
+### Forms chosen
+
+- Text, under the result line, before other broken rules and findings: `broken  P  (expected)`
+  (no path) and `holds  P  a counterexample was expected`. The result line of a stopped search:
+  `pass        vaultForever  8 states  0 ms  (every expected counterexample was found)`, with no
+  `so far`.
+- JSON: an expected rule keeps `verdict`, `path`, `kind`, `reason`, `repeatsFrom` and adds
+  `"expected": "broken"` as its last key; the model's `reason` is
+  `"every expected counterexample was found"` with `status` `"pass"`. `RuleResult`,
+  `ModelResult` and `Checked` are built field by field in tests on `main`, so the key is added
+  when printing (`print.rs` serializes a model with expectations through a mirror); a model
+  without expectations is serialized as before, byte for byte.
+
+### The worked example with Quint 0.33.1
+
+`specs/vault.qnt` of `reference/quint.md`, three checks of `vault`: earnest gives `pass` for
+each (`vaultForever` 8 states, stopped early). `quint verify --backend tlc`: `--invariant
+atMostMax` `[ok] No violation found`; `--invariant nonNegative` and `--step stepForever
+--invariant nonNegative` `[violation] Found an issue`, `balance = 0` then `balance = -1`, the
+path earnest reports. `earnest confirm --tlc` (Apalache 0.62.4's jar): `same` for `vaultLimits`
+and `vaultKnownBugs`; on `vaultForever`, which has no end, TLC does not finish.
+
+### Doubts
+
+- `--base` still skips Quint files; nothing changed there (`verify --base HEAD` on the example
+  prints `rule changes since HEAD  none`).
+- Every Quint check's result cache key changed (the ids it judges), so the first run after this
+  build checks each Quint model once again. Compiles are cached under a new name too, so each
+  compiles once again.
