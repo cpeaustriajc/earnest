@@ -9,6 +9,7 @@ const FIXTURES: &str = concat!(
 struct Shape {
     file: &'static str,
     main: &'static str,
+    init: &'static str,
     step: &'static str,
     invariants: &'static [&'static str],
     temporal: &'static [&'static str],
@@ -22,13 +23,14 @@ const fn shape(
     Shape {
         file,
         main,
+        init: "init",
         step,
         invariants,
         temporal,
     }
 }
 
-const BUILT: [Shape; 13] = [
+const BUILT: [Shape; 21] = [
     shape(("ints", "Low", "step"), &["below", "small"], &["reaches"]),
     shape(("ints", "High", "step"), &["below", "small"], &["reaches"]),
     shape(
@@ -58,6 +60,24 @@ const BUILT: [Shape; 13] = [
     shape(("lamp", "Dim", "step"), &["levelOk", "darkWhenOff"], &[]),
     shape(("lamp", "Bright", "step"), &["levelOk"], &[]),
     shape(("lamp", "Blinding", "step"), &["levelOk"], &[]),
+    shape(("clock", "Large", "step"), &["inv"], &[]),
+    Shape {
+        init: "B::init",
+        ..shape(
+            ("more", "Named", "B::step"),
+            &["B::ok", "B::below"],
+            &["B::grows"],
+        )
+    },
+    shape(("more", "Reexported", "step"), &["ok", "small"], &[]),
+    shape(("more", "ByOwn", "step"), &["ok"], &[]),
+    shape(("more", "ByName", "step"), &["ok"], &[]),
+    Shape {
+        init: "both",
+        ..shape(("more", "Two", "either"), &["ok", "fine"], &[])
+    },
+    shape(("more", "Pair", "step"), &["ok", "apart"], &[]),
+    shape(("compiled", "Renamed", "step"), &["ok"], &[]),
 ];
 
 fn fixture(name: &str) -> String {
@@ -78,7 +98,7 @@ fn built(shape: &Shape, runs: &Runs) -> Option<String> {
     let (invariants, temporal) = (owned(shape.invariants), owned(shape.temporal));
     typechecked(shape.file).setup(&Setup::new(
         shape.main,
-        ("init", shape.step),
+        (shape.init, shape.step),
         (&invariants, &temporal),
         runs,
     ))
@@ -189,31 +209,67 @@ fn the_runs_a_check_plays_are_kept_from_the_spec_module_after_quints_declaration
 fn a_setup_of_any_other_shape_is_left_to_quint_compile() {
     let compiled = typechecked("compiled");
     let ok = owned(&["ok"]);
-    for main in [
-        "Nested", "Aliased", "ByName", "Exported", "Base", "Limit", "Nowhere",
-    ] {
+    for main in ["Nested", "Single", "Mid", "Base", "Limit", "Nowhere"] {
         let setup = Setup::new(main, ("init", "step"), (&ok, &[]), &Runs::None);
         assert_eq!(compiled.setup(&setup), None, "{main}");
     }
     let clock = typechecked("clock");
-    let inv = owned(&["inv"]);
-    let large = Setup::new("Large", ("init", "step"), (&inv, &[]), &Runs::None);
-    assert_eq!(clock.setup(&large), None, "`import Clock(...) as C`");
-    for (init, step, invariant) in [
-        ("init", "step", "nowhere"),
-        ("nowhere", "step", "timeBounded"),
-        ("init", "timeBounded", "timeBounded"),
-        ("init", "step", "Clock::timeBounded"),
-        ("init", "step", "tickTwice"),
+    for (main, init, step, invariant) in [
+        ("Small", "init", "step", "nowhere"),
+        ("Small", "nowhere", "step", "timeBounded"),
+        ("Small", "init", "timeBounded", "timeBounded"),
+        ("Small", "init", "step", "Clock::timeBounded"),
+        ("Small", "init", "step", "tickTwice"),
+        ("Large", "init", "step", "timeBounded"),
+        ("Large", "init", "step", "D::timeBounded"),
     ] {
         let listed = owned(&[invariant]);
-        let setup = Setup::new("Small", (init, step), (&listed, &[]), &Runs::None);
+        let setup = Setup::new(main, (init, step), (&listed, &[]), &Runs::None);
         assert_eq!(
             clock.setup(&setup),
             None,
-            "a name Quint would refuse or resolve otherwise: {init} {step} {invariant}"
+            "a name Quint would refuse or resolve otherwise: {main} {init} {step} {invariant}"
         );
     }
+    let more = typechecked("more");
+    let listed = owned(&["P::nowhere"]);
+    let pair = Setup::new("Pair", ("init", "step"), (&listed, &[]), &Runs::None);
+    assert_eq!(more.setup(&pair), None, "`P` has no `nowhere`");
+}
+
+#[test]
+fn an_exported_instance_reads_as_the_same_setup_imported_whole() {
+    let more = typechecked("more");
+    let (invariants, temporal) = (owned(&["ok", "below"]), owned(&["grows"]));
+    let read = |main: &str| {
+        let built = more
+            .setup(&Setup::new(
+                main,
+                ("init", "step"),
+                (&invariants, &temporal),
+                &Runs::Tests,
+            ))
+            .unwrap_or_else(|| panic!("{main} is built"));
+        crate::read_located(main, &built, &Runs::Tests).unwrap_or_else(|_| panic!("{main} is read"))
+    };
+    let (exported, plain) = (read("Exported"), read("Plain"));
+    let fields = |model: &earnest_ir::Model| -> Vec<String> {
+        model
+            .fields
+            .iter()
+            .map(|field| field.name.clone())
+            .collect()
+    };
+    assert_eq!(fields(&exported), fields(&plain));
+    assert_eq!(
+        exported.rule_ids().collect::<Vec<_>>(),
+        plain.rule_ids().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        exported.rule_ids().collect::<Vec<_>>(),
+        ["ok", "below", "grows", "upTest", "fullTest"]
+    );
+    assert_eq!(exported.runs.starts, plain.runs.starts);
 }
 
 #[test]

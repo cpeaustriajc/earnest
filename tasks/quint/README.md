@@ -2694,15 +2694,38 @@ at its own expression through the source map), and makes the table say `def` whe
 
 | Built from the typecheck | Compiled with `quint compile --main` |
 |---|---|
-| the main module has one `import Spec(...).*` and otherwise only `def`s | `import Spec(...) as C` (sample `Large`, `Aliased`) |
-| `Spec` has only `const`, `var`, `def`, `type` | `Spec` imports, instantiates or exports (`Nested`: an instance of an instance) |
-| every `const` of `Spec` overridden once, by an expression whose every node is a builtin (no id in the table) | a constant given a definition's value (`ByName`: `import Limit.*` then `K = L`) |
-| `init`, `step` name one `action` of the setup or of `Spec`; each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | `export` (`Exported`), several imports, a name that is missing, qualified, of another kind or defined in both (Quint gives the error) |
+| the main module's declarations are instances (`.*` or `as C`), whole imports of modules of definitions only (`import Lib.*`, `import Lib as L`), `export C.*` of its own instances, typedefs and `def`s | an instance of a module that instantiates or imports (`Nested`), one name imported alone (`Single`: `import Limit.L`), any other declaration |
+| each instantiated module has only `const`, `var`, `def`, `type` | a constant not overridden, or overridden twice |
+| `init`, `step` name one `action` the setup sees (its own, a whole instance's, `C::name`, an exported instance's); each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | a name that is missing, of another kind or seen twice (Quint gives the error) |
 | the typecheck succeeded | a typecheck that failed, or a type alias that does not resolve |
+
+Second part (asked after the first report, built on the same walk):
+
+- **An instance under a name** (`Large`, `Named`, `Reexported`): Quint names the module
+  `<setup>::<alias>` (`Large::C::time`); a use `C::init` in the setup resolves through the
+  table entry's `importedFrom.id`, the id of the instance declaration.
+- **A constant given by a name** (`ByOwn`, `ByName`, `Renamed`): `compile` copies the override
+  expression unchanged and, in its first flattening pass, walks it where the instance is written,
+  so its definitions (`twice`, `L`) come before everything else. The builder walks the overrides
+  at the same place. A module imported whole keeps its names (`L`); one imported under a name is
+  namespaced with the bare alias (`Li::L`), as `compile` does.
+- **Several instances** (`Two`, `Pair`): each instance has its namespace. Two instances of one
+  spec (`Pair`: `P`, `R`) would share the spec's ids, so, as `compile`'s `generateFreshIds`,
+  each copy gets fresh ids and the table gets an entry for each new id. With one instance of
+  each spec, Quint's ids are kept.
+- **`export`** (`Exported`): `export B.*` makes `B`'s names visible bare to the checks file.
+  Quint 0.33.1's own `compile --main Exported` keeps `const K` and the bare names (its
+  `enterExport` copies the proto module's definitions), so earnest could only read it
+  `unreadable`. The built module names them `Exported::B::...`, and is compared with `Plain`
+  (`import Base(K = 1).*`), which means the same thing.
+- **Runs of one of two instances** (`Pair` with `runs: true`): `P::upTest` starts with `P::init`,
+  which sets `P::v` only. `quint test --main Pair` passes all four (it plays from part of a
+  state); earnest plays a run only from the check's `init` and keeps slice 6's refusal, so such
+  a check is `unreadable`. Without `runs`, `Pair` is built and read.
 
 ### Equality with Quint's own flattening
 
-`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 18 checks, and in `fixtures/` the
+`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 28 checks, and in `fixtures/` the
 typecheck output of each file and the compile output of each check, written with
 
 ```sh
@@ -2721,20 +2744,28 @@ quint compile --target json --main <Main> --init <init> --step <step> [--invaria
 | `clock.qnt` | `Small` | the spike's sample: a set-of-text constant, four temporal properties, runs |
 | `clockbits.qnt` | `SmallBits` | temporal properties with fair parts |
 | `lamp.qnt` | `Dim`, `Bright`, `Blinding` | slice 7's sample, three setups of one spec |
-| `compiled.qnt` | `Nested`, `Aliased`, `ByName`, `Exported` | shapes that are compiled |
-| `clock.qnt` | `Large` | `import ... as C`, compiled |
+| `clock.qnt` | `Large` | `import ... as C` with definitions on top and a run of its own |
+| `more.qnt` | `Named` | `import Base(K = 3) as B` and nothing else: the checks file names `B::init`, `B::ok`, `B::grows` |
+| `more.qnt` | `Reexported` | `as B` with `action init = B::init` and its own invariant and run |
+| `more.qnt` | `ByOwn`, `ByName` | `K = Own` (a `pure val` of the setup), `K = twice(L)` from `import Limit.*` |
+| `more.qnt` | `Two` | `import Base(K = 2).*` with `import Other(M = 3).*`, its own `init` and `step` over both |
+| `more.qnt` | `Pair` | `import Base(K = 2) as P` with `import Base(K = 3) as R`: fresh ids |
+| `more.qnt` | `Exported`, `Plain` | `as B` with `export B.*`, and the same thing imported whole |
+| `compiled.qnt` | `Renamed` | `import Limit as Li` and `K = Li::L`: built |
+| `compiled.qnt` | `Nested`, `Single` | an instance of an instance, `import Limit.L`: compiled |
 
 Tests (no Node: fixtures and a fake `quint`):
 
-- `crates/earnest_quint/src/setup_tests.rs`: for the 13 checks built, the declarations built
+- `crates/earnest_quint/src/setup_tests.rs`: for the 21 checks built, the declarations built
   (name and kind, in order) equal those of Quint's compile; read by the reader, fields, actions,
   rule ids and start states are equal; the other shapes and wrong names give `None`.
 - `apps/earnest/tests/behavior/quint_setups.rs`
   `every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens`: earnest runs
-  the 18 checks twice, built (only the 5 others compiled) and all compiled (the typecheck taken
-  away), and for the 17 readable checks the status, state count, reason and every rule (id,
-  sentence, verdict, path with its inputs) are equal. Reversing the declarations built makes it
-  fail.
+  the 28 checks without runs twice, built (only `Nested` and `Single` compiled) and all compiled
+  (the typecheck taken away). For the 24 compiled checks, and `Exported` against `Plain`, the
+  status, state count, reason and every rule (id, sentence, verdict, path with its inputs) are
+  equal. Reversing the declarations built makes it fail, and so does turning off the fresh ids
+  (`Pair` is then unreadable).
 
 Before the test, `cmp.py` (scratch, not committed) compared the built and the compiled modules
 with ids stripped: for all 13, the same declarations in the same order and the same bodies,
@@ -2849,12 +2880,11 @@ check each with `darkWhenOff`. Release builds, real Quint through a wrapper that
 
 ### Shapes
 
-Built from the typecheck: `Low`, `High`, `Setup`, `Four`, `Tight`, `S`, `Three`, `One`, `Small`,
-`SmallBits`, `Dim`, `Bright`, `Blinding`, `S1`..`S17`. Compiled: `Large` and `Aliased`
-(`import ... as C`), `Nested` (an instance of an instance), `ByName` (a second import, a constant
-given a definition), `Exported` (`export`; Quint 0.33.1's compile keeps its `const K`, so it is
-`unreadable` either way), every module that is not a setup, a name Quint would refuse, and a
-file whose typecheck fails.
+Built from the typecheck (after the second part): `Low`, `High`, `Setup`, `Four`, `Tight`, `S`,
+`Three`, `One`, `Small`, `Large`, `SmallBits`, `Dim`, `Bright`, `Blinding`, `Named`,
+`Reexported`, `ByOwn`, `ByName`, `Two`, `Pair`, `Exported`, `Plain`, `Renamed`, `S1`..`S17`.
+Compiled: `Nested` (an instance of an instance), `Single` (`import Limit.L`), every module that
+is not a setup, a name Quint would refuse, and a file whose typecheck fails.
 
 ### Tests
 
@@ -2914,6 +2944,75 @@ changed.
   copies expressions unchanged, so a new read operator needs nothing here.
 - Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
   treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
+
+## Slice 4, second part: report
+
+Asked by the orchestrator after the first report: the shapes a real project is likely to write
+must not end `unreadable`. Built on the integration head `ea7e3fb`.
+
+### Done
+
+- `setup.rs` builds a setup module made of: instances whole (`.*`) or under a name (`as C`),
+  any number of them, two of one spec among them (fresh ids); whole imports of modules of
+  definitions (`import Lib.*`, `import Lib as Li`); `export C.*` of its own instances; and its
+  own definitions. Overrides may name definitions (`K = Own`, `K = twice(L)`, `K = Li::L`).
+  The checks file's names resolve as the setup sees them (own, whole instance, `C::name`,
+  exported). See "Second part" under "How `quint compile` flattens a setup".
+- Order of the four asked: 1 `as C` built (`Large`, `Named`, `Reexported`); 2 constants by name
+  built (`ByOwn`, `ByName` playing `upTest`, `Renamed`); 3 `export` built (`Exported`, compared
+  with `Plain` since Quint's own compile is wrong there); 4 several instances built (`Two`,
+  `Pair`). None needed the hour.
+- Still compiled: an instance of an instance (`Nested`), one name imported alone (`Single`), and
+  what Quint would refuse.
+- With real Quint 0.33.1, `tasks/quint/setups` (28 checks, 11 files) runs 11 typechecks and 2
+  compiles; 2 checks are `unreadable` on purpose: `Pair` with `runs: true` (a run from part of
+  the state) and `Single` naming a run of the module it imports.
+
+### `quint test` on the new shapes (`--backend typescript --match 'Test$'`)
+
+```text
+Pair:       ok Pair::P::upTest, Pair::P::fullTest, Pair::R::upTest, Pair::R::fullTest
+Named:      ok Named::B::upTest, Named::B::fullTest
+Reexported: ok Reexported::B::upTest, Reexported::B::fullTest, ownTest
+ByName:     ok ByName::Base::upTest, ByName::Base::fullTest
+Exported:   ok Exported::B::upTest, Exported::B::fullTest, upTest, fullTest
+```
+
+earnest: every one of these `holds`, except `Pair`'s, which earnest refuses (above). Quint plays
+`Exported`'s runs twice, once under each name; earnest plays each once.
+
+### Tests
+
+`setup_tests.rs` (7: 21 shapes built against Quint's declarations and reading, the compiled
+shapes, the export), `quint_setups.rs` (5, now over 28 checks). Only tests of this slice
+changed; none is on `origin/main`.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo test --locked`: 1993 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,847,189 | +0.26% | 1.00% | met |`. Not re-recorded.
+- `just benchmark`: every budget `met`; the last line is `wide, search time with all cores
+  (0.119 s) over search time with 1 worker (0.316 s): 0.38x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the same 64 in the 16 conformance files `origin/main` does not have.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`. `cargo machete`: `... Good job!`
+- `tests_kept.py --base origin/main`: `tests kept: 1609 tests, 4686 assertions (base: 1304, 3798)`.
+
+### Doubts
+
+- A run of one of two instances of a spec can't be played (it starts from part of the state);
+  the check is `unreadable` with slice 6's reason. Playing it would need partial states.
+- `export` has no reference output from Quint 0.33.1; its equality is with an equivalent setup.
+- A refusal inside a copy with fresh ids (`Pair`) has no source place: it stays at 1:1, as a
+  compiled instance's does.
+
+### Next
+
+`import Lib.name` and instances of instances, if a project has them.
 
 ## Reads 1 (issue #64): what is checked
 
