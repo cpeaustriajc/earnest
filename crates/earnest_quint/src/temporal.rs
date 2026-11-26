@@ -380,3 +380,6 @@ pub(crate) fn temporal<'a>(
     }
     Ok(read)
 }
+
+#[cfg(test)]
+mod tests;
