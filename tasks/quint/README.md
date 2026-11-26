@@ -1053,3 +1053,135 @@ section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores,
 | the second run, nothing changed (no Node started) | 0.040 s |
 
 The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
+
+## Slice 7: report
+
+### Done
+
+- `earnest.quint.json` (`apps/earnest/src/checks.rs`): the keys of decision 1, checked by hand on
+  `serde_json::Value` so that each problem names its key (`checks[1].runs`). Not JSON, an unknown
+  key, a wrong type, a missing `file` or `main`, or a second entry for one `(file, main)` makes the
+  checks file `unreadable` with one problem, and nothing in it is checked.
+- Discovery (`discovery.rs`): a folder search lists every `earnest.quint.json`; a `.qnt` named on
+  the command line is listed with the `earnest.quint.json` of its folder, checked only by its
+  entries; a named `earnest.quint.json` checks all of its entries. `.qnt` files are never read by
+  a folder search. `Discovered` has a new `listed` field; `Found`, `Text` and `ModelFile` are
+  unchanged.
+- `quint.rs`: finds `quint` (`EARNEST_QUINT`, then `node_modules/.bin/quint` from the checks
+  file's folder upward, then `PATH`; on Windows `quint.cmd`, `quint.exe`, `quint`), asks its
+  version once per program, compiles each check up to `--jobs` at a time (`workers::run_each`),
+  reads the JSON with the reader, and makes one `ModelFile` per check: its path is the `.qnt`
+  file, its source the compiled JSON, its one model named after `main`. `gather` merges them into
+  the other files in path order; `gather` now takes the job count (`tla` uses all cores).
+- The cache under `.earnest/quint/`: one file per `(real .qnt path, main)` holding the key on its
+  first line and the JSON after it; `version-<hash>.json` with the program's real path, size,
+  modification time (ns) and the text of `quint --version`; `places-<hash>.json` with what
+  `quint parse --source-map` gave. The key is the FNV-64 of `cache.rs` (`fingerprint_of`, the same
+  hash, with each piece prefixed by its length) over the version text, `main`, `init`, `step`,
+  `invariants`, `temporal`, `runs`, the hash of every `.qnt` below the checks file's folder (path
+  and content), and the `.qnt` file itself. Files are written whole by rename (`write_whole`,
+  shared with the result cache).
+- The result cache (`verify.rs`): an entry is matched to its `ModelFile` by identity instead of
+  by path, and a check is cached under `<path>\n<main>`, because two checks share a `.qnt` path.
+- Lines (`places.rs`): when a check's module is refused, `quint parse <file> --out ... --source-map
+  ...` runs once for that file. A problem goes to the place of its expression id when the source
+  map has it, else to the definition it names (the main module first; `A::C::name` through the
+  module `C`, or the module that the instance alias `C` makes; else the one module that declares
+  `name`), else stays at 1:1. A place in another file (`import ... from "./other"`) is reported in
+  that file.
+- `crates/earnest_quint`: `Refusal` gains `id` and `within`; `scan.rs` sets `within` on every
+  refusal it names a definition for and `id` on an operator it refuses; `Reader::refuse` sets
+  `within`. `lib.rs` adds `Located`, `Runs` and `read_located(path, source, runs)`; `read` is
+  `read_located` without the extra fields. Nothing in how a module is translated changed.
+- Docs: `reference/quint.md` (in the sidebar after Rust), the promise in `README.md` (only the
+  "No runtime" and "Nothing runs" bullets), `reference/cli.md`, `tutorials/pull-request.md` and a
+  Quint bullet in `start/install.md`; `index.mdx` does not repeat the promise, so it is unchanged.
+  A changelog entry. `earnest --help` says "TypeScript, Rust or Quint".
+- Tests: `apps/earnest/tests/behavior/quint_checks.rs` (12 tests, unix only, a fake `quint` shell
+  script), unit tests in `checks.rs` (3) and `places.rs` (1), and one in
+  `crates/earnest_quint/src/tests.rs`. `record.parse.json` and `record.sourcemap.json` in
+  `models/` are what Quint 0.33.1 wrote for `record.qnt`, with the absolute path in
+  `sourceIndex` replaced by `record.qnt`; the fake writes the sandbox's path back.
+
+### The commands earnest runs
+
+```sh
+quint --version
+quint compile --target json --main <main> --init <init> --step <step> [--invariant a,b] [--temporal c,d] <file>.qnt
+quint parse <file>.qnt --out .earnest/quint/.parse-<pid>-<n>.json --source-map .earnest/quint/.map-<pid>-<n>.json
+```
+
+`<file>` is the path as earnest shows it (relative to where it runs). The second runs once per
+check; the third only for a file with a refused construct. Each starts from the folder earnest
+runs in. Verified against Quint 0.33.1:
+
+- `--invariant` and `--temporal` take one argument, names joined by commas (`--help`: "the
+  invariants to check, separated by commas"); `--init` and `--step` always passed.
+- **Not `--out`, unlike decision 4.** In 0.33.1, `compile --out f` writes every module of the
+  file, unflattened (`modules` = `Clock`, `Small`, `Large` for `--main Large`), and still prints the
+  flattened main module on stdout. The reader needs the flattened one, so earnest sends stdout to
+  a file of its own in `.earnest/quint/` and keeps it.
+- **Not a pipe either.** Read through a pipe, the JSON stopped at 65,536 bytes: Quint exits before
+  Node has written the rest. Written to a file, it is whole.
+- A failure: exit 1, nothing on stdout, and on stderr either one line (`error: [QNT404] Name 'nope'
+  not found`, `error: module Nope does not exist`) or a block whose first line is
+  `Error [QNT404]: Name 'y' not found` and whose `at <absolute path>:4:22` line gives the place.
+  Earnest takes the first line that is not blank, and the place from the first `at` line, else
+  1:1.
+
+### Runs
+
+`runs` is read into `earnest_quint::Runs` (`None`, `Tests`, `Named`) and passed to
+`read_located`, which ignores it. It is part of the cache key. Slice 6 should know:
+
+- The compiled JSON holds the runs written in the main module itself (`compile --main Large` has
+  `largeTick`) and no run of an imported module (`--main Small` has none of `Clock`'s four).
+  `quint compile` has no flag that keeps them: flattening takes an imported definition only when
+  something refers to it. To play the spec module's runs for a setup, slice 6 needs another
+  compile (`--main Clock`, which keeps every definition) or option A of section 6.
+- `scan.rs` still refuses every `run` definition, so a main module with its own runs is
+  `unreadable` today whatever `runs` says.
+
+### What is not mapped to a line
+
+- A refusal with no definition: `the compiled module` (Quint reported errors), a missing `init`
+  or `step`, more than 1000 actions from one step, a fault while `init` is worked out, more than
+  1,000,000 combinations in `init`. They stay at 1:1.
+- A refusal from `Reader::refuse` carries the definition but no expression id, so it is placed at
+  the definition (`action bump`), not at the expression. Only the operators `scan.rs` refuses
+  carry an id.
+- A construct flattened in from an instance: its ids are fresh, so it goes to the definition in
+  the imported module, found by name. A constant's value is the instance's override, but the
+  problem goes to the `const` declaration (`Small::Clock::Nodes` at `const Nodes`).
+- A compiled `.json` named on the command line: no `.qnt` to map to, so 1:1 as in slice 1.
+
+### Doubts
+
+- The rules of a module flattened from an instance are named `Blinding::Lamp::levelOk`, as the
+  reader names them, so `--rule levelOk` does not select them although `earnest.quint.json` lists
+  `levelOk`. An unreadable check declares the listed names, so there `--rule levelOk` does select
+  it. Slice 4 (setups) should decide the names.
+- Two unreadable checks of one `.qnt` file print two headers `unreadable  clock.qnt`; the
+  problems name the definitions (`Large::C::hear`), which tells them apart only for flattened
+  definitions.
+- The example in the "not listed" problem has three lines in the JSON `message`; the text output
+  joins them on one line, as it does for every problem.
+- The tree hash covers the `.qnt` files below the checks file's folder. A spec imported from
+  above it (`import ... from "../shared"`) is not hashed, so editing it does not compile again.
+- The version is keyed on the program's resolved path: with `node_modules/.bin/quint` that is
+  Quint's `cli.js`, which an upgrade rewrites. A wrapper script that runs another `quint` keeps
+  its own size and time; then the version text is not asked again.
+- `earnest verify --base` still skips Quint files (slice 1's doubt), now also `.qnt` checks.
+- The Windows build is not tested: the fake is a shell script, so `quint_checks.rs` is
+  `#![cfg(unix)]`.
+
+### Checks, each with its last line
+
+CHECKS_PLACEHOLDER
+
+### Unfinished, and the next step
+
+- Nothing of decision 1 to 7 is left out, except the two deviations above (`--out`, the
+  one-line example in the text output).
+- Next: slices 2, 5 and 6 merge onto this; when slice 6 reads runs it gets `Runs` through
+  `read_located`, and needs the spec module's runs as said under "Runs".
