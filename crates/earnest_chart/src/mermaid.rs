@@ -1,6 +1,7 @@
+use crate::markdown::code_span;
 use crate::plot::{Look, Plot};
-use crate::select::{ARROW_LIMIT, Selection, select};
-use earnest_check::{Graph, Outline};
+use crate::select::{ARROW_LIMIT, Found, Selection, select};
+use earnest_check::{Graph, Outline, PremiseKind};
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
@@ -310,6 +311,44 @@ impl<'a, P: Plot> Drawing<'a, P> {
         })
     }
 
+    fn place(&self, found: Found) -> String {
+        match found {
+            Found::Drawn(at) => format!("in {}", code_span(self.plot.label(at))),
+            Found::Beyond => "beyond what is shown".to_owned(),
+        }
+    }
+
+    fn premise_note(&self) -> Option<String> {
+        let premises = self.plot.premises();
+        let mut sentences: Vec<String> = Vec::new();
+        let mut at = 0;
+        while let Some(first) = premises.get(at) {
+            let rule = &first.rule;
+            let mut pieces: Vec<String> = Vec::new();
+            let mut implied = None;
+            while let Some(premise) = premises.get(at).filter(|premise| premise.rule == *rule) {
+                if let Some(Some(found)) = self.selection.premises.get(at) {
+                    let place = self.place(*found);
+                    match premise.kind {
+                        PremiseKind::After => pieces.push(format!("starts {place}")),
+                        PremiseKind::Reaches => pieces.push(format!("is met {place}")),
+                        PremiseKind::Implies => implied = Some(place),
+                        _ => {}
+                    }
+                }
+                at = at.saturating_add(1);
+            }
+            let rule = code_span(rule);
+            if let Some(place) = implied {
+                sentences.push(format!("The premise of {rule} first holds {place}."));
+            }
+            if !pieces.is_empty() {
+                sentences.push(format!("{rule} {}.", pieces.join(" and ")));
+            }
+        }
+        (!sentences.is_empty()).then(|| sentences.join(" "))
+    }
+
     fn write(&self) -> String {
         let mut lines = vec!["```mermaid".to_owned()];
         if let Some(text) = self.plot.title() {
@@ -323,6 +362,10 @@ impl<'a, P: Plot> Drawing<'a, P> {
         lines.extend(self.classes());
         lines.push("```".to_owned());
         if let Some(note) = self.left_out() {
+            lines.push(String::new());
+            lines.push(note);
+        }
+        if let Some(note) = self.premise_note() {
             lines.push(String::new());
             lines.push(note);
         }
@@ -351,6 +394,15 @@ impl<'a, P: Plot> Drawing<'a, P> {
 /// beyond what is shown.` or `2 broken states lie beyond what is shown.` When another broken
 /// state is drawn, it says `Another broken state lies beyond what is shown.` or `2 more broken
 /// states lie beyond what is shown.`, so it never reads as if the drawn one were missing.
+///
+/// After the routes to broken states, the arrows left go to the route to the nearest box where
+/// each of [`Graph::premises`] holds, in that order; a premise that holds in a box already
+/// drawn costs none. When any premise holds in a box a start leads to, the text ends with a
+/// blank line and one line naming, per rule, the box where it first holds, such as
+/// ``The premise of `paid` first holds in `Paid`.`` or
+/// ``` `settles` starts in `Busy` and is met in `Idle`.```, with `beyond what is shown` in place
+/// of a box whose route did not fit. A graph with no premise gets the chart it got before
+/// premises.
 #[must_use]
 pub fn chart(graph: &Graph) -> String {
     chart_with_limit(graph, ARROW_LIMIT)

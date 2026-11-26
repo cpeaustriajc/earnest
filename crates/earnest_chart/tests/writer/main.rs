@@ -4,6 +4,7 @@ mod chart;
 mod eventually;
 mod labels;
 mod limit;
+mod premises;
 mod properties;
 mod report;
 mod support;

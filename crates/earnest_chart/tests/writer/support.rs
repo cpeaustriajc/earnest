@@ -176,6 +176,7 @@ pub(crate) struct Read {
     pub(crate) classes: Vec<(String, Vec<String>)>,
     pub(crate) styles: Vec<(String, String)>,
     pub(crate) note: Option<String>,
+    pub(crate) premises: Option<String>,
 }
 
 impl Read {
@@ -332,7 +333,12 @@ pub(crate) fn read(chart: &str) -> Read {
     let after: Vec<&str> = lines.collect();
     match after.as_slice() {
         [] => {}
-        ["", note] => read.note = Some((*note).to_owned()),
+        ["", note] if note.starts_with("Not shown: ") => read.note = Some((*note).to_owned()),
+        ["", premises] => read.premises = Some((*premises).to_owned()),
+        ["", note, "", premises] if note.starts_with("Not shown: ") => {
+            read.note = Some((*note).to_owned());
+            read.premises = Some((*premises).to_owned());
+        }
         _ => panic!("more than a note after the block: {after:?}"),
     }
     for (from, to, _) in &read.arrows {
