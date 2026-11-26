@@ -1,6 +1,7 @@
 const MARK: &str = "@check";
 const BROKEN: &str = "broken";
 const REACHABLE: &str = "reachable";
+const UNSPACED: &str = "check";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -12,35 +13,137 @@ pub(crate) enum Kind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Mark {
     pub(crate) kind: Kind,
-    pub(crate) says: Option<String>,
+    pub(crate) names: Vec<String>,
+    pub(crate) line: usize,
 }
 
-pub(crate) fn mark_of(doc: &str) -> Option<Result<Mark, String>> {
-    let mut lines = doc.trim_start().lines();
-    let first = lines.next()?.trim();
-    let rest = first.strip_prefix(MARK)?;
-    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
-        return Some(Err(first.to_owned()));
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Doc {
+    pub(crate) marks: Vec<Mark>,
+    pub(crate) says: Option<String>,
+    pub(crate) wrong: Vec<(usize, String)>,
+}
+
+impl Doc {
+    pub(crate) fn is_marked(&self) -> bool {
+        !self.marks.is_empty() || !self.wrong.is_empty()
     }
-    let kind = match rest.trim() {
-        "" => Kind::Holds,
-        BROKEN => Kind::Broken,
-        REACHABLE => Kind::Reachable,
-        _ => return Some(Err(first.to_owned())),
+}
+
+fn is_a_name(text: &str) -> bool {
+    !text.is_empty()
+        && text.split("::").all(|segment| {
+            segment
+                .chars()
+                .next()
+                .is_some_and(|first| first.is_alphabetic() || first == '_')
+                && segment
+                    .chars()
+                    .all(|each| each.is_alphanumeric() || each == '_')
+        })
+}
+
+fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
+    let rest = rest.trim();
+    let (first, after) = rest
+        .split_once(|each: char| each.is_whitespace())
+        .map_or((rest, ""), |(first, after)| (first, after.trim()));
+    let (kind, listed) = match first {
+        "" => return Some((Kind::Holds, Vec::new())),
+        BROKEN => (Kind::Broken, after),
+        REACHABLE => (Kind::Reachable, after),
+        _ => (Kind::Holds, rest),
     };
-    let sentence: Vec<&str> = lines
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    Some(Ok(Mark {
-        kind,
-        says: (!sentence.is_empty()).then(|| sentence.join(" ")),
-    }))
+    if listed.is_empty() {
+        return Some((kind, Vec::new()));
+    }
+    let names: Vec<String> = listed.split(',').map(|each| each.trim().to_owned()).collect();
+    names
+        .iter()
+        .all(|name| is_a_name(name))
+        .then_some((kind, names))
+}
+
+fn is_unspaced(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix(UNSPACED) else {
+        return false;
+    };
+    rest.is_empty()
+        || rest == format!(" {BROKEN}")
+        || rest == format!(" {REACHABLE}")
+        || rest.starts_with(&format!(" {BROKEN} "))
+        || rest.starts_with(&format!(" {REACHABLE} "))
+        || (rest.contains(',') && words_after(rest).is_some())
+}
+
+pub(crate) fn read_doc(doc: &str) -> Doc {
+    let mut read = Doc::default();
+    let mut sentence: Vec<&str> = Vec::new();
+    for (line, text) in doc.lines().enumerate() {
+        let trimmed = text.trim();
+        if let Some(rest) = trimmed.strip_prefix(MARK) {
+            let spaced = rest.is_empty() || rest.starts_with(char::is_whitespace);
+            match words_after(rest).filter(|_| spaced) {
+                Some((kind, names)) => read.marks.push(Mark { kind, names, line }),
+                None => read.wrong.push((line, unknown_mark(trimmed))),
+            }
+        } else if is_unspaced(trimmed) {
+            read.wrong.push((line, unspaced_mark(trimmed)));
+        } else if !trimmed.is_empty() {
+            sentence.push(trimmed);
+        }
+    }
+    read.says = (!sentence.is_empty()).then(|| sentence.join(" "));
+    read
+}
+
+fn unspaced_mark(written: &str) -> String {
+    format!(
+        "the doc comment holds `{written}`, which is how Quint hands over `///@{written}`: a \
+         mark needs a space after the three slashes, `/// @{written}`, or it is read as a \
+         sentence and nothing is checked"
+    )
+}
+
+pub(crate) fn second_mark() -> String {
+    format!(
+        "the doc comment holds a second mark: a definition takes one, `{MARK}`, `{MARK} {BROKEN}` \
+         or `{MARK} {REACHABLE}`"
+    )
+}
+
+pub(crate) fn names_off_module(name: &str) -> String {
+    format!(
+        "the mark names definitions, which only the doc comment of a check's module does: write \
+         `{MARK}` alone above `{name}`, or move the names to the module's doc comment"
+    )
+}
+
+pub(crate) fn not_judged(name: &str, what: &str) -> String {
+    format!(
+        "`{name}` is {what}, which no check judges, so the mark would be ignored: mark a `val`, a \
+         `temporal` definition or a `run` with no parameters"
+    )
+}
+
+pub(crate) fn not_seen_named(name: &str, module: &str) -> String {
+    format!(
+        "the doc comment of `{module}` names `{name}`, which the module does not see: name a \
+         definition or a run of `{module}`, or of a module it imports, as `{module}` writes it"
+    )
+}
+
+pub(crate) fn no_init_or_step(module: &str, missing: &str, action: &str, judged: &str) -> String {
+    format!(
+        "the check `{module}` judges {judged}, so it searches, and it sees no `{missing}`: write \
+         `action {missing} = {action}` in `{module}`, naming the action to search with, so that \
+         they are judged"
+    )
 }
 
 pub(crate) fn unknown_mark(written: &str) -> String {
     format!(
-        "the doc comment starts with `{written}`, which is not a mark the checker knows: the \
+        "the doc comment holds `{written}`, which is not a mark the checker knows: the \
          marks are `{MARK}` (the property holds), `{MARK} {BROKEN}` (it must have a \
          counterexample) and `{MARK} {REACHABLE}` (a state where it is true must be reached)"
     )
@@ -61,8 +164,9 @@ pub(crate) fn misplaced_mark(kind: Kind, name: &str, qualifier: &str) -> String 
 
 pub(crate) fn module_mark_alone() -> String {
     format!(
-        "a module is marked `{MARK}` alone, to make it a check: `{MARK} {BROKEN}` and `{MARK} \
-         {REACHABLE}` mark its properties"
+        "a module is made a check by `{MARK}`, alone or with names: `{MARK} {BROKEN}` and \
+         `{MARK} {REACHABLE}` on a module need the names of what they judge, as `{MARK} {BROKEN} \
+         neverFull`"
     )
 }
 
@@ -85,12 +189,6 @@ pub(crate) fn nothing_to_judge(module: &str) -> String {
     nothing_because(module, "it sees no marked property and no run to play")
 }
 
-pub(crate) fn nothing_to_search(module: &str) -> String {
-    nothing_because(
-        module,
-        "it sees no `init` and `step` to search with, and no run to play",
-    )
-}
 
 pub(crate) fn not_seen(name: &str) -> String {
     format!(
@@ -110,39 +208,73 @@ pub(crate) fn how_to_mark() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, Mark, mark_of};
+    use super::{Kind, Mark, read_doc};
+
+    fn marks(doc: &str) -> (Vec<Mark>, Option<String>, Vec<usize>) {
+        let read = read_doc(doc);
+        let wrong = read.wrong.iter().map(|(line, _)| *line).collect();
+        (read.marks, read.says, wrong)
+    }
+
+    fn mark(kind: Kind, names: &[&str], line: usize) -> Mark {
+        Mark {
+            kind,
+            names: names.iter().map(|name| (*name).to_owned()).collect(),
+            line,
+        }
+    }
 
     #[test]
-    fn a_mark_is_the_first_line_of_the_doc_and_the_rest_is_its_sentence() {
-        let cases = [
+    fn a_mark_is_any_line_of_the_doc_and_the_other_lines_are_its_sentence() {
+        assert_eq!(
+            marks("@check\nThe balance never goes below zero."),
             (
-                "@check\nThe balance never goes below zero.",
-                Some(Ok(Mark {
-                    kind: Kind::Holds,
-                    says: Some("The balance never goes below zero.".to_owned()),
-                })),
-            ),
+                vec![mark(Kind::Holds, &[], 0)],
+                Some("The balance never goes below zero.".to_owned()),
+                vec![]
+            )
+        );
+        assert_eq!(
+            marks("It wraps\n@check broken\naround."),
             (
-                "@check broken\nIt wraps\naround.",
-                Some(Ok(Mark {
-                    kind: Kind::Broken,
-                    says: Some("It wraps around.".to_owned()),
-                })),
-            ),
+                vec![mark(Kind::Broken, &[], 1)],
+                Some("It wraps around.".to_owned()),
+                vec![]
+            )
+        );
+        assert_eq!(
+            marks(" @check  reachable "),
+            (vec![mark(Kind::Reachable, &[], 0)], None, vec![])
+        );
+        assert_eq!(
+            marks("The lamp.\n\n@check levelOk, C::darkWhenOff\n@check broken neverFull"),
             (
-                " @check  reachable ",
-                Some(Ok(Mark {
-                    kind: Kind::Reachable,
-                    says: None,
-                })),
-            ),
-            ("@check brokn", Some(Err("@check brokn".to_owned()))),
-            ("@checked", Some(Err("@checked".to_owned()))),
-            ("The balance.\n@check", None),
-            ("@invariant", None),
-        ];
-        for (doc, expected) in cases {
-            assert_eq!(mark_of(doc), expected, "{doc}");
+                vec![
+                    mark(Kind::Holds, &["levelOk", "C::darkWhenOff"], 2),
+                    mark(Kind::Broken, &["neverFull"], 3)
+                ],
+                Some("The lamp.".to_owned()),
+                vec![]
+            )
+        );
+        assert_eq!(marks("@invariant"), (vec![], Some("@invariant".to_owned()), vec![]));
+    }
+
+    #[test]
+    fn a_mark_the_checker_can_not_read_is_wrong_at_its_line() {
+        for (doc, line) in [
+            ("@checked", 0),
+            ("first\n@check broken, x", 1),
+            ("check", 0),
+            ("check broken", 0),
+            ("says\ncheck reachable", 1),
+        ] {
+            assert_eq!(marks(doc).2, [line], "{doc}");
         }
+        assert_eq!(
+            marks("check the balance").2,
+            Vec::<usize>::new(),
+            "a sentence that starts with the word check"
+        );
     }
 }

@@ -15,9 +15,7 @@ module OnlyRuns {
   run fixedTest = Fixed::InitOn(1).then(Fixed::step).expect(Fixed::n == 2)
   run listTest = List::init.then(List::step).then(List::step).expect(List::n == 7)
   run thirdTest = Third::init.then(3.reps(_ => Third::step)).expect(Third::n == 13)
-  /// @check broken
-  /// Four steps from 10 go past the limit of three.
-  run thirdOver = Third::init.then(4.reps(_ => Third::step))
+  run thirdOverTest = Third::init.then(4.reps(_ => Third::step))
   run mixTest = all { Fixed::init, List::init }
     .then(all { Fixed::step, List::step })
     .expect(Fixed::n + List::n == 7)

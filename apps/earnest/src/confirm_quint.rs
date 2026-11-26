@@ -346,11 +346,14 @@ impl Runner<'_> {
 
     fn test(&self) -> Result<Vec<Tested>, String> {
         let pattern = match &self.quint.runs {
-            Runs::Named(names) => {
-                let last: Vec<&str> = names
+            Runs::Named(names) | Runs::TestsAnd(names) => {
+                let mut last: Vec<String> = names
                     .iter()
-                    .map(|name| name.rsplit("::").next().unwrap_or(name))
+                    .map(|name| name.rsplit("::").next().unwrap_or(name).to_owned())
                     .collect();
+                if matches!(self.quint.runs, Runs::TestsAnd(_)) {
+                    last.insert(0, ".*Test".to_owned());
+                }
                 format!("^(.*::)?({})$", last.join("|"))
             }
             _ => RUNS_THAT_END_IN_TEST.to_owned(),
@@ -590,7 +593,7 @@ fn left_over(
 }
 
 fn quint_check_plays_by_ending(quint: &QuintCheck) -> bool {
-    quint.runs == Runs::Tests
+    matches!(quint.runs, Runs::Tests | Runs::TestsAnd(_))
 }
 
 #[derive(Debug)]

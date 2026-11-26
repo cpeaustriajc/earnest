@@ -148,11 +148,15 @@ fn fold_reasons(compiled: &Value, bodies: &[&Value]) -> Vec<String> {
 }
 
 fn played_runs<'a>(found: &BTreeMap<&'a str, &'a Value>, runs: &Runs) -> Vec<&'a str> {
+    let named = |names: &[String], name: &str| {
+        names
+            .iter()
+            .any(|listed| last_segment(listed) == last_segment(name))
+    };
     let wanted = |name: &str| match runs {
         Runs::Tests => name.ends_with(TESTS_END_WITH),
-        Runs::Named(names) => names
-            .iter()
-            .any(|listed| last_segment(listed) == last_segment(name)),
+        Runs::Named(names) => named(names, name),
+        Runs::TestsAnd(names) => name.ends_with(TESTS_END_WITH) || named(names, name),
         _ => false,
     };
     found

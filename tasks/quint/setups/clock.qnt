@@ -30,40 +30,16 @@ module Clock {
   run hearAny = init.then(hear).expect(seen.size() == 1)
 }
 
-/// @check
-/// The small clock, with its properties and runs here, so that `Large` does not judge them.
+/// @check timeBounded, skewOk, allHeard, timeAdvances, fairHear, leads, tickTwice, tickMany, overTick, hearAny
 module Small {
-  import Clock(MaxTime = 3, Skew = 1, Nodes = Set("a", "b")) as C
-  action init = C::init
-  action step = C::step
-  /// @check
-  val timeBounded = C::timeBounded
-  /// @check
-  val skewOk = C::skewOk
-  /// @check
-  temporal allHeard = C::allHeard
-  /// @check
-  temporal timeAdvances = C::timeAdvances
-  /// @check
-  temporal fairHear = C::fairHear
-  /// @check
-  temporal leads = C::leads
-  /// @check
-  run tickTwice = C::tickTwice
-  /// @check
-  run tickMany = C::tickMany
-  /// @check
-  run overTick = C::overTick
-  /// @check
-  run hearAny = C::hearAny
+  import Clock(MaxTime = 3, Skew = 1, Nodes = Set("a", "b")).*
 }
 
-/// @check
+/// @check inv
 module Large {
   import Clock(MaxTime = 8, Skew = 10, Nodes = Set("a", "b", "c")) as C
   action init = C::init
   action step = C::step
-  /// @check
   val inv = C::timeBounded
   run largeTick = C::init.then(C::tick).expect(C::time == 1)
 }

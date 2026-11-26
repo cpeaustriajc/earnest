@@ -11,16 +11,12 @@ module Spec {
     all { n + d <= Max + Start, n' = n + d }
   }
 
-  /// @check
-
   val below = n <= Max + Start
-  /// @check
   val small = n < Max
-  /// @check
   temporal reaches = weakFair(step, n) implies eventually(n == Max + Start)
 }
 
-/// @check
+/// @check below, small, reaches
 module Low { import Spec(Start = 0, Max = 3).* }
-/// @check
+/// @check below, small, reaches
 module High { import Spec(Start = 2, Max = 5).* }
