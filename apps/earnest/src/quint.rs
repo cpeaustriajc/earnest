@@ -457,6 +457,33 @@ fn compile(job: &Job) -> Result<String, Problem> {
     Ok(json)
 }
 
+fn runs_only(check: &Check) -> bool {
+    check.invariants.is_empty() && check.temporal.is_empty() && check.runs != Runs::None
+}
+
+fn lacks_a_search(check: &Check, places: Option<&Places>) -> bool {
+    runs_only(check)
+        && places.is_some_and(|found| {
+            !found.declares(&check.main, &check.init) || !found.declares(&check.main, &check.step)
+        })
+}
+
+fn unbuilt(job: &Job) -> Problem {
+    Problem::new(
+        &job.shown,
+        TOP_OF_FILE,
+        &format!("`{}`", job.check.main),
+        &format!(
+            "the check lists only runs, and the module declares no `{}` or no `{}` of its own, \
+             so the checker builds the module from `quint typecheck` and plays its runs from \
+             their first actions: it builds a module of instances, imports and definitions of its \
+             own, and this module is of another shape. Name an `init` and a `step` the module \
+             has in the check, so that `quint compile` takes it",
+            job.check.init, job.check.step
+        ),
+    )
+}
+
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
     let check = &job.check;
     typechecked?.setup(&Setup::new(
@@ -549,7 +576,7 @@ fn widened(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
         }
         let qualifier = places.map_or(PROPERTY_QUALIFIERS[0], |found| {
             found.qualifier(&name, &check.main).unwrap_or_else(|| {
-                if found.declares(&name, &check.main) {
+                if found.reaches(&name, &check.main) {
                     ""
                 } else {
                     PROPERTY_QUALIFIERS[0]
@@ -772,6 +799,20 @@ fn compiled_once(
         .collect()
 }
 
+fn read_check(job: &Job, compiled: Result<String, Problem>) -> Result<Compiled, Vec<Located>> {
+    let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
+    let model = if runs_only(&job.check) {
+        earnest_quint::read_runs(&job.shown, &json, &job.check.runs)
+    } else {
+        earnest_quint::read_located(&job.shown, &json, &job.check.runs)
+    };
+    let mut model = model?;
+    job.model_name().clone_into(&mut model.name);
+    let expected =
+        expected_ids(job, &model).map_err(|problem| vec![Located::new(problem, None, None)])?;
+    Ok((json, model, expected))
+}
+
 pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut files = Vec::new();
     let mut checks = jobs_of(asked(listed), &mut files);
@@ -801,9 +842,9 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
     for job in &checks {
         if let Ok(quint) = &job.quint
-            && places
-                .get(&job.real)
-                .is_some_and(|found| found.may_be_a_setup(&job.check.main))
+            && places.get(&job.real).is_some_and(|found| {
+                found.may_be_a_setup(&job.check.main) || lacks_a_search(&job.check, Some(found))
+            })
             && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
         {
             to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
@@ -823,23 +864,15 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .collect();
     let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
         Some(problem) => Some(Err((*problem).clone())),
-        None => filled(job, typechecked.get(&job.real)).map(Ok),
+        None => filled(job, typechecked.get(&job.real)).map(Ok).or_else(|| {
+            lacks_a_search(&job.check, places.get(&job.real)).then(|| Err(unbuilt(job)))
+        }),
     });
     let compiled = compiled_once(&checks, built, jobs);
     let read: Vec<Result<Compiled, Vec<Located>>> = checks
         .iter()
         .zip(compiled)
-        .map(|(job, compiled)| match compiled {
-            Ok(json) => earnest_quint::read_located(&job.shown, &json, &job.check.runs).and_then(
-                |mut model| {
-                    job.model_name().clone_into(&mut model.name);
-                    let expected = expected_ids(job, &model)
-                        .map_err(|problem| vec![Located::new(problem, None, None)])?;
-                    Ok((json, model, expected))
-                },
-            ),
-            Err(problem) => Err(vec![Located::new(problem, None, None)]),
-        })
+        .map(|(job, compiled)| read_check(job, compiled))
         .collect();
     for (job, read) in checks.iter().zip(read) {
         files.push(match read {
