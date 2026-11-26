@@ -590,10 +590,9 @@ State 1: <Initial predicate>
             .violated,
             ["Rule_never"]
         );
-        assert!(
-            read_tlc("Error: The invariant of Rule_ok is equal to TRUE\n")
-                .violated
-                .is_empty()
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_ok is equal to TRUE\n").violated,
+            Vec::<String>::new()
         );
     }
 
