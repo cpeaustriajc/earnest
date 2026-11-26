@@ -30,6 +30,12 @@ pub enum Fault {
     /// A number is outside the integer type the model file gives it, where Rust stops a test
     /// build and wraps around in a release build.
     Outside(IntType),
+    /// A map has no value for the key read, a sequence no item at the position read, or a
+    /// choice among the tags of a value has no case for its tag.
+    Missing,
+    /// A power with a negative exponent, zero to the power zero, or a run of numbers that
+    /// counts down, which the languages leave undefined.
+    Undefined,
     /// An operation got a value of a kind it has no meaning for, too few arguments, or a field
     /// or slot that does not exist.
     WrongKind,
@@ -53,6 +59,12 @@ impl Fault {
                 "takes a division with a negative number or a divisor below 1".to_owned()
             }
             Self::Outside(ty) => format!("computes a number outside `{}`", ty.name()),
+            Self::Missing => {
+                "reads a key, a position or a case that is not there".to_owned()
+            }
+            Self::Undefined => {
+                "computes a power or a run of numbers that is not defined".to_owned()
+            }
             Self::WrongKind => "uses a value of the wrong kind".to_owned(),
             Self::Stopped => "was stopped by the time limit".to_owned(),
         }
@@ -242,6 +254,65 @@ pub fn eval(expr: &Expr, frame: &mut Frame<'_>) -> Result<Value, Fault> {
             };
             test.over(&eval(source, frame)?, frame, truth)
         }
+        Expr::Fold {
+            source,
+            start,
+            total,
+            item,
+            body,
+        } => {
+            let collection = eval(source, frame)?;
+            let first = eval(start, frame)?;
+            let folding = Folding {
+                total: *total,
+                item: *item,
+                body: &**body,
+                unit: NO_UNIT,
+            };
+            folding.over(&collection, first, frame, eval)
+        }
+    }
+}
+
+pub(crate) struct Folding<'b, B> {
+    pub(crate) total: usize,
+    pub(crate) item: usize,
+    pub(crate) body: &'b B,
+    pub(crate) unit: u64,
+}
+
+impl<B> Folding<'_, B> {
+    pub(crate) fn over(
+        &self,
+        collection: &Value,
+        first: Value,
+        frame: &mut Frame<'_>,
+        step: impl Fn(&B, &mut Frame<'_>) -> Evaluated,
+    ) -> Evaluated {
+        match collection {
+            Value::Set(items) => self.through(items.iter(), first, frame, step),
+            Value::Seq(items) => self.through(items.iter(), first, frame, step),
+            other => Err(wrong_or_null(other)),
+        }
+    }
+
+    fn through<'v>(
+        &self,
+        items: impl Iterator<Item = &'v Value>,
+        first: Value,
+        frame: &mut Frame<'_>,
+        step: impl Fn(&B, &mut Frame<'_>) -> Evaluated,
+    ) -> Evaluated {
+        let mut so_far = first;
+        for item in items {
+            if frame.out_of_time() {
+                return Err(Fault::Stopped);
+            }
+            frame.write(self.unit, self.total, so_far);
+            frame.write(self.unit, self.item, item.clone());
+            so_far = step(self.body, frame)?;
+        }
+        Ok(so_far)
     }
 }
 
@@ -418,8 +489,33 @@ pub(crate) fn applied<T>(
         }
         Op::Set(set_op) => on_set(set_op, first, second),
         Op::Map(map_op) => on_map(map_op, first, second, third),
-        Op::Seq(seq_op) => on_seq(seq_op, first, second),
+        Op::Seq(seq_op) => on_seq(seq_op, first, second, third),
+        Op::Power => {
+            let answer =
+                int_pair(&first, second.as_ref()).and_then(|(base, power)| raised(base, power));
+            frame.note(&answer);
+            answer.map(Value::Int)
+        }
+        Op::Interval => {
+            let (lo, hi) = int_pair(&first, second.as_ref())?;
+            Ok(Value::set((lo..=hi).map(Value::Int).collect()))
+        }
+        Op::Ascending => {
+            let (lo, hi) = int_pair(&first, second.as_ref())?;
+            if lo > hi {
+                return Err(Fault::Undefined);
+            }
+            Ok(Value::seq((lo..hi).map(Value::Int).collect()))
+        }
     }
+}
+
+fn raised(base: i64, power: i64) -> Result<i64, Fault> {
+    if power < 0 || (base == 0 && power == 0) {
+        return Err(Fault::Undefined);
+    }
+    let power = u32::try_from(power).map_err(|_| Fault::Overflow)?;
+    base.checked_pow(power).ok_or(Fault::Overflow)
 }
 
 pub(crate) fn wrong_or_null(value: &Value) -> Fault {
@@ -597,10 +693,31 @@ fn on_map(op: MapOp, first: Value, second: Option<Value>, third: Option<Value>) 
             entries.insert(key, value);
             Ok(Value::map(entries))
         }
+        MapOp::MustGet => entries
+            .get(&needed(second)?)
+            .cloned()
+            .ok_or(Fault::Missing),
+        MapOp::Replace => {
+            let key = needed(second)?;
+            let value = needed(third)?;
+            if !entries.contains_key(&key) {
+                return Err(Fault::Missing);
+            }
+            let mut entries = as_map(first)?;
+            entries.insert(key, value);
+            Ok(Value::map(entries))
+        }
     }
 }
 
-fn on_seq(op: SeqOp, first: Value, second: Option<Value>) -> Evaluated {
+fn position_in(items: &[Value], position: &Value) -> Result<usize, Fault> {
+    usize::try_from(as_int(position)?)
+        .ok()
+        .filter(|index| *index < items.len())
+        .ok_or(Fault::Missing)
+}
+
+fn on_seq(op: SeqOp, first: Value, second: Option<Value>, third: Option<Value>) -> Evaluated {
     let items = seq_in(&first)?;
     match op {
         SeqOp::Size => size_of(items.len()),
@@ -626,5 +743,38 @@ fn on_seq(op: SeqOp, first: Value, second: Option<Value>) -> Evaluated {
             Ok(Value::seq(items))
         }
         SeqOp::Includes => Ok(Value::Bool(items.contains(&needed(second)?))),
+        SeqOp::Nth => {
+            let index = position_in(items, &needed(second)?)?;
+            items.get(index).cloned().ok_or(Fault::Missing)
+        }
+        SeqOp::Head => items.first().cloned().ok_or(Fault::Missing),
+        SeqOp::Tail if items.is_empty() => Err(Fault::Missing),
+        SeqOp::Tail => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
+        SeqOp::Concat => {
+            let other = needed(second)?;
+            let mut items = as_seq(first)?;
+            items.extend(seq_in(&other)?.iter().cloned());
+            Ok(Value::seq(items))
+        }
+        SeqOp::Slice => {
+            let from = as_int(&needed(second)?)?;
+            let to = as_int(&needed(third)?)?;
+            let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+                return Err(Fault::Missing);
+            };
+            items
+                .get(from..to)
+                .map(|part| Value::seq(part.to_vec()))
+                .ok_or(Fault::Missing)
+        }
+        SeqOp::ReplaceAt => {
+            let index = position_in(items, &needed(second)?)?;
+            let item = needed(third)?;
+            let mut items = as_seq(first)?;
+            if let Some(place) = items.get_mut(index) {
+                *place = item;
+            }
+            Ok(Value::seq(items))
+        }
     }
 }

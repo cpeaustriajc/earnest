@@ -75,6 +75,22 @@ impl Shared {
                 scope.close();
                 changed
             }
+            Expr::Fold {
+                source,
+                start,
+                total,
+                item,
+                body,
+            } => {
+                let mut changed = self.narrowed(source, scope);
+                changed |= self.narrowed(start, scope);
+                scope.open(*total);
+                scope.open(*item);
+                changed |= self.narrowed(body, scope);
+                scope.close();
+                scope.close();
+                changed
+            }
             _ => {
                 let mut changed = false;
                 expr.each_part(&mut |part| changed |= self.narrowed(part, scope));
@@ -95,7 +111,7 @@ impl Shared {
                 scope.close();
                 settles
             }
-            Expr::Sweep { .. } => false,
+            Expr::Sweep { .. } | Expr::Fold { .. } => false,
             _ => {
                 let mut settles = true;
                 expr.each_part(&mut |part| settles &= self.settles(part, scope));
@@ -129,7 +145,7 @@ fn repeated(all: &[Binder<'_>]) -> bool {
 }
 
 fn holds_a_sweep(expr: &Expr) -> bool {
-    if matches!(expr, Expr::Sweep { .. }) {
+    if matches!(expr, Expr::Sweep { .. } | Expr::Fold { .. }) {
         return true;
     }
     let mut found = false;

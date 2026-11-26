@@ -86,6 +86,11 @@ pub enum MapOp {
     Size,
     /// The set of its keys.
     Keys,
+    /// The key's value. A key without one is [`Fault::Missing`].
+    MustGet,
+    /// The map with the key's value replaced by the third argument. A key without a value is
+    /// [`Fault::Missing`].
+    Replace,
 }
 
 /// A primitive on a sequence or a queue. The sequence is the first argument.
@@ -109,6 +114,22 @@ pub enum SeqOp {
     Pop,
     /// Whether the second argument is an item.
     Includes,
+    /// The item at the position in the second argument, counted from 0. A position with no
+    /// item is [`Fault::Missing`].
+    Nth,
+    /// The first item. An empty sequence is [`Fault::Missing`].
+    Head,
+    /// The sequence without its first item. An empty sequence is [`Fault::Missing`].
+    Tail,
+    /// The items of the first sequence, then those of the second.
+    Concat,
+    /// The items from the position in the second argument up to, not including, the position
+    /// in the third, counted from 0. Positions that are not `0 <= second <= third <= size` are
+    /// [`Fault::Missing`].
+    Slice,
+    /// The sequence with the item at the position in the second argument, counted from 0,
+    /// replaced by the third argument. A position with no item is [`Fault::Missing`].
+    ReplaceAt,
 }
 
 /// An operation on evaluated arguments, used in [`Expr::Apply`].
@@ -145,6 +166,15 @@ pub enum Op {
     Map(MapOp),
     /// A primitive on a sequence or a queue.
     Seq(SeqOp),
+    /// The first number to the power of the second. A negative power and zero to the power
+    /// zero are [`Fault::Undefined`].
+    Power,
+    /// The set of whole numbers from the first to the second, both included. Empty when the
+    /// first is above the second.
+    Interval,
+    /// The sequence of whole numbers from the first up to, not including, the second. A first
+    /// number above the second is [`Fault::Undefined`].
+    Ascending,
 }
 
 /// What an [`Expr::Sweep`] does with the test's answers.
@@ -225,6 +255,20 @@ pub enum Expr {
         /// The collection whose items are tried.
         source: Box<Self>,
         /// The test, which gives true or false.
+        body: Box<Self>,
+    },
+    /// A running value carried through the items of a set, in its order, or of a sequence:
+    /// `start`, then `body` with the value so far in `total` and the next item in `item`.
+    Fold {
+        /// The collection whose items are taken.
+        source: Box<Self>,
+        /// The value before the first item.
+        start: Box<Self>,
+        /// The slot `body` reads the value so far from.
+        total: usize,
+        /// The slot `body` reads the current item from.
+        item: usize,
+        /// The next value.
         body: Box<Self>,
     },
 }
