@@ -1,7 +1,8 @@
 use crate::marks::{
-    Doc, Kind, Mark, constant_unset, misplaced_mark, module_mark_alone, named_twice, names_alone,
-    names_off_module, names_unended, no_init_or_step, not_judged, not_seen, not_seen_named,
-    nothing_to_judge, read_doc, second_mark, unknown_mark, unspaced_source,
+    Doc, Kind, Mark, commented_mark, constant_unset, misplaced_mark, module_mark_alone,
+    named_twice, names_alone, names_off_module, names_unended, no_init_or_step, not_judged,
+    not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark, starts_a_mark, unknown_mark,
+    unspaced_source,
 };
 use crate::places::{Marked, Places};
 use crate::quint::shown_in_folder;
@@ -156,6 +157,87 @@ impl Placer<'_> {
             at = above;
         }
         found.reverse();
+        found
+    }
+
+    fn commented_above(&self, declared: usize) -> Vec<(usize, String)> {
+        let lines: Vec<&str> = self.text.lines().map(str::trim).collect();
+        let mut found = Vec::new();
+        let mut at = declared;
+        while let Some(above) = at.checked_sub(1) {
+            let Some(written) = lines.get(above).copied() else {
+                break;
+            };
+            if written.starts_with(DOC_SLASHES) {
+                at = above;
+            } else if let Some(comment) = written.strip_prefix("//") {
+                if starts_a_mark(comment.trim()) {
+                    found.push((above, comment.trim().to_owned()));
+                }
+                at = above;
+            } else if written.ends_with("*/") {
+                let opens = (0..=above)
+                    .rev()
+                    .find(|each| lines.get(*each).is_some_and(|line| line.contains("/*")));
+                let Some(opens) = opens else {
+                    break;
+                };
+                let text = lines.get(opens).copied().unwrap_or_default();
+                let inside = text.split_once("/*").map_or("", |(_, rest)| rest);
+                let inside = inside.trim_start_matches('*').trim();
+                if starts_a_mark(inside) {
+                    found.push((opens, inside.trim_end_matches("*/").trim().to_owned()));
+                }
+                at = opens;
+            } else {
+                break;
+            }
+        }
+        found.reverse();
+        found
+    }
+
+    fn commented_marks(&self) -> Vec<(Option<String>, Problem)> {
+        let lines: Vec<&str> = self.text.lines().collect();
+        let mut found = Vec::new();
+        for (index, line) in lines.iter().enumerate() {
+            let line = line.trim_start();
+            let Some((keyword, rest)) = line.split_once(char::is_whitespace) else {
+                continue;
+            };
+            if !["module", "val", "temporal", "run"].contains(&keyword) {
+                continue;
+            }
+            let name: String = rest
+                .trim_start()
+                .chars()
+                .take_while(|each| each.is_alphanumeric() || *each == '_')
+                .collect();
+            if name.is_empty() {
+                continue;
+            }
+            let (feature, owner) = if keyword == "module" {
+                (format!("`module {name}`"), Some(name.clone()))
+            } else {
+                (format!("`{name}`"), None)
+            };
+            for (above, written) in self.commented_above(index) {
+                let place = Place {
+                    line: u32::try_from(above.saturating_add(1)).unwrap_or(1),
+                    column: 1,
+                };
+                let below = format!("`{keyword} {name}`");
+                found.push((
+                    owner.clone(),
+                    Problem::new(
+                        self.shown,
+                        place,
+                        &feature,
+                        &commented_mark(&written, &below),
+                    ),
+                ));
+            }
+        }
         found
     }
 
@@ -427,6 +509,7 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         text: fs::read_to_string(real_file).unwrap_or_default(),
     };
     let mut planned = Planned::default();
+    planned.problems.extend(locator.commented_marks());
     for each in places.marks_in(real_file) {
         let doc = read_doc(each.doc);
         if !doc.is_marked() {

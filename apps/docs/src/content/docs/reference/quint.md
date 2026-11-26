@@ -94,6 +94,8 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - Each of these is `unreadable`, at the line of the mark:
   - `@check` followed by a word earnest does not know, such as `@check reachble`;
   - `///@check` with no space after the slashes, which `quint parse` hands over as `check`, with or without names after it: earnest reads the `///@` in the source line;
+  - `@Check` or `@CHECK`, a doc line whose first word is `@check` in another case: the message says the mark is written `@check`;
+  - a `//` or `/* */` comment that starts with `@check` on the lines directly above a module, a `val`, a `temporal` definition or a run: a mark is a doc comment, `/// @check`, and a mark is removed by deleting it, not by commenting it out. A `@check` elsewhere in a comment, as in a URL or the middle of a line, is not read;
   - a second mark in one doc comment;
   - names after a mark on a definition: names go in a module's doc comment;
   - a mark on something no check judges: an `action`, a `var`, a `const`, an `import` or `instance`, a `type`, or a definition with parameters;

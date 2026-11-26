@@ -55,9 +55,9 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 11] = [
+const SETS: [&str; 12] = [
     "specs", "failing", "typo", "lost", "runs", "rules", "old", "names", "faults", "written",
-    "blank",
+    "blank", "cased",
 ];
 
 fn marked() -> PathBuf {
@@ -619,5 +619,55 @@ fn a_mark_with_no_space_is_reported_at_its_own_line_beside_a_blank_doc_line() {
         [(7, "`ok`".to_owned()), (11, "`two`".to_owned())],
         "`///@check broken` on line 7 with a blank `///` below it, and on line 11 with one \
          above it: {run}"
+    );
+}
+
+#[test]
+fn a_mark_in_another_case_or_in_a_plain_comment_above_a_declaration_is_unreadable_at_its_line() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "cased", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let found: Vec<(u64, String)> = problems(&report)
+        .into_iter()
+        .map(|(_, line, feature, _)| (line, feature))
+        .filter(|(_, feature)| !feature.starts_with("`quint compile"))
+        .collect();
+    let expected: Vec<(u64, String)> = [
+        (6, "`upper`"),
+        (8, "`shout`"),
+        (10, "`commented`"),
+        (12, "`blocked`"),
+        (16, "`tmp`"),
+        (18, "`aTest`"),
+        (21, "`module Plain`"),
+    ]
+    .iter()
+    .map(|(line, feature)| (*line, (*feature).to_owned()))
+    .collect();
+    let mut sorted = found;
+    sorted.sort();
+    assert_eq!(
+        sorted, expected,
+        "`@Check` and `@CHECK` in a doc comment, a `//` comment and a `/* */` comment above a \
+         `val`, a `temporal` definition, a run and a module, and nothing for a `@check` that is \
+         not at the start of a comment: {run}"
+    );
+    let messages: Vec<String> = problems(&report)
+        .into_iter()
+        .map(|(_, _, _, message)| message)
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("a mark is written `@check`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().any(
+            |message| message.contains("a mark is removed by deleting it")
+                || message.contains("not by commenting it out")
+        ),
+        "{messages:?}"
     );
 }
