@@ -157,6 +157,8 @@ fn read_wanted(
 #[cfg(test)]
 mod actions_tests;
 #[cfg(test)]
+mod arguments_tests;
+#[cfg(test)]
 mod first_tests;
 #[cfg(test)]
 mod fixes_tests;
