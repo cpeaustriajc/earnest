@@ -8,7 +8,7 @@ mod workers;
 
 use crate::expand::{Asked, Budget, Expand, FromRows, Mark, Move, Whence, Width};
 use crate::helpers::Helpers;
-use crate::limits::{Limits, TIME_LIMIT_REASON, asked};
+use crate::limits::{EVERY_EXPECTED_FOUND, Limits, TIME_LIMIT_REASON, asked};
 use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
@@ -51,6 +51,7 @@ pub(crate) struct Search<'a> {
     pub(crate) computed_beyond_32_bits: bool,
     pub(crate) cut_short: bool,
     pub(crate) gives_graph: bool,
+    stop_once_broken: Vec<usize>,
     judged: usize,
     last_spread_merge: SpreadMerge,
     state_time: Duration,
@@ -161,6 +162,7 @@ fn searched(model: &Model, limits: &Limits, asked: &Limits) -> Outcome {
         computed_beyond_32_bits: false,
         cut_short: false,
         gives_graph: asked.keep_graph,
+        stop_once_broken: positions_of(model, &limits.stop_once_broken),
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
         state_time: Duration::ZERO,
@@ -170,7 +172,27 @@ fn searched(model: &Model, limits: &Limits, asked: &Limits) -> Outcome {
     search.outcome()
 }
 
+fn positions_of(model: &Model, ids: &[String]) -> Vec<usize> {
+    let positions: Vec<usize> = ids
+        .iter()
+        .filter_map(|id| model.rules.iter().position(|rule| rule.id == *id))
+        .collect();
+    if positions.len() == ids.len() {
+        positions
+    } else {
+        Vec::new()
+    }
+}
+
 impl Search<'_> {
+    fn every_wanted_broken(&self) -> bool {
+        !self.stop_once_broken.is_empty()
+            && self
+                .stop_once_broken
+                .iter()
+                .all(|rule| self.first_broken.get(*rule).is_some_and(Option::is_some))
+    }
+
     fn run(&mut self) {
         let began = Instant::now();
         let deadline = self
@@ -195,10 +217,18 @@ impl Search<'_> {
                 break;
             }
             if level.end == Round::Full {
-                self.reason = Some(self.limit_reason());
+                self.reason = Some(if self.every_wanted_broken() {
+                    EVERY_EXPECTED_FOUND.to_owned()
+                } else {
+                    self.limit_reason()
+                });
                 break;
             }
             frontier = found_before..self.store.len();
+            if self.every_wanted_broken() {
+                self.reason = Some(EVERY_EXPECTED_FOUND.to_owned());
+                break;
+            }
         }
         self.judge_the_rest(deadline);
     }

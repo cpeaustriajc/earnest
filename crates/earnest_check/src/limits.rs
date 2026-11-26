@@ -49,6 +49,12 @@ pub struct Limits {
     /// `id#2`, `id#3` and so on. The others are not evaluated and are left out of
     /// [`crate::Outcome::rules`]. An id no rule has leaves no rule checked.
     pub only_rule: Option<String>,
+    /// Rules that the caller only wants a counterexample of. When every one of them is a rule
+    /// of [`earnest_ir::Model::rules`] and each is found broken, the search stops at the end of
+    /// the level in which the last was found, so each keeps a shortest path, and
+    /// [`crate::Outcome::reason`] is [`EVERY_EXPECTED_FOUND`]. The states found in that level
+    /// are judged and counted, and no action is tried from them. Empty never stops a search.
+    pub stop_once_broken: Vec<String>,
 }
 
 pub(crate) fn asked(only_rule: Option<&str>, id: &str) -> bool {
@@ -73,6 +79,7 @@ impl Default for Limits {
             keep_graph: false,
             outline: false,
             only_rule: None,
+            stop_once_broken: Vec::new(),
         }
     }
 }
@@ -83,6 +90,9 @@ impl Default for Limits {
 pub const WORKER_STACK: usize = 256 * 1024 * 1024;
 
 pub(crate) const TIME_LIMIT_REASON: &str = "time limit of";
+
+/// The [`crate::Outcome::reason`] of a search that [`Limits::stop_once_broken`] stopped.
+pub const EVERY_EXPECTED_FOUND: &str = "every expected counterexample was found";
 
 /// Whether `reason`, the [`crate::Outcome::reason`] of a search, says the time limit stopped it.
 ///

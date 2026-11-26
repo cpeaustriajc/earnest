@@ -22,7 +22,7 @@ mod witness;
 pub use explore::explore;
 pub use graph::{Edge, Graph, Node};
 pub use helpers::{Helpers, Loan};
-pub use limits::{Limits, WORKER_STACK, stopped_by_time_limit};
+pub use limits::{EVERY_EXPECTED_FOUND, Limits, WORKER_STACK, stopped_by_time_limit};
 pub use outcome::{
     Change, Finding, FindingKind, Named, Outcome, Path, RuleKind, RuleOutcome, Shown, Status, Step,
     Verdict,

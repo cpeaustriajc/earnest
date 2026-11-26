@@ -3934,9 +3934,92 @@ some of the variables.
 - `quint_actions::fairness_over_a_named_tuple_and_not_at_the_top_of_a_property_are_judged_as_tlc_judges_them`:
   `halflisted` holds where it was refused.
 
+## The checks file for a real project (#69): report
+
+### Done
+
+1. **`name`** (`checks.rs` `Entry`, `quint.rs` `Job::model_name`): optional text on one line with
+   no space at either end; it becomes the model's name (`model.name`), so the result line, the
+   JSON, `--model`, the chart, `earnest report`, `confirm` and the result cache use it. Two checks
+   of one `file` and `main` are read when their names differ from each other and from every other
+   check's name in the file; otherwise the file is `unreadable` at `` `checks[1]` `` (no name) or
+   `` `checks[1].name` `` (a name another check has), and the message says to give each its own
+   `name`. A compiled module is now cached under its file and what `quint compile` is given
+   (`main`, `init`, `step`, invariants, temporal), not under `main` alone, so two checks of one
+   module no longer overwrite each other's compile, and checks that compile alike start one
+   compile in a run (`compiled_once`). `runs` left the compile key: the JSON does not depend on
+   it. Tests: `quint_expected::two_named_checks_...`, `::two_checks_that_compile_alike_...`,
+   `::two_checks_of_one_module_without_names_...`.
+2. **`expectCounterexample`** (`quint.rs` `widened`, `expected_ids`; `run.rs` `judge`,
+   `detail_of`; `print.rs` `Expecting`): each name is classified by the qualifier `quint parse`
+   gives it (`places.rs` now keeps qualifiers): a `val`/`def` is added to the invariants, a
+   `temporal` to the temporal properties, a `run` to the runs (`Runs::None` becomes the named
+   run; with `"runs": true` a run not ending in `Test` is refused with a message to list runs by
+   name). A name `quint parse` does not know goes to `quint compile` as an invariant, so Quint's
+   own error is reported. After reading, each name is matched to a printed rule id (exactly, else
+   the one id whose `::` segments end alike); none makes the check `unreadable`, naming it. The
+   model's status is judged again in `explore_expecting`, so `verify`, `report`, `chart` and
+   `confirm` agree: broken is met, holds is `fail`, unknown is `unfinished` (`fail` when a fault
+   or another rule already fails). A temporal property in parts `P`, `P#2`, … is met when at
+   least one part is broken, as `quint verify` expects of the whole property. Tests:
+   `quint_expected::a_met_expectation_...`, `::an_expected_invariant_that_holds_...`,
+   `::an_expected_invariant_not_reached_...`, `::an_expected_temporal_property_...`,
+   `::an_expected_run_...`, `::a_name_the_module_does_not_have_...`,
+   `::a_temporal_property_in_parts_is_met_when_one_part_is_broken` (#68's `P`, `P#2`: the
+   `#n` is stripped from every rule id, since `always` parts are plain rules).
+3. **Stopping early** (`earnest_check` `Limits::stop_once_broken`, `EVERY_EXPECTED_FOUND`;
+   `explore.rs` `every_wanted_broken`): the caller lists rules; after each level, and at the
+   state limit, the search stops when every listed rule has a first broken state. The check runs
+   once per level, not per state. `first_broken` is filled level by level, so each path is the
+   shortest a full search gives. `run.rs` lists the rules only when every always-rule the check
+   still judges (after `--rule`) is expected and no rule about runs is judged. Since #68 a
+   temporal `always(P)` is an always-rule, so it stops a search too; a property in parts stops it
+   only once every part is broken, though one broken part meets it; runs are played
+   apart from the search. `confirm` never stops early, so its count can be set beside TLC's. No
+   field of `Model`, `Field` or `Action` changed. Tests:
+   `quint_expected::a_model_with_no_end_passes_by_stopping_...`,
+   `::rule_selects_an_expected_and_an_ordinary_property`.
+4. **Cache, `--rule`, `--json`, `--jobs`**: the result cache key of a Quint check adds its
+   expected names and the ids it judges; a `name` is already in it. The ids fix an older stale
+   result: editing only `runs` served the result with the old runs, since the key held the
+   compiled JSON, which does not change with `runs`
+   (`quint_expected::editing_the_runs_alone_checks_again`). A rename or an edit of `expectCounterexample` that
+   does not change what Quint is given checks again with no compile. Tests:
+   `quint_expected::a_cached_run_and_any_number_of_jobs_...`, `::editing_the_expectations_...`.
+
+### Forms chosen
+
+- Text, under the result line, before other broken rules and findings: `broken  P  (expected)`
+  (no path) and `holds  P  a counterexample was expected`. The result line of a stopped search:
+  `pass        vaultForever  8 states  0 ms  (every expected counterexample was found)`, with no
+  `so far`.
+- JSON: an expected rule keeps `verdict`, `path`, `kind`, `reason`, `repeatsFrom` and adds
+  `"expected": "broken"` as its last key; the model's `reason` is
+  `"every expected counterexample was found"` with `status` `"pass"`. `RuleResult`,
+  `ModelResult` and `Checked` are built field by field in tests on `main`, so the key is added
+  when printing (`print.rs` serializes a model with expectations through a mirror); a model
+  without expectations is serialized as before, byte for byte.
+
+### The worked example with Quint 0.33.1
+
+`specs/vault.qnt` of `reference/quint.md`, three checks of `vault`: earnest gives `pass` for
+each (`vaultForever` 8 states, stopped early). `quint verify --backend tlc`: `--invariant
+atMostMax` `[ok] No violation found`; `--invariant nonNegative` and `--step stepForever
+--invariant nonNegative` `[violation] Found an issue`, `balance = 0` then `balance = -1`, the
+path earnest reports. `earnest confirm --tlc` (Apalache 0.62.4's jar): `same` for `vaultLimits`
+and `vaultKnownBugs`; on `vaultForever`, which has no end, TLC does not finish.
+
+### Doubts
+
+- `--base` still skips Quint files; nothing changed there (`verify --base HEAD` on the example
+  prints `rule changes since HEAD  none`).
+- Every Quint check's result cache key changed (the ids it judges), so the first run after this
+  build checks each Quint model once again. Compiles are cached under a new name too, so each
+  compiles once again.
+
 ### Checks, each with its last line
 
-On the tree merged with the integration head `6cd635b`:
+The fairness slice (#68), on its tree merged with the integration head `6cd635b`:
 
 - `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
   warnings. `just lint-library`: no warnings.
@@ -3955,3 +4038,26 @@ On the tree merged with the integration head `6cd635b`:
   3798)`.
 - `earnest confirm --tlc target/tools/tla2tools.jar`: `same` for `FairnessVal`,
   `FairnessInAnd`, `fairshapes`, `buyers`, `fairtuple` and `halflisted`.
+
+The checks-file slice (#69), on its tree merged with the same head:
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings. `just lint-library`: no
+  warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2102 passed, 0
+  failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.40%`, `mixed/shelf`, budget 2%; `grid_1m` `+0.27%`
+  as on the integration head). On the tree merged with `641c099` it could not run: valgrind 3.22
+  read no symbols from that build of the binary (`callgrind's output names no file`), while it
+  read the integration head's. Whole-process totals of the seven cases agreed with that head's
+  within 0.01% on one worker and 0.21% on four.
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.932 s, 1 worker 2.694 s).
+- `just same-answers 6cd635b`: `0 differences` in the three sweeps and `every model file: 392
+  runs, 0 differences`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, all in `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts`
+  and `clock.model.ts`, which `origin/main` reports `unreadable` (`m.eventually`, `m.setup`).
+- `tests_kept.py --base origin/main`: `tests kept: 1674 tests, 4860 assertions (base: 1304,
+  3798)`.

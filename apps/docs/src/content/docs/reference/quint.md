@@ -27,8 +27,10 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 | `invariants` | none | Values that must hold in every reachable state |
 | `temporal` | none | Temporal properties |
 | `runs` | `false` | `true` for the runs whose name ends in `Test` (as `quint test` picks them), or a list of run names |
+| `name` | `main` | The check's name, so one module can be checked several times |
+| `expectCounterexample` | none | Invariants, temporal properties or runs that must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
 
-Each check is one model in every output: its result line, its JSON entry and `--model` use `main` as the name, and the `.qnt` file is its file. Each invariant is a rule with the invariant's name as its id, so `--rule inRange` selects it.
+Each check is one model in every output: its result line, its JSON entry, `--model`, the chart, `earnest report` and `earnest confirm` use its `name`, or `main` when it has none, and the `.qnt` file is its file. Each invariant is a rule with the invariant's name as its id, so `--rule inRange` selects it.
 
 A check with `runs` and no `invariants` or `temporal` is a check of runs only. It plays the runs and searches no state, even when the module has an `init` and a `step`, so a spec whose step never stops growing still gives an answer. The module needs no `init` or `step`. Its result line has `0 states`, and its JSON entry the same keys as any other, with `"states": 0`:
 
@@ -38,7 +40,75 @@ pass        OnlyRuns  0 states  0 ms
 
 A check that lists invariants or temporal properties needs the module's `init` and `step`, and a module without them makes it `unreadable` with Quint's error, `Name 'init' not found`. To search a module and also play its runs, list at least one invariant or temporal property.
 
-The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two entries name the same `file` and `main`. A file written two ways, as `a.qnt`, `./a.qnt` or `sub/../a.qnt`, is the same file. The problem names the key, such as `` `checks[1].runs` ``, and nothing in the file is checked.
+The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two checks of one `file` and `main` have the same name. Two such checks are read when each has a `name` that no other check in the file has. A `name` must be text on one line with no space at either end. A file written two ways, as `a.qnt`, `./a.qnt` or `sub/../a.qnt`, is the same file. The problem names the key, such as `` `checks[1].runs` `` or `` `checks[1].name` ``, and nothing in the file is checked. For two checks of one module with no name, it says to give each its own `name`.
+
+## Expected counterexamples
+
+A known bug can stay in the spec as a property that must break. List it in `expectCounterexample`, and the check passes while the bug is there:
+
+```json title="specs/earnest.quint.json"
+{
+  "checks": [
+    { "file": "vault.qnt", "main": "vault", "name": "vaultLimits", "invariants": ["atMostMax"] },
+    { "file": "vault.qnt", "main": "vault", "name": "vaultKnownBugs", "invariants": ["atMostMax"], "expectCounterexample": ["nonNegative"] },
+    { "file": "vault.qnt", "main": "vault", "name": "vaultForever", "step": "stepForever", "expectCounterexample": ["nonNegative"] }
+  ]
+}
+```
+
+```quint title="specs/vault.qnt"
+module vault {
+  pure val Max = 3
+
+  var balance: int
+  var opened: int
+
+  action init = all { balance' = 0, opened' = 0 }
+  action deposit = all { balance < Max, balance' = balance + 1, opened' = opened }
+  action withdraw = all { balance > -1, balance' = balance - 1, opened' = opened }
+  action step = any { deposit, withdraw }
+  action reopen = all { balance' = 0, opened' = opened + 1 }
+  action stepForever = any { step, reopen }
+
+  val atMostMax = balance <= Max
+  val nonNegative = balance >= 0
+}
+```
+
+The three checks are one module under three names. `vaultForever` has no end, since `reopen` counts up forever:
+
+```text
+pass        vaultLimits  5 states  0 ms
+pass        vaultKnownBugs  5 states  0 ms
+  broken  nonNegative  (expected)
+pass        vaultForever  8 states  0 ms  (every expected counterexample was found)
+  broken  nonNegative  (expected)
+3 models: 3 pass, 0 fail, 0 unfinished
+```
+
+`quint verify --backend tlc` gives the same verdicts: no violation of `atMostMax`, and the counterexample `balance = 0`, then `balance = -1`, for `nonNegative` with either step.
+
+Each name is an invariant (a `val` or `def` of type `bool`), a temporal property or a run of the module, written as for `invariants`, `temporal` and `runs`. It need not be listed there too; when it is, it is checked once. A run named only here is played even when `runs` is `false`; with `"runs": true`, a run whose name does not end in `Test` must be listed in `runs` by name. A name that is not a property of the module makes the check `unreadable` and is named. Where `quint parse` does not know the name, it is passed to `quint compile` as an invariant, and Quint's own error is reported.
+
+A property in `expectCounterexample` is judged so:
+
+| Its verdict | The expectation | The check |
+|---|---|---|
+| `broken` | met | passes, if every other property holds |
+| `holds` | not met | `fail` |
+| `unknown` | not judged | `unfinished`, or `fail` when a fault made it unknown |
+
+A temporal property that earnest checks in parts, `P`, `P#2`, …, is met when at least one part is broken, as `quint verify` expects the property as a whole to have a counterexample.
+
+A met expectation prints one line, `broken  nonNegative  (expected)`, with no path under it. The path is in the JSON and in `earnest report`. One that is not met prints `holds  nonNegative  a counterexample was expected`. In the JSON both keep their verdict and add `"expected": "broken"`; see [the JSON output](/reference/output/#json-output).
+
+### Stopping once every counterexample is found
+
+When every property the check judges is in `expectCounterexample` and is an invariant, or a temporal property that earnest reads as one (`always(P)`, or such parts of an `and`), the search stops at the end of the level in which it finds the last of them broken. A property in parts stops the search only once every part is broken. The model is `pass`, its count is the states found so far, and the result line ends with `(every expected counterexample was found)`. The search goes breadth first and stops only at the end of a level, so each counterexample is a shortest one, as in a full search. Runs need no search and are played as usual.
+
+A check that also lists an invariant that must hold, or a temporal property about runs such as `eventually(P)`, searches every state: `vaultKnownBugs` above counts all 5. With `--rule nonNegative`, only that rule is judged, so `vaultKnownBugs` stops too.
+
+`earnest report` and `earnest chart` stop in the same way. `earnest confirm` always searches every state, so its count can be set beside TLC's, and on a model with no end it does not finish. On `vaultKnownBugs` it gives `same`.
 
 ## Which `.qnt` files are checked
 
@@ -289,7 +359,7 @@ Quint names what it flattens from an instance after the instance: `Small::Clock:
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
-- A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants`, `temporal` and `runs`, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
+- A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants` and `temporal` (with the names of `expectCounterexample` that are invariants or temporal properties), and every `.qnt` file the module reads are the same. Two checks that compile alike start one compile, and a `name`, `runs` or `expectCounterexample` that changes nothing Quint is given compiles nothing again. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.

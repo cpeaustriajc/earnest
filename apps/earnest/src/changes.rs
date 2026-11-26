@@ -278,6 +278,7 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         keep_graph: false,
         outline: false,
         only_rule: None,
+        stop_once_broken: Vec::new(),
     };
     explore(&Model { rules, ..model }, &limits)
         .rules

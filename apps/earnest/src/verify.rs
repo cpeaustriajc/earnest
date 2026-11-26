@@ -4,7 +4,7 @@ use crate::changes::{Compare, check_base, rule_changes};
 use crate::commands::{Exit, Gathered, gather, limits_of, refusing, say_what_is_unread};
 use crate::print::{Since, Verified, to_stderr, to_stdout};
 use crate::reading::ModelFile;
-use crate::run::{Bounds, Checked, Graphs, Search, checked, explore_each};
+use crate::run::{Bounds, Checked, Expecting, Graphs, Search, Stops, checked, explore_expecting};
 use crate::select::{Target, select_with_removed};
 use earnest_check::stopped_by_time_limit;
 use std::path::Path;
@@ -63,7 +63,18 @@ fn entries<'a>(
 
 fn cached_as(file: &ModelFile) -> String {
     match file.quint_check() {
-        Some(check) => format!("{}\n{check}", file.path),
+        Some(check) => match file.models().first() {
+            Some(readable) => {
+                let judged: Vec<&str> = readable.model.rule_ids().collect();
+                format!(
+                    "{}\n{check}\njudged:{}\nexpected:{}",
+                    file.path,
+                    judged.join(","),
+                    readable.expected.join(",")
+                )
+            }
+            None => format!("{}\n{check}", file.path),
+        },
         None => file.path.clone(),
     }
 }
@@ -124,15 +135,19 @@ fn check_all(
         .filter(|position| results.get(*position).is_some_and(Option::is_none))
         .collect();
     let rule = arguments.selection.rule.as_deref();
-    let searches: Vec<Search<'_>> = missing
+    let searches: Vec<Expecting<'_>> = missing
         .iter()
         .filter_map(|position| targets.get(*position))
-        .map(|target| Search {
-            model: &target.readable.model,
-            only_rule: rule,
+        .map(|target| Expecting {
+            search: Search {
+                model: &target.readable.model,
+                only_rule: rule,
+            },
+            expected: &target.readable.expected,
+            stops: Stops::Early,
         })
         .collect();
-    let ran = explore_each(&searches, bounds, Graphs::Dropped);
+    let ran = explore_expecting(&searches, bounds, Graphs::Dropped);
     let checked_targets = missing
         .iter()
         .filter_map(|position| Some((*position, targets.get(*position)?)));
