@@ -3123,3 +3123,27 @@ with `QNT505`.
   type is known; reading it would need the argument's type carried with the binding.
 - A literal past 2^53 with digits below its leading ones (`123456789012345678901`) is shown as the
   `f64` nearest it, not as written.
+
+### Checks, each with its last line
+
+On the tree after merging the integration head `6a0bb4f` (slice 4, second part):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2010 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the 64 of the conformance files `origin/main` does not have, as in slices 2
+  to 7 (the ten printed are `tasks/conformance/runs/cart`, `cart_broken` and `clock`).
+- `tests_kept.py --base origin/main`: `tests kept: 1613 tests, 4696 assertions (base: 1304, 3798)`.
+- `cargo test --locked -p earnest_break_it --features tlc --test tlc quint_reads`, with
+  `EARNEST_TLC_JAR` naming the TLC inside Apalache's jar: 1 passed.
+
+`just counts` and `just benchmark` were not run: `earnest_ir` and `earnest_check` are unchanged,
+and no `Op` or `Expr` variant was added.
+
+On merging: slice 4's second part renumbers the ids of an instance (`id_in`), so the types a built
+setup carries are keyed by the new id and inlined with that instance's aliases. A setup's own
+definition whose `fieldNames` argument has an alias type falls back to `quint compile`.
