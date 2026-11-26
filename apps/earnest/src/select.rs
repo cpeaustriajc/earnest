@@ -10,12 +10,21 @@ fn has_rule(target: &Target<'_>, id: &str) -> bool {
     target.readable.model.rule_ids().any(|rule| rule == id)
 }
 
+fn is_one_model(targets: &[Target<'_>]) -> bool {
+    targets.windows(2).all(|pair| {
+        let [first, second] = pair else { return true };
+        let (one, other) = (&first.readable.model, &second.readable.model);
+        first.file.path == second.file.path && one.name == other.name && one.line == other.line
+    })
+}
+
 fn listed(targets: &[Target<'_>]) -> String {
-    targets
+    let mut names: Vec<String> = targets
         .iter()
         .map(|target| format!("`{}`", target.readable.model.name))
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect();
+    names.dedup();
+    names.join(", ")
 }
 
 fn unreadable_files(files: &[ModelFile]) -> Vec<String> {
@@ -140,6 +149,7 @@ pub(crate) fn select<'a>(
         }
         (0, None) => Err(format!("no model has a rule `{id}`{}", might_be_in(files))),
         (1, _) | (_, Some(_)) => Ok(with_rule),
+        (_, None) if is_one_model(&with_rule) => Ok(with_rule),
         (_, None) => Err(format!(
             "the rule `{id}` is in the models {}: name one with `--model`",
             listed(&with_rule)
@@ -323,6 +333,31 @@ mod tests {
         );
         let plain = select(&files(), Some("Garage"), None).expect_err("no such model");
         assert_eq!(plain, "no model is named `Garage`", "no unreadable file");
+    }
+
+    #[test]
+    fn a_rule_every_setup_of_one_model_lists_needs_no_model_name() {
+        let source = "import { m } from \"@earnestjs/model\";\n\
+            export const Lamp = m.model(\"Lamp\", { on: m.boolean().initial(false) });\n\
+            export const lit = m.setup(Lamp, \"lit\", { on: true });\n\
+            export const dark = m.rule(Lamp, \"dark\", (s) => !s.on);\n";
+        let mut kept = vec![load(Found::model(
+            "l.model.ts",
+            Language::TypeScript,
+            source,
+        ))];
+        let runs: Vec<String> = select(&kept, None, Some("dark"))
+            .expect("one model, in two runs")
+            .iter()
+            .map(|target| target.readable.model.run_name())
+            .collect();
+        assert_eq!(runs, ["Lamp", "Lamp (lit)"], "both runs of the model");
+        kept.push(file("b.model.ts", &[("Attic", &["dark"])]));
+        let error = select(&kept, None, Some("dark")).expect_err("two models have it");
+        assert_eq!(
+            error, "the rule `dark` is in the models `Lamp`, `Attic`: name one with `--model`",
+            "each model is named once"
+        );
     }
 
     #[test]

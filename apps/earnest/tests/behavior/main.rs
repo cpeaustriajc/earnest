@@ -12,6 +12,8 @@ mod offline;
 mod replay;
 mod results;
 mod runs;
+mod runs_eventually;
+mod runs_setups;
 mod select;
 mod support;
 mod tla;
