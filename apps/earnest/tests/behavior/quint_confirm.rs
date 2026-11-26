@@ -65,7 +65,8 @@ const CHECKS: &str = r#"{ "checks": [
   { "file": "confirm.qnt", "main": "lift", "invariants": ["inside"], "temporal": ["reachesTop"], "runs": true, "expectCounterexample": ["low"] },
   { "file": "confirm.qnt", "main": "big", "invariants": ["belowBig"] },
   { "file": "confirm.qnt", "main": "halves", "invariants": ["halfAbove"] },
-  { "file": "confirm.qnt", "main": "ranges", "runs": true }
+  { "file": "confirm.qnt", "main": "ranges", "runs": true },
+  { "file": "confirm.qnt", "main": "words", "invariants": ["counted"] }
 ] }"#;
 
 const RUNS_PLAYED: &str = "\n  lift\n    ok upTest passed 1 test(s)\n    1) pickTest failed after 3 test(s)\n\n  1 passing (5ms)\n  1 failed\nerror: Tests failed\n";
@@ -110,7 +111,7 @@ impl Quint {
         };
         sandbox.write("specs/confirm.qnt", &read(samples.join("confirm.qnt")));
         sandbox.write("specs/earnest.quint.json", CHECKS);
-        for main in ["lift", "big", "halves", "ranges"] {
+        for main in ["lift", "big", "halves", "ranges", "words"] {
             sandbox.write(
                 &format!("fake/compiled/{main}.json"),
                 &read(samples.join(format!("fixtures/{main}.json"))),
@@ -385,14 +386,32 @@ fn a_run_quint_test_breaks_on_a_range_that_starts_above_its_end_cannot_be_confir
         [
             "cannot   ranges  0 states  pass  (Quint)",
             "  run emptyTest: the checker says holds, `quint test` says broken after 1 sample(s)",
-            "    Quint can't confirm this: the model uses `range`, which Quint's TLC run and \
-             `quint test` answer differently when it starts above its end",
+            "    Quint can't confirm this: the check's runs use `range`, which `quint test` \
+             answers otherwise than Quint's TLC run and the checker when it starts above its end",
         ],
         "{run}"
     );
     assert!(
         quint.calls("verify").is_empty(),
         "a check of runs only searches nothing"
+    );
+}
+
+#[test]
+fn a_fold_over_texts_that_the_check_reaches_makes_another_answer_of_quint_verify_cannot() {
+    let quint = Quint::new();
+    quint.answer("words+counted", &holds(4));
+    let run = quint.confirm("words");
+    run.exits(1);
+    assert_eq!(
+        run.stdout.lines().collect::<Vec<_>>(),
+        [
+            "cannot   words  3 states  pass  (Quint)",
+            "  states: the checker found 3, `quint verify` found 4",
+            "    Quint can't confirm this: the check folds a set of items of the kind `str`, \
+             which TLC may take in another order than the checker",
+        ],
+        "{run}"
     );
 }
 
@@ -489,6 +508,35 @@ fn a_quint_that_stops_on_the_file_cannot_confirm_it_and_says_what_quint_said() {
             "    Quint can't confirm this: Quint stopped: Error: Module A not found",
         ],
         "{run}"
+    );
+}
+
+#[test]
+fn a_job_of_all_properties_that_stops_is_split_so_the_line_names_the_property_quint_refused() {
+    let quint = Quint::new();
+    quint.answer(
+        "lift+inside@reachesTop",
+        "[TLC] Compiling to TLA+ (via Apalache)...\nerror: TLC error (see output above)\n",
+    );
+    quint.answer(
+        "lift@reachesTop",
+        "Error: TLC threw an unexpected exception.\nerror: TLC error (see output above)\n",
+    );
+    let run = quint.confirm("lift");
+    run.exits(1);
+    assert_eq!(
+        run.stdout.lines().collect::<Vec<_>>(),
+        [
+            "cannot   lift  4 states  fail  (Quint)",
+            "  property reachesTop: the checker says broken, `quint verify` says unknown",
+            "    Quint can't confirm this: Quint stopped: TLC threw an unexpected exception.",
+        ],
+        "`inside` is still compared, and its job gives the count\n{run}"
+    );
+    assert_eq!(
+        quint.calls("verify").len(),
+        4,
+        "all, then each, then the expected counterexample"
     );
 }
 

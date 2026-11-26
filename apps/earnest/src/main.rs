@@ -7,6 +7,7 @@ mod checks;
 mod commands;
 mod confirm;
 mod confirm_quint;
+mod confirm_reach;
 mod discovery;
 mod places;
 mod print;

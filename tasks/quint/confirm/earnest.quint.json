@@ -2,5 +2,6 @@
   { "file": "confirm.qnt", "main": "lift", "invariants": ["inside"], "temporal": ["reachesTop"], "runs": true, "expectCounterexample": ["low"] },
   { "file": "confirm.qnt", "main": "big", "invariants": ["belowBig"] },
   { "file": "confirm.qnt", "main": "halves", "invariants": ["halfAbove"] },
-  { "file": "confirm.qnt", "main": "ranges", "runs": true }
+  { "file": "confirm.qnt", "main": "ranges", "runs": true },
+  { "file": "confirm.qnt", "main": "words", "invariants": ["counted"] }
 ] }
