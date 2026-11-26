@@ -349,6 +349,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
             model: "A".to_owned(),
             id: "fresh".to_owned(),
             change: Kind::Added,
+            part: None,
             was: None,
             now: Some(Wording {
                 says: "New".to_owned(),

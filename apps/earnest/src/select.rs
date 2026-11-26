@@ -350,4 +350,46 @@ mod tests {
     fn no_files_select_nothing() {
         assert!(names(&[], None, None).is_empty(), "nothing to select");
     }
+
+    fn jar(path: &str, name: &str) -> ModelFile {
+        let source = format!(
+            "import {{ m }} from \"@earnestjs/model\";\n\
+             export const {name} = m.model(\"Jar\", {{ n: m.int(0, 2).initial(0) }});\n\
+             export const low = m.rule({name}, \"low\", (s) => s.n <= 1);\n\
+             export const one = m.setup({name}, \"one\", {{ n: 1 }});\n\
+             export const two = m.setup({name}, \"two\", {{ n: 2 }});\n"
+        );
+        let loaded = load(Found::model(path, Language::TypeScript, &source));
+        assert!(
+            loaded.problems().is_empty(),
+            "the test file is readable: {:?}",
+            loaded.problems()
+        );
+        loaded
+    }
+
+    #[test]
+    fn a_rule_selects_every_run_of_the_one_model_that_has_it() {
+        let files = [jar("jar.model.ts", "Jar")];
+        let runs: Vec<String> = select(&files, None, Some("low"))
+            .expect("one model has the rule")
+            .iter()
+            .map(|target| target.readable.model.run_name())
+            .collect();
+        assert_eq!(
+            runs,
+            ["Jar", "Jar (one)", "Jar (two)"],
+            "the model as declared and in each setup"
+        );
+    }
+
+    #[test]
+    fn a_rule_of_two_models_with_setups_names_each_model_once() {
+        let files = [jar("a.model.ts", "Jar"), jar("b.model.ts", "Jar")];
+        let error = select(&files, None, Some("low")).expect_err("two models have it");
+        assert_eq!(
+            error, "the rule `low` is in the models `Jar`, `Jar`: name one with `--model`",
+            "one name per model, not per run"
+        );
+    }
 }

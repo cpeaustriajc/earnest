@@ -32,6 +32,31 @@ impl ChangeKind {
     }
 }
 
+/// What kind of part of a model changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChangedPart {
+    /// A rule that must be true in every reachable state.
+    Rule,
+    /// A rule about a state every run reaches.
+    Eventually,
+    /// A witness: a path the model must be able to take.
+    Witness,
+    /// A setup: other values for some fields to start at.
+    Setup,
+}
+
+impl ChangedPart {
+    fn word(self) -> Option<&'static str> {
+        match self {
+            Self::Rule => None,
+            Self::Eventually => Some("eventually"),
+            Self::Witness => Some("witness"),
+            Self::Setup => Some("setup"),
+        }
+    }
+}
+
 /// One side of a rule change: the rule as it was, or as it is now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RuleText<'a> {
@@ -54,6 +79,8 @@ pub struct RuleChange<'a> {
     pub id: &'a str,
     /// How the rule differs.
     pub change: ChangeKind,
+    /// What kind of part it is. Every kind but [`ChangedPart::Rule`] is named after the id.
+    pub part: ChangedPart,
     /// The rule at the base commit. `None` for an added rule.
     pub was: Option<RuleText<'a>>,
     /// The rule in the working tree. `None` for a removed rule.
@@ -78,7 +105,8 @@ fn side(name: &str, text: RuleText<'_>) -> String {
 }
 
 /// The rule-changes section the text output documents: the line `rule changes since <base>`,
-/// then one indented line per rule. An added or removed rule has its sentence on that line;
+/// then one indented line per rule. A rule about runs, a witness and a setup have their kind
+/// in round brackets after the id. An added or removed rule has its sentence on that line;
 /// any other change is followed by a `was` and a `now` line with the sentence and the
 /// condition.
 ///
@@ -90,8 +118,12 @@ pub fn rule_change_lines(changes: &RuleChanges<'_>) -> Vec<String> {
         lines.push("  none".to_owned());
     }
     for each in changes.changes {
+        let part = each
+            .part
+            .word()
+            .map_or_else(String::new, |word| format!(" ({word})"));
         let head = format!(
-            "  {:<9}  {}.{}",
+            "  {:<9}  {}.{}{part}",
             each.change.word(),
             one_line(each.model),
             one_line(each.id)

@@ -259,3 +259,48 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
         position: readable.position,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Bounds, Graphs, Search, checked, explore_each};
+    use crate::discovery::{Found, Language};
+    use crate::reading::load;
+
+    const TWINS: &str = "import { m } from \"@earnestjs/model\";\n\
+        export const A = m.model(\"Jar\", { n: m.int(0, 2).initial(0) }); \
+        export const B = m.model(\"Jar\", { k: m.int(0, 1).initial(0) });\n";
+
+    #[test]
+    fn a_result_is_of_its_own_model_when_two_of_one_name_share_a_line() {
+        let file = load(Found::model("twins.model.ts", Language::TypeScript, TWINS));
+        let [first, second] = file.models() else {
+            panic!("the file has two models: {:?}", file.problems());
+        };
+        let searches = [first, second].map(|readable| Search {
+            model: &readable.model,
+            only_rule: None,
+        });
+        let bounds = Bounds::new(1_000, None, None);
+        let ran = explore_each(&searches, bounds, Graphs::Dropped);
+        let results: Vec<_> = [first, second]
+            .iter()
+            .zip(&ran)
+            .map(|(readable, ran)| checked(readable, ran).expect("a result can be reported"))
+            .collect();
+        let [of_first, of_second] = results.as_slice() else {
+            panic!("one result per model");
+        };
+        assert!(
+            of_first.is_of(first) && !of_first.is_of(second),
+            "the first result is of the first model only"
+        );
+        assert!(
+            of_second.is_of(second) && !of_second.is_of(first),
+            "the second result is of the second model only"
+        );
+        assert!(
+            !of_first.is_the_run_of(of_second),
+            "a fresh result of one never replaces the cached result of the other"
+        );
+    }
+}

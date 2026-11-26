@@ -219,6 +219,21 @@ mod tests {
     }
 
     #[test]
+    fn a_name_kept_apart_from_others_gets_the_first_number_none_of_them_has() {
+        let mut names = Names::of_the_language();
+        assert_eq!(
+            names.claim_apart_from("Jar", &["Jar", "Jar_2"]),
+            "Jar_3",
+            "`Jar` and `Jar_2` are the others"
+        );
+        assert_eq!(
+            names.claim("Jar"),
+            "Jar",
+            "the others are not taken in the module"
+        );
+    }
+
+    #[test]
     fn a_word_of_the_language_is_never_handed_out() {
         let mut names = Names::of_the_language();
         assert_eq!(names.claim("IF"), "IF_2");
