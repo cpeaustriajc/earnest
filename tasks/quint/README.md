@@ -1177,7 +1177,26 @@ runs in. Verified against Quint 0.33.1:
 
 ### Checks, each with its last line
 
-CHECKS_PLACEHOLDER
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings, `Finished`.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1814 passed, 0
+  failed.
+- `just typescript`: `Tests  76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`; the two `[WARN]` lines (`i18n`,
+  `404`) are there on the base too. `dist/llms-full.txt` holds the new page.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps
+  `0 differences`. All 64 (4 runs each) are in 16 files that are not on `origin/main`:
+  `tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,
+  stove,ticket,worker}.model.ts`, `runs/gate.rs`, `runs/kettle.rs`,
+  `tasks/conformance/setups/clock.model.ts` and `setups/clock.rs` (the script lists 10; the
+  full list is from a copy of `same.py` with `SHOWN` raised, not committed).
+  `just same-answers fdbd03a` (the integration head this branch starts from): `every model
+  file: 392 runs, 0 differences`, every sweep 0.
+- `tests_kept.py --base origin/main`: `tests kept: 1491 tests, 4385 assertions (base: 1304, 3798)`.
+- `just counts` and `just benchmark` were not run: no search code changed.
 
 ### Unfinished, and the next step
 
