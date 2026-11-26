@@ -6,6 +6,7 @@ use earnest_semantic::lower;
 use syn::{Attribute, ImplItem, Item, Type};
 
 const REPORTED_BY_ID: [&str; 3] = ["rule", "eventually", "witness"];
+const QUINT_EXTENSION: &str = "qnt";
 
 #[derive(Debug)]
 pub(crate) struct Readable {
@@ -47,6 +48,16 @@ impl ModelFile {
             Content::Models(_) => &[],
             Content::Unreadable(problems) => problems,
         }
+    }
+
+    pub(crate) fn quint_check(&self) -> Option<&str> {
+        let is_quint = std::path::Path::new(&self.path)
+            .extension()
+            .is_some_and(|extension| extension == QUINT_EXTENSION);
+        self.declared
+            .first()
+            .filter(|_| is_quint)
+            .map(|check| check.name.as_str())
     }
 
     pub(crate) fn declares_unread(&self, model: Option<&str>, rule: Option<&str>) -> bool {

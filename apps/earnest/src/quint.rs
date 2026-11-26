@@ -48,7 +48,7 @@ struct Job {
     shown: String,
     real: PathBuf,
     check: Check,
-    tree: u64,
+    read: u64,
     quint: Result<Quint, String>,
 }
 
@@ -340,8 +340,8 @@ fn key_of(job: &Job, quint: &Quint, source: &[u8]) -> String {
         &runs_key(&check.runs),
     ];
     let mut pieces: Vec<&[u8]> = listed.iter().map(|each| each.as_bytes()).collect();
-    let tree = job.tree.to_le_bytes();
-    pieces.push(&tree);
+    let read = job.read.to_le_bytes();
+    pieces.push(&read);
     pieces.push(source);
     format!("{:016x}", fingerprint_of(&pieces))
 }
@@ -452,12 +452,27 @@ fn compile(job: &Job) -> Result<String, Problem> {
     Ok(json)
 }
 
-fn parsed(real_file: &Path, shown: &str, quint: &Quint, tree: u64) -> Option<Places> {
+fn fingerprint_files(paths: &[&str]) -> u64 {
+    let mut sorted = paths.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let contents: Vec<Vec<u8>> = sorted
+        .iter()
+        .map(|path| fs::read(path).unwrap_or_default())
+        .collect();
+    let mut pieces: Vec<&[u8]> = Vec::with_capacity(sorted.len().saturating_mul(2));
+    for (path, content) in sorted.iter().zip(&contents) {
+        pieces.push(path.as_bytes());
+        pieces.push(content);
+    }
+    fingerprint_of(&pieces)
+}
+
+fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
     let source = fs::read(real_file).ok()?;
-    let tree = tree.to_le_bytes();
     let key = format!(
         "{:016x}",
-        fingerprint_of(&[quint.version.as_bytes(), &tree, &source])
+        fingerprint_of(&[quint.version.as_bytes(), &source])
     );
     let target = cache_path(&format!(
         "places-{:016x}.json",
@@ -465,6 +480,7 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint, tree: u64) -> Option<Pla
     ));
     if let Some(text) = kept(&target, &key)
         && let Ok(places) = serde_json::from_str::<Places>(&text)
+        && places.read == fingerprint_files(&places.files_read())
     {
         return Some(places);
     }
@@ -489,7 +505,8 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint, tree: u64) -> Option<Pla
     let places = read();
     fs::remove_file(&out).unwrap_or_default();
     fs::remove_file(&map).unwrap_or_default();
-    let places = places?;
+    let mut places = places?;
+    places.read = fingerprint_files(&places.files_read());
     if let Ok(text) = serde_json::to_string(&places) {
         store(&target, &format!("{key}\n{text}"));
     }
@@ -576,7 +593,7 @@ fn jobs_of(asked: BTreeMap<PathBuf, Asked>, files: &mut Vec<ModelFile>) -> Vec<J
                 shown: shown_string(&shown),
                 real: real_file,
                 check,
-                tree,
+                read: tree,
                 quint,
             });
         }
@@ -593,7 +610,28 @@ fn jobs_of(asked: BTreeMap<PathBuf, Asked>, files: &mut Vec<ModelFile>) -> Vec<J
 
 pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut files = Vec::new();
-    let checks = jobs_of(asked(listed), &mut files);
+    let mut checks = jobs_of(asked(listed), &mut files);
+    let mut to_parse: Vec<(PathBuf, String, Quint)> = Vec::new();
+    for job in &checks {
+        if let Ok(quint) = &job.quint
+            && !to_parse.iter().any(|(file, ..)| *file == job.real)
+        {
+            to_parse.push((job.real.clone(), job.shown.clone(), quint.clone()));
+        }
+    }
+    let maps = run_each(&to_parse, jobs, |(file, shown, quint), _| {
+        parsed(file, shown, quint)
+    });
+    let places: HashMap<PathBuf, Places> = to_parse
+        .into_iter()
+        .zip(maps)
+        .filter_map(|((file, ..), places)| Some((file, places?)))
+        .collect();
+    for job in &mut checks {
+        if let Some(found) = places.get(&job.real) {
+            job.read = found.read;
+        }
+    }
     let compiled = run_each(&checks, jobs, |job, _| compile(job));
     let read: Vec<Result<(String, earnest_ir::Model), Vec<Located>>> = checks
         .iter()
@@ -603,27 +641,6 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                 .map(|model| (json, model)),
             Err(problem) => Err(vec![Located::new(problem, None, None)]),
         })
-        .collect();
-    let mut to_place: Vec<(PathBuf, String, Quint, u64)> = Vec::new();
-    for (job, read) in checks.iter().zip(&read) {
-        let refused = read.as_ref().err().is_some_and(|located| {
-            located
-                .iter()
-                .any(|each| each.id.is_some() || each.definition.is_some())
-        });
-        if let (true, Ok(quint)) = (refused, &job.quint)
-            && !to_place.iter().any(|(file, ..)| *file == job.real)
-        {
-            to_place.push((job.real.clone(), job.shown.clone(), quint.clone(), job.tree));
-        }
-    }
-    let maps = run_each(&to_place, jobs, |(file, shown, quint, tree), _| {
-        parsed(file, shown, quint, *tree)
-    });
-    let places: HashMap<&Path, &Places> = to_place
-        .iter()
-        .zip(&maps)
-        .filter_map(|((file, ..), places)| Some((file.as_path(), places.as_ref()?)))
         .collect();
     for (job, read) in checks.iter().zip(read) {
         files.push(match read {
@@ -641,7 +658,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                 }]),
             },
             Err(located) => {
-                let problems = match places.get(job.real.as_path()) {
+                let problems = match places.get(&job.real) {
                     Some(found) => {
                         place_all(located, found, &job.check.main, &job.real, &job.shown)
                     }

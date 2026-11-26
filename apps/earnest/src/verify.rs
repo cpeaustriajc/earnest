@@ -11,7 +11,6 @@ use std::path::Path;
 use std::ptr;
 
 const HERE: &str = ".";
-const QUINT_EXTENSION: &str = "qnt";
 
 #[derive(Debug)]
 struct Entry<'a> {
@@ -63,12 +62,9 @@ fn entries<'a>(
 }
 
 fn cached_as(file: &ModelFile) -> String {
-    let is_quint_check = Path::new(&file.path)
-        .extension()
-        .is_some_and(|extension| extension == QUINT_EXTENSION);
-    match file.declared.first() {
-        Some(check) if is_quint_check => format!("{}\n{}", file.path, check.name),
-        _ => file.path.clone(),
+    match file.quint_check() {
+        Some(check) => format!("{}\n{check}", file.path),
+        None => file.path.clone(),
     }
 }
 

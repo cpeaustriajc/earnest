@@ -6,8 +6,12 @@ pub(crate) struct Target<'a> {
     pub(crate) readable: &'a Readable,
 }
 
+fn has_the_rule(readable: &Readable, id: &str) -> bool {
+    readable.model.rule_ids().any(|rule| rule == id)
+}
+
 fn has_rule(target: &Target<'_>, id: &str) -> bool {
-    target.readable.model.rule_ids().any(|rule| rule == id)
+    has_the_rule(target.readable, id)
 }
 
 impl Target<'_> {
@@ -102,13 +106,12 @@ pub(crate) fn select_with_removed<'a>(
             unmatched: None,
         }),
         Err(error) => {
-            let has_the_model = |name: &str| {
-                files
-                    .iter()
-                    .flat_map(ModelFile::models)
-                    .any(|readable| readable.model.name == name)
-            };
-            if base.is_some() && model.is_some_and(|name| !has_the_model(name)) {
+            let readables = || files.iter().flat_map(ModelFile::models);
+            let model_gone =
+                model.is_some_and(|name| !readables().any(|readable| readable.model.name == name));
+            let rule_gone =
+                rule.is_some_and(|id| !readables().any(|readable| has_the_rule(readable, id)));
+            if base.is_some() && (model_gone || rule_gone) {
                 Ok(Selected {
                     targets: Vec::new(),
                     unmatched: Some(error),
@@ -288,6 +291,23 @@ mod tests {
         assert!(
             select_with_removed(&kept, Some("Porch"), Some("dim"), Some("HEAD")).is_err(),
             "a rule the model lacks is still an error"
+        );
+    }
+
+    #[test]
+    fn with_a_base_a_rule_that_is_gone_is_left_for_the_comparison_to_list() {
+        let kept = files();
+        let selected = select_with_removed(&kept, None, Some("missing"), Some("HEAD"))
+            .expect("the base may have the rule");
+        assert!(selected.targets.is_empty(), "nothing is checked");
+        assert_eq!(
+            selected.unmatched.as_deref(),
+            Some("no model has a rule `missing`"),
+            "the error stays for when the base has none either"
+        );
+        assert!(
+            select_with_removed(&kept, None, Some("missing"), None).is_err(),
+            "without a base the id must match a rule"
         );
     }
 

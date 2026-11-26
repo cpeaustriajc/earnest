@@ -11,6 +11,7 @@ fn rule(id: &str, after: Option<Expr>, reaches: Expr) -> Eventually {
         after: after.map(Code::new),
         reaches: Code::new(reaches),
         slots: 8,
+        fair: None,
     }
 }
 

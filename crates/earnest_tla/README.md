@@ -97,7 +97,10 @@ INVARIANT Rule_bounded
   `SPECIFICATION Spec` in place of `INIT` and `NEXT`, and a `PROPERTY` line per rule after the
   invariants. `Files::config_living` gives the configuration that checks one property alone,
   and `Files::config_checking` still checks invariants from `Init` and `Next`. A model without a
-  rule about runs is written exactly as before.
+  rule about runs is written exactly as before. When a rule says its own fairness (a Quint
+  temporal property), `Spec` is `Init /\ [][Next]_vars` alone and each property is
+  `(fairness) => (property)`: `WF_vars(Next)` when the whole step is fair, and
+  `WF_vars(A1 \/ A2)` for each fair part made of the actions `A1` and `A2`.
 - **Setups.** A model in a setup is its own module, `<Model>_<setup>`, with the setup's values
   in `Init`.
 - **Names.** A name keeps its spelling when TLA+ can spell it and nothing else has it. A letter

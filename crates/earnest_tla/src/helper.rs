@@ -21,9 +21,18 @@ pub(crate) enum Helper {
     SeqIncludes,
     SeqItems,
     TextRank,
+    MapMustGet,
+    MapReplace,
+    SeqNth,
+    SeqHead,
+    SeqTail,
+    SeqSlice,
+    SeqReplaceAt,
+    Power,
+    Ascending,
 }
 
-pub(crate) const EVERY_HELPER: [Helper; 19] = [
+pub(crate) const EVERY_HELPER: [Helper; 28] = [
     Helper::Fault,
     Helper::Remainder,
     Helper::Division,
@@ -43,6 +52,15 @@ pub(crate) const EVERY_HELPER: [Helper; 19] = [
     Helper::SeqIncludes,
     Helper::SeqItems,
     Helper::TextRank,
+    Helper::MapMustGet,
+    Helper::MapReplace,
+    Helper::SeqNth,
+    Helper::SeqHead,
+    Helper::SeqTail,
+    Helper::SeqSlice,
+    Helper::SeqReplaceAt,
+    Helper::Power,
+    Helper::Ascending,
 ];
 
 pub(crate) const REMAINDER_FAULT: &str = "a remainder with a negative number or a divisor below 1";
@@ -70,12 +88,22 @@ impl Helper {
             Self::SeqIncludes => "SeqIncludes",
             Self::SeqItems => "SeqItems",
             Self::TextRank => "TextRank",
+            Self::MapMustGet => "MapMustGet",
+            Self::MapReplace => "MapReplace",
+            Self::SeqNth => "SeqNth",
+            Self::SeqHead => "SeqHead",
+            Self::SeqTail => "SeqTail",
+            Self::SeqSlice => "SeqSlice",
+            Self::SeqReplaceAt => "SeqReplaceAt",
+            Self::Power => "Power",
+            Self::Ascending => "Ascending",
         }
     }
 
     pub(crate) fn needs(self) -> Option<Self> {
         match self {
             Self::Remainder | Self::Division => Some(Self::Fault),
+            other if crate::faulting::faults(other) => Some(Self::Fault),
             _ => None,
         }
     }
@@ -132,6 +160,9 @@ impl Helper {
                     "{name}({seq}, {index}) == IF ({index} >= 0) /\\ ({index} < Len({seq})) \
                      THEN {found} ELSE <<>>"
                 )
+            }
+            other if crate::faulting::faults(other) => {
+                crate::faulting::definition(other, &mut names)
             }
             _ => on_a_seq(self, &mut names),
         }

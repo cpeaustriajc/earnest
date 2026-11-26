@@ -255,17 +255,19 @@ impl Reader<'_> {
         }
         let span = named.span();
         let state = at(span, TermKind::Name(STATE.to_owned()));
+        let body = self.method_texts.get(&name).cloned().unwrap_or_default();
+        let text = format!("{name}: {body}");
         Some(ConditionDraft {
             state_name: Some(STATE.to_owned()),
             term: at(
                 span,
                 TermKind::Helper {
                     kind: HelperKind::Method,
-                    name: name.clone(),
+                    name,
                     arguments: vec![state],
                 },
             ),
-            text: name,
+            text,
         })
     }
 

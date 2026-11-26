@@ -17,6 +17,7 @@ struct Names {
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Places {
+    pub(crate) read: u64,
     files: HashMap<String, String>,
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
@@ -81,7 +82,16 @@ impl Places {
             .iter()
             .filter_map(names_of)
             .collect();
-        Some(Self { files, at, modules })
+        Some(Self {
+            read: 0,
+            files,
+            at,
+            modules,
+        })
+    }
+
+    pub(crate) fn files_read(&self) -> Vec<&str> {
+        self.files.values().map(String::as_str).collect()
     }
 
     fn module(&self, name: &str) -> Option<&Names> {

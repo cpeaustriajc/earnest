@@ -63,7 +63,13 @@ When none is found, each check is `unreadable` with ``` `quint` was not found: i
 
 ## What earnest runs
 
-For each check, earnest runs one compile, up to `--jobs` at a time:
+First, earnest runs `quint parse` once for each listed `.qnt` file, to learn which files the module reads and where each definition is:
+
+```sh
+quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
+```
+
+Then it runs one compile for each check, up to `--jobs` at a time:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -74,15 +80,22 @@ Several invariants or temporal properties are joined by commas. `--invariant` an
 A compile that fails makes its check `unreadable` with Quint's first error line, at the line and column Quint gives:
 
 ```text
-unreadable  specs/clock.qnt
+unreadable  specs/clock.qnt  Small
   specs/clock.qnt:4:22  `quint compile --main Small`  Error [QNT404]: Name 'y' not found
 ```
 
-When the reader refuses a construct of a compiled module, earnest runs `quint parse --source-map` once for the file to find the construct's line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
+When the reader refuses a construct of a compiled module, the source map from `quint parse` gives its line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
 
 ## What is read today
 
-The reader takes `int` and `bool` variables, the integer and boolean operators, `if`, `let`, `nondet` over a set written out or a range of constants, actions with parameters, and the listed invariants. Every other construct makes the check `unreadable` and is named in the problem: records, sets as values, maps, lists, tuples, text, variants, temporal properties and runs among them. The full list is in [the reader's report](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused).
+The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet` over a set that does not change, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
+
+Still refused, each named in the problem:
+
+- Not yet read, and being built: runs (`run` definitions), and a `oneOf` over a set computed from the state or from another `nondet`.
+- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (write `foldl`), `fieldNames`, `apalache::generate`, `q::debug`, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+
+The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
 
 A module flattened from an instance names its definitions after it: a rule of `import Clock(MaxTime = 3).*` in the module `Small` is `Small::Clock::inRange`.
 
@@ -90,9 +103,9 @@ A module flattened from an instance names its definitions after it: a rule of `i
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
-- A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants`, `temporal` and `runs`, the `.qnt` file and every `.qnt` file below the folder of `earnest.quint.json` are the same. Imports are by file, so editing any of them compiles that folder's checks again.
+- A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants`, `temporal` and `runs`, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again.
-- The places from `quint parse --source-map` are kept the same way.
+- What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 
 The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON is unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 

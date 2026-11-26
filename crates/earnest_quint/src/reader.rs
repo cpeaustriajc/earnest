@@ -1,7 +1,8 @@
-use crate::builtins::{Builtin, builtin, kind_of_builtin};
+use crate::builtins::{Builtin, builtin, not_read};
+use crate::data::data_builtin;
 use crate::json::{Def, Entry, Expr as Quint};
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
-use earnest_value::{Domain, MOST_VALUES_LISTED, Value};
+use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::HashMap;
 
 pub(crate) struct Refusal {
@@ -85,7 +86,8 @@ pub(crate) struct Reader<'a> {
     fields: HashMap<u64, usize>,
     bound: HashMap<u64, Bound<'a>>,
     parameters: HashMap<usize, String>,
-    slots: usize,
+    pub(crate) slots: usize,
+    pub(crate) symbols: Symbols,
     pub(crate) in_init: bool,
     pub(crate) unnamed: Vec<u64>,
     pub(crate) within: String,
@@ -104,15 +106,47 @@ fn base_name(parameter: &str) -> &str {
     }
 }
 
-fn reads_state(expr: &Expr) -> bool {
+fn reads_state(expr: &Expr, bound: &[usize]) -> bool {
+    let any = |all: &[Expr]| all.iter().any(|each| reads_state(each, bound));
+    let within = |slots: &[usize], body: &Expr| {
+        let inner: Vec<usize> = bound.iter().chain(slots).copied().collect();
+        reads_state(body, &inner)
+    };
     match expr {
         Expr::Const(_) => false,
-        Expr::Apply(_, arguments) => arguments.iter().any(reads_state),
+        Expr::Local(slot) => !bound.contains(slot),
+        Expr::Apply(_, arguments) | Expr::SetOf(arguments) | Expr::SeqOf(arguments) => {
+            any(arguments)
+        }
         Expr::And(first, second) | Expr::Or(first, second) => {
-            reads_state(first) || reads_state(second)
+            reads_state(first, bound) || reads_state(second, bound)
         }
         Expr::Choose(test, then, otherwise) => {
-            reads_state(test) || reads_state(then) || reads_state(otherwise)
+            reads_state(test, bound) || reads_state(then, bound) || reads_state(otherwise, bound)
+        }
+        Expr::Record(fields) => fields.iter().any(|(_, each)| reads_state(each, bound)),
+        Expr::Get(inner, _) => reads_state(inner, bound),
+        Expr::With(base, changes) => {
+            reads_state(base, bound) || changes.iter().any(|(_, each)| reads_state(each, bound))
+        }
+        Expr::MapOf(entries) => entries
+            .iter()
+            .any(|(key, value)| reads_state(key, bound) || reads_state(value, bound)),
+        Expr::Bind { slot, value, body } => reads_state(value, bound) || within(&[*slot], body),
+        Expr::Sweep {
+            slot, source, body, ..
+        } => reads_state(source, bound) || within(&[*slot], body),
+        Expr::Fold {
+            source,
+            start,
+            total,
+            item,
+            body,
+            ..
+        } => {
+            reads_state(source, bound)
+                || reads_state(start, bound)
+                || within(&[*total, *item], body)
         }
         _ => true,
     }
@@ -139,11 +173,11 @@ fn fault_refusal(fault: Fault) -> Refusal {
     )
 }
 
-pub(crate) fn constant(expr: &Expr) -> Read<Option<Value>> {
-    if reads_state(expr) {
+pub(crate) fn constant(expr: &Expr, slots: usize) -> Read<Option<Value>> {
+    if reads_state(expr, &[]) {
         return Ok(None);
     }
-    eval(expr, &mut Frame::new(&[], 0))
+    eval(expr, &mut Frame::new(&[], slots))
         .map(Some)
         .map_err(fault_refusal)
 }
@@ -163,6 +197,7 @@ impl<'a> Reader<'a> {
         table: &'a HashMap<String, Entry>,
         defs: HashMap<u64, &'a Def>,
         fields: HashMap<u64, usize>,
+        symbols: Symbols,
     ) -> Self {
         Self {
             table,
@@ -171,6 +206,7 @@ impl<'a> Reader<'a> {
             bound: HashMap::new(),
             parameters: HashMap::new(),
             slots: 0,
+            symbols,
             in_init: false,
             unnamed: Vec::new(),
             within: String::new(),
@@ -189,7 +225,7 @@ impl<'a> Reader<'a> {
         .within(&self.within))
     }
 
-    fn entry(&self, id: u64, name: &str) -> Read<&'a Entry> {
+    pub(crate) fn entry(&self, id: u64, name: &str) -> Read<&'a Entry> {
         match self.table.get(&id.to_string()) {
             Some(entry) => Ok(entry),
             None => self.refuse(
@@ -199,7 +235,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn operator(&self, entry: &Entry, name: &str) -> Read<&'a Def> {
+    pub(crate) fn operator(&self, entry: &Entry, name: &str) -> Read<&'a Def> {
         if let Some(Bound::Operator(def)) = self.bound.get(&entry.id) {
             return Ok(def);
         }
@@ -236,6 +272,25 @@ impl<'a> Reader<'a> {
             Some(was) => self.bound.insert(id, was),
             None => self.bound.remove(&id),
         };
+        result
+    }
+
+    pub(crate) fn with_values<T>(
+        &mut self,
+        values: Vec<(u64, Expr)>,
+        read: impl FnOnce(&mut Self) -> Read<T>,
+    ) -> Read<T> {
+        let outer: Vec<(u64, Option<Bound<'a>>)> = values
+            .into_iter()
+            .map(|(id, value)| (id, self.bound.insert(id, Bound::Value(value))))
+            .collect();
+        let result = read(self);
+        for (id, was) in outer.into_iter().rev() {
+            match was {
+                Some(was) => self.bound.insert(id, was),
+                None => self.bound.remove(&id),
+            };
+        }
         result
     }
 
@@ -310,7 +365,7 @@ impl<'a> Reader<'a> {
                 ),
             },
             Quint::Bool { value } => Ok(Expr::Const(Value::Bool(*value))),
-            Quint::Str {} => self.refuse("text", "text is not read yet"),
+            Quint::Str { value } => Ok(Expr::Const(Value::Str(self.text(value)))),
             Quint::Lambda { .. } => self.refuse(
                 "an operator as a value",
                 "an operator passed as a value is not read yet",
@@ -354,9 +409,12 @@ impl<'a> Reader<'a> {
     }
 
     fn apply(&mut self, id: u64, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        if let Some(data) = data_builtin(opcode) {
+            return self.data(data, opcode, args);
+        }
         let Some(found) = builtin(opcode) else {
-            if let Some(kind) = kind_of_builtin(opcode) {
-                return self.refuse(&format!("`{opcode}`"), &format!("{kind} are not read yet"));
+            if let Some(why) = not_read(opcode) {
+                return self.refuse(&format!("`{opcode}`"), why);
             }
             let entry = self.entry(id, opcode)?;
             let def = self.operator(entry, opcode)?;
@@ -401,12 +459,6 @@ impl<'a> Reader<'a> {
                     "`oneOf` is read only as the value of a `nondet` in an action",
                 );
             }
-            (Builtin::SetOf | Builtin::Range, _) => {
-                return self.refuse(
-                    &format!("`{opcode}`"),
-                    "sets are not read yet, except as what a `nondet` picks from",
-                );
-            }
             _ => {
                 return self.refuse(
                     &format!("`{opcode}`"),
@@ -428,7 +480,9 @@ impl<'a> Reader<'a> {
             },
             Quint::Name { id, .. } => self.is_action_name(*id),
             Quint::Let { opdef, expr } => opdef.qualifier == "nondet" || self.is_action(expr),
-            Quint::Int { .. } | Quint::Bool { .. } | Quint::Str {} | Quint::Lambda { .. } => false,
+            Quint::Int { .. } | Quint::Bool { .. } | Quint::Str { .. } | Quint::Lambda { .. } => {
+                false
+            }
         }
     }
 
@@ -497,7 +551,7 @@ impl<'a> Reader<'a> {
             }
             Quint::Let { opdef, expr } if opdef.qualifier == "nondet" => self.nondet(opdef, expr),
             Quint::Let { opdef, expr } => self.local(opdef, |reader| reader.paths(expr)),
-            Quint::Int { .. } | Quint::Bool { .. } | Quint::Str {} | Quint::Lambda { .. } => {
+            Quint::Int { .. } | Quint::Bool { .. } | Quint::Str { .. } | Quint::Lambda { .. } => {
                 Ok(vec![Path::guarded(self.pure(expr)?)])
             }
         }
@@ -564,47 +618,44 @@ impl<'a> Reader<'a> {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");
         }
         let computed = "`oneOf` over a set computed from the state or from another `nondet`";
-        match source {
-            Quint::App { opcode, args, .. } if builtin(opcode) == Some(Builtin::SetOf) => {
-                let mut values = Vec::with_capacity(args.len());
-                for each in args {
-                    let item = self.pure(each)?;
-                    let Some(value) = constant(&item)? else {
-                        return self.refuse(&feature, computed);
-                    };
-                    if !values.contains(&value) {
-                        values.push(value);
-                    }
+        if let Quint::App { opcode, args, .. } = source
+            && builtin(opcode) == Some(Builtin::Range)
+        {
+            let ends = self.arguments(args)?;
+            let mut numbers = Vec::with_capacity(2);
+            for each in &ends {
+                match constant(each, self.slots)? {
+                    Some(Value::Int(number)) => numbers.push(number),
+                    _ => return self.refuse(&feature, computed),
                 }
-                values.sort();
-                Ok((Domain::OneOf(values.clone()), values))
             }
-            Quint::App { opcode, args, .. } if builtin(opcode) == Some(Builtin::Range) => {
-                let ends = self.arguments(args)?;
-                let mut numbers = Vec::with_capacity(2);
-                for each in &ends {
-                    match constant(each)? {
-                        Some(Value::Int(number)) => numbers.push(number),
-                        _ => return self.refuse(&feature, computed),
-                    }
-                }
-                let [lo, hi] = numbers.as_slice() else {
-                    return self.refuse("`to`", "a range without both ends");
-                };
-                let domain = Domain::Int { lo: *lo, hi: *hi };
-                if domain.count() > MOST_VALUES_LISTED {
+            let [lo, hi] = numbers.as_slice() else {
+                return self.refuse("`to`", "a range without both ends");
+            };
+            let domain = Domain::Int { lo: *lo, hi: *hi };
+            if domain.count() > MOST_VALUES_LISTED {
+                return self.refuse(
+                    &feature,
+                    &format!("a range of more than {MOST_VALUES_LISTED} values"),
+                );
+            }
+            let values = domain.values();
+            return Ok((domain, values));
+        }
+        let set = self.pure(source)?;
+        match constant(&set, self.slots)? {
+            Some(Value::Set(items)) => {
+                if u128::try_from(items.len()).unwrap_or(u128::MAX) > MOST_VALUES_LISTED {
                     return self.refuse(
                         &feature,
-                        &format!("a range of more than {MOST_VALUES_LISTED} values"),
+                        &format!("a set of more than {MOST_VALUES_LISTED} values"),
                     );
                 }
-                let values = domain.values();
-                Ok((domain, values))
+                let values: Vec<Value> = items.iter().cloned().collect();
+                Ok((Domain::OneOf(values.clone()), values))
             }
-            _ => self.refuse(
-                &feature,
-                "`oneOf` is read over a set written out (`Set(...)`) or a range (`a.to(b)`) only",
-            ),
+            Some(_) => self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set"),
+            None => self.refuse(&feature, computed),
         }
     }
 

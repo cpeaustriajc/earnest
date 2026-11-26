@@ -44,9 +44,15 @@ case "$1" in
       previous="$argument"
     done
     name="$(basename "$file" .qnt)"
-    cp "$here/parsed/$name.parse.json" "$out"
-    sed "s#\"0\":\"$name.qnt\"#\"0\":\"$(cd "$(dirname "$file")" && pwd)/$name.qnt\"#" \
-      "$here/parsed/$name.sourcemap.json" > "$map"
+    folder="$(cd "$(dirname "$file")" && pwd)"
+    if [ -f "$here/parsed/$name.parse.json" ]; then
+      cp "$here/parsed/$name.parse.json" "$out"
+      sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" \
+        "$here/parsed/$name.sourcemap.json" > "$map"
+    else
+      echo '{"modules":[]}' > "$out"
+      echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    fi
     ;;
 esac
 "##;
@@ -83,13 +89,13 @@ impl Quint {
         let quint = Self { sandbox, program };
         quint.with_version("0.33.1");
         let Self { sandbox, program } = quint;
-        for module in ["counter", "dead", "starts", "mixed", "record"] {
+        for module in ["counter", "dead", "starts", "mixed", "choose"] {
             sandbox.write(
                 &format!("fake/compiled/{module}.json"),
                 &sample(&format!("{module}.json")),
             );
         }
-        for name in ["record.parse.json", "record.sourcemap.json"] {
+        for name in ["choose.parse.json", "choose.sourcemap.json"] {
             sandbox.write(&format!("fake/parsed/{name}"), &sample(name));
         }
         sandbox.write("fake/calls", "");
@@ -194,19 +200,34 @@ fn a_listed_check_is_compiled_with_its_module_init_step_and_properties_and_check
     );
     let run = quint.earnest(&["verify"]);
     run.exits(1);
-    let mut calls = quint.calls();
-    calls.get_mut(1..).unwrap_or_default().sort();
+    let calls = quint.calls();
     assert_eq!(
-        calls,
+        calls.first().map(String::as_str),
+        Some("--version"),
+        "the version first: {calls:?}"
+    );
+    let mut compiles = quint.compiles();
+    compiles.sort();
+    assert_eq!(
+        compiles,
         [
-            "--version",
             "compile --target json --main counter --init init --step step --invariant \
              inRange,tooBig models/counter.qnt",
             "compile --target json --main dead --init begin --step next --invariant ok \
              --temporal later,sooner models/dead.qnt",
         ],
-        "one version, then one compile per check side by side, the properties joined by \
-         commas\n{run}"
+        "one compile per check side by side, the properties joined by commas\n{run}"
+    );
+    let mut parses: Vec<String> = calls
+        .iter()
+        .filter(|call| call.starts_with("parse"))
+        .filter_map(|call| call.split(' ').nth(1).map(str::to_owned))
+        .collect();
+    parses.sort();
+    assert_eq!(
+        parses,
+        ["models/counter.qnt", "models/dead.qnt"],
+        "one parse per file, for the files it reads: {calls:?}"
     );
     assert_eq!(run.model_line("counter")[0], "fail", "{run}");
     assert_eq!(run.model_line("counter")[2], "12 states", "{run}");
@@ -560,18 +581,23 @@ fn a_refused_construct_is_reported_at_its_line_in_the_quint_file() {
     let quint = Quint::new();
     quint.with_specs(
         "models",
-        &["record"],
-        r#"{ "checks": [{ "file": "record.qnt", "main": "record", "invariants": ["ok"] }] }"#,
+        &["choose"],
+        r#"{ "checks": [{ "file": "choose.qnt", "main": "choose", "invariants": ["ok"] }] }"#,
     );
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
-    let expected = [
-        ("models/record.qnt".to_owned(), 3, 3, "`var r`".to_owned()),
-        ("models/record.qnt".to_owned(), 5, 22, "`Rec`".to_owned()),
-        ("models/record.qnt".to_owned(), 7, 22, "`Rec`".to_owned()),
-        ("models/record.qnt".to_owned(), 9, 12, "`field`".to_owned()),
-    ];
-    assert_eq!(problems(&run.json()), expected, "{run}");
+    let expected = [(
+        "models/choose.qnt".to_owned(),
+        7,
+        22,
+        "`chooseSome`".to_owned(),
+    )];
+    assert_eq!(
+        problems(&run.json()),
+        expected,
+        "line 7 is `action step = x' = Set(1, 2).chooseSome()`, and the call starts at its \
+         receiver, column 22\n{run}"
+    );
     let parses = |calls: Vec<String>| {
         calls
             .iter()
@@ -602,5 +628,80 @@ fn a_compiled_json_named_on_the_command_line_needs_no_quint() {
     assert!(
         !Path::new(&quint.sandbox.path().join(".earnest/quint")).exists(),
         "nothing is compiled"
+    );
+}
+
+#[test]
+fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
+    let quint = Quint::new();
+    quint.with_specs(
+        "models",
+        &["counter"],
+        r#"{ "checks": [
+          { "file": "counter.qnt", "main": "counter" },
+          { "file": "counter.qnt", "main": "wide" }
+        ] }"#,
+    );
+    for main in ["counter", "wide"] {
+        quint.sandbox.write(
+            &format!("fake/fails/{main}"),
+            "error: name resolution failed\n",
+        );
+    }
+    let run = quint.earnest(&["verify"]);
+    run.exits(1);
+    let headers: Vec<&str> = run
+        .stdout
+        .lines()
+        .filter(|line| line.starts_with("unreadable"))
+        .collect();
+    assert_eq!(
+        headers,
+        [
+            "unreadable  models/counter.qnt  counter",
+            "unreadable  models/counter.qnt  wide"
+        ],
+        "the module after the file, as on a result line\n{run}"
+    );
+}
+
+#[test]
+fn editing_a_file_imported_from_a_parent_folder_compiles_the_check_again() {
+    let quint = Quint::new();
+    quint.with_specs("app/specs", &["counter"], COUNTER_CHECKS);
+    quint.sandbox.write(
+        "app/shared/lib.qnt",
+        "module lib {\n  pure val Limit = 5\n}\n",
+    );
+    let root = quint
+        .sandbox
+        .path()
+        .canonicalize()
+        .expect("the sandbox has a real path");
+    quint
+        .sandbox
+        .write("fake/parsed/counter.parse.json", r#"{"modules":[]}"#);
+    quint.sandbox.write(
+        "fake/parsed/counter.sourcemap.json",
+        &format!(
+            r#"{{"sourceIndex":{{"0":"counter.qnt","1":"{}"}},"map":{{}}}}"#,
+            root.join("app/shared/lib.qnt").display()
+        ),
+    );
+    quint.earnest(&["verify"]).exits(1);
+    assert_eq!(quint.compiles().len(), 1, "the first run compiles");
+    quint.forget_calls();
+    quint.earnest(&["verify"]).exits(1);
+    assert_eq!(quint.calls(), Vec::<String>::new(), "nothing changed");
+    quint.sandbox.write(
+        "app/shared/lib.qnt",
+        "module lib {\n  pure val Limit = 6\n}\n",
+    );
+    let edited = quint.earnest(&["verify"]);
+    edited.exits(1);
+    assert_eq!(
+        quint.compiles().len(),
+        1,
+        "the file Quint read from `../shared` changed, so the check is compiled again\n{edited}"
     );
 }

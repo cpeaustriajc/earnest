@@ -52,9 +52,7 @@ pub(crate) enum Declaration {
         name: String,
     },
     Def(Def),
-    Typedef {
-        name: String,
-    },
+    Typedef {},
     #[serde(other)]
     Other,
 }
@@ -82,7 +80,9 @@ pub(crate) enum Expr {
     Bool {
         value: bool,
     },
-    Str {},
+    Str {
+        value: String,
+    },
     Name {
         id: u64,
         name: String,
