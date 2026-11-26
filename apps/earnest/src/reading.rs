@@ -5,6 +5,8 @@ use earnest_ir::Model;
 use earnest_semantic::lower;
 use syn::{Attribute, ImplItem, Item, Type};
 
+const REPORTED_BY_ID: [&str; 3] = ["rule", "eventually", "witness"];
+
 #[derive(Debug)]
 pub(crate) struct Readable {
     pub(crate) draft: Draft,
@@ -91,29 +93,31 @@ fn declared_in_rust(items: &[Item], declared: &mut Vec<Declared>) {
             _ => {}
         }
     }
-    for item in items {
-        let Item::Impl(block) = item else {
-            continue;
-        };
-        let Type::Path(owner) = &*block.self_ty else {
-            continue;
-        };
-        let Some(name) = owner.path.get_ident().map(ToString::to_string) else {
-            continue;
-        };
-        for rule in block.items.iter().filter_map(|member| match member {
-            ImplItem::Fn(function)
-                if function
-                    .attrs
-                    .iter()
-                    .any(|attribute| attribute.path().is_ident("rule")) =>
-            {
-                Some(function.sig.ident.to_string())
-            }
-            _ => None,
-        }) {
-            if let Some(found) = declared.iter_mut().find(|each| each.name == name) {
-                found.rules.push(rule);
+    for role in REPORTED_BY_ID {
+        for item in items {
+            let Item::Impl(block) = item else {
+                continue;
+            };
+            let Type::Path(owner) = &*block.self_ty else {
+                continue;
+            };
+            let Some(name) = owner.path.get_ident().map(ToString::to_string) else {
+                continue;
+            };
+            for rule in block.items.iter().filter_map(|member| match member {
+                ImplItem::Fn(function)
+                    if function
+                        .attrs
+                        .iter()
+                        .any(|attribute| attribute.path().is_ident(role)) =>
+                {
+                    Some(function.sig.ident.to_string())
+                }
+                _ => None,
+            }) {
+                if let Some(found) = declared.iter_mut().find(|each| each.name == name) {
+                    found.rules.push(rule);
+                }
             }
         }
     }
@@ -342,6 +346,65 @@ impl Lamp {
             !file.declares_unread(Some("Lamp"), Some("flip")),
             "an action"
         );
+    }
+
+    #[test]
+    fn an_unreadable_rust_file_declares_its_rules_about_runs_and_witnesses_after_its_rules() {
+        let source = "\
+use earnest::model::{Model, model};
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]
+pub struct Lamp {
+    #[initial(false)]
+    lit: bool,
+}
+
+#[model]
+impl Lamp {
+    #[action(\"someone flips the switch\", fair)]
+    fn flip(&self) -> Option<Self> {
+        loop {}
+    }
+
+    #[witness(\"One flip lights the lamp\")]
+    fn lights(&self) -> Option<bool> {
+        let after = self.flip()?;
+        Some(after.lit)
+    }
+
+    #[eventually(\"Every run lights the lamp\")]
+    fn lit_at_last(&self) -> bool {
+        self.lit
+    }
+
+    #[setup(\"The lamp starts lit\")]
+    fn on(&self) -> Self {
+        Self { lit: true }
+    }
+
+    #[rule(\"The lamp is never lit\")]
+    fn dark(&self) -> bool {
+        !self.lit
+    }
+}
+";
+        let file = loaded("lamp.rs", Language::Rust, source);
+        assert!(!file.problems().is_empty(), "the file is unreadable");
+        assert_eq!(
+            file.declared,
+            [Declared {
+                name: "Lamp".to_owned(),
+                rules: vec![
+                    "dark".to_owned(),
+                    "lit_at_last".to_owned(),
+                    "lights".to_owned()
+                ]
+            }],
+            "the rule, then the rule about runs, then the witness, as a readable file lists them"
+        );
+        assert!(file.declares_unread(Some("Lamp"), Some("lights")));
+        assert!(file.declares_unread(None, Some("lit_at_last")));
+        assert!(!file.declares_unread(None, Some("on")), "a setup");
     }
 
     #[test]

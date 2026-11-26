@@ -2,14 +2,88 @@ use crate::choices::{Fastest, Slot, domain_choices, for_each_combination};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::ext::IdentExt;
+use syn::parse::ParseStream;
 use syn::spanned::Spanned;
-use syn::{Attribute, FnArg, ImplItem, ImplItemFn, ItemImpl, LitStr, Pat};
+use syn::{Attribute, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, LitStr, Pat, Token};
 
-const ROLES: [&str; 3] = ["action", "rule", "end"];
+const ROLES: [&str; 6] = ["action", "rule", "end", "eventually", "witness", "setup"];
+const OPTIONS: [(&str, &str, bool); 3] = [
+    ("action", "fair", false),
+    ("eventually", "after", true),
+    ("witness", "setup", true),
+];
 
 struct Role {
     name: &'static str,
     sentence: LitStr,
+    named: Option<Ident>,
+}
+
+type Written = (LitStr, Vec<(Ident, Option<Ident>)>);
+
+fn written(input: ParseStream<'_>) -> syn::Result<Written> {
+    let sentence: LitStr = input.parse()?;
+    let mut options = Vec::new();
+    while !input.is_empty() {
+        input.parse::<Token![,]>()?;
+        if input.is_empty() {
+            break;
+        }
+        let name = input.call(Ident::parse_any)?;
+        let value = if input.peek(Token![=]) {
+            input.parse::<Token![=]>()?;
+            Some(input.call(Ident::parse_any)?)
+        } else {
+            None
+        };
+        options.push((name, value));
+    }
+    Ok((sentence, options))
+}
+
+fn what_it_takes(role: &str) -> String {
+    match role {
+        "action" => {
+            "an action takes its sentence, then `fair`: `#[action(\"...\", fair)]`".to_owned()
+        }
+        "eventually" => "a rule about runs takes its sentence, then `after = method`, a helper \
+            method that takes `&self` and returns `bool`: `#[eventually(\"...\", after = paid)]`"
+            .to_owned(),
+        "witness" => "a witness takes its sentence, then `setup = method`, a `#[setup]` method: \
+            `#[witness(\"...\", setup = behind)]`"
+            .to_owned(),
+        other => format!("`#[{other}]` takes only its sentence, in quotes: `#[{other}(\"...\")]`"),
+    }
+}
+
+fn named_option(
+    role: &'static str,
+    given: Vec<(Ident, Option<Ident>)>,
+) -> syn::Result<Option<Ident>> {
+    let mut named = None;
+    let mut seen: Vec<String> = Vec::new();
+    for (option, value) in given {
+        let written = option.unraw().to_string();
+        let Some((_, _, takes_a_name)) = OPTIONS
+            .iter()
+            .find(|(owner, known, _)| *owner == role && *known == written)
+        else {
+            return Err(syn::Error::new(option.span(), what_it_takes(role)));
+        };
+        if seen.contains(&written) {
+            return Err(syn::Error::new(
+                option.span(),
+                format!("`{written}` is given twice"),
+            ));
+        }
+        seen.push(written);
+        match (value, *takes_a_name) {
+            (None, false) => {}
+            (Some(method), true) => named = Some(method),
+            _ => return Err(syn::Error::new(option.span(), what_it_takes(role))),
+        }
+    }
+    Ok(named)
 }
 
 pub(crate) fn expand(arguments: &TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
@@ -29,6 +103,9 @@ pub(crate) fn expand(arguments: &TokenStream, input: TokenStream) -> syn::Result
     let mut actions = Vec::new();
     let mut rules = Vec::new();
     let mut ends = Vec::new();
+    let mut eventually = Vec::new();
+    let mut witnesses = Vec::new();
+    let mut setups = Vec::new();
     for item in &mut block.items {
         let ImplItem::Fn(method) = item else {
             continue;
@@ -39,7 +116,10 @@ pub(crate) fn expand(arguments: &TokenStream, input: TokenStream) -> syn::Result
         match role.name {
             "action" => actions.push(steps_of(method, &role.sentence)?),
             "rule" => rules.push(claim_of(method, &role.sentence)),
-            _ => ends.push(claim_of(method, &role.sentence)),
+            "end" => ends.push(claim_of(method, &role.sentence)),
+            "eventually" => eventually.push(eventually_of(method, &role)),
+            "witness" => witnesses.push(witness_of(method, &role)),
+            _ => setups.push(setup_of(method, &role.sentence)),
         }
     }
     let owner = &block.self_ty;
@@ -61,6 +141,18 @@ pub(crate) fn expand(arguments: &TokenStream, input: TokenStream) -> syn::Result
             fn ends(&self) -> ::std::vec::Vec<::earnest::model::Claim> {
                 ::std::vec![#(#ends),*]
             }
+
+            fn eventually(&self) -> ::std::vec::Vec<::earnest::model::Eventually> {
+                ::std::vec![#(#eventually),*]
+            }
+
+            fn witnesses(&self) -> ::std::vec::Vec<::earnest::model::Witnessed> {
+                ::std::vec![#(#witnesses),*]
+            }
+
+            fn setups(&self) -> ::std::vec::Vec<::earnest::model::Setup<Self>> {
+                ::std::vec![#(#setups),*]
+            }
         }
     })
 }
@@ -80,16 +172,25 @@ fn take_role(attributes: &mut Vec<Attribute>) -> syn::Result<Option<Role>> {
         if found.is_some() {
             return Err(syn::Error::new(
                 attribute.span(),
-                "a method is an action, a rule or an end, never two of them",
+                "a method is an action, a rule, an end, a rule about runs, a witness or a \
+                 setup, never two of them",
             ));
         }
-        let sentence = attribute.parse_args().map_err(|_| {
+        let (sentence, given) = attribute.parse_args_with(written).map_err(|_| {
             syn::Error::new(
                 attribute.span(),
-                format!("write the sentence in quotes: `#[{name}(\"...\")]`"),
+                format!(
+                    "write the sentence in quotes: `#[{name}(\"...\")]`; {}",
+                    what_it_takes(name)
+                ),
             )
         })?;
-        found = Some(Role { name, sentence });
+        let named = named_option(name, given)?;
+        found = Some(Role {
+            name,
+            sentence,
+            named,
+        });
     }
     *attributes = kept;
     Ok(found)
@@ -112,6 +213,68 @@ fn claim_of(method: &ImplItemFn, sentence: &LitStr) -> TokenStream {
             id: #id,
             says: #sentence,
             holds: Self::#name(self),
+        }
+    }
+}
+
+fn eventually_of(method: &ImplItemFn, role: &Role) -> TokenStream {
+    let name = &method.sig.ident;
+    let id = name.unraw().to_string();
+    let sentence = &role.sentence;
+    let after = role.named.as_ref().map_or_else(
+        || quote! { ::core::option::Option::None },
+        |after| quote! { ::core::option::Option::Some(Self::#after(self)) },
+    );
+    quote! {
+        ::earnest::model::Eventually {
+            id: #id,
+            says: #sentence,
+            after: #after,
+            reaches: Self::#name(self),
+        }
+    }
+}
+
+fn witness_of(method: &mut ImplItemFn, role: &Role) -> TokenStream {
+    let played = &method.block;
+    method.block = syn::parse_quote! {
+        {
+            ::core::convert::identity(#played)
+        }
+    };
+    let name = &method.sig.ident;
+    let id = name.unraw().to_string();
+    let sentence = &role.sentence;
+    let setup = role.named.as_ref().map_or_else(
+        || quote! { ::core::option::Option::None },
+        |setup| {
+            let named = setup.unraw().to_string();
+            quote! {
+                {
+                    let _: fn(&Self) -> Self = Self::#setup;
+                    ::core::option::Option::Some(#named)
+                }
+            }
+        },
+    );
+    quote! {
+        ::earnest::model::Witnessed {
+            id: #id,
+            says: #sentence,
+            setup: #setup,
+            played: Self::#name(self),
+        }
+    }
+}
+
+fn setup_of(method: &ImplItemFn, sentence: &LitStr) -> TokenStream {
+    let name = &method.sig.ident;
+    let id = name.unraw().to_string();
+    quote! {
+        ::earnest::model::Setup {
+            id: #id,
+            says: #sentence,
+            state: Self::#name(self),
         }
     }
 }
@@ -331,5 +494,111 @@ mod tests {
             !expanded.contains("# [one_of"),
             "the attribute is read: {expanded}"
         );
+    }
+
+    #[test]
+    fn rules_about_runs_witnesses_and_setups_lose_their_attributes_and_are_called_by_name() {
+        let expanded = expand(
+            &TokenStream::new(),
+            quote! {
+                impl Gate {
+                    #[action("the visitor pays", fair)]
+                    fn pay(&self) -> Option<Self> {
+                        None
+                    }
+
+                    fn paid(&self) -> bool {
+                        true
+                    }
+
+                    #[eventually("Once paid, the gate opens", after = paid)]
+                    fn opens(&self) -> bool {
+                        true
+                    }
+
+                    #[eventually("Every run ends")]
+                    fn ends(&self) -> bool {
+                        true
+                    }
+
+                    #[setup("The gate starts open")]
+                    fn open(&self) -> Self {
+                        self.clone()
+                    }
+
+                    #[witness("Pay, then the gate opens", setup = open)]
+                    fn pays(&self) -> Option<bool> {
+                        let after = self.pay()?;
+                        Some(after.opens())
+                    }
+                }
+            },
+        )
+        .expect("a model block")
+        .to_string();
+        for gone in [
+            "# [action",
+            "# [eventually",
+            "# [setup",
+            "# [witness",
+            "fair",
+        ] {
+            assert!(!expanded.contains(gone), "{gone} in {expanded}");
+        }
+        let wanted = [
+            quote! { fn pay(&self) -> Option<Self> },
+            quote! { action: "pay", label: "the visitor pays" },
+            quote! {
+                id: "opens",
+                says: "Once paid, the gate opens",
+                after: ::core::option::Option::Some(Self::paid(self)),
+                reaches: Self::opens(self),
+            },
+            quote! { after: ::core::option::Option::None, reaches: Self::ends(self), },
+            quote! { id: "open", says: "The gate starts open", state: Self::open(self), },
+            quote! { let _: fn(&Self) -> Self = Self::open; },
+            quote! { played: Self::pays(self), },
+            quote! {
+                fn pays(&self) -> Option<bool> {
+                    ::core::convert::identity({
+                        let after = self.pay()?;
+                        Some(after.opens())
+                    })
+                }
+            },
+        ];
+        for piece in wanted {
+            let text = piece.to_string();
+            assert!(expanded.contains(&text), "{text} in {expanded}");
+        }
+    }
+
+    #[test]
+    fn an_option_another_attribute_takes_or_given_twice_is_refused() {
+        for (attribute, words) in [
+            (quote! { #[rule("One", fair)] }, "takes only its sentence"),
+            (quote! { #[action("One", fair = yes)] }, "`fair`"),
+            (quote! { #[action("One", fair, fair)] }, "given twice"),
+            (quote! { #[eventually("One", after)] }, "`after = method`"),
+            (
+                quote! { #[eventually("One", before = paid)] },
+                "`after = method`",
+            ),
+            (quote! { #[witness("One", fair)] }, "`setup = method`"),
+            (
+                quote! { #[witness("One", setup = 3)] },
+                "write the sentence in quotes",
+            ),
+        ] {
+            let found = refusal(quote! {
+                impl Gate {
+                    #attribute
+                    fn one(&self) -> bool {
+                        true
+                    }
+                }
+            });
+            assert!(found.contains(words), "{words} in {found}");
+        }
     }
 }
