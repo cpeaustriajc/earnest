@@ -9,7 +9,7 @@ const REPORTED_BY_ID: [&str; 3] = ["rule", "eventually", "witness"];
 
 #[derive(Debug)]
 pub(crate) struct Readable {
-    pub(crate) draft: Draft,
+    pub(crate) draft: Option<Draft>,
     pub(crate) model: Model,
     pub(crate) position: usize,
 }
@@ -146,6 +146,7 @@ pub(crate) fn read(language: Language, path: &str, source: &str) -> Reading {
     match language {
         Language::TypeScript => earnest_ts::read(path, source),
         Language::Rust => earnest_rs::read(path, source),
+        Language::Quint => Reading::default(),
     }
 }
 
@@ -162,12 +163,12 @@ fn understand(reading: Reading) -> Content {
                     .filter_map(|position| model.in_setup(position))
                     .collect();
                 models.push(Readable {
-                    draft: draft.clone(),
+                    draft: Some(draft.clone()),
                     model,
                     position,
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
-                    draft: draft.clone(),
+                    draft: Some(draft.clone()),
                     model,
                     position,
                 }));
@@ -183,8 +184,35 @@ fn understand(reading: Reading) -> Content {
     }
 }
 
+fn quint(path: String, source: String) -> ModelFile {
+    let (declared, content) = match earnest_quint::read(&path, &source) {
+        Ok(model) => (
+            vec![Declared {
+                name: model.name.clone(),
+                rules: model.rule_ids().map(str::to_owned).collect(),
+            }],
+            Content::Models(vec![Readable {
+                draft: None,
+                model,
+                position: 0,
+            }]),
+        ),
+        Err(problems) => (Vec::new(), Content::Unreadable(problems)),
+    };
+    ModelFile {
+        path,
+        source,
+        declared,
+        content,
+    }
+}
+
 pub(crate) fn load(found: Found) -> ModelFile {
     match found.text {
+        Text::Model {
+            language: Language::Quint,
+            source,
+        } => quint(found.path, source),
         Text::Model { language, source } => {
             let reading = read(language, &found.path, &source);
             let declared = declared_by(language, &source, &reading);

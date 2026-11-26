@@ -602,3 +602,253 @@ The first is simpler and testable [inferred: a product decision, flag it to the 
   by `--match`, earnest needs the same pattern [read].
 - The default Rust evaluator for `quint test` could not be downloaded here. Every `quint test`
   result above is from `--backend typescript` [ran].
+
+---
+
+## Slice 1: what is checked
+
+`earnest verify <file>.json` reads a module that `quint compile --target json` wrote (issue
+#54). The samples are in `models/`, each `.qnt` beside the `.json` compiled from it with Quint
+0.33.1; `counter.json` was compiled again, with both invariants. The small modules the unit tests
+of `crates/earnest_quint` read are in `crates/earnest_quint/fixtures`.
+
+Compiled with:
+
+```sh
+quint compile --target json --main counter --invariant inRange,tooBig counter.qnt > counter.json
+quint compile --target json --main mixed --invariant inBounds,downAtZero,agree,neverFourDown mixed.qnt > mixed.json
+quint compile --target json --main starts --invariant small starts.qnt > starts.json
+quint compile --target json --main dead --invariant ok dead.qnt > dead.json
+quint compile --target json --main record --invariant ok record.qnt > record.json
+```
+
+### State counts and verdicts by hand
+
+- **counter**: `count` 0 to 5, `on` either. From `(0, false)`, `toggle` flips `on`, `bump` needs
+  `on` and adds 1 to 3, cut at 5, and `reset` takes 5 back to `(0, false)`. With `on` true every
+  count from 0 to 5 is reached, and `toggle` gives each with `on` false: 6 × 2 = **12**.
+  `inRange` holds (the cut keeps 0 to 5). `tooBig` (`count < 4`) is broken; a bump adds at most
+  3, so the shortest path is `toggle`, then two bumps that add up to 4: **3 steps**.
+- **mixed** (`any`, `all`, `if`, `nondet` over `Set(-1, 1, 2)`, an action with a parameter, a
+  `val` inside an action, `implies`, `iff`): `x` 0 to 4, `up` either. A move to `x + d` sets
+  `up` to `d > 0`; `flip` toggles `up` and sends `x` to 0 when `up` was false; `wrap` at 4. Every
+  `(k, true)` is reached by moves up and every `(k, false)` by a flip from it: 5 × 2 = **10**.
+  `inBounds`, `downAtZero` and `agree` hold; `neverFourDown` is broken by
+  `move(2)`, `move(2)`, `flip`: **3 steps**.
+- **starts** (a nondeterministic `init`): `a` in {0, 2, 4} and `b` either, so **6** start states;
+  `step` adds 1 to `a` up to 6 and keeps `b`, so `a` reaches 0 to 6 with either `b`:
+  7 × 2 = **14**. `small` holds. Every run stops at `a = 6`.
+- **dead**: `a` from 0 to 3, then no action: **4** states, `ok` holds, and the stop at 3 is no
+  finding.
+- **params** (`crates/earnest_quint/fixtures/params.qnt`: an action called with a `nondet`, an
+  `any` inside the step): `x` from 0; `add` gives 1 or 2 below 6, so up to 7; `x - 1` above 0;
+  `x * 2` below 3. Every `x` from 0 to 7: **8**. `ok` holds.
+
+| Model | States by hand | TLC | earnest | Invariant | By hand | TLC | earnest |
+|---|---|---|---|---|---|---|---|
+| counter | 12 | 12 | 12 | `inRange` | holds | ok | holds |
+| | | | | `tooBig` | broken, 3 steps | violation, 3 steps | broken, 3 steps |
+| mixed | 10 | 10 | 10 | `inBounds`, `downAtZero`, `agree` | hold | ok | hold |
+| | | | | `neverFourDown` | broken, 3 steps | violation, 3 steps | broken, 3 steps |
+| starts | 14 (6 start) | 14 (6 initial) | 14 | `small` | holds | ok | holds |
+| dead | 4 | 4 | 4 | `ok` | holds, no deadlock | ok | pass, not stuck |
+| params | 8 | 8 | 8 | `ok` | holds | ok | holds |
+
+TLC stops at the first violation, so a broken invariant's TLC count is partial (8 for
+`tooBig`); the full count is from a run of an invariant that holds.
+
+### TLC, as Quint runs it
+
+Quint 0.33.1 from npm, Java 21, Apalache 0.62.4 (which Quint downloads). One command per
+invariant, so TLC reports each one alone:
+
+```text
+=== quint verify --backend tlc --main counter --invariant inRange counter.qnt
+33 states generated, 12 distinct states found, 0 states left on queue.
+[ok] No violation found (605ms).
+=== quint verify --backend tlc --main counter --invariant tooBig counter.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>  on = FALSE, count = 0
+State 2: <toggle>             on = TRUE,  count = 0
+State 3: <bump>               on = TRUE,  count = 1
+State 4: <bump>               on = TRUE,  count = 4
+16 states generated, 8 distinct states found, 0 states left on queue.
+[violation] Found an issue (680ms).
+=== quint verify --backend tlc --main mixed --invariant inBounds mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (532ms).
+=== quint verify --backend tlc --main mixed --invariant downAtZero mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (919ms).
+=== quint verify --backend tlc --main mixed --invariant agree mixed.qnt
+35 states generated, 10 distinct states found, 0 states left on queue.
+[ok] No violation found (1272ms).
+=== quint verify --backend tlc --main mixed --invariant neverFourDown mixed.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>  up = TRUE,  x = 0
+State 2: <move(2)>            up = TRUE,  x = 2
+State 3: <move(2)>            up = TRUE,  x = 4
+State 4: <flip>               up = FALSE, x = 4
+31 states generated, 10 distinct states found, 0 states left on queue.
+[violation] Found an issue (1527ms).
+=== quint verify --backend tlc --main starts --invariant small starts.qnt
+Finished computing initial states: 6 distinct states generated
+18 states generated, 14 distinct states found, 0 states left on queue.
+[ok] No violation found (902ms).
+=== quint verify --backend tlc --main dead --invariant ok dead.qnt
+4 states generated, 4 distinct states found, 0 states left on queue.
+[ok] No violation found (1069ms).
+=== quint verify --backend tlc --main params --invariant ok params.qnt
+23 states generated, 8 distinct states found, 0 states left on queue.
+[ok] No violation found (673ms).
+```
+
+The state lines are cut to the action and the values; the rest of each output is Apalache's and
+TLC's start-up text.
+
+### earnest
+
+```text
+$ earnest verify tasks/quint/models/counter.json
+fail        counter  12 states  0 ms
+  broken  tooBig  "The Quint invariant `tooBig` holds"
+    start  count = 0, on = false
+    1. toggle  on: false -> true
+    2. bump  by = 1  count: 0 -> 1
+    3. bump  by = 3  count: 1 -> 4
+    end    count = 4, on = true
+$ earnest verify tasks/quint/models/mixed.json
+fail        mixed  10 states  0 ms
+  broken  neverFourDown  "The Quint invariant `neverFourDown` holds"
+    start  x = 0, up = true
+    1. move  d = 2  x: 0 -> 2
+    2. move  d = 2  x: 2 -> 4
+    3. flip  up: true -> false
+    end    x = 4, up = false
+$ earnest verify tasks/quint/models/starts.json
+pass        starts  14 states  0 ms
+$ earnest verify tasks/quint/models/dead.json
+pass        dead  4 states  0 ms
+$ earnest verify crates/earnest_quint/fixtures/params.json
+pass        params  8 states  0 ms
+$ earnest verify tasks/quint/models/record.json
+unreadable  tasks/quint/models/record.json
+  tasks/quint/models/record.json:1:1  `var r`  a variable that holds records: only `int` and `bool` variables are read yet
+  tasks/quint/models/record.json:1:1  `Rec`  records are not read yet, in the definition `step`
+  tasks/quint/models/record.json:1:1  `field`  records are not read yet, in the definition `ok`
+  tasks/quint/models/record.json:1:1  `Rec`  records are not read yet, in the definition `init`
+```
+
+The TLA+ export of each of these models (`earnest tla`), run through the TLC in Apalache's jar
+(`java -cp apalache.jar tlc2.TLC`), finds the same counts (14 for `starts`, 4 for `dead`, with
+no deadlock error) and the same broken invariants.
+
+The tests: `crates/earnest_quint/src/tests.rs` (the reader) and
+`apps/earnest/tests/behavior/quint.rs` (the CLI on the samples above).
+
+## Slice 1: report
+
+### Done
+
+- `crates/earnest_quint`: serde types for the compiled JSON, names resolved through `table`,
+  operators, `val` and `def` inlined, `q::init` worked out into listed start states, `q::step`
+  unfolded into actions (one per path through `any`/`all`/`if`/`let`/`nondet`/calls, named after
+  the top-level action reached, `#2` after a repeated name, at most 1000 per step), each named
+  invariant of `q::inv` a rule, and one end that is `true`. It gives an `earnest_ir::Model`
+  directly.
+- `earnest_value::Domain::Any` (every `int` variable): `contains` is always true, `count` is
+  `u128::MAX`, `values` lists none.
+- `earnest_ir::Runs::starts`: listed start states, read by `explore/starts.rs` (`Starts::of`),
+  so by the search and the witness player.
+- The CLI: a `.json` file named on the command line that `quint compile` wrote goes to the new
+  reader; a folder search does not pick up `.json` files. `Readable.draft` is an `Option`,
+  because a Quint model has no draft. Output, JSON, cache, `--rule` and `--model` are the
+  existing code.
+- The TLA+ export: a `Domain::Any` field is `TRUE` in `InRange`, and listed start states are
+  written as one disjunction in `Init` (it wrote the product of the fields' starts, which was
+  wrong for these models).
+
+### The audit of `values()` and `count()` for `Domain::Any`
+
+- `earnest_semantic` (`lib.rs:356`, `:363`): lists only domains it built from a draft, never
+  `Any`.
+- `store/codec.rs`: `Any` counts more than the listed limit, so it gets the `Grown` codec, a
+  dictionary of the values the search reaches, each inside the domain.
+- `store/layout.rs`: only `Int` and `Bool` get a range slot; `Any` gets the grown width.
+- Inputs: the reader gives every input a listed domain (`OneOf` or `Int`), never `Any`.
+- `earnest_tla` (`scribe.rs` `within`, `kind.rs`, `limits.rs`): `within` writes `TRUE` now; the
+  others fall to their `_` arms (kind unknown, no limits to note), which is right.
+- The chart reads values, not domains. `expand.rs:2254` is a test helper.
+
+### Refused
+
+Records, tuples, sets as values, maps, lists, text, variants and `match`, integer powers
+(`ipow`), temporal properties (`temporal` and `q::temporalProps`), inductive invariants, runs,
+`const` without a value, type definitions, imports and other declarations, a `nondet` that is
+not `oneOf` over `Set(...)` or `a.to(b)` of constants, a `oneOf` over a set computed from the
+state or from another `nondet`, `oneOf`/`Set`/`to` anywhere else, an action used as a value,
+an operator passed as a value, a step or an `init` that leaves a variable unassigned or assigns
+one twice, an `init` that reads a variable, an integer literal beyond 64 bits, a fault while
+`init` is worked out, more than 1000 actions from one step, and more than 1,000,000 combinations
+in `init`. The compiled JSON has no line numbers, so **every problem is at line 1, column 1**,
+and names the construct and the definition it is in.
+
+### Where the spike's README was wrong
+
+- 1.1: `table` entries for a `def` do carry the body (`expr`); the reader still takes bodies from
+  the module's declarations, by id.
+- Constants are not folded by the compile: `-1` is `iuminus(1)` and `Limit` stays a `pureval`
+  definition. The reader inlines them and works out each `oneOf` set when it reads the file.
+- 1.3: serde_json reads a literal beyond 64 bits as a float, so the problem shows it as `1e+20`.
+  It is refused either way.
+- The spike's `counter.json` was compiled with `--invariant inRange` only; the issue needs
+  `inRange,tooBig`, so it was compiled again.
+- 4.2 says `let` becomes `Bind`. The reader substitutes the value where it is used instead,
+  as TLC does; an expression used many times is evaluated many times.
+- `temporal` and `run` cannot be module names (they are keywords), and an action with
+  parameters whose body is a `{ val ... }` block needs its result type (`: bool`) in 0.33.1.
+
+### Doubts about existing code
+
+- `earnest verify --base` (rule changes) skips a Quint file, because `language_of` does not
+  know `.json`; a rule removed from a compiled module is not listed. Left for slice 7.
+- A setup (`Model::in_setup`) does not change listed start states. No Quint model has setups
+  in this slice; slice 4 needs to decide.
+- Order inside `all { ... }`: earnest evaluates every condition before any assignment, TLC in
+  the order written, so `all { x' = 1 / y, y > 0 }` faults in TLC and is disabled in earnest
+  when `y` is 0.
+
+### Checks, each with its last line
+
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,658,285 | +0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores): last line `wide, search time with all cores (0.235 s) over search
+  time with 1 worker (0.369 s): 0.64x, budget at most 0.75x: met`; every budget line `met`,
+  `grid_10m` with 4 workers 1.083 s.
+- `just same-answers origin/main`: `every model file: 336 runs, 8 differences`; the sweeps
+  `0 differences`. All 8 are `tasks/conformance/runs/lift.model.ts` and `panel.model.ts`, which
+  are not on `origin/main`: they came with the integration branch's witness setups. The binary
+  of this branch prints the same output for both as the binary of its base `19c5023`, and
+  `just same-answers 19c5023` gives `every model file: 336 runs, 0 differences` with every sweep
+  at 0.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked`: 80 suites, 1673 passed, 0 failed.
+- `tests_kept.py --base origin/main`: `tests kept: 1365 tests, 3953 assertions (base: 1304, 3798)`.
+
+### Unfinished, and the next step
+
+- Problems sit at line 1, column 1: slice 3 matches ids against `quint parse --source-map`.
+- An input slot is numbered across the whole step, so an action can have unused slots (a few
+  `null`s in its frame). Renumbering per action is a small follow-up if a model ever has many.
+- An input takes a parameter's name only when a bare `nondet` is passed to an action; an
+  action called with a constant (`deposit(3)`) is an action of its own, `deposit#2` for the
+  next.
+- The docs and the CLI's `--help` still say "TypeScript or Rust"; the user docs wait until the
+  reader takes the app's models (slice 2 onward).
+- Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
+  general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
+  `scan.rs`.

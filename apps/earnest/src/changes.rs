@@ -621,13 +621,15 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             .models()
             .iter()
             .filter(|readable| readable.model.runs.chosen.is_none())
-            .map(|readable| &readable.draft)
+            .filter_map(|readable| readable.draft.as_ref())
             .collect();
         let old_drafts: Vec<&Draft> = old.iter().collect();
         for target in targets.iter().filter(|target| {
             target.file.path == file.path && target.readable.model.runs.chosen.is_none()
         }) {
-            let new = &target.readable.draft;
+            let Some(new) = &target.readable.draft else {
+                continue;
+            };
             let before = namesakes_before(&now, target.readable.position);
             let was = namesake(&old_drafts, &new.name, before);
             compared

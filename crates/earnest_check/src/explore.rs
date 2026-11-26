@@ -177,7 +177,7 @@ impl Search<'_> {
             .limits
             .time_limit
             .and_then(|limit| began.checked_add(limit));
-        for start in Starts::new(&self.model.fields) {
+        for start in Starts::of(self.model) {
             let placed =
                 self.store
                     .place_values(start.into_boxed_slice(), None, self.limits.max_states);
