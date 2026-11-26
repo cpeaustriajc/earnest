@@ -442,11 +442,11 @@ fn a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly() {
     assert_eq!(
         verdicts(&report, "PlainNested"),
         held(&["nestedTest"]),
-        "a spec that imports a module of helpers is compiled, with `H::init`\n{report}"
+        "a spec that imports a module of helpers is built from the typecheck\n{report}"
     );
-    assert_eq!(
-        quint.compiled(),
-        ["compile --target json --main PlainNested --init H::init --step H::step specs/Plain.qnt"],
-        "only the shape the typecheck build can't take is compiled"
+    assert!(
+        quint.compiled().is_empty(),
+        "nothing is compiled: {:?}",
+        quint.compiled()
     );
 }
