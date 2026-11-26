@@ -2153,3 +2153,66 @@ Windows. Apalache's own checking. An older `tla2tools.jar` (the download was ref
 plural TLC message is read from `MP.class`, not seen. `earnest replay` on a Quint path (no such
 command). Cases where only one Quint backend was asked: the TypeScript REPL's order for a fold
 over tuples disagrees with `quint run`, and was not followed further.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-2` (#70), merged with the integration branch and the pass's final
+write-up. The eight tests pass with no assertion changed. TLC is the `v1.8.0` release's
+`tla2tools.jar` (`TLC2 Version 2026.11.26.020825`); every test of `cargo test --locked -p
+earnest_break_it --features tlc --test tlc` passes with it, the three `runs` and `stutters` tests
+that failed before among them.
+
+- **`confirm --tlc` and the current TLC.** `confirm.rs` reads `Temporal property X was
+  violated.`, `Temporal properties A, B were violated.` and the old `Temporal properties were
+  violated.` as broken, and `The invariant of X is equal to FALSE` (and TLC's longer "is a
+  constant-level formula ... evaluates to FALSE." wording) as `X` violated. `confirm` passes no
+  `-tool`, so it still reads TLC's text; no flag was added. The other lines it reads were checked
+  against the jar's `MP.class`: `Invariant X is violated.` and `... by the initial state:` were
+  read already, every configuration has `CHECK_DEADLOCK FALSE`, the export writes no `ASSUME`,
+  an evaluation error stays an error (`unknown`), and the count line has today's form. Tests:
+  `confirm_reads_a_temporal_property_that_tlc_names_as_violated_as_broken`,
+  `confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken`, and two unit tests
+  in `confirm.rs` for each wording.
+- **A lambda or a `match` in a temporal property.** `temporal()` gives each rule and goal the
+  reader's slots after the property is read, as invariants get them; fairness holds no
+  expression. Test: `a_lambda_inside_a_temporal_property_is_judged_as_tlc_judges_it`. The project
+  model's `everyoneIdle` is now judged and `confirm --tlc` says `same` on it.
+- **The result cache and the entry.** The cache's `source` for a Quint check is the JSON and the
+  whole entry as read (`Check`'s `Debug`), so a field added to the entry is in the key without a
+  second change. Tests: `a_cached_result_is_not_served_for_a_check_whose_runs_changed`, and
+  `a_cached_result_is_not_served_for_a_check_whose_entry_changed` for `invariants`, `temporal`,
+  `init`, `step`, `main` and `runs` from a list to `true`.
+- **A `nondet` behind a guard.** The set a `nondet` picks from is worked out only where the guards
+  Quint evaluates before it hold: the branch's tag in a `match`, the test of an `if`, the earlier
+  parts of an `all` (`Path::behind` wraps the set in `Choose(guard, set, {})`). TLC and `quint run
+  --backend typescript` agree on each shape: `models/quint_second/guarded_nondet.qnt` has
+  `all { i < q.length(), nondet w = q[i].oneOf() … }` and `if (i < q.length()) { nondet … }`, 3
+  states, `small` holds in both (the Rust simulator could not be fetched). Tests:
+  `a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`,
+  `a_nondet_behind_a_guard_or_an_if_is_picked_only_where_the_guard_holds`.
+- **Setups under a name.** A file is typechecked when one of its modules has any instance (`as
+  C`, constants by a name, `export`, several instances), not only `.*`. The places cache's field
+  was renamed, so entries written before are read again. Where a setup is compiled all the same,
+  `"runs": true` with a run of an imported module whose name ends in `Test` makes the check
+  `unreadable`, naming each run that would not be played, as a named run is refused: a note on a
+  `pass` could be read as a pass of those runs. Tests:
+  `the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them`,
+  `runs_true_on_a_compiled_setup_that_drops_the_spec_s_runs_is_refused_naming_them`.
+- **Tuples of ten items or more.** In a model with such tuples the reader hands `Op::InTlcOrder`
+  the names `_1`, `_2`, … in position order; the order and the export's order predicate compare a
+  record whose fields are all among them by position, as TLC compares a tuple. Below ten items,
+  name order is position order, so those models are unchanged. The docs' sentence about the tenth
+  item is gone. `confirm --tlc` says `same` on `fold_tuple10` and on a copy whose invariant reads
+  a variable over five 11-item tuples, where Quint's TLC run says `[ok]`. Tests:
+  `a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`, and
+  `a_tuple_given_its_item_names_compares_its_items_by_position` in `earnest_ir`.
+- **Variants in the TLA+ export.** A module that writes the fields `tag` and `value` begins with
+  `TagBeforeValue == [tag |-> TRUE, value |-> TRUE]`, before `VARIABLES`. TLC parses the checked
+  module before the standard ones, so it meets `tag` first and compares two variants' tags before
+  their values; the exported values are unchanged. `confirm --tlc` says `same` on
+  `variant_compare` and on every setup of the project model (179, 2 412, 1 752, 33 765 and 177 048
+  states). Test: `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
+
+A `nondet` that picks from a written set of such tuples tries its values in the same positional
+order, as the docs say. Not changed: the usability notes and the constructs still refused, left
+for a later ticket.
