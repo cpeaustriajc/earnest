@@ -4353,6 +4353,32 @@ fault for the checker) and `ranges` (`range(3, 1)`) print `cannot`, as the docs 
 So the check "`same` on every sample" is not met as written: 3 samples cannot be confirmed by
 Quint 0.33.1 at all. The stop rule of the Budget (no state count on a violation-free run) did not
 fire: no sample had a violation-free run without a count.
+### After the review of `3f80c0f` [ran]
+
+Changes:
+- A run the checker lists as not played is never `same`. It differs when `quint test` breaks
+  it and is `cannot` when it passes. Run names are compared whole.
+- `range` and `fold` count only where the check's `init`, `step`, properties or played runs
+  reach them in the compiled module, which is read from Quint's JSON. `range` counts only
+  against `quint test`. A fold counts only over a set whose items are not `int` or `bool` in
+  Quint's `types`, or whose items Quint's types don't give.
+- A job of all properties that stops with an error is split, one job per property.
+- A relative `EARNEST_QUINT` is started by its absolute path.
+- New sample: `confirm.qnt`, module `words`, a reachable fold over texts.
+
+The same four commands as above, from a fresh `.earnest`, give the same lines for every check
+of `first`, `imports` and `setups`, so:
+
+| Folder | `same` | `cannot` | `differs` |
+|---|---|---|---|
+| `first`, `imports`, `setups` (35 checks read) | 32 | 3 (`FirstSteps`, `As`, `Exported`) | 0 |
+| `confirm` (5 checks) | 2 (`lift`, `words`) | 3 (`big`, `halves`, `ranges`) | 0 |
+
+`As` now starts one job per property after the first job stops. Each job stops with the same
+flattening error, so each property is named with it. That made 89 `quint verify` jobs and 26
+`quint test` jobs in all. Times: `first` 50 s, `imports` 137 s, `setups` 422 s, `confirm` 45 s.
+`words` is `same`: TLC gives 3 states and no violation, as the checker does.
+
 
 ## Checks marked in the model (#72): how other checkers declare a check
 

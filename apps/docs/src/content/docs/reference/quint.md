@@ -513,9 +513,9 @@ For each check that searches, earnest starts one `quint verify --backend tlc` wi
 quint verify /work/specs/clock.qnt --main Small --backend tlc --init init --step step --temporal timeAdvances --invariants timeBounded skewOk
 ```
 
-That job gives TLC's state count and, when it finds no violation, the verdict of every property. TLC stops at the first violation and does not say which property broke, so when the job finds one, each property gets a job of its own. A property marked `broken` gets its own job from the start. When no job finishes without a violation, one more job with no property gives the count. A check whose properties all hold costs one job, and each job starts Java, about 7 seconds.
+That job gives TLC's state count and, when it finds no violation, the verdict of every property. TLC stops at the first violation and does not say which property broke, so when the job finds one, or stops with an error, each property gets a job of its own, and the line names the property Quint refused. A property marked `broken` gets its own job from the start. When no job finishes without a violation, one more job with no property gives the count. A check whose properties all hold costs one job, and each job starts Java, about 7 seconds.
 
-For each check that plays runs, earnest starts one `quint test --backend typescript --main Small`, with `--match 'Test$'` when the check plays only the runs whose name ends in `Test`, or a `--match` of the runs it plays when one of them is marked. Each run's verdict is compared: `ok` is `holds`, `failed` is `broken`. A run that `quint test` plays and the checker does not, and that is not one of the [runs not played](#runs), differs.
+For each check that plays runs, earnest starts one `quint test --backend typescript --main Small`, with `--match 'Test$'` when the check plays only the runs whose name ends in `Test`, or a `--match` of the runs it plays when one of them is marked. Each run's verdict is compared: `ok` is `holds`, `failed` is `broken`. A run that `quint test` plays and the checker does not differs. A run the checker lists as [not played](#runs) is never `same`: it differs when `quint test` breaks it, since the check then passes a run Quint breaks, and is `cannot` when `quint test` passes it. The names are compared whole, `setup::spec::upTest` against `setup::spec::upTest`.
 
 ### When it prints `cannot`
 
@@ -528,11 +528,13 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 | The model declares, or the search computes, a number outside 32 bits | TLC's integers hold 32 bits |
 | The checker could not judge a property or a run, such as `/` or `%` of a negative number, which is a fault | `the checker could not judge it` |
 | A run `quint test` passed after more than one sample, which the checker breaks | `quint test` tries random choices of a run, and the checker tries every choice |
-| The model uses `range` or a fold | the backend difference [listed above](#where-quints-backends-differ) |
+| A run the check plays reaches `range`; only the comparison with `quint test` | `quint test` answers otherwise when `range` starts above its end ([listed above](#where-quints-backends-differ)) |
+| `init`, `step`, a property or a run reaches a `fold` over a set of anything but numbers or booleans, or over a set whose kind of items is not in Quint's types | TLC may take the set in another order than the checker |
+| `quint test` plays a run under a second name, `M::B::upTest`, that ends like a run the checker played, as `export B.*` gives | the checker can't tell whether it is that run |
 | The search stopped at `--max-states` or `--time-limit` | there is no full result to compare |
 | A model that is not a Quint check | Quint has nothing to run |
 
-Any other difference prints `differs`. A run with no choice is played once by `quint test` (`passed 1 test(s)`), so a run the checker breaks and Quint passes once differs.
+Only what the check reaches counts: a `range` or a `fold` in another module of the file, or in a definition nothing calls, changes nothing. Any other difference prints `differs`. A run with no choice is played once by `quint test` (`passed 1 test(s)`), so a run the checker breaks and Quint passes once differs.
 
 ## The cache
 

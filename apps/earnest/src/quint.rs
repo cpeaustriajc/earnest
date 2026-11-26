@@ -106,7 +106,7 @@ fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
         },
     };
     QuintCheck {
-        program: quint.program.clone(),
+        program: std::path::absolute(&quint.program).unwrap_or_else(|_| quint.program.clone()),
         file: job.real.clone(),
         main: check.main.clone(),
         init: check.init.clone(),

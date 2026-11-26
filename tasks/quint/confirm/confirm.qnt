@@ -46,3 +46,12 @@ module ranges {
 
   run emptyTest = init.expect(range(3, 1).length() == 0)
 }
+
+module words {
+  var n: int
+
+  action init = n' = 0
+  action step = all { n < 2, n' = n + 1 }
+
+  val counted = Set("up", "down").fold(n, (total, word) => total + 1) <= 4
+}

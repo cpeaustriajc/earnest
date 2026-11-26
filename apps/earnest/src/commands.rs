@@ -1,9 +1,7 @@
 use crate::arguments::{self, Chart, Confirm, Models, Report, Tla};
 use crate::changes::{Compare, Difference, check_base, rule_changes};
 use crate::confirm::{Checker, Tool, confirm_lines, differences, runs_differences};
-use crate::confirm_quint::{
-    Asked, quint_differences, quint_folder, quint_lines, where_backends_differ,
-};
+use crate::confirm_quint::{Asked, quint_differences, quint_folder, quint_lines};
 use crate::discovery::{discover, language_of};
 use crate::print::{
     no_model_line, problem_lines, skipped_line, to_stderr, to_stdout, unreadable_lines,
@@ -507,7 +505,7 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
                 quint: target.readable.quint.as_ref(),
                 expected: &target.readable.expected,
                 beyond_tlc,
-                backends_differ: where_backends_differ(&target.file.source),
+                compiled: &target.file.source,
                 folder: quint_folder(),
             });
             everything_agrees &= found.is_empty();
