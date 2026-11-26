@@ -69,7 +69,7 @@ First, earnest runs `quint parse` once for each listed `.qnt` file, to learn whi
 quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
 ```
 
-Then, for each file with a check of a setup module, it runs `quint typecheck` once, whatever the number of setups in the file. A setup module instantiates a spec:
+Then, for each file with a check of a setup module, it runs `quint typecheck` once, whatever the number of setups in the file. A setup module instantiates a spec, with `.*` or under a name (`as C`):
 
 ```sh
 quint typecheck specs/clock.qnt --out .earnest/quint/...
@@ -204,7 +204,7 @@ The runs of the spec module are played in a setup that earnest builds from `quin
 
 A run must start with the check's `init`. With two instances of one spec, `P::upTest` starts with `P::init`, which sets only part of the state. `quint test` plays it from that part, and earnest can't, so such a run makes the check `unreadable`. Check that setup without `runs`, or write the run in the setup module from its own `init`.
 
-A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
+A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why. So does `"runs": true` when an imported module has a run whose name ends in `Test`: the problem names each run that would not be played, so that a `pass` never stands for runs that did not run. List the runs of the checked module by name, or leave `runs` out.
 
 ## How values print
 
@@ -239,7 +239,7 @@ Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with n
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON is unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 

@@ -407,6 +407,23 @@ fn not_found(name: &str, imported: &[String]) -> Refusal {
     refusal(&format!("`run {name}`"), why).within(name)
 }
 
+fn not_played(dropped: &[&str]) -> Refusal {
+    let listed = dropped
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    refusal(
+        "`\"runs\": true`",
+        &format!(
+            "the check plays every run whose name ends in `Test`, and {listed} would not be \
+             played: they are written in a module this one imports, `quint compile` drops the \
+             runs of imported modules, and the checker plays them only for a setup it builds \
+             itself; list the runs to play by name, or leave `runs` out"
+        ),
+    )
+}
+
 fn chosen<'a>(
     (declarations, imported): (&'a [Declaration], &[String]),
     runs: &Runs,
@@ -424,7 +441,18 @@ fn chosen<'a>(
                 .filter(|def| def.name.ends_with(TESTS_END_WITH))
                 .collect();
             tests.sort_by_key(|def| def.id);
-            Ok(tests)
+            let short = Short::of(tests.iter().map(|def| def.name.as_str()));
+            let dropped: Vec<&str> = imported
+                .iter()
+                .map(String::as_str)
+                .filter(|name| name.ends_with(TESTS_END_WITH))
+                .filter(|name| !tests.iter().any(|def| short.name(&def.name) == *name))
+                .collect();
+            if dropped.is_empty() {
+                Ok(tests)
+            } else {
+                Err(vec![not_played(&dropped)])
+            }
         }
         Runs::Named(names) => {
             let all: Vec<&Def> = every.collect();

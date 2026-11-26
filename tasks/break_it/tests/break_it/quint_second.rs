@@ -219,6 +219,20 @@ fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them(
     );
 }
 
+#[test]
+fn runs_true_on_a_compiled_setup_that_drops_the_spec_s_runs_is_refused_naming_them() {
+    let report = compiled(
+        "Named",
+        include_str!("../../models/quint_second/named_runs/Named.json"),
+    );
+    let said = report.json["unreadable"].to_string();
+    assert!(
+        report.is_unreadable() && said.contains("`upTest`") && report.model("Named").is_null(),
+        "`quint compile --main Named` drops `C::upTest`, so a check that plays every run \
+         ending in `Test` would pass without it; it is refused, naming `upTest`\n{report}"
+    );
+}
+
 fn run_ids(model: &Value) -> Vec<(String, String)> {
     model["rules"]
         .as_array()
