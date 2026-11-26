@@ -734,7 +734,7 @@ pub(crate) fn place_all(
 mod tests {
     use super::Places;
     use earnest_diagnostics::{Place, Problem};
-    use earnest_quint::{Located, Runs};
+    use earnest_quint::Located;
 
     const PARSED: &str = r#"{"modules": [
         {"name": "Clock", "declarations": [

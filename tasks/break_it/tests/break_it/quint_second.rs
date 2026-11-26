@@ -25,7 +25,11 @@ case "$1" in
     ;;
   parse)
     folder="$(cd "$(dirname "$2")" && pwd)"
-    cp "$here/typecheck.json" "$out"
+    if [ -f "$here/parse.json" ]; then
+      cp "$here/parse.json" "$out"
+    else
+      cp "$here/typecheck.json" "$out"
+    fi
     sed "s#\"0\":\"#\"0\":\"$folder/#" "$here/sourcemap.json" > "$map"
     ;;
   typecheck)
@@ -237,24 +241,54 @@ fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them(
 }
 
 #[test]
-fn runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play() {
-    let recorded = RecordedQuint::new(&QuintFixtures {
+fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
+    let fixtures = |typecheck| QuintFixtures {
         file: "runs_not_played.qnt",
         source: include_str!("../../models/quint_second/runs_not_played/runs_not_played.qnt"),
-        typecheck: include_str!("../../models/quint_second/runs_not_played/parse.json"),
+        typecheck,
         sourcemap: include_str!(
             "../../models/quint_second/runs_not_played/runs_not_played.sourcemap.json"
         ),
         compiled: include_str!("../../models/quint_second/runs_not_played/Plays.json"),
-    });
+    };
+    let built = RecordedQuint::new(&fixtures(include_str!(
+        "../../models/quint_second/runs_not_played/typecheck.json"
+    )))
+    .verify(&["--no-cache"]);
+    let plays = model_named(&built, "Plays");
+    assert_eq!(
+        (plays["status"].as_str(), run_ids(plays)),
+        (
+            Some("pass"),
+            vec![
+                ("upTest".to_owned(), "holds".to_owned()),
+                ("ownTest".to_owned(), "holds".to_owned())
+            ]
+        ),
+        "`quint test --main Plays` plays `S::upTest` and `ownTest`, and the check, built from \
+         the typecheck, plays both\n{built:#}"
+    );
+    let recorded = RecordedQuint::new(&fixtures(""));
+    fs::write(
+        recorded.folder.path().join("fake/parse.json"),
+        include_str!("../../models/quint_second/runs_not_played/parse.json"),
+    )
+    .expect("the parse can be written");
     let report = recorded.verify(&["--no-cache"]);
     let model = model_named(&report, "Plays");
     assert_eq!(
-        (model["status"].as_str(), &model["runsNotPlayed"]),
-        (Some("pass"), &serde_json::json!(["S::upTest"])),
-        "`quint test --main Plays` plays `S::upTest` and `ownTest`; `quint compile` drops \
-         `S::upTest`, so the check plays `ownTest` and says it did not play `S::upTest`\n\
-         {report:#}"
+        (
+            model["status"].as_str(),
+            &model["runsNotPlayed"],
+            model["reason"].as_str()
+        ),
+        (
+            Some("unfinished"),
+            &serde_json::json!(["S::upTest"]),
+            Some("runs not played: S::upTest")
+        ),
+        "with no typecheck, `quint compile` drops `S::upTest`, so the check plays `ownTest` and \
+         does not pass: it says which run it did not play\n{report:#}"
     );
     assert_eq!(
         run_ids(model),
