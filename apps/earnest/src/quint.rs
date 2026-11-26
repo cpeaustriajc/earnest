@@ -159,10 +159,7 @@ fn not_a_model(qnt: &Path) -> ModelFile {
     problem_file(
         &shown_string(qnt),
         &format!("`{name}`"),
-        &format!(
-            "no module of the Quint file is checked: {}",
-            how_to_mark()
-        ),
+        &format!("no module of the Quint file is checked: {}", how_to_mark()),
     )
 }
 
