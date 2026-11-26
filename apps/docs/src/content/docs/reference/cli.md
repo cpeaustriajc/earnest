@@ -25,7 +25,7 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | `verify` | Check every matched model and print results as text or JSON |
 | `chart` | Print each model as a Mermaid `stateDiagram-v2` statechart |
 | `report` | Print Markdown for a pull request body: results, charts, paths, and optional rule changes |
-| `tla` | Write `<Model>.tla` and `<Model>.cfg` for each model into `--out` |
+| `tla` | Write `<Model>.tla` and `<Model>.cfg` for each model, and `<Model>_<setup>.tla` and `.cfg` for each of its setups, into `--out` |
 | `confirm` | Export each model to TLA+, run TLC or `tla-rs`, and compare state counts and verdicts with `earnest` |
 
 ## Flags
@@ -33,8 +33,8 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | Flag | Default | Commands | Meaning |
 |---|---|---|---|
 | `PATH...` | current directory | all | Files or folders to search for models |
-| `--model <name>` | all | all | Check only the model with this name |
-| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule or witness (requires `--model` when two models share the id) |
+| `--model <name>` | all | all | Check only the model with this name, and each of its [setups](/reference/typescript/#setups) |
+| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule, rule about runs, or witness, in each result that lists it (requires `--model` when two models share the id; the setups of one model do not count as other models) |
 | `--json` | off | `verify` | Print results as JSON instead of text |
 | `--max-states <n>` | `5000000` | `verify`, `chart`, `report`, `confirm` | Stop a model after this many distinct states; every counted state has its rules judged |
 | `--time-limit <seconds>` | none | `verify`, `chart`, `report`, `confirm` | Stop a model after this long, including inside a single state if an action or rule runs too long |
@@ -42,7 +42,7 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | `--no-cache` | off | `verify` | Recheck every matched model even when unchanged; cached results for unchecked models stay stored |
 | `--max-arrows <n>` | `20` | `chart`, `report` | Maximum arrows drawn per chart (at least `1`) |
 | `--base <git ref>` | none | `verify`, `report` | Compare each model's rules with the same file at this commit |
-| `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` are written |
+| `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` (and `<Model>_<setup>.tla` and `.cfg` per setup) are written |
 | `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc` or `--tla-rs` is required) |
 | `--tla-rs <path>` | none | `confirm` | Path to the `tla-rs` binary (needs no Java) |
 
@@ -63,6 +63,7 @@ Results, model order, and the shortest path to each broken rule are identical fo
 - A cached result is reused only by a build compiled from the same sources as the build that wrote it.
 - Results stopped by `--max-states` are cached. Results stopped by `--time-limit` are not.
 - Running on a subset of models, with or without `--no-cache`, leaves cached results for other models untouched.
+- Each [setup](/reference/typescript/#setups) of a model is cached as a result of its own.
 
 ## Exit codes
 

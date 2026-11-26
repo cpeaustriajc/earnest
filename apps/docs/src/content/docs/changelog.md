@@ -5,6 +5,34 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: rules about runs and setups in TypeScript models
+
+A rule says what must be true in every state. A rule about runs says that every run comes to a state: once approved, the cart offers checkout.
+
+```ts
+export const offered = m.eventually(Cart, "Once approved, the cart offers checkout", {
+	after: (s) => s.approved,
+	reaches: (s) => s.offers,
+});
+```
+
+- **Runs:** from every reachable state where `after` is true (without `after`, from every start state), every run must come to a state where `reaches` is true. A run never stops while some action can still change the state. `fair: true` on an action adds that the action is not put off forever while it stays possible.
+- **Broken:** `earnest verify` prints the shortest path into a run that never gets there, and a `why` line: ``steps 2 to 3 can repeat forever`` for a loop, or `nothing changes the state from here, so the run can stay in it forever`. JSON gives the rule `"kind": "eventually"`, the `reason`, and `repeatsFrom`, where the loop starts in `path.steps`.
+- **Unknown:** a search stopped by a limit, a state out of range, or a fault gives `unknown`, never `holds`.
+- **Memory:** a model with a rule about runs keeps its arrows during the search. Other models are searched as before.
+
+A setup checks the same model once more from other start values, so one model covers several configurations:
+
+```ts
+export const behind = m.setup(Clock, "The clock runs 10 behind", { skew: -10 });
+```
+
+- **Results:** the model as declared is still checked, and each setup gets its own result line, `Clock (behind)`, with its own states, rules and paths. JSON adds a `models` entry with `"setup": { "id", "says" }`.
+- **Witnesses:** `m.witness(Clock, "...", { setup: behind, steps, expect })` is played from the setup's start states and listed with that setup.
+- **Selecting:** `--model Clock` selects the model and its setups, and `--rule <id>` selects each result that lists the id.
+
+`earnest tla` writes each rule about runs as a temporal property, each fair action as weak fairness in `Spec`, and one module per setup. `earnest confirm --tlc` runs TLC on each rule about runs and compares the verdict. `explore` in `@earnestjs/model` judges rules about runs the same way, and takes `{ setup: behind }`. Rust models have neither yet. See [Rules about runs](/reference/typescript/#rules-about-runs) and [Setups](/reference/typescript/#setups).
+
 ## November 2026: witnesses in TypeScript models
 
 A rule says what must be true in every state. A witness says that a path can be taken: these steps, from every start state, and then this is true. It catches a model that passes because an action can never happen.

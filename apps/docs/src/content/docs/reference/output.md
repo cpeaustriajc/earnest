@@ -30,6 +30,7 @@ unreadable  src/clock.model.ts
 
 - **Status words:** `pass`, `fail`, `unfinished`, or `unreadable`.
 - **Model line:** status, model name, `<n> states` (or `<n> states so far` when stopped early), `<n> ms`, and `(cached)` when served from `.earnest/`.
+- **Setups:** a model with [setups](/reference/typescript/#setups) prints one line for the model as declared, then one per setup in declaration order, named with the setup's id in brackets: `fail  Clock (behind)  6 states  0 ms`. Each line has its own state count, broken rules and findings, and the summary counts each of them as a model.
 - **`broken`:** names the rule id and its sentence, followed by the shortest path to the first violating state:
   - `start` lists every field of the start state.
   - Each numbered step gives the action id, its inputs as `name = value` if any, and every changed field as `field: before -> after`.
@@ -57,6 +58,20 @@ unreadable  src/clock.model.ts
   | `what the witness expects <fault> here` | Every step happened and `expect` faulted in the last state |
 
   `<fault>` is the fault's own words, as in a `fault` finding (for example, `reads a value that is null`).
+- **`broken` rule about runs:** a [rule about runs](/reference/typescript/#rules-about-runs) (TypeScript models only) prints its id, its sentence, and the shortest path from a start state into a run that never reaches what the rule wants, followed by a `why` line at the depth of the path. When that run loops, the path goes once round the loop and the `why` line names its steps, counted from 1:
+
+  ```text
+  fail        CartBroken  4 states  0 ms
+    broken  offered  "Once approved, the cart offers checkout"
+      start  approved = false, offers = false, paid = false
+      1. approve  approved: false -> true
+      2. cancel  approved: true -> false
+      3. approve  approved: false -> true
+      end    approved = true, offers = false, paid = false
+      why    steps 2 to 3 can repeat forever
+  ```
+
+  When the run stays in the last state of the path, because no action can happen there or every action that can keeps the state as it is, the `why` line is `nothing changes the state from here, so the run can stay in it forever`.
 - **`stuck`:** a state where every action condition is false and every `end` condition is false. An `end` is evaluated only when no action can happen.
 - **`out of range`:** an action assigns a value outside a field's declared domain (for example, pushing past a sequence `max` or incrementing past a range). The out-of-range state is counted, no rule is judged in it, and search does not continue from it. No rule can receive `holds` in a model with an out-of-range state; rules not seen broken are `unknown`. `explore` in `@earnestjs/model` follows the same rule.
 - **`fault`:** an expression cannot be evaluated in a state (for example, reading a field of `null`, integer overflow, or `m.rem` with a negative input) inside a rule, action condition, action change, or `end` condition. A state where an action condition or `end` faults is a `fault`, not `stuck`. `explore` in `@earnestjs/model` follows the same rule.
@@ -129,13 +144,16 @@ Field meanings:
   - `"broken"` when any counted state breaks the rule.
   - `"holds"` only when exploration completed every reachable state, the rule never faulted, and no out-of-range state or action/end fault cut exploration short.
   - `"unknown"` when not seen broken, but the model was unfinished, the rule faulted, or another fault/out-of-range state left states unreached or unjudged.
-- `rules[].kind`: `"witness"` for a [witness](/reference/typescript/#witnesses). A plain rule has no `kind` key. Witnesses are listed after the model's rules.
-- `rules[].reason`: present only on a broken witness, with the text of its `why` line.
+- `rules[].kind`: `"eventually"` for a [rule about runs](/reference/typescript/#rules-about-runs) and `"witness"` for a [witness](/reference/typescript/#witnesses). A plain rule has no `kind` key. Rules about runs are listed after the plain rules and before the witnesses.
+- `rules[].reason`: present only on a broken rule about runs or a broken witness, with the text of its `why` line.
+- `rules[].repeatsFrom`: present only on a rule about runs broken by a loop: the 0-based position in `path.steps` of the first step of the loop. The steps from there to the last can repeat forever. A run that stays in the last state of the path has no `repeatsFrom`.
+- A rule about runs is `"holds"` only when the search finished every reachable state and no state went out of range, no action or `end` faulted, and the rule's `after` and `reaches` had a value in every state. It is `"unknown"` otherwise, unless a run that breaks it was found. When `after` or `reaches` faults, a `fault` finding names the rule, unless the model already has a fault.
 - A witness's `verdict` is `"holds"` when it plays to the end from every start state, `"broken"` when a start state breaks it (`path` is then the path played until it broke), and `"unknown"` only when the model has more start states than `--max-states` and none of the ones played broke it.
 - `findings[].kind`: `"stuck"`, `"out-of-range"`, or `"fault"`.
 - `skipped`: test files that use the library and were skipped, in path order (`[]` if none).
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
-- `summary`: `models` counts models only; `unreadable` counts unreadable files separately.
+- `summary`: `models` counts models only; `unreadable` counts unreadable files separately. A model with setups counts once for itself and once for each setup.
+- `models[].setup`: present only on the result of a model in a [setup](/reference/typescript/#setups), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
 - **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects.
 - Two runs on the same files produce identical JSON apart from `milliseconds` and `cached`.
 
@@ -206,7 +224,7 @@ Additional rules for `--base`:
 
 `earnest report` prints Markdown formatted for a pull request body:
 
-- One section per model with its result line, Mermaid statechart, the shortest path to each broken rule, and the path and `why` line of each broken witness.
+- One section per model, and per setup of a model, with its result line, Mermaid statechart, the shortest path to each broken rule, and the path and `why` line of each broken rule about runs and each broken witness.
 - An `Unreadable files` section naming every unreadable file and its problems.
 - A `Skipped files` section listing skipped test files that use the library.
 - A `Files that declare no model` section listing skipped Rust files that use the library without declaring a model.

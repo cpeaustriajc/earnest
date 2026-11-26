@@ -56,7 +56,8 @@ export type State = m.Infer<typeof Turnstile>;
 - Nothing is annotated. `s` is the state type the fields declare, an action's second parameter is
   typed from its `input`, and `changes` gives back only the fields that change. A wrong literal
   (`gate: "ajar"`), a field the model does not have, or a value of the wrong kind in `changes` is
-  a compile error. In an action, `input`, `when` and `changes` may be written in any order.
+  a compile error. In an action, `input`, `when`, `changes` and `fair` may be written in any
+  order.
 - `m.action`, `m.rule`, `m.end` and `m.view` take the model as their first argument. A rule or an
   end then has its sentence and a condition. An action has its sentence and an object with
   `input`, `when` and `changes`. A view has an object.
@@ -66,7 +67,19 @@ export type State = m.Infer<typeof Turnstile>;
   `m.step(action, { name: value })`. A bare action that takes inputs in `steps`, and `m.step` with
   an input the action does not declare, are compile errors, and `m.witness` throws on a step that
   is not an action declared on the model before it or on an input the action does not declare.
+  With `setup: behind`, the path is played from that setup's start states instead.
   See [witnesses](https://earnest.cpeaustriajc.dev/reference/typescript/#witnesses).
+- `m.eventually(Model, sentence, { after, reaches })` declares a rule about runs: from every
+  reachable state where `after` is true (without `after`, from every start state), every run comes
+  to a state where `reaches` is true. A run never stops while an action can still change the
+  state, and `fair: true` on an action says it is not put off forever while it stays possible.
+  A `reaches` or `after` that does not give a boolean is a compile error. See
+  [rules about runs](https://earnest.cpeaustriajc.dev/reference/typescript/#rules-about-runs).
+- `m.setup(Model, sentence, { field: value })` declares a setup: the model checked once more with
+  those fields starting at those values. A field the model lacks, or a value of the wrong type,
+  is a compile error, and `m.setup` throws when it names no field, a name that is not a field, or
+  a value the field does not declare. See
+  [setups](https://earnest.cpeaustriajc.dev/reference/typescript/#setups).
 - Declarations are plain values. `.optional()` and `.initial(value)` give back a new declaration,
   so one `const Press = m.enum([...])` can be a field in two models and an input of an action.
 - State is read-only, and every operation on a set, map, sequence, queue, lock, timer, request or
@@ -139,7 +152,20 @@ is what was played until it broke, from that start, and its `reason` says why, i
 the checker's `why` line. It is `unknown` only when there are more start states than
 `maxStates` and none of the ones played broke it. A rule has no `kind` and no `reason`.
 
-- The id of an action, a rule, an end or a witness is the name it is exported under, and a running program
+Rules about runs come after the rules and before the witnesses, each with
+`kind: "eventually"`. A broken one has the shortest path into a run that never reaches what it
+wants, and a `reason`: `steps A to B can repeat forever`, with `repeatsFrom` the position in
+`path.steps` where the loop starts, or `nothing changes the state from here, so the run can stay
+in it forever`. One is `unknown`, never `holds`, when the search is unfinished, a state is out of
+range, or a fault was found. The search keeps every move of a model with such a rule.
+
+`explore(Model, { exports, setup: behind })` searches the model from the start states of one of
+its setups and plays the witnesses that name that setup, as the setup's own result from
+`earnest verify` does. Without `setup` it searches the model as declared and plays the witnesses
+that name none. It throws when the setup is not one declared on this model. The setups of a model
+are in `Model.runners().setups`, each with the `part` its export names.
+
+- The id of an action, a rule, an end, a rule about runs, a setup or a witness is the name it is exported under, and a running program
   can't see that name, so pass the model file's exports as `exports`. A part that is not among
   them has its sentence as its id.
 - `maxStates` stops the search before it holds more distinct states than that; the default is

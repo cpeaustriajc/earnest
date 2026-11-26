@@ -89,6 +89,17 @@ INVARIANT Rule_bounded
   of numbers or a set of booleans is written that way, with `Ok` and `Hit` defined by `LET`. The
   items of a declaration come in the order of the declaration (a sequence), the items of a set
   ascending. A set of anything else whose test can fault still asks for every item.
+- **Rules about runs.** A model with a rule about runs also has `Spec`: `Init`,
+  `[][Next]_vars`, `WF_vars(Next)` so that a run never stops while an action can change the
+  state, and `WF_vars(Action_id)` for each fair action. Each rule is `Eventually_id`, `<>(reaches)`
+  or `(after) ~> (reaches)`; a condition that reads no variable gets `vars = vars /\` in front,
+  because TLC misjudges a temporal property over a constant. The configuration then names
+  `SPECIFICATION Spec` in place of `INIT` and `NEXT`, and a `PROPERTY` line per rule after the
+  invariants. `Files::config_living` gives the configuration that checks one property alone,
+  and `Files::config_checking` still checks invariants from `Init` and `Next`. A model without a
+  rule about runs is written exactly as before.
+- **Setups.** A model in a setup is its own module, `<Model>_<setup>`, with the setup's values
+  in `Init`.
 - **Names.** A name keeps its spelling when TLA+ can spell it and nothing else has it. A letter
   TLA+ lacks becomes `_`, a name that does not start with a letter gets a `v` in front, and a
   taken name gets `_2`, `_3` and so on. Text values are TLA+ strings and are never renamed.
@@ -116,6 +127,9 @@ What can make TLC and the search differ, and what to do about each:
 - **A construct the writer does not know.** It is written as a call of `Fault`, which stops TLC
   with an error that says what it was.
 - **A view label.** Labels are not exported, so nothing in the module depends on them.
+- **A rule about runs.** TLC prints `Temporal properties were violated.` for a broken one. Check
+  each property in a run of its own, with `Files::config_living`: TLC stops at the first broken
+  property. A witness is not exported.
 
 ## Tests
 

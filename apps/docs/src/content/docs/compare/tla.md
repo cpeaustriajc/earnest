@@ -206,10 +206,10 @@ Earnest is an explicit-state model checker, like TLC and Quint. Other methods ch
 | Checked with the app's own type checker and linter | Yes | No | No |
 | Setup | One binary, no Java, no network | Java and `tla2tools.jar` | Node, plus Java and Apalache for `verify` |
 | Checks every state | Yes | Yes | Yes with `verify`. `run` samples paths |
-| Checks "eventually" properties | No | Yes | Yes |
+| Checks "eventually" properties | TypeScript models, under weak fairness | Yes | Yes |
 | Can export to TLA+ | Yes, and TLC confirms the result | Not applicable | Yes, through Apalache |
 
-Earnest checks rules that must hold in every state, and states where nothing can happen. It can't check that something happens eventually. For example, the t3code agent found that a run can stay `waiting` after 5 failed checkpoint captures, and it couldn't model that one. For that kind of property, export the model and use TLC.
+Earnest checks rules that must hold in every state, and states where nothing can happen. A TypeScript model can also say that every run comes to a state with [`m.eventually`](/reference/typescript/#rules-about-runs), under weak fairness of each step and of each action marked `fair`, and `earnest confirm --tlc` compares those verdicts with TLC. Rust models can't say that yet, and earnest has no strong fairness or other temporal formulas. When the t3code agent found that a run can stay `waiting` after 5 failed checkpoint captures, earnest had no rules about runs, so the agent couldn't model it. For a property earnest can't state, export the model and use TLC.
 
 ## Limits of this comparison
 
