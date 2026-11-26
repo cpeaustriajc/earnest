@@ -212,3 +212,63 @@ fn or_keep_and_enabled_are_refused() {
     refused("keep", "`orKeep`", "inside `always` is not read");
     refused("able", "`enabled`", "inside `always` is not read");
 }
+
+const SHAPES_REFUSED: &str = include_str!("../../fixtures/fairshapesrefused.json");
+
+fn refused_in_shapes(property: &str, feature: &str, why: &str) {
+    let mut compiled: Json = serde_json::from_str(SHAPES_REFUSED).expect("the fixture is JSON");
+    let declarations = compiled["modules"][0]["declarations"]
+        .as_array_mut()
+        .expect("the module has declarations");
+    let listed = declarations
+        .iter_mut()
+        .find(|declaration| declaration["name"] == "q::temporalProps")
+        .expect("the fixture lists its temporal properties");
+    let named = listed["expr"]["args"]
+        .as_array()
+        .and_then(|all| all.iter().find(|each| each["name"] == property))
+        .cloned()
+        .unwrap_or_else(|| panic!("the fixture lists {property}"));
+    listed["expr"] = named;
+    let problems: Vec<Problem> = match read("fairshapes.json", &compiled.to_string()) {
+        Ok(_) => panic!("{property} was read, but it must be refused"),
+        Err(problems) => problems,
+    };
+    assert!(
+        problems.iter().any(|problem| problem.feature == feature
+            && problem.message.contains(why)
+            && problem
+                .message
+                .contains(&format!("in the definition `{property}`"))),
+        "a problem names {feature}, says {why:?} and names {property}: {problems:?}"
+    );
+}
+
+#[test]
+fn fairness_over_an_expression_that_can_stay_the_same_while_a_variable_changes_is_refused_by_name()
+{
+    let advice = "write `weakFair(A, vars)` with `vars` a tuple of the variables";
+    refused_in_shapes("overSum", "`weakFair`", "fairness over `x + y`");
+    refused_in_shapes("overSum", "`weakFair`", advice);
+    refused_in_shapes("overBoth", "`weakFair`", "fairness over `Set(x, y)`");
+    refused_in_shapes("overSize", "`weakFair`", "fairness over `Set(x, y).size()`");
+}
+
+#[test]
+fn fairness_over_a_shape_that_leaves_a_variable_out_names_it() {
+    refused_in_shapes("overSome", "`weakFair`", "the tuple leaves out `y`");
+}
+
+#[test]
+fn fairness_under_exists_is_refused() {
+    refused_in_shapes(
+        "someFair",
+        "`exists`",
+        "fairness under `exists` is not read",
+    );
+}
+
+#[test]
+fn a_forall_over_more_than_a_thousand_items_is_refused() {
+    refused_in_shapes("tooMany", "`forall`", "more than 1000 items");
+}

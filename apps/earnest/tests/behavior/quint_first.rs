@@ -43,15 +43,46 @@ case "$1" in
 esac
 "#;
 
-const FILES: [&str; 5] = [
+const FILES: [&str; 10] = [
     "RunFromHelper",
     "TwoInstances",
     "OnlyRuns",
     "FirstSteps",
     "Unset",
+    "RunsOnly",
+    "HelperRun",
+    "Spec",
+    "Shapes",
+    "Helpers",
 ];
 
-const COMPILED: [&str; 4] = ["RunFromHelper", "TwoInstances", "FirstSteps", "Unset"];
+const COMPILED: [(&str, &str); 14] = [
+    ("RunFromHelper", "RunFromHelper"),
+    ("TwoInstances", "TwoInstances"),
+    ("FirstSteps", "FirstSteps"),
+    ("Unset", "Unset"),
+    ("RunsOnly", "RunsOnly"),
+    ("HelperRun", "HelperRun"),
+    ("Helpers", "Helpers"),
+    ("Helpers", "StepIsChain"),
+    ("Shapes", "AsImport"),
+    ("Shapes", "StarImport"),
+    ("Shapes", "Several"),
+    ("Shapes", "FromFile"),
+    ("Shapes", "OwnVariables"),
+    ("Shapes", "Mixed"),
+];
+
+const SHAPES: [(&str, &[&str]); 8] = [
+    ("StarImport", &["starTest"]),
+    ("AsImport", &["asTest"]),
+    ("StarInstance", &["starInstanceTest"]),
+    ("AsInstance", &["asInstanceTest"]),
+    ("FromFile", &["fromFileTest"]),
+    ("Several", &["aTest", "bTest", "fTest"]),
+    ("OwnVariables", &["ownTest", "onlyOwnTest"]),
+    ("Mixed", &["mixTest"]),
+];
 
 fn first(name: &str) -> String {
     let path = repository().join("tasks/quint/first").join(name);
@@ -78,10 +109,10 @@ impl Quint {
                 &first(&format!("fixtures/{file}.typecheck.json")),
             );
         }
-        for main in COMPILED {
+        for (file, main) in COMPILED {
             sandbox.write(
                 &format!("fake/compiled/{main}.json"),
-                &first(&format!("fixtures/{main}.{main}.json")),
+                &first(&format!("fixtures/{file}.{main}.json")),
             );
         }
         sandbox.write("specs/earnest.quint.json", checks);
@@ -249,5 +280,112 @@ fn every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_v
             ("`y`".to_owned(), 1),
         ],
         "each run that reads a variable its first action leaves unset\n{report}"
+    );
+}
+
+fn held(ids: &[&str]) -> Vec<(String, String)> {
+    pairs(&ids.iter().map(|id| (*id, "holds")).collect::<Vec<_>>())
+}
+
+#[test]
+fn a_module_of_runs_only_on_a_plain_import_is_played_with_or_without_init_and_step_named() {
+    for entry in [
+        r#"{ "file": "RunsOnly.qnt", "main": "RunsOnly", "runs": true }"#,
+        r#"{ "file": "RunsOnly.qnt", "main": "RunsOnly", "runs": true, "init": "Main::init", "step": "Main::step" }"#,
+    ] {
+        let quint = Quint::new(&format!(r#"{{ "checks": [{entry}] }}"#));
+        let report = quint.earnest(&["verify", "--json", "specs"]).json();
+        assert_eq!(
+            verdicts(&report, "RunsOnly"),
+            held(&["stepsOnceTest"]),
+            "{entry}\n{report}"
+        );
+        assert_eq!(
+            quint.compiled(),
+            [
+                "compile --target json --main RunsOnly --init Main::init --step Main::step specs/RunsOnly.qnt"
+            ],
+            "one compile, with the imported module's `init` and `step`: {entry}"
+        );
+    }
+}
+
+#[test]
+fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows() {
+    let checks: Vec<String> = SHAPES
+        .iter()
+        .map(|(main, _)| format!(r#"{{ "file": "Shapes.qnt", "main": "{main}", "runs": true }}"#))
+        .collect();
+    let quint = Quint::new(&format!(r#"{{ "checks": [{}] }}"#, checks.join(", ")));
+    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    assert_eq!(report["unreadable"], serde_json::json!([]), "{report}");
+    for (main, runs) in SHAPES {
+        assert_eq!(
+            verdicts(&report, main),
+            held(runs),
+            "as `quint test --main {main}` judges them\n{report}"
+        );
+    }
+    let compiled = quint.compiled();
+    for (main, init) in [
+        ("StarImport", "init"),
+        ("AsImport", "L::init"),
+        ("FromFile", "F::init"),
+        ("Several", "F::init"),
+        ("OwnVariables", "A::init"),
+        ("Mixed", "init"),
+    ] {
+        assert!(
+            compiled
+                .iter()
+                .any(|call| call.contains(&format!("--main {main} --init {init} "))),
+            "{main} is compiled once with `{init}`: {compiled:?}"
+        );
+    }
+    assert_eq!(
+        compiled.len(),
+        6,
+        "the instances are built, the rest compiled once each"
+    );
+}
+
+#[test]
+fn a_definition_that_chains_steps_is_played_where_a_run_calls_it() {
+    let quint = Quint::new(
+        r#"{ "checks": [
+            { "file": "HelperRun.qnt", "main": "HelperRun", "runs": true },
+            { "file": "Helpers.qnt", "main": "Helpers", "runs": true },
+            { "file": "Helpers.qnt", "main": "StepIsChain", "step": "onward", "invariants": [] }
+        ] }"#,
+    );
+    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    assert_eq!(verdicts(&report, "HelperRun"), held(&["twoStepsTest"]));
+    assert_eq!(
+        verdicts(&report, "Helpers"),
+        pairs(&[
+            ("twoStepsTest", "holds"),
+            ("argumentsTest", "holds"),
+            ("startTest", "holds"),
+            ("middleTest", "holds"),
+            ("nestedTest", "holds"),
+            ("repsTest", "holds"),
+            ("paramRepsTest", "holds"),
+            ("runParamTest", "holds"),
+            ("failTest", "holds"),
+            ("overTest", "broken"),
+            ("nondetArgTest", "holds"),
+            ("wrongTest", "broken"),
+        ]),
+        "as `quint test --main Helpers` judges them\n{report}"
+    );
+    let refused: Vec<&str> = report["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|problem| problem["message"].as_str())
+        .collect();
+    assert!(
+        matches!(refused.as_slice(), [only] if only.contains("make a run, not one step")),
+        "a chain of steps as the search's `step` is refused: {refused:?}"
     );
 }

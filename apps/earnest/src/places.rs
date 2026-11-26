@@ -103,6 +103,53 @@ impl Places {
             .is_some_and(|module| module.declared.iter().any(|(each, _)| each == name))
     }
 
+    pub(crate) fn sees(&self, main: &str, name: &str) -> bool {
+        let Some(module) = self.module(main) else {
+            return false;
+        };
+        let (alias, last) = name
+            .rsplit_once(QUALIFIED)
+            .map_or((None, name), |(alias, last)| (Some(alias), last));
+        match alias {
+            None if in_module(module, last).is_some() => true,
+            _ => module.instances.iter().any(|(each, proto)| {
+                let reached = match alias {
+                    Some(alias) => each == alias,
+                    None => each == proto,
+                };
+                reached
+                    && self
+                        .module(proto)
+                        .is_some_and(|spec| in_module(spec, last).is_some())
+            }),
+        }
+    }
+
+    pub(crate) fn imported_init_and_step(&self, main: &str) -> Vec<(String, String)> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        module
+            .instances
+            .iter()
+            .filter(|(_, proto)| {
+                self.module(proto).is_some_and(|spec| {
+                    in_module(spec, "init").is_some() && in_module(spec, "step").is_some()
+                })
+            })
+            .map(|(alias, proto)| {
+                if alias == proto {
+                    ("init".to_owned(), "step".to_owned())
+                } else {
+                    (
+                        format!("{alias}{QUALIFIED}init"),
+                        format!("{alias}{QUALIFIED}step"),
+                    )
+                }
+            })
+            .collect()
+    }
+
     pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {
         self.module(main)
             .is_some_and(|module| module.has_an_instance)

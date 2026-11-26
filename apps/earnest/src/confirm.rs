@@ -948,4 +948,32 @@ State 1: <Initial predicate>
             "no run, nothing found"
         );
     }
+
+    #[test]
+    fn a_broken_temporal_property_is_read_in_the_words_of_either_tlc() {
+        use super::{BROKEN, RunsRun, UNKNOWN, runs_verdict};
+        let broken = |error: &str| RunsRun {
+            id: "reach".to_owned(),
+            run: TlcRun {
+                distinct_states: Some(3),
+                violated: Vec::new(),
+                errors: vec![error.to_owned()],
+            },
+        };
+        assert_eq!(
+            runs_verdict(&broken("Temporal properties were violated.")),
+            BROKEN,
+            "the TLC inside Apalache's jar"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property Eventually_reach was violated.")),
+            BROKEN,
+            "tla2tools.jar 1.8 names the property"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property was violated for some reason.")),
+            UNKNOWN,
+            "any other words are an error"
+        );
+    }
 }

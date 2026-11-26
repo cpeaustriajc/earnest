@@ -2,6 +2,7 @@
 //! `cargo test --locked -p earnest_break_it --features tlc --test tlc`. The jar is the one
 //! `just tlc` puts at `target/tools/tla2tools.jar`, or the path in `EARNEST_TLC_JAR`.
 
+mod quint_arguments;
 mod quint_random;
 mod quint_reads;
 mod quint_second;

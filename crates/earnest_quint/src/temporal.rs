@@ -1,5 +1,5 @@
-use crate::json::{Def, Entry, Expr as Quint};
-use crate::reader::{Read, Reader};
+use crate::json::{Def, Entry, Expr as Quint, Param};
+use crate::reader::{Read, Reader, Refusal, constant};
 use earnest_ir::{Code, Eventually, Expr, Fairness, Op, Rule};
 use earnest_value::Value;
 use std::collections::HashMap;
@@ -17,6 +17,15 @@ const TEMPORAL: [&str; 9] = [
     "mustChange",
     "enabled",
 ];
+const MOST_ITEMS: usize = 1000;
+const INFIX: [(&str, &str); 6] = [
+    ("iadd", "+"),
+    ("isub", "-"),
+    ("imul", "*"),
+    ("idiv", "/"),
+    ("imod", "%"),
+    ("ipow", "^"),
+];
 const ONLY_WEAK_FAIRNESS: &str = "only `weakFair(A, vars)` is read as fairness";
 
 pub(crate) struct Temporal {
@@ -33,6 +42,7 @@ pub(crate) struct Step<'s> {
 enum Goal {
     Reaches { after: Option<Expr>, reaches: Expr },
     Always(Expr),
+    Initially(Expr),
 }
 
 struct Properties<'r, 'a> {
@@ -45,6 +55,30 @@ fn conjuncts(expr: &Quint) -> &[Quint] {
     match expr {
         Quint::App { opcode, args, .. } if opcode == "and" => args,
         other => std::slice::from_ref(other),
+    }
+}
+
+fn written(expr: &Quint) -> String {
+    match expr {
+        Quint::Name { name, .. } => name.clone(),
+        Quint::Int { value } => value.to_string(),
+        Quint::Bool { value } => value.to_string(),
+        Quint::Str { value } => format!("\"{value}\""),
+        Quint::App { opcode, args, .. } => {
+            let each: Vec<String> = args.iter().map(written).collect();
+            let sign = INFIX
+                .iter()
+                .find(|(name, _)| name == opcode)
+                .map(|(_, sign)| *sign);
+            match (sign, each.as_slice()) {
+                (Some(sign), [left, right]) => format!("{left} {sign} {right}"),
+                (None, [first, rest @ ..]) if opcode.starts_with(char::is_lowercase) => {
+                    format!("{first}.{opcode}({})", rest.join(", "))
+                }
+                _ => format!("{opcode}({})", each.join(", ")),
+            }
+        }
+        Quint::Lambda { .. } | Quint::Let { .. } => "…".to_owned(),
     }
 }
 
@@ -135,53 +169,138 @@ impl<'a> Properties<'_, 'a> {
         self.reader.pure(expr)
     }
 
-    fn property(&mut self, expr: &'a Quint, step: &Step<'_>) -> Read<(Fairness, Vec<Goal>)> {
+    fn property(
+        &mut self,
+        expr: &'a Quint,
+        step: &Step<'_>,
+        fair: Option<&Fairness>,
+        parts: &mut Vec<(Fairness, Goal)>,
+    ) -> Read<()> {
         let expr = self.unfolded(expr);
-        if let Quint::App { opcode, args, .. } = expr
-            && opcode == "implies"
-            && let [fair, goals] = args.as_slice()
-            && self.is_fairness(fair)
-        {
-            let fairness = self.fairness(fair, step)?;
-            return Ok((fairness, self.goals(goals)?));
+        if let Quint::App { opcode, args, .. } = expr {
+            match (opcode.as_str(), args.as_slice()) {
+                ("and", _) => {
+                    for each in args {
+                        self.property(each, step, fair, parts)?;
+                    }
+                    return Ok(());
+                }
+                ("implies", [given, goals]) if self.is_fairness(given) => {
+                    let mut fairness = fair.cloned().unwrap_or_default();
+                    self.fairness(given, step, &mut fairness)?;
+                    return self.property(goals, step, Some(&fairness), parts);
+                }
+                ("forall", [set, Quint::Lambda { params, expr: body }])
+                    if self.first_temporal(body, 0).is_some() =>
+                {
+                    if let Some(items) = self.items_of(set, params)? {
+                        for (id, item) in items {
+                            let was = self.reader.hold(id, Expr::Const(item));
+                            let read = self.property(body, step, fair, parts);
+                            self.reader.release(id, was);
+                            read?;
+                        }
+                        return Ok(());
+                    }
+                }
+                _ => {}
+            }
         }
-        Ok((Fairness::default(), self.goals(expr)?))
+        let goal = self.goal(expr)?;
+        parts.push((fair.cloned().unwrap_or_default(), goal));
+        Ok(())
+    }
+
+    fn items_of(&mut self, set: &'a Quint, params: &[Param]) -> Read<Option<Vec<(u64, Value)>>> {
+        let [param] = params else {
+            return Ok(None);
+        };
+        let read = self.reader.pure(set)?;
+        let Some(Value::Set(items)) = constant(&read, self.reader.slots)? else {
+            return Ok(None);
+        };
+        if items.len() > MOST_ITEMS {
+            return self.reader.refuse(
+                "`forall`",
+                &format!(
+                    "a `forall` over more than {MOST_ITEMS} items in a temporal property, more \
+                     than the checker reads as one property each"
+                ),
+            );
+        }
+        Ok(Some(
+            items.iter().map(|item| (param.id, item.clone())).collect(),
+        ))
     }
 
     fn is_fairness(&self, expr: &Quint) -> bool {
-        conjuncts(self.unfolded(expr)).iter().all(|each| {
-            matches!(self.unfolded(each), Quint::App { opcode, .. }
-                if opcode == "weakFair" || opcode == "strongFair")
-        })
+        match self.unfolded(expr) {
+            Quint::App { opcode, args, .. } => match (opcode.as_str(), args.as_slice()) {
+                ("weakFair" | "strongFair", _) => true,
+                ("and", _) => !args.is_empty() && args.iter().all(|each| self.is_fairness(each)),
+                ("forall" | "exists", [_, Quint::Lambda { expr, .. }]) => self.is_fairness(expr),
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
-    fn fairness(&mut self, expr: &'a Quint, step: &Step<'_>) -> Read<Fairness> {
-        let mut fairness = Fairness::default();
-        for each in conjuncts(self.unfolded(expr)) {
-            let Quint::App { opcode, args, .. } = self.unfolded(each) else {
-                return self.reader.refuse("fairness", ONLY_WEAK_FAIRNESS);
-            };
-            if opcode != "weakFair" {
+    fn fairness(&mut self, expr: &'a Quint, step: &Step<'_>, fairness: &mut Fairness) -> Read<()> {
+        let Quint::App { opcode, args, .. } = self.unfolded(expr) else {
+            return self.reader.refuse("fairness", ONLY_WEAK_FAIRNESS);
+        };
+        match (opcode.as_str(), args.as_slice()) {
+            ("and", _) => {
+                for each in args {
+                    self.fairness(each, step, fairness)?;
+                }
+                return Ok(());
+            }
+            ("forall", [set, Quint::Lambda { params, expr: body }]) => {
+                let Some(items) = self.items_of(set, params)? else {
+                    return self.reader.refuse(
+                        "`forall`",
+                        "fairness under a `forall` over a set that changes with the state is \
+                         not read: the set must have a value without the state",
+                    );
+                };
+                for (id, item) in items {
+                    let was = self.reader.hold(id, Expr::Const(item));
+                    let read = self.fairness(body, step, fairness);
+                    self.reader.release(id, was);
+                    read?;
+                }
+                return Ok(());
+            }
+            ("exists", _) => {
+                return self.reader.refuse(
+                    "`exists`",
+                    "fairness under `exists` is not read: a run must then be fair to one item \
+                     the run does not name. Write `forall`, or the fairness of each item",
+                );
+            }
+            ("weakFair", _) => {}
+            _ => {
                 return self.reader.refuse(
                     &format!("`{opcode}`"),
                     &format!("{ONLY_WEAK_FAIRNESS}, not strong fairness"),
                 );
             }
-            let [action, vars] = args.as_slice() else {
-                return self.reader.refuse("`weakFair`", ONLY_WEAK_FAIRNESS);
-            };
-            let listed = self.over_every_variable(vars, step.fields)?;
-            match self.fair_part(action, step)? {
-                None => fairness.step = true,
-                Some(part) => {
-                    self.assigns_every_variable(action, &listed)?;
-                    if !fairness.actions.contains(&part) {
-                        fairness.actions.push(part);
-                    }
+        }
+        let [action, vars] = args.as_slice() else {
+            return self.reader.refuse("`weakFair`", ONLY_WEAK_FAIRNESS);
+        };
+        let listed = self.over_every_variable(vars, step.fields)?;
+        match self.fair_part(action, step)? {
+            None => fairness.step = true,
+            Some(part) => {
+                self.assigns_every_variable(action, &listed)?;
+                if !fairness.actions.contains(&part) {
+                    fairness.actions.push(part);
                 }
             }
         }
-        Ok(fairness)
+        Ok(())
     }
 
     fn named_value(&self, expr: &'a Quint) -> &'a Quint {
@@ -207,35 +326,13 @@ impl<'a> Properties<'_, 'a> {
         vars: &'a Quint,
         fields: &[String],
     ) -> Read<Vec<(usize, &'a str)>> {
-        let listed: &[Quint] = match self.named_value(vars) {
-            Quint::App { opcode, args, .. } if opcode == "Tup" => args,
-            other => std::slice::from_ref(other),
-        };
-        let mut seen = vec![false; fields.len()];
-        let mut named = Vec::with_capacity(listed.len());
-        for each in listed {
-            let read = match each {
-                Quint::Name { name, .. } => self.reader.pure(each).ok().zip(Some(name.as_str())),
-                _ => None,
-            };
-            let Some((Expr::Field(position), name)) = read else {
-                return self.reader.refuse(
-                    "`weakFair`",
-                    "fairness over something that is not the state variables: write \
-                     `weakFair(A, vars)` with `vars` a tuple of every variable, such as \
-                     `(x, y)`, or a `val` that is one",
-                );
-            };
-            if let Some(flag) = seen.get_mut(position) {
-                *flag = true;
-            }
-            named.push((position, name));
-        }
+        let mut named = Vec::new();
+        self.mentioned(vars, &mut named, 0)?;
         let missing: Vec<String> = fields
             .iter()
-            .zip(&seen)
-            .filter(|(_, listed)| !**listed)
-            .map(|(name, _)| format!("`{name}`"))
+            .enumerate()
+            .filter(|(position, _)| named.iter().all(|(listed, _)| listed != position))
+            .map(|(_, name)| format!("`{name}`"))
             .collect();
         if missing.is_empty() {
             return Ok(named);
@@ -246,6 +343,54 @@ impl<'a> Properties<'_, 'a> {
                 "fairness over only some of the state variables is not read: the tuple leaves \
                  out {}, so list every variable",
                 missing.join(", ")
+            ),
+        )
+    }
+
+    fn mentioned(
+        &mut self,
+        expr: &'a Quint,
+        named: &mut Vec<(usize, &'a str)>,
+        depth: usize,
+    ) -> Read<()> {
+        let expr = self.named_value(expr);
+        let parts: &'a [Quint] = match expr {
+            Quint::App { opcode, args, .. } => match (opcode.as_str(), args.as_slice()) {
+                ("Tup" | "List", _) | ("Set", [_]) => args,
+                ("Rec", _) => {
+                    for value in args.iter().skip(1).step_by(2) {
+                        self.mentioned(value, named, depth.saturating_add(1))?;
+                    }
+                    return Ok(());
+                }
+                _ => return self.not_one_to_one(expr),
+            },
+            Quint::Name { name, .. } => {
+                if let Ok(Expr::Field(position)) = self.reader.pure(expr) {
+                    named.push((position, name.as_str()));
+                    return Ok(());
+                }
+                return self.not_one_to_one(expr);
+            }
+            _ => return self.not_one_to_one(expr),
+        };
+        if depth > self.defs.len() {
+            return self.not_one_to_one(expr);
+        }
+        for each in parts {
+            self.mentioned(each, named, depth.saturating_add(1))?;
+        }
+        Ok(())
+    }
+
+    fn not_one_to_one<T>(&mut self, over: &Quint) -> Read<T> {
+        let what = written(over);
+        self.reader.refuse(
+            "`weakFair`",
+            &format!(
+                "fairness over `{what}`, which is not the state variables and can stay the same \
+                 while one of them changes, is not read: write `weakFair(A, vars)` with `vars` \
+                 a tuple of the variables, such as `(x, y)`, or a `val` that is one"
             ),
         )
     }
@@ -307,33 +452,26 @@ impl<'a> Properties<'_, 'a> {
         }
     }
 
-    fn goals(&mut self, expr: &'a Quint) -> Read<Vec<Goal>> {
-        let mut goals = Vec::new();
-        for each in conjuncts(self.unfolded(expr)) {
-            let each = self.unfolded(each);
-            let Quint::App { opcode, args, .. } = each else {
-                return self.not_a_goal(each);
-            };
-            let goal = match (opcode.as_str(), args.as_slice()) {
-                ("and", _) => {
-                    goals.extend(self.goals(each)?);
-                    continue;
-                }
-                ("eventually", [reaches]) => Goal::Reaches {
-                    after: None,
-                    reaches: self.state(reaches, "eventually")?,
-                },
-                ("leadsTo", [after, reaches]) => Goal::Reaches {
-                    after: Some(self.state(after, "leadsTo")?),
-                    reaches: self.state(reaches, "leadsTo")?,
-                },
-                ("always", [inner]) => self.always(inner)?,
-                ("not", [inner]) => self.negated(each, inner)?,
-                _ => return self.not_a_goal(each),
-            };
-            goals.push(goal);
+    fn goal(&mut self, each: &'a Quint) -> Read<Goal> {
+        if self.first_temporal(each, 0).is_none() {
+            return Ok(Goal::Initially(self.reader.pure(each)?));
         }
-        Ok(goals)
+        let Quint::App { opcode, args, .. } = each else {
+            return self.not_a_goal(each);
+        };
+        Ok(match (opcode.as_str(), args.as_slice()) {
+            ("eventually", [reaches]) => Goal::Reaches {
+                after: None,
+                reaches: self.state(reaches, "eventually")?,
+            },
+            ("leadsTo", [after, reaches]) => Goal::Reaches {
+                after: Some(self.state(after, "leadsTo")?),
+                reaches: self.state(reaches, "leadsTo")?,
+            },
+            ("always", [inner]) => self.always(inner)?,
+            ("not", [inner]) => self.negated(each, inner)?,
+            _ => return self.not_a_goal(each),
+        })
     }
 
     fn always(&mut self, inner: &'a Quint) -> Read<Goal> {
@@ -415,7 +553,7 @@ pub(crate) fn temporal<'a>(
     table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     step: &Step<'_>,
-) -> Read<Temporal> {
+) -> Result<Temporal, Vec<Refusal>> {
     let mut read = Temporal {
         eventually: Vec::new(),
         rules: Vec::new(),
@@ -428,20 +566,31 @@ pub(crate) fn temporal<'a>(
         table,
         defs,
     };
+    let mut refused = Vec::new();
     for conjunct in conjuncts(&listed.expr) {
         let Some(def) = properties.temporal_def(conjunct) else {
             PROPERTIES.clone_into(&mut properties.reader.within);
-            return properties.reader.refuse(
-                "a temporal property",
-                "a temporal property that is not the name of a definition",
+            refused.extend(
+                properties
+                    .reader
+                    .refuse::<()>(
+                        "a temporal property",
+                        "a temporal property that is not the name of a definition",
+                    )
+                    .err(),
             );
+            continue;
         };
         let name = &def.name;
         name.clone_into(&mut properties.reader.within);
-        let (fair, goals) = properties.property(&def.expr, step)?;
+        let mut parts = Vec::new();
+        if let Err(refusal) = properties.property(&def.expr, step, None, &mut parts) {
+            refused.push(refusal);
+            continue;
+        }
         let slots = properties.reader.slots;
-        let count = goals.len();
-        for (index, goal) in goals.into_iter().enumerate() {
+        let count = parts.len();
+        for (index, (fair, goal)) in parts.into_iter().enumerate() {
             let number = index.saturating_add(1);
             let id = numbered(name, number);
             let says = property_says(name, number, count);
@@ -453,7 +602,16 @@ pub(crate) fn temporal<'a>(
                     after: after.map(Code::new),
                     reaches: Code::new(reaches),
                     slots,
-                    fair: Some(fair.clone()),
+                    fair: Some(fair),
+                }),
+                Goal::Initially(holds) => read.eventually.push(Eventually {
+                    id,
+                    says: format!("{says} in every start state"),
+                    line: DECLARED_ON,
+                    after: None,
+                    reaches: Code::new(holds),
+                    slots,
+                    fair: Some(Fairness::default()),
                 }),
                 Goal::Always(holds) => read.rules.push(Rule {
                     id,
@@ -466,7 +624,11 @@ pub(crate) fn temporal<'a>(
             }
         }
     }
-    Ok(read)
+    if refused.is_empty() {
+        Ok(read)
+    } else {
+        Err(refused)
+    }
 }
 
 #[cfg(test)]
