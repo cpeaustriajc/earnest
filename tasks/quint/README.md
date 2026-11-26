@@ -3803,4 +3803,27 @@ origin/main` sweeps 0 differences, `392 runs, 64 differences` all in `tasks/conf
 (not on `origin/main`), and 0 against the integration head; `tests kept: 1656 tests, 4805
 assertions (base: 1304, 3798)`.
 
+### The runs of a module imported plainly
+
+`quint test --main X` plays the `…Test` runs of every module `X` imports: `import Spec as Main`
+gives `Main::specTest`, `import Spec.*` gives `specTest`. `quint compile` drops them, so the
+compile fallback of the second part played only `X`'s own runs. For a check of runs only, the
+typecheck build now takes a plain import of a module with variables and no constants (`import
+M as A`, `import M.*`, `from "./file"`, several, each spec at most once), the same way it takes a
+module of definitions, and reaches the imported runs the check chooses. `first/Plain.qnt` (with
+`first/Other.qnt`):
+
+| Check | `quint test --backend typescript` | earnest |
+|---|---|---|
+| `PlainAs` (`import Spec as Main`) | `Main::specTest` ok, `Main::specOverTest` failed (QNT513), `ownTest` ok | `specTest` holds, `specOverTest` broken, `ownTest` holds |
+| `PlainStar` (`import Spec.*`) | `specTest` ok, `specOverTest` failed, `ownTest` ok | the same |
+| `PlainFrom` (`import Other as O from "./Other"`, `import Spec as S`) | `O::otherTest`, `S::specTest`, `bothTest` ok, `S::specOverTest` failed | the same |
+| `PlainNested` (`import Helped as H`, and `Helped` imports `Lib.*`) | `nestedTest` ok | holds, compiled with `--init H::init` |
+
+Only `PlainNested` is compiled: a spec that imports a module itself is not built yet (issue #71),
+so its own runs would be dropped there (the #70 session prints a note naming them). Every
+`Shapes.qnt` module and the owner's `RunsOnly` are now built from the typecheck, with no
+compile (`quint_first::a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly`,
+and the two earlier tests that counted compiles now count none). The build takes these shapes
+only for a check of runs only, so every setup built before is built the same.
 
