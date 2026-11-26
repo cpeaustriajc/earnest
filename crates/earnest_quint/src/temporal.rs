@@ -1,6 +1,8 @@
 use crate::json::{Def, Entry, Expr as Quint, Param};
-use crate::reader::{Choice, Path, Read, Reader, Refusal, constant, reads_state};
-use earnest_ir::{Code, Eventually, Expr, FairStep, Fairness, Frame, Op, Rule, truth};
+use crate::reader::{Choice, Path, Read, Reader, Refusal, all_of, constant, reads_state};
+use earnest_ir::{
+    Action, Alone, Code, Eventually, Expr, FairStep, Fairness, Frame, Input, Op, Pick, Rule, truth,
+};
 use earnest_value::Value;
 use std::collections::HashMap;
 
@@ -392,30 +394,28 @@ impl<'a> Properties<'_, 'a> {
                 return Ok(());
             }
             Fair::Step => (0..step.paths.len())
-                .map(|position| (position, Vec::new()))
+                .map(|action| FairStep {
+                    action,
+                    inputs: Vec::new(),
+                    over: over.clone(),
+                    alone: None,
+                })
                 .collect(),
             Fair::Actions { def, given, part } => {
-                self.assigns_every_variable(def, &given, &listed)?;
-                part
+                let paths = self.assigns_every_variable(def, &given, &listed)?;
+                vec![FairStep {
+                    action: part.first().map_or(0, |(action, _)| *action),
+                    inputs: Vec::new(),
+                    over,
+                    alone: Some(self.alone(def, &given, &paths, step.fields.len())),
+                }]
             }
         };
-        let narrowed = !over.is_empty() || part.iter().any(|(_, inputs)| !inputs.is_empty());
-        let part: Vec<usize> = if narrowed {
-            part.into_iter()
-                .map(|(action, inputs)| {
-                    self.fair_step(
-                        FairStep {
-                            action,
-                            inputs,
-                            over: over.clone(),
-                        },
-                        step.paths.len(),
-                    )
-                })
-                .collect()
-        } else {
-            part.into_iter().map(|(action, _)| action).collect()
-        };
+        let actions = step.paths.len();
+        let part: Vec<usize> = part
+            .into_iter()
+            .map(|wanted| self.fair_step(wanted, actions))
+            .collect();
         if !fairness.actions.contains(&part) {
             fairness.actions.push(part);
         }
@@ -516,12 +516,62 @@ impl<'a> Properties<'_, 'a> {
         )
     }
 
+    fn alone(&self, def: &Def, given: &[Value], paths: &[Path], fields: usize) -> Alone {
+        let shown: Vec<String> = given.iter().map(|value| self.reader.symbols.show(value)).collect();
+        let mut picks = Vec::new();
+        let actions = paths
+            .iter()
+            .enumerate()
+            .map(|(position, path)| {
+                let mut updates = vec![None; fields];
+                for (field, expr) in &path.assigns {
+                    if let Some(slot @ None) = updates.get_mut(*field) {
+                        *slot = Some(Code::new(expr.clone()));
+                    }
+                }
+                for (input, choice) in path.choices.iter().enumerate() {
+                    if let Some(from) = &choice.from {
+                        picks.push(Pick {
+                            script: None,
+                            action: position,
+                            input,
+                            from: Code::new(from.clone()),
+                        });
+                    }
+                }
+                Action {
+                    id: def.name.clone(),
+                    label: def.name.clone(),
+                    line: DECLARED_ON,
+                    inputs: path
+                        .choices
+                        .iter()
+                        .map(|choice| Input {
+                            name: choice.name.clone(),
+                            slot: choice.slot,
+                            domain: choice.domain.clone(),
+                            values: choice.values.clone(),
+                        })
+                        .collect(),
+                    guard: Code::new(all_of(path.guards.clone())),
+                    updates,
+                    slots: self.reader.slots,
+                }
+            })
+            .collect();
+        Alone {
+            named: format!("{}({})", def.name, shown.join(", ")),
+            actions,
+            picks,
+        }
+    }
+
     fn assigns_every_variable(
         &mut self,
         def: &'a Def,
         given: &[Value],
         listed: &[(usize, &str)],
-    ) -> Read<()> {
+    ) -> Read<Vec<Path>> {
         let name = &def.name;
         let paths = match &def.expr {
             Quint::Lambda { params, expr } => {
@@ -535,7 +585,7 @@ impl<'a> Properties<'_, 'a> {
             }
             other => self.reader.paths(other)?,
         };
-        for path in paths {
+        for path in &paths {
             let open = listed
                 .iter()
                 .find(|(position, _)| path.assigns.iter().all(|(given, _)| given != position));
@@ -551,7 +601,7 @@ impl<'a> Properties<'_, 'a> {
                 );
             }
         }
-        Ok(())
+        Ok(paths)
     }
 
     fn fair_part(&mut self, action: &'a Quint, step: &Step<'_>) -> Read<Fair<'a>> {
