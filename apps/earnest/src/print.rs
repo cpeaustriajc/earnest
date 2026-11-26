@@ -1,11 +1,11 @@
-use crate::changes::Difference;
+use crate::changes::{Difference, NotRead, for_the_chart, whys};
 use crate::reading::{ModelFile, Readable};
 use crate::run::only_runs_not_played;
 use crate::run::{
     Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
     whole_of,
 };
-use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines};
+use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines_noting};
 use earnest_check::EVERY_EXPECTED_FOUND;
 use earnest_diagnostics::Problem;
 use earnest_ir::Model;
@@ -19,6 +19,7 @@ const STATUS_WIDTH: usize = 10;
 pub(crate) struct Since<'a> {
     pub(crate) base: &'a str,
     pub(crate) changes: &'a [Difference],
+    pub(crate) not_compared: &'a [NotRead],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +119,8 @@ struct Document<'a> {
     no_model: &'a [String],
     #[serde(rename = "ruleChanges")]
     rule_changes: &'a [Difference],
+    #[serde(rename = "notCompared", skip_serializing_if = "<[_]>::is_empty")]
+    not_compared: &'a [NotRead],
     summary: Summary,
 }
 
@@ -186,10 +189,15 @@ impl Verified<'_> {
                 .iter()
                 .map(Difference::for_the_chart)
                 .collect();
-            lines.extend(rule_change_lines(&RuleChanges {
-                base: since.base,
-                changes: &changes,
-            }));
+            let whys = whys(since.not_compared, since.base);
+            let not_compared = for_the_chart(since.not_compared, &whys);
+            lines.extend(rule_change_lines_noting(
+                &RuleChanges {
+                    base: since.base,
+                    changes: &changes,
+                },
+                &not_compared,
+            ));
         }
         lines.extend(skipped_line(self.skipped.len()));
         lines.extend(no_model_line(self.no_model.len()));
@@ -208,6 +216,7 @@ impl Verified<'_> {
             skipped: self.skipped,
             no_model: self.no_model,
             rule_changes: self.since.map_or(&[], |since| since.changes),
+            not_compared: self.since.map_or(&[], |since| since.not_compared),
             summary: self.summary(),
         };
         serde_json::to_string_pretty(&document)
@@ -508,6 +517,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
             since: Some(Since {
                 base: "origin/main",
                 changes: &changes,
+                not_compared: &[],
             }),
         };
         let text = verified.text();

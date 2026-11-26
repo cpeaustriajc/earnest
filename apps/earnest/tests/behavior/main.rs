@@ -12,6 +12,7 @@ mod offline;
 mod quint;
 mod quint_actions;
 mod quint_arguments;
+mod quint_changes;
 mod quint_checks;
 mod quint_confirm;
 mod quint_data;

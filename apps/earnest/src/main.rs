@@ -3,6 +3,7 @@
 mod arguments;
 mod cache;
 mod changes;
+mod changes_quint;
 mod checks;
 mod commands;
 mod confirm;

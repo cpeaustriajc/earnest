@@ -1,5 +1,7 @@
 use crate::arguments::{self, Chart, Confirm, Models, Report, Tla};
-use crate::changes::{Compare, Difference, check_base, rule_changes};
+use crate::changes::{
+    Compare, Compared, Difference, check_base, for_the_chart, rule_changes, whys,
+};
 use crate::confirm::{Checker, Tool, confirm_lines, differences, runs_differences};
 use crate::confirm_quint::{Asked, quint_differences, quint_folder, quint_lines};
 use crate::discovery::{discover, language_of};
@@ -12,7 +14,7 @@ use crate::run::{Bounds, Expecting, Graphs, Ran, Search, Stops, checked, explore
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
     Charted, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_charts,
-    skipped_section,
+    rule_changes_section, skipped_section,
 };
 use earnest_check::Status;
 use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write, write_apart_from};
@@ -238,6 +240,22 @@ fn every_model_passed(ran: &[Ran]) -> bool {
     ran.iter().all(|ran| ran.outcome.status == Status::Pass)
 }
 
+fn changes_section(base: &str, compared: &Compared) -> String {
+    let changes: Vec<RuleChange<'_>> = compared
+        .changes
+        .iter()
+        .map(Difference::for_the_chart)
+        .collect();
+    let whys = whys(&compared.not_compared, base);
+    rule_changes_section(
+        &RuleChanges {
+            base,
+            changes: &changes,
+        },
+        &for_the_chart(&compared.not_compared, &whys),
+    )
+}
+
 pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
     let bounds = limits_of(&arguments.bounds);
     if let Some(base) = &arguments.base {
@@ -292,16 +310,10 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         };
         (base, rule_changes(&compare, &targets))
     });
-    let changes: Vec<RuleChange<'_>> = compared
-        .iter()
-        .flat_map(|(_, compared)| compared.changes.iter().map(Difference::for_the_chart))
-        .collect();
-    let since = compared.as_ref().map(|(base, _)| RuleChanges {
-        base,
-        changes: &changes,
-    });
     if let Some(error) = selected.unmatched
-        && changes.is_empty()
+        && compared
+            .as_ref()
+            .is_none_or(|(_, compared)| compared.changes.is_empty())
     {
         return Err(error);
     }
@@ -317,9 +329,16 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
             problems: lines,
         })
         .collect();
-    let mut written = report_with_charts(&sections, &unreadable, since.as_ref());
+    let changes_section = compared
+        .as_ref()
+        .map(|(base, compared)| changes_section(base, compared));
     let left_out = (!no_model.is_empty()).then(|| no_model_section(&no_model));
-    for section in skipped_section(&skipped).into_iter().chain(left_out) {
+    let mut written = report_with_charts(&sections, &unreadable, None);
+    for section in changes_section
+        .into_iter()
+        .chain(skipped_section(&skipped))
+        .chain(left_out)
+    {
         if !written.is_empty() {
             written.push_str("\n\n");
         }
