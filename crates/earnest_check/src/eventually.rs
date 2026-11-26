@@ -1,4 +1,5 @@
 use crate::explore::Search;
+use crate::limits::asked;
 use crate::outcome::{Path, RuleKind, RuleOutcome, Step, Verdict};
 use earnest_ir::{Eventually, Fairness, Fault, Frame};
 use rustc_hash::FxHashMap;
@@ -510,7 +511,7 @@ impl Search<'_> {
             .runs
             .eventually
             .iter()
-            .filter(|rule| only_rule.is_none_or(|wanted| wanted == rule.id))
+            .filter(|rule| asked(only_rule, &rule.id))
             .collect()
     }
 

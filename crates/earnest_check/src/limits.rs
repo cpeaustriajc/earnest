@@ -45,9 +45,22 @@ pub struct Limits {
     /// 2^32 states or more or a graph of more than 2^32 edges, the search fills
     /// [`crate::Outcome::graph`] instead. Nothing is filled without [`Self::keep_graph`].
     pub outline: bool,
-    /// Check only the rule with this id. The others are not evaluated and are left out of
+    /// Check only the rule with this id, and the numbered parts of a rule that is several,
+    /// `id#2`, `id#3` and so on. The others are not evaluated and are left out of
     /// [`crate::Outcome::rules`]. An id no rule has leaves no rule checked.
     pub only_rule: Option<String>,
+}
+
+pub(crate) fn asked(only_rule: Option<&str>, id: &str) -> bool {
+    only_rule.is_none_or(|wanted| {
+        id == wanted
+            || id
+                .strip_prefix(wanted)
+                .and_then(|rest| rest.strip_prefix('#'))
+                .is_some_and(|number| {
+                    !number.is_empty() && number.bytes().all(|digit| digit.is_ascii_digit())
+                })
+    })
 }
 
 impl Default for Limits {
