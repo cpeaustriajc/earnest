@@ -509,12 +509,10 @@ fn a_quint_file_named_without_an_entry_says_how_to_list_it() {
 fn models_of(report: &serde_json::Value) -> Vec<String> {
     report["models"]
         .as_array()
-        .map(|all| {
-            all.iter()
-                .map(|each| each["name"].as_str().unwrap_or_default().to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .map(|each| each["name"].as_str().unwrap_or_default().to_owned())
+        .collect()
 }
 
 #[test]
