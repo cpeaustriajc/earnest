@@ -57,7 +57,10 @@ fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
     if listed.is_empty() {
         return Some((kind, Vec::new()));
     }
-    let names: Vec<String> = listed.split(',').map(|each| each.trim().to_owned()).collect();
+    let names: Vec<String> = listed
+        .split(',')
+        .map(|each| each.trim().to_owned())
+        .collect();
     names
         .iter()
         .all(|name| is_a_name(name))
@@ -189,7 +192,6 @@ pub(crate) fn nothing_to_judge(module: &str) -> String {
     nothing_because(module, "it sees no marked property and no run to play")
 }
 
-
 pub(crate) fn not_seen(name: &str) -> String {
     format!(
         "`{name}` is marked, and no check sees it, so it is never judged: mark with `/// {MARK}` \
@@ -257,7 +259,10 @@ mod tests {
                 vec![]
             )
         );
-        assert_eq!(marks("@invariant"), (vec![], Some("@invariant".to_owned()), vec![]));
+        assert_eq!(
+            marks("@invariant"),
+            (vec![], Some("@invariant".to_owned()), vec![])
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::marks::{
     Doc, Kind, Mark, constant_unset, misplaced_mark, module_mark_alone, names_off_module,
-    no_init_or_step, not_judged, not_seen, not_seen_named, nothing_to_judge, read_doc,
-    second_mark, unknown_mark,
+    no_init_or_step, not_judged, not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark,
+    unknown_mark,
 };
 use crate::places::{Marked, Places};
 use crate::quint::shown_in_folder;
@@ -92,7 +92,12 @@ struct Placer<'a> {
 }
 
 impl Placer<'_> {
-    fn at_definition(&self, each: &Marked<'_>, line: usize, (feature, message): (&str, &str)) -> Problem {
+    fn at_definition(
+        &self,
+        each: &Marked<'_>,
+        line: usize,
+        (feature, message): (&str, &str),
+    ) -> Problem {
         let Some((file, spot_line, column)) = each.spot else {
             return Problem::new(self.shown, TOP_OF_FILE, feature, message);
         };
@@ -116,7 +121,8 @@ impl Placer<'_> {
                 .strip_prefix("module")
                 .and_then(|rest| rest.trim_start().strip_prefix(name))
                 .is_some_and(|rest| {
-                    rest.is_empty() || rest.starts_with(|each: char| each.is_whitespace() || each == '{')
+                    rest.is_empty()
+                        || rest.starts_with(|each: char| each.is_whitespace() || each == '{')
                 })
         })?;
         u32::try_from(position.saturating_add(1)).ok()
@@ -197,7 +203,11 @@ fn named_in_module(
     let visible = places.visible(main);
     for name in &mark.names {
         let Some(found) = visible.iter().find(|each| each.name == *name) else {
-            problems.push(placer.at_module((main, doc_text), mark.line, &not_seen_named(name, main)));
+            problems.push(placer.at_module(
+                (main, doc_text),
+                mark.line,
+                &not_seen_named(name, main),
+            ));
             continue;
         };
         if let Some(what) = what_is(places, found.id) {
@@ -232,15 +242,22 @@ fn plan_of(
     let mut problems = Vec::new();
     let mut judged: Vec<Judged> = Vec::new();
     let mut ids: Vec<(u64, String)> = Vec::new();
-    for each in places.visible(main) {
+    let mut faulty = false;
+    let mut visible = places.visible(main);
+    visible.sort_by_key(|each| each.id);
+    for each in visible {
         let Some(doc) = places.doc_of(each.id).map(read_doc) else {
             continue;
         };
         let Some((kind, says)) = is_judged(places, each.id, &doc) else {
+            faulty |= doc.is_marked();
             continue;
         };
         seen.extend(spot_key(places.spot_of(each.id)));
-        if ids.iter().any(|(id, name)| *id == each.id && *name == each.name) {
+        if ids
+            .iter()
+            .any(|(id, name)| *id == each.id && *name == each.name)
+        {
             continue;
         }
         ids.push((each.id, each.name.clone()));
@@ -312,6 +329,9 @@ fn plan_of(
             }
         }
     } else if plan.runs == Runs::None && problems.is_empty() {
+        if faulty {
+            return Err(problems);
+        }
         problems.push(placer.at_module((main, doc_text), 0, &nothing_to_judge(main)));
     }
     if problems.is_empty() {
@@ -345,7 +365,9 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
                 ));
             }
         } else {
-            planned.problems.extend(problems.into_iter().map(|problem| (None, problem)));
+            planned
+                .problems
+                .extend(problems.into_iter().map(|problem| (None, problem)));
         }
     }
     let mut modules = places.modules_in(real_file);
@@ -362,7 +384,9 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
             .map(|(line, message)| at(*line, message))
             .collect();
         if doc.marks.is_empty() {
-            planned.problems.extend(problems.into_iter().map(|problem| (None, problem)));
+            planned
+                .problems
+                .extend(problems.into_iter().map(|problem| (None, problem)));
             continue;
         }
         problems.extend(
@@ -382,9 +406,11 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         } else {
             let _ = plan_of(&placer, (module.name, text, &doc), &mut planned.seen);
         }
-        planned
-            .problems
-            .extend(problems.into_iter().map(|problem| (Some(module.name.to_owned()), problem)));
+        planned.problems.extend(
+            problems
+                .into_iter()
+                .map(|problem| (Some(module.name.to_owned()), problem)),
+        );
     }
     planned
 }

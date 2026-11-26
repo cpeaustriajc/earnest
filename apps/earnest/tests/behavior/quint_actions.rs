@@ -268,7 +268,7 @@ mod with_quint {
     use std::os::unix::fs::PermissionsExt;
 
     use super::fixture;
-    use crate::support::{Marks, Run, Sandbox, with_marks};
+    use crate::support::{Run, Sandbox, checks};
 
     const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -294,7 +294,7 @@ case "$1" in
 esac
 "##;
 
-    fn with_runplace(marks: Marks<'_>) -> Sandbox {
+    fn with_runplace() -> Sandbox {
         let sandbox = Sandbox::empty();
         sandbox.write("fake/quint", FAKE);
         fs::set_permissions(
@@ -305,13 +305,13 @@ esac
         sandbox.write("fake/compiled.json", &fixture("runplace.json"));
         sandbox.write(
             "fake/parse.json",
-            &with_marks(&fixture("runplace.parse.json"), marks),
+            &checks("fixtures/runplace/runplace.parse.json"),
         );
-        sandbox.write("fake/sourcemap.json", &fixture("runplace.sourcemap.json"));
         sandbox.write(
-            "models/runplace.qnt",
-            &format!("{}// marked: runplace\n", fixture("runplace.qnt")),
+            "fake/sourcemap.json",
+            &checks("fixtures/runplace/runplace.sourcemap.json"),
         );
+        sandbox.write("models/runplace.qnt", &checks("runplace/runplace.qnt"));
         sandbox
     }
 
@@ -345,7 +345,7 @@ esac
 
     #[test]
     fn a_refusal_inside_a_run_is_reported_at_the_refused_expression_in_the_quint_file() {
-        let sandbox = with_runplace(&[("runplace", &[])]);
+        let sandbox = with_runplace();
         let run = earnest(&sandbox, &["verify", "--json"]);
         run.exits(1);
         assert_eq!(

@@ -863,7 +863,10 @@ fn marked_checks(
             }
         }
         let checks = found.plans.len();
-        let refused = by_module.iter().filter(|(module, _)| module.is_some()).count();
+        let refused = by_module
+            .iter()
+            .filter(|(module, _)| module.is_some())
+            .count();
         for (module, mut problems) in by_module {
             problems.sort_by_key(Problem::place);
             files.push(unreadable_of(&shown, module, problems));

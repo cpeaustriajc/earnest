@@ -224,10 +224,7 @@ impl Places {
         let parameters = declarations
             .iter()
             .filter(|declaration| {
-                declaration
-                    .get("expr")
-                    .and_then(|expr| text(expr, "kind"))
-                    == Some(PARAMETERS)
+                declaration.get("expr").and_then(|expr| text(expr, "kind")) == Some(PARAMETERS)
             })
             .filter_map(|declaration| declaration.get("id").and_then(Value::as_u64))
             .collect();
@@ -398,12 +395,14 @@ impl Places {
 
     pub(crate) fn own_actions(&self, main: &str) -> Vec<&str> {
         self.module(main).map_or_else(Vec::new, |module| {
-            module
+            let mut actions: Vec<(u64, &str)> = module
                 .declared
                 .iter()
                 .filter(|(_, id)| self.qualifier_of(*id) == Some("action"))
-                .map(|(name, _)| name.as_str())
-                .collect()
+                .map(|(name, id)| (*id, name.as_str()))
+                .collect();
+            actions.sort_unstable();
+            actions.into_iter().map(|(_, name)| name).collect()
         })
     }
 
@@ -473,10 +472,12 @@ impl Places {
     pub(crate) fn marks_in(&self, file: &Path) -> Vec<Marked<'_>> {
         let mut found = Vec::new();
         for module in self.of_file(file) {
-            let links = module
-                .links
-                .iter()
-                .filter_map(|link| Some((link.alias.clone().unwrap_or_else(|| link.proto.clone()), link.id?)));
+            let links = module.links.iter().filter_map(|link| {
+                Some((
+                    link.alias.clone().unwrap_or_else(|| link.proto.clone()),
+                    link.id?,
+                ))
+            });
             let every: Vec<(String, u64)> = module.declared.iter().cloned().chain(links).collect();
             for (name, id) in &every {
                 let Some(doc) = self.docs.get(id) else {

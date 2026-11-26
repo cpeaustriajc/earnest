@@ -64,12 +64,24 @@ fn fresh(taken: &[(String, String)]) -> String {
     }
 }
 
-fn items(entry: &Map<String, Value>, key: &str, written: &mut Vec<(String, String)>) -> Vec<String> {
+fn items(
+    entry: &Map<String, Value>,
+    key: &str,
+    written: &mut Vec<(String, String)>,
+) -> Vec<String> {
     let mut found = Vec::new();
-    for item in entry.get(key).and_then(Value::as_array).into_iter().flatten() {
+    for item in entry
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         let (name, is) = match item {
             Value::String(text) => (None, text.trim().to_owned()),
-            Value::Object(fields) => (text_of(fields.get("name")), text_of(fields.get("is")).unwrap_or_default()),
+            Value::Object(fields) => (
+                text_of(fields.get("name")),
+                text_of(fields.get("is")).unwrap_or_default(),
+            ),
             _ => continue,
         };
         if is.is_empty() {
@@ -105,7 +117,12 @@ fn entry_of(value: &Value) -> Option<Entry> {
         .collect();
     let runs = match fields.get("runs") {
         Some(Value::Bool(true)) => None,
-        Some(Value::Array(listed)) => Some(listed.iter().filter_map(|each| text_of(Some(each))).collect()),
+        Some(Value::Array(listed)) => Some(
+            listed
+                .iter()
+                .filter_map(|each| text_of(Some(each)))
+                .collect(),
+        ),
         _ => Some(Vec::new()),
     };
     Some(Entry {
@@ -131,7 +148,10 @@ fn module_line(file: &Path, name: &str) -> Option<usize> {
         line.trim_start()
             .strip_prefix("module")
             .and_then(|rest| rest.trim_start().strip_prefix(name))
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with(|each: char| each.is_whitespace() || each == '{'))
+            .is_some_and(|rest| {
+                rest.is_empty()
+                    || rest.starts_with(|each: char| each.is_whitespace() || each == '{')
+            })
     })?;
     Some(position.saturating_add(1))
 }
@@ -169,7 +189,11 @@ fn block(lines: &[String]) -> String {
         .join("\n")
 }
 
-fn runs_note(entry: &Entry, places: Option<&Places>, prefix: &str) -> (Vec<String>, Option<String>) {
+fn runs_note(
+    entry: &Entry,
+    places: Option<&Places>,
+    prefix: &str,
+) -> (Vec<String>, Option<String>) {
     let tests = places.map_or_else(Vec::new, |found| found.test_runs(&entry.main));
     let Some(listed) = &entry.runs else {
         return (Vec::new(), None);
@@ -186,7 +210,7 @@ fn runs_note(entry: &Entry, places: Option<&Places>, prefix: &str) -> (Vec<Strin
         .collect();
     let note = (!unplayed.is_empty()).then(|| {
         format!(
-            "can't be kept: a check plays every run it sees whose name ends in `Test`, so {} {} \
+            "the runs of the entry can't be kept as they are: a check plays every run it sees whose name ends in `Test`, so {} {} \
              played from now on, which the entry left out",
             unplayed.join(", "),
             if unplayed.len() == 1 { "is" } else { "are" }
@@ -232,10 +256,10 @@ fn referred(name: &str, main: &str, copy: &Copy, places: &Places) -> String {
         return name.to_owned();
     }
     match places.defined_in(name, main) {
-        Some((module, _)) if module != main => copy
-            .aliases
-            .get(module)
-            .map_or_else(|| name.to_owned(), |alias| format!("{alias}{QUALIFIED}{name}")),
+        Some((module, _)) if module != main => copy.aliases.get(module).map_or_else(
+            || name.to_owned(),
+            |alias| format!("{alias}{QUALIFIED}{name}"),
+        ),
         _ => name.to_owned(),
     }
 }
@@ -265,7 +289,12 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
             .iter()
             .filter(|(action, chosen)| refer(chosen) != *action)
             .map(|(action, chosen)| format!("action {action} = {}", refer(chosen)))
-            .chain(entry.written.iter().map(|(name, is)| format!("val {name} = {is}")))
+            .chain(
+                entry
+                    .written
+                    .iter()
+                    .map(|(name, is)| format!("val {name} = {is}")),
+            )
             .collect();
         let mut text = format!(
             "add a copy of the module `{}` to `{}`, named `{wrapped}`, in which each of these \
@@ -276,7 +305,11 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
             block(&copy.imports)
         );
         if !defines.is_empty() {
-            let _ = write!(text, "\n{INDENT}then add these lines to the copy:\n{}", block(&defines));
+            let _ = write!(
+                text,
+                "\n{INDENT}then add these lines to the copy:\n{}",
+                block(&defines)
+            );
         }
         let _ = write!(
             text,
@@ -309,7 +342,12 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
     for (action, chosen) in actions {
         lines.push(format!("  action {action} = {}", named(chosen)));
     }
-    lines.extend(entry.written.iter().map(|(name, is)| format!("  val {name} = {is}")));
+    lines.extend(
+        entry
+            .written
+            .iter()
+            .map(|(name, is)| format!("  val {name} = {is}")),
+    );
     lines.push("}".to_owned());
     format!(
         "add this module to `{}`, and mark nothing in `{}` for it:\n{}",
@@ -319,7 +357,12 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
     )
 }
 
-fn in_place(entry: &Entry, file: &Path, places: Option<&Places>, notes: &mut Vec<String>) -> String {
+fn in_place(
+    entry: &Entry,
+    file: &Path,
+    places: Option<&Places>,
+    notes: &mut Vec<String>,
+) -> String {
     let (runs, note) = runs_note(entry, places, "");
     notes.extend(note);
     let holds: Vec<String> = entry.holds.iter().chain(&runs).cloned().collect();
@@ -334,7 +377,12 @@ fn in_place(entry: &Entry, file: &Path, places: Option<&Places>, notes: &mut Vec
         .iter()
         .filter(|(action, chosen)| *chosen != action)
         .map(|(action, chosen)| format!("action {action} = {chosen}"))
-        .chain(entry.written.iter().map(|(name, is)| format!("val {name} = {is}")))
+        .chain(
+            entry
+                .written
+                .iter()
+                .map(|(name, is)| format!("val {name} = {is}")),
+        )
         .collect();
     if !defines.is_empty() {
         let _ = write!(
@@ -347,7 +395,12 @@ fn in_place(entry: &Entry, file: &Path, places: Option<&Places>, notes: &mut Vec
     text
 }
 
-fn entry_text(position: usize, entry: &Entry, folder: &Path, places: &HashMap<PathBuf, Places>) -> String {
+fn entry_text(
+    position: usize,
+    entry: &Entry,
+    folder: &Path,
+    places: &HashMap<PathBuf, Places>,
+) -> String {
     let file = folder.join(&entry.file);
     let found = places.get(&real(&file));
     let sees = |name: &str| found.is_some_and(|places| places.sees(&entry.main, name));
@@ -390,7 +443,9 @@ pub(crate) fn migration(checks: &Path, places: &HashMap<PathBuf, Places>) -> Str
         Err(_) => None,
     };
     let Some(listed) = listed else {
-        let why = read.err().unwrap_or_else(|| "it has no list `checks`".to_owned());
+        let why = read
+            .err()
+            .unwrap_or_else(|| "it has no list `checks`".to_owned());
         return format!(
             "{head}. The file can't be read as a list of checks ({why}): delete it, and write \
              `/// @check` above each module to check"

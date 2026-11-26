@@ -437,7 +437,7 @@ fn a_mark_on_a_definition_that_is_no_property_is_unreadable_and_named() {
     let report = run.json();
     assert_eq!(feature_of(&report), "`step`", "{run}");
     assert!(
-        message_of(&report).contains("and `step` is declared with `action`"),
+        message_of(&report).contains("`step` is an `action`, which no check judges"),
         "{run}"
     );
 }

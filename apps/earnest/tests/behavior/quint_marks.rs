@@ -285,7 +285,6 @@ fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
         (10, "`module Empty`"),
         (21, "`zero`"),
         (26, "`module Worded`"),
-        (31, "`fixed`"),
     ]
     .iter()
     .map(|(line, feature)| (*line, (*feature).to_owned()))
@@ -294,8 +293,8 @@ fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
     sorted.sort();
     assert_eq!(
         sorted, expected,
-        "a constant unset, nothing to judge, a mark no check sees (twice, one in a module whose \
-         own mark is unreadable), and an unknown word on a module: {run}"
+        "a constant unset, nothing to judge, a mark no check sees, and a name on a module the \
+         module does not see: {run}"
     );
     assert!(models(&run.json()).is_empty(), "nothing is judged: {run}");
 }
@@ -315,11 +314,16 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
         "{run}"
     );
     for written in [
-        "1. `clock.qnt`, module `Small`: write `/// @check` above `module Small`, `clock.qnt:14`",
-        "write `/// @check` above `inRange` of the module `Clock`, `clock.qnt:7`",
-        "write `/// @check` above `alwaysInRange` of the module `Clock`, `clock.qnt:10`",
-        "/// @check\nmodule SmallBroken {\n  import Clock(Limit = 3) as V\n  action init = V::init\n  action step = V::step\n  /// @check broken\n  val belowLimit = V::belowLimit\n}",
-        "3. `clock.qnt`, module `Large`: write `/// @check` above `module Large`, `clock.qnt:18`",
+        "1. `clock.qnt`, the check of `Small`: write these lines above `module Small` \
+         (`clock.qnt:14`):\n      /// @check inRange, alwaysInRange\n",
+        "2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to \
+         `clock.qnt`, and mark nothing in `Small` for it:\n      /// @check broken \
+         V::belowLimit\n      module SmallBroken {\n        import Clock(Limit = 3) as V\n        \
+         action init = V::init\n        action step = V::step\n      }\n",
+        "so `tickTest` is played from now on, which the entry left out",
+        "3. `clock.qnt`, the check of `Large`: write these lines above `module Large` \
+         (`clock.qnt:18`):\n      /// @check C::inRange\n",
+        "so `C::tickTest` is played from now on",
     ] {
         assert!(message.contains(written), "{written}\nin\n{message}");
     }
@@ -329,7 +333,7 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
     );
     let text = quint.earnest(&["verify", "old"]);
     assert!(
-        text.to_string().contains("\n      module SmallBroken {\n"),
+        text.to_string().contains("\n            module SmallBroken {\n"),
         "the text output keeps the module on lines of its own, to copy: {text}"
     );
 }
