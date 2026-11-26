@@ -424,6 +424,63 @@ Each branch of a `match` in an action is an action named after the action and th
 
 An action called with a value that does not change is named after the action and the value of each such parameter, in a path step and in the JSON's `action`: `buy(1)` and `buy(R.who)` with `R.who` equal to 2 in one `any` print `buy  buyer = 1` and `buy  buyer = 2`, as a `nondet` argument prints `buy  b = 1`. Fairness still goes by the action's name.
 
+## Confirming a check with Quint
+
+`earnest confirm --quint` runs Quint's own `quint verify --backend tlc` and `quint test` on each check, and prints `same`, `differs` or `cannot` for it, as [`earnest confirm --tlc`](/reference/tla/#confirm-with-tlc-or-tla-rs) does. It exits `1` unless every line is `same`. `quint` is found as [`earnest verify` finds it](#how-quint-is-found), and `quint verify --backend tlc` needs Java on `PATH`.
+
+```sh
+earnest confirm --quint specs/
+```
+
+```text
+same     Small  16 states  fail  (Quint)
+cannot   As  16 states  fail  (Quint)
+  states: the checker found 16, `quint verify` gave no count
+    Quint can't confirm this: Quint stopped: Error: Internal error while flattening [QNT404] Name 'twice' not found,...
+```
+
+### What `--quint` and `--tlc` each confirm
+
+| | `confirm --tlc` | `confirm --quint` |
+|---|---|---|
+| What the other program reads | the TLA+ module earnest writes from the model it read | the `.qnt` file, read by Quint itself |
+| A fault in earnest's search | found | found |
+| A fault in earnest's reading of the Quint file | not found: TLC checks the model as earnest misread it | found, when it changes a state count or a verdict |
+| Runs | not compared | compared with `quint test` |
+
+Neither is a proof. `same` says that two programs gave the same state count and the same verdicts on this model, with these constants. A fault that both programs share, or one that changes nothing on this model, is not found.
+
+### The jobs it starts
+
+For each check that searches, earnest starts one `quint verify --backend tlc` with every invariant and temporal property of the check, in `.earnest/confirm/quint/`:
+
+```sh
+quint verify /work/specs/clock.qnt --main Small --backend tlc --init init --step step --temporal timeAdvances --invariants timeBounded skewOk
+```
+
+That job gives TLC's state count and, when it finds no violation, the verdict of every property. TLC stops at the first violation and does not say which property broke, so when the job finds one, or stops with an error, each property gets a job of its own, and the line names the property Quint refused. A property in `expectCounterexample` gets its own job from the start. When no job finishes without a violation, one more job with no property gives the count. A check whose properties all hold costs one job, and each job starts Java, about 7 seconds.
+
+For each check with `runs`, earnest starts one `quint test --backend typescript --main Small`, with `--match 'Test$'` for `"runs": true` or a `--match` of the names listed. Each run's verdict is compared: `ok` is `holds`, `failed` is `broken`. A run that `quint test` plays and the checker does not differs. A run the checker lists as [not played](#runs) is never `same`: it differs when `quint test` breaks it, since the check then passes a run Quint breaks, and is `cannot` when `quint test` passes it. The names are compared whole, `setup::spec::upTest` against `setup::spec::upTest`.
+
+### When it prints `cannot`
+
+A difference prints `cannot`, with `Quint can't confirm this:` and the reason under it, when one of Quint's backends is known to answer otherwise, or when there is no answer to compare:
+
+| Case | Reason printed |
+|---|---|
+| Java is not on `PATH` | `Java was not found on PATH, and quint verify --backend tlc needs it ...` |
+| `quint` stops with an error, such as Quint 0.33.1 on `import X as A` inside an instantiated spec | `Quint stopped:` and Quint's error |
+| The model declares, or the search computes, a number outside 32 bits | TLC's integers hold 32 bits |
+| The checker could not judge a property or a run, such as `/` or `%` of a negative number, which is a fault | `the checker could not judge it` |
+| A run `quint test` passed after more than one sample, which the checker breaks | `quint test` tries random choices of a run, and the checker tries every choice |
+| A run the check plays reaches `range`; only the comparison with `quint test` | `quint test` answers otherwise when `range` starts above its end ([listed above](#where-quints-backends-differ)) |
+| `init`, `step`, a property or a run reaches a `fold` over a set of anything but numbers or booleans, or over a set whose kind of items is not in Quint's types | TLC may take the set in another order than the checker |
+| `quint test` plays a run under a second name, `M::B::upTest`, that ends like a run the checker played, as `export B.*` gives | the checker can't tell whether it is that run |
+| The search stopped at `--max-states` or `--time-limit` | there is no full result to compare |
+| A model that is not a Quint check | Quint has nothing to run |
+
+Only what the check reaches counts: a `range` or a `fold` in another module of the file, or in a definition nothing calls, changes nothing. Any other difference prints `differs`. A run with no choice is played once by `quint test` (`passed 1 test(s)`), so a run the checker breaks and Quint passes once differs.
+
 ## The cache
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
