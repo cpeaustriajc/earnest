@@ -19,6 +19,7 @@ const HOLDS: &str = "holds";
 const UNKNOWN: &str = "unknown";
 const EVENTUALLY: &str = "eventually";
 const TLC_STATES: &str = "states";
+const JAVA_TEMPORARY_FILES: &str = "java";
 const PROPERTY_BROKEN: &str = "Temporal properties were violated.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
@@ -294,6 +295,7 @@ impl Checker<'_> {
             Tool::Tlc => {
                 let mut command = Command::new("java");
                 command
+                    .arg(format!("-Djava.io.tmpdir={JAVA_TEMPORARY_FILES}"))
                     .arg("-cp")
                     .arg(self.program)
                     .args(["tlc2.TLC", "-continue", "-workers"])
@@ -372,7 +374,7 @@ impl Checker<'_> {
     }
 
     pub(crate) fn check(&self, files: &Files) -> Result<(TlcRun, Vec<RuleRun>), String> {
-        fs::create_dir_all(&self.folder).map_err(|error| {
+        fs::create_dir_all(self.folder.join(JAVA_TEMPORARY_FILES)).map_err(|error| {
             format!(
                 "the folder {} can't be made: {error}",
                 self.folder.to_string_lossy()
