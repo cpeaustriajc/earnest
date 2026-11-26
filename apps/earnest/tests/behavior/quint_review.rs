@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 18] = [
+const SETS: [&str; 19] = [
     "samename",
     "exported",
     "nospace",
@@ -74,6 +74,7 @@ const SETS: [&str; 18] = [
     "commasentence",
     "sumtype",
     "typesmodule",
+    "barecomma",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -427,4 +428,16 @@ fn a_failing_run_of_a_spec_whose_state_holds_a_sum_type_is_played_in_the_check_t
 fn a_failing_run_of_a_spec_that_imports_its_types_from_a_types_file_is_played_in_the_setup_file() {
     let report = Quint::new().report("typesmodule");
     played_and_broken(&report, "Setup", "twiceTest");
+}
+
+#[test]
+fn a_bare_mark_followed_by_a_comma_as_the_unreadable_names_line_asks_is_read_on() {
+    let report = Quint::new().report("barecomma");
+    let judged = find_model(&report, "W3").map_or_else(Vec::new, verdicts);
+    assert!(
+        judged.iter().any(|(id, _)| id == "ok"),
+        "`/// @check` then `/// ok` is unreadable with `end the line of the mark with a comma`; \
+         doing so, `/// @check,` then `/// ok`, is called `not a mark the checker knows` and no \
+         module is checked: {report}"
+    );
 }
