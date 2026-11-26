@@ -82,6 +82,8 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 | `/// @check` | a `run` | the run is played, whatever its name |
 | `/// @check broken` | a `run` | the run must fail |
 
+`/// @view state` and `/// @view group` label the chart and judge nothing. They stand on a `val`, never on a module: a module's doc comment that holds `@view`, with or without names after it, is `unreadable`, and the message says to put the mark above the `val`. See [Chart labels](#chart-labels).
+
 - Only a module whose own doc comment holds a mark is checked. A module with no mark is not judged, whatever runs it holds, so a spec, a helper or a sample is left alone. `Clock` is not marked; it also sets no `Limit`.
 - A check judges every marked property it sees: its own, and those of the modules it imports, instantiates or that are exported to it, as `quint compile --main` resolves them. `inRange` counts in `Small`, and as `C::inRange` in `Large`.
 - A property judged in one check and not in another is named in that check's doc comment, as `C::belowSix` in `Large`, and left unmarked in the spec. A name is written as the module sees it: `C::belowSix` under `import Clock(...) as C`, `belowSix` under `import Clock(...).*`.
@@ -110,6 +112,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from what `quint parse` gives, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
 - When `quint compile` itself fails on a check's module, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
+- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
 ### What a checks file said
 
@@ -235,6 +238,93 @@ A check that also lists an invariant that must hold, or a temporal property abou
 
 `earnest report` and `earnest chart` stop in the same way. `earnest confirm` always searches every state, so its count can be set beside TLC's, and on a model with no end it does not finish. On `vaultKnownBugs` it gives `same`.
 
+## Chart labels
+
+`earnest chart` and `earnest report` label each state with every variable, `base = Set(1), server = Set(1), screen = Set(), ...`, until the model says otherwise. Mark a `val` with `/// @view state` to label each state with that value instead, and a `val` with `/// @view group` to draw each state inside a box labelled with that value:
+
+```quint title="specs/light.qnt"
+/// @check
+module light {
+  type Color = Red | Amber | Green
+  var color: Color
+  var cars: int
+  action init = all { color' = Red, cars' = 0 }
+  action change = all {
+    color' = match color { | Red => Green | Green => Amber | Amber => Red },
+    cars' = cars,
+  }
+  action arrive = all { cars < 2, cars' = cars + 1, color' = color }
+  action pass = all { color == Green, cars > 0, cars' = cars - 1, color' = color }
+  action step = any { change, arrive, pass }
+  /// @check
+  val fewCars = cars <= 2
+  /// @view state
+  val shown = (color, cars)
+  /// @view group
+  val side = match color { | Red => "stop" | Amber => "stop" | Green => "go" }
+}
+```
+
+`earnest chart specs/light.qnt --max-arrows 50` prints, in part:
+
+```text
+stateDiagram-v2
+    state "stop" as g0 {
+        state "(Red, 0)" as s0
+        state "(Red, 1)" as s2
+        ...
+    }
+    state "go" as g1 {
+        state "(Green, 0)" as s1
+        ...
+    }
+```
+
+- A text prints without quotes. Any other value prints as in [How values print](#how-values-print): `(Red, 0)` for a tuple, `{ retried: 1 }` for a record.
+- States with the same label and the same group are drawn as one box, so a label that leaves out a part of the state merges the states that differ only there. A box is drawn as broken when any of its states breaks a rule, and as an end when any of them is one.
+- A chart draws 20 arrows unless `--max-arrows` says otherwise, and the boxes those arrows reach. A label that merges many states may still need more: pass `--max-arrows 50` to see every box of a small chart.
+- A label that faults in a state, by earnest's own rules for integers (a `/` or `%` by a number below 1 or of a negative number, an overflow) or `getOnlyElement` of a set that is not of one item, prints `?` for that state, and every such state of one group shares one `?` box. `earnest verify` is not affected: a label is evaluated only to draw the chart.
+- Quint has no way to join texts or to write a number as text, so a label is either a record or a tuple of the parts to show, or an `if` or `match` that gives a text:
+
+```quint
+/// @view state
+val seen =
+  if (screen == Orders) "all shown"
+  else if (screen.size() > 0) "some shown"
+  else if (server.size() > 0) "accepted, none shown"
+  else if (base.size() > 0) "placed"
+  else "nothing placed"
+```
+
+- A check uses the `@view state` and `@view group` definitions it sees, its own and those its imports and exports bring, as it sees marked properties. In `module Named { import Spec(Limit = 2) as S ... }` a `@view state` on `Spec`'s `stage` labels `Named`'s states, as `S::stage`.
+- A label of the check's own module wins over the labels it imports, for `@view state` and for `@view group` each:
+
+| The check's own module has | It imports | The chart is labelled by |
+|---|---|---|
+| one `@view state` | any number | its own; the imported ones are not used in this check |
+| none | one | the imported one |
+| none | two or more, such as `S::shown` and `T::shown` of `import Spec(N = 1) as S` and `import Spec(N = 2) as T` | nothing: the check is `unreadable`, and the message names them and says to mark a `val` of the check to choose |
+| two | any number | nothing: the check is `unreadable`, and the message names both |
+
+  So one setup of a spec can label its chart its own way while another takes the spec's labels. A module brought by more than one import of one instance, as `import Spec.*` beside `import Spec as P` and `export P.*`, brings one label; two instances of one spec bring two.
+- A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives the labels to `quint compile` after the check's invariants, so that it keeps their definitions, and takes them out of the compiled JSON again before it reads the invariants, leaving every other byte, numbers among them, as Quint wrote it. Quint 0.33.1 takes a text or a record there: it checks that each name exists and does not check the type of the `and` it writes from the list. A setup built from `quint typecheck` is built with its labels the same way, and stays built from the typecheck, so its imported runs are still played.
+- A check that plays only runs searches nothing and draws no chart, so it uses no label. `confirm --quint`, `confirm --tlc` and `earnest tla` leave the labels out.
+- A `val` may carry both a `@check` and a `@view` mark: the property is judged, and the chart shows `true` or `false`. The lines of the doc comment other than the marks are the rule's sentence. A `val` holds at most one `@view` mark.
+- Each of these is `unreadable`, at the line of the mark:
+  - `@view` with no word after it, or a word other than `state` or `group`, such as `@view title`;
+  - anything after the word, such as `@view state, phase`;
+  - `///@view state` with no space after the slashes, which `quint parse` hands over as `view state`: earnest reads the `///@` in the source line;
+  - a second `@view` mark in one doc comment;
+  - `@view` on anything but a `val` with no parameters: a `def` (the message says to write a `val`), a definition with parameters, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
+  - a check with two `@view state` definitions of its own, or none of its own and two it imports, and the same for `@view group`: the message names them;
+  - `@view` in another letter case, as `/// @View state`, and `@view` in a comment that `quint parse` does not hand over, `// @view state` or `/** @view state */`, on the lines directly above a declaration: the message shows `/// @view state`. A doc line is a mark only when it starts with `@view` or `@check`, so a misspelling such as `/// @vew state` is read as a sentence, and the chart keeps the labels it had;
+  - a label that reads a variable that `init`, `step` and the checked properties do not read, since the search does not hold that variable;
+  - a label the reader can't read, such as one that uses `chooseSome`: the message is the reader's own, and says what to write;
+  - a `@view` definition that no check that searches sees;
+  - a label that `quint compile` fails on when it follows the invariants, while the check compiles without it: the message gives Quint's error;
+  - a label with which a setup can't be built from `quint typecheck` while it can without it;
+  - a compiled module whose invariants do not end with the labels the check was compiled with. A label is never judged as an invariant.
+
 ## Which `.qnt` files are checked
 
 | You run | What is checked |
@@ -299,7 +389,7 @@ A spec imported whole with `import Spec.*` is built as `quint compile` writes it
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
 ```
 
-Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. Earnest reads the JSON from the standard output: `--out` writes the modules before they are flattened.
+Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. A check with [chart labels](#chart-labels) lists the `@view state` and then the `@view group` definition at the end of `--invariant`, and of the module built from `quint typecheck`, so that the compiled module keeps them; earnest takes them out of the invariants before it reads the JSON. Earnest reads the JSON from the standard output: `--out` writes the modules before they are flattened.
 
 A compile that fails makes its check `unreadable` with Quint's first error line, at the line and column Quint gives:
 
@@ -566,12 +656,13 @@ Only what the check reaches counts: a `range` or a `fold` in another module of t
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
-- A compiled module is reused while the text of `quint --version`, the check's module, its marked invariants and temporal properties, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them, a mark among them, compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of the file stand in for them.
+- A compiled module is reused while the text of `quint --version`, the check's module, its marked invariants and temporal properties, its chart labels, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them, a mark among them, compiles the check again. Adding, editing or removing a `@view` mark changes the file, so the next run parses it and compiles the check again, once. When `quint parse` fails, the `.qnt` files below the folder of the file stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
 - What `quint parse` gave, the marks among it, is reused while `quint --version` and every file it lists are the same, and only by a build compiled from the same sources as the build that kept it: the entry holds what earnest read from the parse, not Quint's own output. The compiled and typechecked JSON are Quint's output as written, so any build reads them. Editing a mark reads the file again.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
+- With `--base <git ref>`, a `.qnt` file that differs from the base, or whose imported files do, is read at the base with one `quint parse` of a copy of the base's `.qnt` files, kept under `.earnest/quint/base-<hash>/`. That parse is reused on the same terms, so a second run against the same commit starts no Node process for the base. A file that is the same at the base and now, imports included, is not parsed at the base at all. See [Rule changes](/reference/output/#quint-checks) for what is listed.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose marks, sentences among them, are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose marks, sentences and chart labels among them, are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 

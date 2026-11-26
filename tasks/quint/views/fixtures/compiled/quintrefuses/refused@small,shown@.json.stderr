@@ -1,0 +1,8 @@
+
+ Error [QNT203]: 'oneOf' must be used inside a nondet definition
+
+  at @FOLDER@/refused.qnt:12:15
+  12:   val shown = Set(1, 2).oneOf()
+                    ^^^^^^^^^^^^^^^^^
+
+error: typechecking failed

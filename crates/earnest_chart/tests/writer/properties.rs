@@ -49,6 +49,7 @@ fn node() -> impl Strategy<Value = Node> {
             },
             outside: Vec::new(),
             states,
+            premises: Vec::new(),
         })
 }
 
@@ -84,6 +85,7 @@ fn graphs() -> impl Strategy<Value = Graph> {
                     .into_iter()
                     .map(|(from, to, labels)| Edge { from, to, labels })
                     .collect(),
+                premises: Vec::new(),
             }
         })
 }

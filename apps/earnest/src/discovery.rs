@@ -169,7 +169,7 @@ pub(crate) fn is_model_file(language: Language, path: &str, source: &str) -> boo
     is_model_name(path) || is_model_source(language, path, source)
 }
 
-fn is_skipped_folder(name: &OsStr) -> bool {
+pub(crate) fn is_skipped_folder(name: &OsStr) -> bool {
     name.to_str()
         .is_none_or(|name| name.starts_with('.') || SKIPPED_FOLDERS.contains(&name))
 }

@@ -1,4 +1,4 @@
-use crate::changes::{RuleChanges, rule_change_lines};
+use crate::changes::{NotCompared, RuleChanges, rule_change_lines, rule_change_lines_noting};
 use crate::markdown::{code_span, fenced, one_line, prose};
 use crate::mermaid::chart_with_limit;
 use crate::select::ARROW_LIMIT;
@@ -169,4 +169,15 @@ pub fn report_with_charts(
         ));
     }
     blocks.join("\n\n")
+}
+
+/// The `## Rule changes` section that [`report_with_charts`] ends with, with the lines of
+/// [`rule_change_lines_noting`](crate::rule_change_lines_noting), for a caller that passes no
+/// changes to [`report_with_charts`] and appends this section after its output.
+#[must_use]
+pub fn rule_changes_section(changes: &RuleChanges<'_>, not_compared: &[NotCompared<'_>]) -> String {
+    format!(
+        "## Rule changes\n\n{}",
+        fenced(&rule_change_lines_noting(changes, not_compared))
+    )
 }

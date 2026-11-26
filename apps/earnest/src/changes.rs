@@ -1,3 +1,4 @@
+use crate::changes_quint::quint_changes;
 use crate::discovery::{
     IN_EVERY_MODEL_FILE, Language, is_model_file, is_model_name, is_searched, language_of,
 };
@@ -5,12 +6,12 @@ use crate::reading::{ModelFile, Readable, read};
 use crate::run::Bounds;
 use crate::select::Target;
 use earnest_ast::{ConditionDraft, Draft, RuleDraft};
-use earnest_chart::{ChangeKind, ChangedPart, RuleChange, RuleText};
+use earnest_chart::{ChangeKind, ChangedPart, NotCompared, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
 use earnest_ir::{Code, Eventually, Expr, Model, Op, Played, Rule, Setup, Witness};
 use earnest_semantic::{EarlierParts, lower_with_earlier_parts};
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -104,7 +105,7 @@ impl Difference {
     }
 }
 
-fn git(folder: &Path) -> Command {
+pub(crate) fn git(folder: &Path) -> Command {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -146,7 +147,7 @@ fn nearest_folder(path: &Path) -> (&Path, PathBuf) {
     }
 }
 
-fn bytes_at(base: &str, file: &str) -> Option<Vec<u8>> {
+pub(crate) fn bytes_at(base: &str, file: &str) -> Option<Vec<u8>> {
     let (folder, below) = nearest_folder(Path::new(file));
     let name = below.to_str()?;
     let shown = git(folder)
@@ -191,7 +192,7 @@ fn at_base(base: &str, language: Language, file: &str) -> AtBase {
     bytes_at(base, file).map_or(AtBase::Absent, |bytes| understood(language, file, bytes))
 }
 
-fn names_from(output: &std::process::Output) -> Vec<&str> {
+pub(crate) fn names_from(output: &std::process::Output) -> Vec<&str> {
     output
         .stdout
         .split(|byte| *byte == 0)
@@ -224,24 +225,29 @@ fn models_listed_at(base: &str, folder: &Path) -> Vec<PathBuf> {
     listed
 }
 
+pub(crate) fn real(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn models_only_at_base(base: &str, roots: &[PathBuf], present: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
     let here = [PathBuf::from(".")];
     let roots = if roots.is_empty() { &here } else { roots };
-    let mut only_at_base = BTreeSet::new();
+    let mut only_at_base: BTreeMap<PathBuf, PathBuf> = BTreeMap::new();
     for root in roots.iter().filter(|root| root.is_dir()) {
         let shown = if root == Path::new(".") {
             Path::new("")
         } else {
             root.as_path()
         };
+        let real_root = real(root);
         for below in models_listed_at(base, root) {
             let path = shown.join(&below);
-            if is_searched(&below) && !present.contains(&path) {
-                only_at_base.insert(path);
+            if is_searched(&below) && !present.contains(&real(&path)) {
+                only_at_base.entry(real_root.join(&below)).or_insert(path);
             }
         }
     }
-    only_at_base.into_iter().collect()
+    only_at_base.into_values().collect()
 }
 
 fn implies(first: &Rule, second: &Rule, id: String) -> Rule {
@@ -634,23 +640,144 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
     changes
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Why {
+    Unreadable,
+    ChecksFile,
+    QuintNotFound,
+    Marks,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct FirstProblem {
+    pub(crate) file: String,
+    pub(crate) line: u32,
+    pub(crate) column: u32,
+    pub(crate) message: String,
+    pub(crate) more: usize,
+}
+
+const SHORTEST_CUT: usize = 20;
+const LONGEST_SAID: usize = 120;
+
+impl FirstProblem {
+    fn said(&self, of: &str) -> String {
+        let message = self
+            .message
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let cut = message
+            .find(": ")
+            .filter(|at| *at >= SHORTEST_CUT)
+            .map_or(message.as_str(), |at| message.get(..at).unwrap_or(&message));
+        let short: String = if cut.chars().count() > LONGEST_SAID {
+            let kept: String = cut.chars().take(LONGEST_SAID).collect();
+            format!("{kept}...")
+        } else {
+            cut.to_owned()
+        };
+        let place = if self.file == of {
+            format!("{}:{}", self.line, self.column)
+        } else {
+            format!("{}:{}:{}", self.file, self.line, self.column)
+        };
+        let more = match self.more {
+            0 => String::new(),
+            1 => ", and 1 more".to_owned(),
+            more => format!(", and {more} more"),
+        };
+        format!("{place} {short}{more}")
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct NotRead {
+    pub(crate) file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) model: Option<String>,
+    pub(crate) reason: Why,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) problem: Option<FirstProblem>,
+}
+
+impl NotRead {
+    pub(crate) fn file(file: String, reason: Why) -> Self {
+        Self {
+            file,
+            model: None,
+            reason,
+            problem: None,
+        }
+    }
+
+    pub(crate) fn why(&self, base: &str) -> String {
+        match self.reason {
+            Why::Unreadable => format!("unreadable at {base}"),
+            Why::ChecksFile => format!("an earnest.quint.json lists its checks at {base}"),
+            Why::QuintNotFound => format!("no quint was found to read it at {base}"),
+            Why::Marks => match &self.problem {
+                Some(problem) => format!(
+                    "its marks are unreadable at {base}: {}",
+                    problem.said(&self.file)
+                ),
+                None => format!("its marks are unreadable at {base}"),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Compared {
     pub(crate) changes: Vec<Difference>,
-    unreadable_at_base: Vec<String>,
+    pub(crate) not_compared: Vec<NotRead>,
 }
 
 impl Compared {
     pub(crate) fn warnings(&self, base: &str) -> Vec<String> {
-        self.unreadable_at_base
+        self.not_compared
             .iter()
-            .map(|file| {
+            .map(|each| {
+                if each.model.is_none()
+                    && let Some(problem) = &each.problem
+                {
+                    return format!(
+                        "warning: a mark of {} is unreadable at {base}, {}, so what it marks is \
+                         not compared",
+                        each.file,
+                        problem.said(&each.file)
+                    );
+                }
+                let what = each.model.as_ref().map_or_else(
+                    || each.file.clone(),
+                    |model| format!("the check `{model}` of {}", each.file),
+                );
                 format!(
-                    "warning: {file} is unreadable at {base}, so its rule changes are not listed"
+                    "warning: {what} is unreadable at {base}, so its rule changes are not listed"
                 )
             })
             .collect()
     }
+}
+
+pub(crate) fn whys(not_compared: &[NotRead], base: &str) -> Vec<String> {
+    not_compared.iter().map(|each| each.why(base)).collect()
+}
+
+pub(crate) fn for_the_chart<'a>(
+    not_compared: &'a [NotRead],
+    whys: &'a [String],
+) -> Vec<NotCompared<'a>> {
+    not_compared
+        .iter()
+        .zip(whys)
+        .map(|(each, why)| NotCompared {
+            file: &each.file,
+            model: each.model.as_deref(),
+            why,
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -724,14 +851,18 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
                         .changes
                         .extend(removed_with_their_model(compare, &drafts, &[]));
                 }
-                AtBase::Unreadable => compared.unreadable_at_base.push(file.path.clone()),
+                AtBase::Unreadable => compared
+                    .not_compared
+                    .push(NotRead::file(file.path.clone(), Why::Unreadable)),
                 AtBase::Absent => {}
             }
             continue;
         }
         let old = match at_base(compare.base, language, &file.path) {
             AtBase::Unreadable => {
-                compared.unreadable_at_base.push(file.path.clone());
+                compared
+                    .not_compared
+                    .push(NotRead::file(file.path.clone(), Why::Unreadable));
                 continue;
             }
             AtBase::Absent => Vec::new(),
@@ -771,7 +902,7 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
     let present: BTreeSet<PathBuf> = compare
         .files
         .iter()
-        .map(|file| PathBuf::from(&file.path))
+        .map(|file| real(Path::new(&file.path)))
         .collect();
     for path in models_only_at_base(compare.base, compare.roots, &present) {
         let Some(language) = language_of(&path) else {
@@ -779,7 +910,9 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
         };
         let shown = path.to_string_lossy();
         match at_base(compare.base, language, &shown) {
-            AtBase::Unreadable => compared.unreadable_at_base.push(shown.into_owned()),
+            AtBase::Unreadable => compared
+                .not_compared
+                .push(NotRead::file(shown.into_owned(), Why::Unreadable)),
             AtBase::Absent => {}
             AtBase::Models(drafts) => {
                 compared
@@ -788,12 +921,17 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             }
         }
     }
+    let (changes, unreadable) = quint_changes(compare);
+    compared.changes.extend(changes);
+    compared.not_compared.extend(unreadable);
     compared
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Compare, Difference, Kind, Wording, git, model_changes, rule_changes};
+    use super::{
+        Compare, Difference, Kind, NotRead, Why, Wording, git, model_changes, rule_changes,
+    };
     use crate::discovery::discover;
     use crate::reading::{ModelFile, load};
     use crate::run::Bounds;
@@ -1431,6 +1569,12 @@ mod tests {
             1,
             "the file is named as unreadable at the base: {:?}",
             compared.warnings("HEAD")
+        );
+        let file = root.join("a.model.ts").to_string_lossy().into_owned();
+        assert_eq!(
+            compared.not_compared,
+            [NotRead::file(file, Why::Unreadable)],
+            "and listed as not compared, so the output does not say that nothing changed"
         );
     }
 

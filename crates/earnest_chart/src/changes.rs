@@ -150,3 +150,45 @@ pub fn rule_change_lines(changes: &RuleChanges<'_>) -> Vec<String> {
     }
     lines
 }
+
+/// A file, or one model of a file, whose rules at the base commit could not be read, so none of
+/// its changes is listed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NotCompared<'a> {
+    /// The path of the file.
+    pub file: &'a str,
+    /// The model of the file that could not be read, or `None` when the whole file could not.
+    pub model: Option<&'a str>,
+    /// Why, in a few words, as `unreadable at origin/main`.
+    pub why: &'a str,
+}
+
+/// The lines of [`rule_change_lines`], then one line for each file or model that was not
+/// compared: `  not compared  <file>  <why>`, or `  not compared  <file>  <model>  <why>`.
+///
+/// When no rule changed and something was not compared, the `none` line is left out, so the
+/// section can't be read as saying that nothing changed.
+#[must_use]
+pub fn rule_change_lines_noting(
+    changes: &RuleChanges<'_>,
+    not_compared: &[NotCompared<'_>],
+) -> Vec<String> {
+    let mut lines = rule_change_lines(changes);
+    if not_compared.is_empty() {
+        return lines;
+    }
+    if changes.changes.is_empty() {
+        lines.truncate(1);
+    }
+    for each in not_compared {
+        let model = each
+            .model
+            .map_or_else(String::new, |model| format!("  {}", one_line(model)));
+        lines.push(format!(
+            "  not compared  {}{model}  {}",
+            one_line(each.file),
+            one_line(each.why)
+        ));
+    }
+    lines
+}

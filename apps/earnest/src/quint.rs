@@ -4,7 +4,7 @@ use crate::discovery::Listed;
 use crate::marks::how_to_mark;
 use crate::migrate::migration;
 use crate::places::{Places, place_all};
-use crate::plan::{Plan, Spot, planned};
+use crate::plan::{Labels, Plan, Spot, Viewing, planned};
 use crate::reading::{Content, Declared, ModelFile, Readable};
 use crate::run::whole_of;
 use crate::typecheck::typechecked;
@@ -23,6 +23,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::UNIX_EPOCH;
+
+mod labels;
+
+use labels::{at_marks, blamed, label_unbuilt, labelled, without_labels};
 
 const PROGRAM_VARIABLE: &str = "EARNEST_QUINT";
 const PROGRAM: &str = "quint";
@@ -62,6 +66,7 @@ struct Job {
     said: Vec<(String, String)>,
     read: u64,
     quint: Result<Quint, String>,
+    labels: Labels,
 }
 
 impl Job {
@@ -393,7 +398,7 @@ fn compiled_as(check: &Check) -> [String; 5] {
 }
 
 fn key_of(job: &Job, quint: &Quint, source: &[u8]) -> String {
-    let compiled = compiled_as(&job.check);
+    let compiled = compiled_as(&labelled(job));
     let mut listed: Vec<&str> = vec![quint.version.as_str()];
     listed.extend(compiled.iter().map(String::as_str));
     let mut pieces: Vec<&[u8]> = listed.iter().map(|each| each.as_bytes()).collect();
@@ -468,7 +473,7 @@ fn compile(job: &Job) -> Result<String, Problem> {
         )
     })?;
     let key = key_of(job, &quint, &source);
-    let compiled = compiled_as(&job.check);
+    let compiled = compiled_as(&labelled(job));
     let file = shown_string(&job.real);
     let mut named: Vec<&[u8]> = vec![file.as_bytes()];
     named.extend(compiled.iter().map(String::as_bytes));
@@ -484,7 +489,7 @@ fn compile(job: &Job) -> Result<String, Problem> {
     })?;
     let ran = File::create(&written).and_then(|file| {
         Command::new(&quint.program)
-            .args(arguments(&job.check, &job.shown))
+            .args(arguments(&labelled(job), &job.shown))
             .stdout(file)
             .stderr(Stdio::piped())
             .output()
@@ -573,6 +578,7 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
             said: job.said.clone(),
             read: job.read,
             quint: job.quint.clone(),
+            labels: job.labels.clone(),
         };
         match compile(&attempt) {
             Ok(json) => return Ok(json),
@@ -649,14 +655,22 @@ fn builds(found: &Places, job: &Job) -> bool {
         || found.imports_whole(main)
 }
 
-fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
-    let check = &job.check;
-    typechecked?.setup(&Setup::new(
-        &check.main,
-        (&check.init, &check.step),
-        (&check.invariants, &check.temporal),
-        &check.runs,
-    ))
+fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<Result<String, Problem>> {
+    let built = |check: &Check| {
+        typechecked?.setup(&Setup::new(
+            &check.main,
+            (&check.init, &check.step),
+            (&check.invariants, &check.temporal),
+            &check.runs,
+        ))
+    };
+    match built(&labelled(job)) {
+        Some(json) => Some(Ok(json)),
+        None if job.labels.names().next().is_some() => {
+            built(&job.check).map(|_| Err(label_unbuilt(job)))
+        }
+        None => None,
+    }
 }
 
 fn fingerprint_files(paths: &[&str]) -> u64 {
@@ -725,7 +739,7 @@ fn parse_failed(shown: &str, real_file: &Path, said: &str) -> Problem {
     Problem::new(&file, place, feature, explanation)
 }
 
-fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
+pub(crate) fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
     let unread = |error: io::Error| {
         Problem::new(
             shown,
@@ -847,7 +861,7 @@ fn declared(job: &Job) -> Declared {
     }
 }
 
-fn program_for(
+pub(crate) fn program_for(
     programs: &mut HashMap<PathBuf, Result<Quint, String>>,
     folder: &Path,
 ) -> Result<Quint, String> {
@@ -882,6 +896,7 @@ fn job_of(candidate: &Candidate, plan: Plan) -> Job {
         said: plan.said,
         read: candidate.read,
         quint: candidate.quint.clone(),
+        labels: plan.labels,
     }
 }
 
@@ -903,6 +918,7 @@ fn marked_checks(
     let mut jobs = Vec::new();
     let mut seen: BTreeSet<Spot> = BTreeSet::new();
     let mut marked: Vec<(String, Spot, Problem)> = Vec::new();
+    let mut viewing = Viewing::default();
     for candidate in candidates {
         let shown = shown_string(&candidate.shown);
         let places = match read.get(&candidate.real) {
@@ -913,7 +929,8 @@ fn marked_checks(
             }
             None => continue,
         };
-        let found = planned(places, &candidate.real, &shown);
+        let mut found = planned(places, &candidate.real, &shown);
+        viewing.add(&shown, std::mem::take(&mut found.viewing));
         seen.extend(found.seen);
         marked.extend(
             found
@@ -946,6 +963,7 @@ fn marked_checks(
         .into_iter()
         .filter(|(_, spot, _)| !seen.contains(spot))
         .map(|(shown, _, problem)| (shown, problem))
+        .chain(viewing.unseen())
         .collect();
     for (shown, problem) in unseen {
         files.push(unreadable(&shown, Vec::new(), vec![problem]));
@@ -969,7 +987,7 @@ fn compiled_once(
     let mut to_compile: Vec<&Job> = Vec::new();
     for (job, built) in checks.iter().zip(&built) {
         let same = |other: &&Job| {
-            other.real == job.real && compiled_as(&other.check) == compiled_as(&job.check)
+            other.real == job.real && compiled_as(&labelled(other)) == compiled_as(&labelled(job))
         };
         let at = match to_compile.iter().position(same) {
             Some(at) => at,
@@ -1020,12 +1038,13 @@ fn read_check(
     runs: &Runs,
 ) -> Result<Compiled, Vec<Located>> {
     let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
+    let (json, views) = without_labels(job, &json)?;
     let model = if runs_only(&job.check) {
         earnest_quint::read_runs(&job.shown, &json, runs)
     } else {
-        earnest_quint::read_located(&job.shown, &json, runs)
+        earnest_quint::read_viewed(&job.shown, &json, runs, &views)
     };
-    let mut model = model?;
+    let mut model = model.map_err(|found| at_marks(job, &views, found))?;
     job.model_name().clone_into(&mut model.name);
     let expected =
         expected_ids(job, &model).map_err(|problem| vec![Located::new(problem, None, None)])?;
@@ -1087,7 +1106,7 @@ fn compiled_all(
                     .is_some_and(|found| builds(found, job))
             }),
         ) {
-            Some(json) => (Some(Ok(json)), true),
+            Some(json) => (Some(json), true),
             None => (
                 lacks_a_search(&job.check, places.get(&job.real))
                     .then(|| compiled_for_runs(job, places.get(&job.real))),
@@ -1096,7 +1115,7 @@ fn compiled_all(
         },
     });
     let (built, from_typecheck): (Vec<_>, Vec<bool>) = built.into_iter().unzip();
-    compiled_once(checks, built, jobs)
+    blamed(checks, compiled_once(checks, built, jobs))
         .into_iter()
         .zip(from_typecheck)
         .map(|(compiled, from)| compiled.map(|json| (json, from)))
@@ -1207,8 +1226,11 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             }) => ModelFile {
                 path: job.shown.clone(),
                 source: format!(
-                    "{json}\n{:?}\n{:?}\n{:?}",
-                    job.check, job.reachable, job.said
+                    "{json}\n{:?}\n{:?}\n{:?}\n{:?}",
+                    job.check,
+                    job.reachable,
+                    job.said,
+                    job.labels.names().collect::<Vec<_>>()
                 ),
                 declared: vec![Declared {
                     name: model.name.clone(),

@@ -15,6 +15,7 @@ mod limits;
 mod outcome;
 mod outline;
 mod picks;
+mod premise;
 mod report;
 mod store;
 mod witness;
@@ -28,3 +29,4 @@ pub use outcome::{
     Verdict,
 };
 pub use outline::Outline;
+pub use premise::{Premise, PremiseKind};
