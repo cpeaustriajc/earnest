@@ -443,3 +443,29 @@ fn a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile() {
          exports `Spec`; the refusal says it is Quint's compile and what to do\n{report}"
     );
 }
+
+#[test]
+fn a_compiled_module_plays_only_the_runs_quint_test_plays() {
+    let recorded = RecordedQuint::new(&QuintFixtures {
+        file: "exporter.qnt",
+        source: include_str!("../../models/quint_third/exporter/exporter.qnt"),
+        typecheck: include_str!("../../models/quint_third/exporter/typecheck.json"),
+        compiled: include_str!("../../models/quint_third/exporter/compiled.json"),
+        checks: r#"{ "checks": [ { "file": "exporter.qnt", "main": "Exporter", "runs": true } ] }"#,
+    });
+    let report = recorded.verify(&["--no-cache"]);
+    let model = model_named(&report, "Exporter");
+    let ids: Vec<&str> = model["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|found| found["id"].as_str())
+        .collect();
+    assert_eq!(
+        (ids, &model["status"]),
+        (vec!["specTest"], &Value::from("pass")),
+        "`Exporter` imports and exports `Spec.specTest` alone; `quint compile` keeps \
+         `specOverTest` in the module too, but `quint test --main Exporter` plays only \
+         `specTest`, so the check plays only that and passes as Quint does\n{report:#}"
+    );
+}

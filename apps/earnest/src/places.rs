@@ -134,33 +134,49 @@ impl Places {
     }
 
     pub(crate) fn runs_not_played(&self, main: &str, compiled: &str) -> Vec<String> {
+        let held = runs_held(main, compiled);
+        let mut found: Vec<String> = self
+            .runs_quint_tests(main)
+            .into_iter()
+            .filter(|name| !held.contains(name))
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+
+    /// The runs whose name ends in `Test` that the compiled module holds, less those another
+    /// module of the file declares and `quint test --main` does not play; `None` when none is
+    /// left out.
+    pub(crate) fn runs_played(&self, main: &str, compiled: &str) -> Option<Vec<String>> {
+        let tested = self.runs_quint_tests(main);
+        let held: Vec<String> = runs_held(main, compiled)
+            .into_iter()
+            .filter(|name| name.ends_with(TESTS_END_WITH))
+            .collect();
+        let own = self.module(main);
+        let (left, played): (Vec<String>, Vec<String>) = held.into_iter().partition(|name| {
+            let last = name
+                .rsplit_once(QUALIFIED)
+                .map_or(name.as_str(), |(_, last)| last);
+            !tested.contains(name)
+                && own.is_some_and(|module| in_module(module, name).is_none())
+                && self
+                    .modules
+                    .iter()
+                    .any(|module| module.name != main && in_module(module, last).is_some())
+        });
+        (!left.is_empty()).then_some(played)
+    }
+
+    fn runs_quint_tests(&self, main: &str) -> Vec<String> {
         let Some(module) = self.module(main) else {
             return Vec::new();
         };
-        let Ok(compiled) = serde_json::from_str::<Value>(compiled) else {
-            return Vec::new();
-        };
-        let played: Vec<&str> = compiled
-            .get("modules")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|each| text(each, "name") == Some(main))
-            .filter_map(|each| each.get("declarations")?.as_array())
-            .flatten()
-            .filter(|declaration| text(declaration, "qualifier") == Some(RUN))
-            .filter_map(|declaration| text(declaration, "name"))
-            .collect();
-        let mut found: Vec<String> = Vec::new();
+        let mut found = self.runs_seen_in(module, 0);
         for imported in &module.imports {
-            for name in self.runs_through(module, imported, self.modules.len()) {
-                if !played.contains(&name.as_str()) {
-                    found.push(name);
-                }
-            }
+            found.extend(self.runs_through(module, imported, self.modules.len()));
         }
-        found.sort_unstable();
-        found.dedup();
         found
     }
 
@@ -319,6 +335,24 @@ impl Places {
     }
 }
 
+fn runs_held(main: &str, compiled: &str) -> Vec<String> {
+    let Ok(compiled) = serde_json::from_str::<Value>(compiled) else {
+        return Vec::new();
+    };
+    compiled
+        .get("modules")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|each| text(each, "name") == Some(main))
+        .filter_map(|each| each.get("declarations")?.as_array())
+        .flatten()
+        .filter(|declaration| text(declaration, "qualifier") == Some(RUN))
+        .filter_map(|declaration| text(declaration, "name"))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn in_module(module: &Names, name: &str) -> Option<u64> {
     module
         .declared
@@ -462,5 +496,27 @@ mod tests {
             places.runs_not_played("OneName", played),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn a_compiled_module_plays_the_runs_it_holds_that_quint_test_plays() {
+        let places = Places::from_quint(SHAPES, r#"{"sourceIndex": {}, "map": {}}"#)
+            .expect("the parse and the map are read");
+        let holding = |main: &str| {
+            format!(
+                r#"{{"modules": [{{"name": "{main}", "declarations": [
+                    {{"kind": "def", "qualifier": "run", "name": "specTest", "id": 1}},
+                    {{"kind": "def", "qualifier": "run", "name": "specOverTest", "id": 2}}]}}]}}"#
+            )
+        };
+        let only_spec_test = Some(vec!["specTest".to_owned()]);
+        for main in ["OneName", "Exporter", "TwiceAs"] {
+            assert_eq!(
+                places.runs_played(main, &holding(main)),
+                only_spec_test,
+                "{main}"
+            );
+        }
+        assert_eq!(places.runs_played("Spec", &holding("Spec")), None);
     }
 }

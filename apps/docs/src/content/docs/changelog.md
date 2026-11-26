@@ -10,7 +10,7 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **Fairness given a part of a pick:** `weakFair(buy(p._1), vars)` where the step picks `nondet p = tuples(BUYERS, ITEMS).oneOf()` and calls `buy(p._1)` is read, as are a record field (`buy(r.who)`) and any expression over one `nondet` (`act(b + 1)`): a step counts when its pick gives the value. It was refused.
 - **A condition before `implies`:** `(x == 0).implies(eventually(x == 3))` is judged in the start states, as TLC and Apalache judge it. It was refused.
 - **An empty `forall`:** a temporal property that is a `forall` over an empty set is a rule that holds, which `--rule` and `expectCounterexample` find. It was left out of the result.
-- **Runs not played:** the note names only the runs `quint test --main` plays: for `import Spec.specTest`, only `specTest`; runs reached through `export` are named too.
+- **Runs played and not played:** a compiled module plays only the runs `quint test --main` plays, so `export Spec.specTest` no longer plays `Spec`'s other runs, and the note names only runs `quint test` plays: for `import Spec.specTest`, only `specTest`; runs reached through `export` are named too.
 - **`--rule` of a run:** plays the run from the start states with no search, so a model without end gives the run's verdict.
 - **Output and messages:** a step of an action called with a value prints it, `buy  buyer = 1`, not `buy` and `buy#2`; a played `M::aTest` keeps its prefix when the module has its own `aTest`; a refusal shows `t._2` and `r.who` as written and names the definition that wrote an action given as an argument; a module whose `quint compile` writes one variable twice under one id is refused naming Quint's compile.
 
