@@ -20,7 +20,16 @@ const UNKNOWN: &str = "unknown";
 const EVENTUALLY: &str = "eventually";
 const TLC_STATES: &str = "states";
 const JAVA_TEMPORARY_FILES: &str = "java";
-const PROPERTY_BROKEN: &str = "Temporal properties were violated.";
+const PROPERTIES_BROKEN: &str = "Temporal properties were violated.";
+const PROPERTY_NAMED: &str = "Temporal property ";
+const PROPERTY_NAMED_BROKEN: &str = " was violated.";
+const PROPERTIES_NAMED: &str = "Temporal properties ";
+const PROPERTIES_NAMED_BROKEN: &str = " were violated.";
+const CONSTANT_INVARIANT: &str = "The invariant of ";
+const CONSTANT_FALSE: &str = " is equal to FALSE";
+const CONSTANT_LEVEL_INVARIANT: &str = "The invariant ";
+const CONSTANT_LEVEL: &str = " is a constant-level formula ";
+const CONSTANT_LEVEL_FALSE: &str = "evaluates to FALSE.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
 
@@ -53,9 +62,31 @@ fn final_distinct_states(line: &str) -> Option<u64> {
 }
 
 fn violated_invariant(line: &str) -> Option<&str> {
-    let rest = line.strip_prefix(INVARIANT_ERROR)?;
-    let (name, _) = rest.split_once(VIOLATED)?;
-    Some(name)
+    if let Some(rest) = line.strip_prefix(INVARIANT_ERROR) {
+        let (name, _) = rest.split_once(VIOLATED)?;
+        return Some(name);
+    }
+    let error = line.strip_prefix(ERROR)?;
+    if let Some(name) = error
+        .strip_prefix(CONSTANT_INVARIANT)
+        .and_then(|rest| rest.strip_suffix(CONSTANT_FALSE))
+    {
+        return Some(name);
+    }
+    let (name, rest) = error
+        .strip_prefix(CONSTANT_LEVEL_INVARIANT)?
+        .split_once(CONSTANT_LEVEL)?;
+    rest.contains(CONSTANT_LEVEL_FALSE).then_some(name)
+}
+
+fn property_broken(error: &str) -> bool {
+    error == PROPERTIES_BROKEN
+        || error
+            .strip_prefix(PROPERTY_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTY_NAMED_BROKEN))
+        || error
+            .strip_prefix(PROPERTIES_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTIES_NAMED_BROKEN))
 }
 
 pub(crate) fn read_tlc(output: &str) -> TlcRun {
@@ -181,8 +212,7 @@ pub(crate) struct RunsRun {
 }
 
 fn runs_verdict(rule: &RunsRun) -> &'static str {
-    let broke = |error: &String| error == PROPERTY_BROKEN;
-    if rule.run.errors.iter().any(broke) {
+    if rule.run.errors.iter().any(|error| property_broken(error)) {
         BROKEN
     } else if rule.run.errors.is_empty() && rule.run.distinct_states.is_some() {
         HOLDS
@@ -212,7 +242,7 @@ pub(crate) fn runs_differences(checked: &Checked, rules: &[RunsRun], tool: Tool)
                 .run
                 .errors
                 .iter()
-                .find(|error| *error != PROPERTY_BROKEN)
+                .find(|error| !property_broken(error))
                 .map_or_default(|error| format!(" ({error})"));
             found.push(format!(
                 "rule {}: the checker says {}, {name} says {verdict}{error}",
@@ -544,6 +574,41 @@ State 1: <Initial predicate>
             "states were left on the queue, so the count is not the whole model's"
         );
         assert!(run.violated.is_empty(), "nothing was seen violated");
+    }
+
+    #[test]
+    fn an_invariant_tlc_finds_false_before_any_state_is_named() {
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_never is equal to FALSE\n").violated,
+            ["Rule_never"]
+        );
+        assert_eq!(
+            read_tlc(
+                "Error: The invariant Rule_never is a constant-level formula (i.e., it contains \
+                 no variables) and evaluates to FALSE. To assert ...\n"
+            )
+            .violated,
+            ["Rule_never"]
+        );
+        assert!(
+            read_tlc("Error: The invariant of Rule_ok is equal to TRUE\n")
+                .violated
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn every_wording_tlc_has_for_a_violated_temporal_property_is_broken() {
+        for line in [
+            "Temporal properties were violated.",
+            "Temporal property Eventually_p0 was violated.",
+            "Temporal properties Eventually_a, Eventually_b were violated.",
+        ] {
+            assert!(super::property_broken(line), "{line}");
+        }
+        assert!(!super::property_broken(
+            "Temporal property Eventually_p0 was not checked."
+        ));
     }
 
     #[test]
