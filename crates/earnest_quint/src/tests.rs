@@ -14,6 +14,8 @@ const TEXT: &str = include_str!("../fixtures/text.json");
 const SET_VARIABLE: &str = include_str!("../fixtures/setvar.json");
 const FROM_STATE: &str = include_str!("../fixtures/fromstate.json");
 const INIT_PICK: &str = include_str!("../fixtures/initpick.json");
+const ALL_NUMBERS: &str = include_str!("../fixtures/allnumbers.json");
+const FLAGS: &str = include_str!("../fixtures/flags.json");
 const PARTIAL: &str = include_str!("../fixtures/partial.json");
 const POWER: &str = include_str!("../fixtures/power.json");
 const WIDE: &str = include_str!("../fixtures/wide.json");
@@ -391,6 +393,28 @@ fn a_nondet_over_a_set_computed_from_the_state_is_an_input_worked_out_in_each_st
     assert!(
         found.actions[0].inputs[0].values.is_empty(),
         "a picked input lists no values of its own"
+    );
+}
+
+#[test]
+fn a_pick_among_every_integer_is_refused_by_name() {
+    refused_with(
+        ALL_NUMBERS,
+        "`nondet y`",
+        "`Int.oneOf()` picks among numbers without end",
+    );
+}
+
+#[test]
+fn a_pick_among_both_booleans_lists_them() {
+    let found = model(FLAGS);
+    assert_eq!(
+        found.actions[0].inputs[0].values,
+        [Value::Bool(false), Value::Bool(true)]
+    );
+    assert!(
+        found.runs.picks.is_empty(),
+        "Bool is listed when the file is read"
     );
 }
 

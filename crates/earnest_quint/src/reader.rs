@@ -602,6 +602,24 @@ impl<'a> Reader<'a> {
         if builtin(opcode) != Some(Builtin::OneOf) {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");
         }
+        if let Quint::Name { name, .. } = source {
+            match name.as_str() {
+                "Bool" => {
+                    let values = vec![Value::Bool(false), Value::Bool(true)];
+                    return Ok(Picked::Listed(Domain::Bool, values));
+                }
+                "Int" | "Nat" => {
+                    return self.refuse(
+                        &feature,
+                        &format!(
+                            "`{name}.oneOf()` picks among numbers without end, which the checker \
+                             cannot list: pick from a range such as `0.to(9)`"
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
         if let Quint::App { opcode, args, .. } = source
             && builtin(opcode) == Some(Builtin::Range)
         {
