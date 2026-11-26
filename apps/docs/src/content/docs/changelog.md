@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: write an XState machine out as a model file
+
+`modelFileOf` in `@earnestjs/xstate` writes a machine as a `.model.ts` file, so `earnest verify` and TLC confirm what `checkMachine` found. It runs the machine's own transitions on every declared context value and event payload and writes the results as tables, so a guard may call any code. Every context field needs a declaration. The [XState page](/integrations/xstate/#example-write-the-machine-out-for-tlc) has the example and what it refuses.
+
 ## November 2026: check an XState machine from a test
 
 The new `@earnestjs/xstate` package runs Earnest's search on a machine written with [XState](https://stately.ai/docs) v5. `model.getPaths(earnestPaths)` replaces `getShortestPaths()` in a test built on `createTestModel` from `@xstate/graph`. `checkMachine(machine, { events, rules })` gives the state count, `pass`, `fail` or `unfinished`, each rule's verdict with the shortest path of events, and the first stuck state. Declarations written with `m` bound the context and list each event's payloads. The machine needs no change. The [XState page](/integrations/xstate/) has the examples and the limits.
