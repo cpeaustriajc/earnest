@@ -1373,8 +1373,10 @@ a reordering that changes the values is not. Tests:
   action whose input is a map key.
 - The Rust twin of that model (an enum set, `#[range]` fields, a fair action, two setups, three
   witnesses, `after = full`) against the TypeScript one: the same states, verdicts, paths, reasons
-  and `repeatsFrom` in each run, apart from the spelling of ids and variants; the order of
-  `eventually()`, `witnesses()` and `setups()` is the macro's file order, the checker's order.
+  and `repeatsFrom` in each run, apart from the spelling of ids and variants. Read in
+  `crates/earnest_macros/src/behavior.rs`, not run: `eventually()`, `witnesses()` and `setups()`
+  list the methods in file order with the unraw method name and the sentence as written, the
+  checker's order and ids.
 - A witness step that changes nothing (holds), a rule about runs that only a stuttering action
   could put off (holds).
 - `--base` with `--rule`, `--model`, both, an unknown rule, an unknown model, an end named as a
