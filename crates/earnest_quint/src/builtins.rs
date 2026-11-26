@@ -93,8 +93,9 @@ pub(crate) fn not_read(opcode: &str) -> Option<&'static str> {
     }
     if RUNS.contains(&opcode) {
         return Some(
-            "a run operator outside a `run`: `then`, `reps`, `expect` and `fail` chain the steps \
-             of a `run` definition, and are read only there",
+            "a chain of steps where one step is wanted: `then`, `reps`, `expect` and `fail` \
+             make a run, not one step, so they are read in a `run` and in a definition a run \
+             calls, and never in `init`, `step` or a property",
         );
     }
     NOT_READ

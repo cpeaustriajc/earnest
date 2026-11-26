@@ -1,5 +1,5 @@
 use crate::Runs;
-use crate::json::{Declaration, Def, Expr as Quint};
+use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
 use crate::reader::{Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, refusal};
@@ -14,6 +14,9 @@ const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
 const MOST_ALIASES: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
+const CHAINS: [&str; 4] = ["then", "reps", "expect", "fail"];
+
+type Helper<'a> = (&'a Def, &'a [Param], &'a Quint, &'a [Quint]);
 
 struct Step {
     choices: Vec<usize>,
@@ -91,6 +94,64 @@ impl<'a> Run<'_, 'a> {
             .filter(|def| def.qualifier == "run" && !matches!(def.expr, Quint::Lambda { .. }))
     }
 
+    fn helper(&self, expr: &'a Quint, depth: usize) -> Option<Helper<'a>> {
+        let (id, name, args): (u64, &str, &'a [Quint]) = match expr {
+            Quint::Name { id, name } => (*id, name, &[]),
+            Quint::App { id, opcode, args } if !CHAINS.contains(&opcode.as_str()) => {
+                (*id, opcode, args)
+            }
+            _ => return None,
+        };
+        let def = self.reader.definition(id, name).ok()?;
+        let (params, body): (&'a [Param], &'a Quint) = match &def.expr {
+            Quint::Lambda { params, expr } => (params, expr),
+            body => (&[], body),
+        };
+        (params.len() == args.len() && self.chains(body, depth))
+            .then_some((def, params, body, args))
+    }
+
+    fn chains(&self, expr: &'a Quint, depth: usize) -> bool {
+        match expr {
+            Quint::App { opcode, .. } if CHAINS.contains(&opcode.as_str()) => true,
+            _ => depth < MOST_ALIASES && self.helper(expr, depth.saturating_add(1)).is_some(),
+        }
+    }
+
+    fn walk_helper(
+        &mut self,
+        (def, params, body, args): Helper<'a>,
+        place: Place,
+        drawn: &mut Drawn,
+    ) -> Read<bool> {
+        let mut held = Vec::with_capacity(params.len());
+        for (param, arg) in params.iter().zip(args) {
+            let value = self.reader.pure(arg)?;
+            if constant(&value, self.reader.slots)?.is_none() {
+                return self.refuse_at(
+                    arg,
+                    &format!("`{}`", def.name),
+                    &format!(
+                        "an argument of `{}`, a chain of steps, that reads the state: give it a \
+                         value that is known before the run starts, such as a constant or the \
+                         run's own `nondet`",
+                        def.name
+                    ),
+                );
+            }
+            held.push((param.id, value));
+        }
+        let mut was = Vec::with_capacity(held.len());
+        for (id, value) in held {
+            was.push((id, self.reader.hold(id, value)));
+        }
+        let walked = self.walk(body, place, drawn);
+        for (id, before) in was.into_iter().rev() {
+            self.reader.release(id, before);
+        }
+        walked
+    }
+
     fn push(&mut self, plan: Plan) -> Read<()> {
         if self.plans.len() >= MOST_PLANS {
             return self.refuse(
@@ -159,7 +220,9 @@ impl<'a> Run<'_, 'a> {
             {
                 self.plan(expr, chosen)
             }
-            _ if self.reader.is_action(expr) => self.plan(expr, chosen),
+            _ if self.reader.is_action(expr) || self.helper(expr, 0).is_some() => {
+                self.plan(expr, chosen)
+            }
             _ => {
                 let holds = self.reader.pure(expr)?;
                 match constant(&holds, self.reader.slots)? {
@@ -201,6 +264,9 @@ impl<'a> Run<'_, 'a> {
     fn walk(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
         if let Some(def) = self.called_run(expr) {
             return self.walk(&def.expr, place, drawn);
+        }
+        if let Some(helper) = self.helper(expr, 0) {
+            return self.walk_helper(helper, place, drawn);
         }
         let Quint::App { opcode, args, .. } = expr else {
             return self.leaf(expr, drawn);
