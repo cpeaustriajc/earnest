@@ -7,7 +7,7 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 ## November 2026: write an XState machine out as a model file
 
-`modelFileOf` in `@earnestjs/xstate` writes a machine as a `.model.ts` file, so `earnest verify` and TLC confirm what `checkMachine` found. It runs the machine's own transitions on every declared context value and event payload and writes the results as tables, so a guard may call any code. Every context field needs a declaration. The [XState page](/integrations/xstate/#example-write-the-machine-out-for-tlc) has the example and what it refuses.
+`modelFileOf` in `@earnestjs/xstate` writes a machine as a `.model.ts` file, so `earnest verify` and TLC confirm what `checkMachine` found. It runs the machine's own transitions on every declared context value and event payload and writes the results as tables, so a guard may call any code. Every context field needs a declaration. `checkMachine` now takes an optional field inside a record as in range when it is missing, as it does at the top level, and `modelFileOf` refuses a machine it can't write with the same result. The [XState page](/integrations/xstate/#example-write-the-machine-out-for-tlc) has the example and what it refuses.
 
 ## November 2026: check an XState machine from a test
 
