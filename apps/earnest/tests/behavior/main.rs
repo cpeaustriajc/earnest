@@ -17,6 +17,7 @@ mod quint_data;
 mod quint_expected;
 mod quint_fairness;
 mod quint_first;
+mod quint_imports;
 mod quint_picks;
 mod quint_problems;
 mod quint_reads;

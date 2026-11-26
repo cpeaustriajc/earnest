@@ -7,6 +7,7 @@ const WILDCARD: &str = "_";
 const TESTS_END_WITH: &str = "Test";
 const MOST_ALIASES: usize = 64;
 const FIELD_NAMES: &str = "fieldNames";
+const MOST_IMPORTS: usize = 64;
 
 type Fill<T> = Option<T>;
 
@@ -31,6 +32,74 @@ fn namespaced(namespace: &str, name: &str) -> String {
     } else {
         format!("{namespace}{SEPARATOR}{name}")
     }
+}
+
+fn ids_in(value: &Value, found: &mut HashSet<u64>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, field) in fields {
+                if key == "id"
+                    && let Some(id) = field.as_u64()
+                {
+                    found.insert(id);
+                }
+                ids_in(field, found);
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| ids_in(item, found)),
+        _ => {}
+    }
+}
+
+fn whole(declaration: &Value) -> bool {
+    matches!(
+        (
+            text(declaration, "defName"),
+            text(declaration, "qualifiedName"),
+        ),
+        (Some("*"), None) | (None, Some(_))
+    )
+}
+
+#[derive(Default)]
+struct Imported<'t> {
+    definitions: Vec<(&'t Value, String)>,
+    typedefs: Vec<(&'t Value, String)>,
+    modules: Vec<&'t str>,
+}
+
+fn imported_into<'t>(
+    typechecked: &'t Typechecked,
+    module: &'t Value,
+    (prefix, aliased): (&str, bool),
+    depth: usize,
+    into: &mut Imported<'t>,
+) -> Fill<()> {
+    if depth > MOST_IMPORTS {
+        return None;
+    }
+    for each in list(module, "declarations") {
+        match text(each, "kind")? {
+            "def" => into.definitions.push((each, prefix.to_owned())),
+            "typedef" => into.typedefs.push((each, prefix.to_owned())),
+            "import" if whole(each) => {
+                let alias = text(each, "qualifiedName");
+                if alias.is_some() && !aliased {
+                    return None;
+                }
+                let proto = text(each, "protoName")?;
+                let inner = typechecked.module(proto)?;
+                into.modules.push(proto);
+                let prefix = alias.map_or_else(
+                    || prefix.to_owned(),
+                    |alias| format!("{prefix}{alias}{SEPARATOR}"),
+                );
+                imported_into(typechecked, inner, (&prefix, aliased), depth + 1, into)?;
+            }
+            _ => return None,
+        }
+    }
+    Some(())
 }
 
 fn most_id(value: &Value) -> u64 {
@@ -157,8 +226,22 @@ struct Instance<'t> {
     visible: bool,
     declarations: HashMap<u64, &'t Value>,
     constants: HashMap<u64, (&'t Value, &'t Value)>,
-    typedefs: HashMap<&'t str, &'t Value>,
+    typedefs: HashMap<String, &'t Value>,
     fresh_ids: bool,
+    prefixes: HashMap<u64, String>,
+    imported: HashSet<u64>,
+    imported_modules: Vec<&'t str>,
+    shared: HashSet<u64>,
+}
+
+impl Instance<'_> {
+    fn refreshes(&self, id: u64) -> bool {
+        self.fresh_ids || self.shared.contains(&id)
+    }
+
+    fn prefix(&self, id: u64) -> &str {
+        self.prefixes.get(&id).map_or("", String::as_str)
+    }
 }
 
 type Target = (Option<usize>, u64, String, &'static str);
@@ -170,6 +253,7 @@ struct Filler<'t> {
     by_declaration: HashMap<u64, usize>,
     by_instance: HashMap<u64, usize>,
     own: HashMap<u64, &'t Value>,
+    hidden: HashSet<u64>,
     renamed: HashMap<(Option<usize>, u64), String>,
     refreshed: HashMap<(usize, u64), u64>,
     pushed: Vec<Value>,
@@ -180,31 +264,53 @@ struct Filler<'t> {
     next: u64,
 }
 
+struct PlainImport<'t> {
+    definitions: Vec<&'t Value>,
+    nested: Vec<&'t Value>,
+    modules: Vec<&'t str>,
+}
+
 fn plain_import<'t>(
     typechecked: &'t Typechecked,
-    declaration: &Value,
+    declaration: &'t Value,
     kept: &[&str],
-) -> Fill<Vec<&'t Value>> {
-    let whole = matches!(
-        (
-            text(declaration, "defName"),
-            text(declaration, "qualifiedName"),
-        ),
-        (Some("*"), None) | (None, Some(_))
-    );
-    if !whole {
+) -> Fill<PlainImport<'t>> {
+    if !whole(declaration) {
         return None;
     }
-    let module = typechecked.module(text(declaration, "protoName")?)?;
-    let mut definitions = Vec::new();
+    let proto = text(declaration, "protoName")?;
+    let module = typechecked.module(proto)?;
+    let mut found = PlainImport {
+        definitions: Vec::new(),
+        nested: Vec::new(),
+        modules: vec![proto],
+    };
+    let mut inner = Imported::default();
     for each in list(module, "declarations") {
         match text(each, "kind")? {
             "typedef" => {}
-            kind if kept.contains(&kind) => definitions.push(each),
+            "import" if whole(each) && each.get("qualifiedName").is_none() => {
+                let proto = text(each, "protoName")?;
+                inner.modules.push(proto);
+                imported_into(
+                    typechecked,
+                    typechecked.module(proto)?,
+                    ("", false),
+                    1,
+                    &mut inner,
+                )?;
+            }
+            kind if kept.contains(&kind) => found.definitions.push(each),
             _ => return None,
         }
     }
-    Some(definitions)
+    found.nested = inner
+        .definitions
+        .into_iter()
+        .map(|(each, _)| each)
+        .collect();
+    found.modules.extend(inner.modules);
+    Some(found)
 }
 
 fn instance<'t>(
@@ -218,6 +324,7 @@ fn instance<'t>(
     let mut declarations = HashMap::new();
     let mut declared_constants = HashMap::new();
     let mut typedefs = HashMap::new();
+    let mut imports = Imported::default();
     for each in list(spec_module, "declarations") {
         let id = number(each, "id");
         match text(each, "kind")? {
@@ -228,10 +335,42 @@ fn instance<'t>(
                 declared_constants.insert(text(each, "name")?, (id?, each));
             }
             "typedef" => {
-                typedefs.insert(text(each, "name")?, each);
+                typedefs.insert(text(each, "name")?.to_owned(), each);
+            }
+            "import" if whole(each) => {
+                let proto = text(each, "protoName")?;
+                imports.modules.push(proto);
+                let prefix = text(each, "qualifiedName")
+                    .map_or_else(String::new, |alias| format!("{alias}{SEPARATOR}"));
+                imported_into(
+                    typechecked,
+                    typechecked.module(proto)?,
+                    (&prefix, true),
+                    1,
+                    &mut imports,
+                )?;
             }
             _ => return None,
         }
+    }
+    let mut prefixes = HashMap::new();
+    let mut imported = HashSet::new();
+    for (each, prefix) in imports.definitions {
+        let id = number(each, "id")?;
+        if declarations.contains_key(&id) && !imported.contains(&id) {
+            return None;
+        }
+        if prefixes
+            .insert(id, prefix.clone())
+            .is_some_and(|before| before != prefix)
+        {
+            return None;
+        }
+        imported.insert(id);
+        declarations.insert(id, each);
+    }
+    for (each, prefix) in imports.typedefs {
+        typedefs.insert(format!("{prefix}{}", text(each, "name")?), each);
     }
     let mut constants = HashMap::new();
     for pair in list(declaration, "overrides") {
@@ -255,7 +394,83 @@ fn instance<'t>(
         constants,
         typedefs,
         fresh_ids: false,
+        prefixes,
+        imported,
+        imported_modules: imports.modules,
+        shared: HashSet::new(),
     })
+}
+
+fn aliased_import<'t>(alias: &'t str, found: PlainImport<'t>) -> Fill<Instance<'t>> {
+    let mut definitions = found.definitions;
+    let mut imported = HashSet::new();
+    for definition in &found.nested {
+        let id = number(definition, "id")?;
+        if !definitions
+            .iter()
+            .any(|each| number(each, "id") == Some(id))
+        {
+            imported.insert(id);
+        }
+    }
+    definitions.extend(found.nested);
+    Some(Instance {
+        declared: None,
+        alias: Some(alias),
+        namespace: alias.to_owned(),
+        visible: false,
+        declarations: definitions
+            .into_iter()
+            .map(|definition| Some((number(definition, "id")?, definition)))
+            .collect::<Fill<HashMap<u64, &Value>>>()?,
+        constants: HashMap::new(),
+        typedefs: HashMap::new(),
+        fresh_ids: false,
+        prefixes: HashMap::new(),
+        imported,
+        imported_modules: Vec::new(),
+        shared: HashSet::new(),
+    })
+}
+
+type Indexes = (HashMap<u64, usize>, HashMap<u64, usize>);
+
+fn indexed<'t>(
+    typechecked: &'t Typechecked,
+    instances: &mut [Instance<'t>],
+    protos: &HashMap<&str, usize>,
+    copies: &mut HashMap<&'t str, usize>,
+) -> Indexes {
+    for each in instances.iter() {
+        for module in &each.imported_modules {
+            *copies.entry(module).or_insert(0) += 1;
+        }
+    }
+    let mut by_declaration = HashMap::new();
+    let mut by_instance = HashMap::new();
+    for (position, each) in instances.iter_mut().enumerate() {
+        if let Some((id, proto)) = each.declared {
+            each.fresh_ids = protos.get(proto).copied().unwrap_or(0) > 1;
+            by_instance.insert(id, position);
+        }
+        let shared_modules: Vec<&Value> = each
+            .imported_modules
+            .iter()
+            .filter(|module| copies.get(*module).copied().unwrap_or(0) > 1)
+            .filter_map(|module| typechecked.module(module))
+            .collect();
+        for module in shared_modules {
+            ids_in(module, &mut each.shared);
+        }
+        if !each.fresh_ids {
+            for id in each.declarations.keys().chain(each.constants.keys()) {
+                if !each.imported.contains(id) {
+                    by_declaration.insert(*id, position);
+                }
+            }
+        }
+    }
+    (by_declaration, by_instance)
 }
 
 impl<'t> Filler<'t> {
@@ -264,6 +479,9 @@ impl<'t> Filler<'t> {
         let main = typechecked.module(main_name)?;
         let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();
+        let mut hidden = HashSet::new();
+        let mut copies: HashMap<&str, usize> = HashMap::new();
+        let mut spaces: HashMap<&str, Option<&str>> = HashMap::new();
         let mut exports = Vec::new();
         let mut protos: HashMap<&str, usize> = HashMap::new();
         for declaration in list(main, "declarations") {
@@ -281,26 +499,27 @@ impl<'t> Filler<'t> {
                         }
                     }
                     let kept: &[&str] = if runs_only { &["def", "var"] } else { &["def"] };
-                    let definitions = plain_import(typechecked, declaration, kept)?;
+                    let found = plain_import(typechecked, declaration, kept)?;
+                    let space = text(declaration, "qualifiedName");
+                    for module in &found.modules {
+                        *copies.entry(module).or_insert(0) += 1;
+                        if *spaces.entry(module).or_insert(space) != space {
+                            return None;
+                        }
+                    }
                     match text(declaration, "qualifiedName") {
                         None => {
-                            for definition in definitions {
+                            for definition in found.definitions {
                                 own.insert(number(definition, "id")?, definition);
                             }
+                            for definition in found.nested {
+                                let id = number(definition, "id")?;
+                                if own.insert(id, definition).is_none() {
+                                    hidden.insert(id);
+                                }
+                            }
                         }
-                        Some(alias) => instances.push(Instance {
-                            declared: None,
-                            alias: Some(alias),
-                            namespace: alias.to_owned(),
-                            visible: false,
-                            declarations: definitions
-                                .into_iter()
-                                .map(|definition| Some((number(definition, "id")?, definition)))
-                                .collect::<Fill<HashMap<u64, &Value>>>()?,
-                            constants: HashMap::new(),
-                            typedefs: HashMap::new(),
-                            fresh_ids: false,
-                        }),
+                        Some(alias) => instances.push(aliased_import(alias, found)?),
                     }
                 }
                 "export" => exports.push(declaration),
@@ -327,19 +546,8 @@ impl<'t> Filler<'t> {
                 })?;
             exported.visible = true;
         }
-        let mut by_declaration = HashMap::new();
-        let mut by_instance = HashMap::new();
-        for (position, each) in instances.iter_mut().enumerate() {
-            if let Some((id, proto)) = each.declared {
-                each.fresh_ids = protos.get(proto).copied().unwrap_or(0) > 1;
-                by_instance.insert(id, position);
-            }
-            if !each.fresh_ids {
-                for id in each.declarations.keys().chain(each.constants.keys()) {
-                    by_declaration.insert(*id, position);
-                }
-            }
-        }
+        let (by_declaration, by_instance) =
+            indexed(typechecked, &mut instances, &protos, &mut copies);
         Some(Self {
             typechecked,
             main,
@@ -347,6 +555,7 @@ impl<'t> Filler<'t> {
             by_declaration,
             by_instance,
             own,
+            hidden,
             renamed: HashMap::new(),
             refreshed: HashMap::new(),
             pushed: Vec::new(),
@@ -372,7 +581,7 @@ impl<'t> Filler<'t> {
         let Some(position) = within.filter(|position| {
             self.instances
                 .get(*position)
-                .is_some_and(|each| each.fresh_ids)
+                .is_some_and(|each| each.refreshes(id))
         }) else {
             return id;
         };
@@ -459,10 +668,10 @@ impl<'t> Filler<'t> {
             Some(position) => *self.instances.get(position)?.declarations.get(&target)?,
             None => *self.own.get(&target)?,
         };
-        let name = text(declaration, "name")?;
+        let name = self.prefixed(within, target, text(declaration, "name")?);
         let shown = self
             .namespace_of(within)
-            .map_or_else(|| name.to_owned(), |space| namespaced(&space, name));
+            .map_or_else(|| name.clone(), |space| namespaced(&space, &name));
         if self.names.contains(&shown) {
             return Some(());
         }
@@ -486,6 +695,13 @@ impl<'t> Filler<'t> {
         }
         self.push(copy);
         Some(())
+    }
+
+    fn prefixed(&self, within: Option<usize>, target: u64, name: &str) -> String {
+        let prefix = within
+            .and_then(|position| self.instances.get(position))
+            .map_or("", |each| each.prefix(target));
+        format!("{prefix}{name}")
     }
 
     fn owner(&self, entry: &Value, target: u64, within: Option<usize>) -> Option<usize> {
@@ -524,15 +740,10 @@ impl<'t> Filler<'t> {
             }
             self.reach(target, owner)?;
         }
-        let refreshed = local.is_some_and(|position| {
-            self.instances
-                .get(position)
-                .is_some_and(|each| each.fresh_ids)
-        });
-        if refreshed {
-            let new_target = self.id_in(local, target);
+        let new_target = self.id_in(local, target);
+        let node = self.id_in(within, id);
+        if new_target != target || node != id {
             let new_kind = if kind == "const" { "def" } else { kind };
-            let node = self.id_in(within, id);
             self.entries.insert(
                 node.to_string(),
                 json!({ "kind": new_kind, "id": new_target }),
@@ -544,8 +755,15 @@ impl<'t> Filler<'t> {
             .cloned()
             .unwrap_or_else(|| written.to_owned());
         Some(match (within, owner) {
+            (Some(_), Some(_)) if top => namespaced(
+                &self.namespace_of(within)?,
+                &self.prefixed(owner, target, text(entry, "name")?),
+            ),
             (Some(_), _) => namespaced(&self.namespace_of(within)?, &base),
-            (None, Some(_)) if top => namespaced(&self.namespace_of(owner)?, text(entry, "name")?),
+            (None, Some(_)) if top => namespaced(
+                &self.namespace_of(owner)?,
+                &self.prefixed(owner, target, text(entry, "name")?),
+            ),
             _ => base,
         })
     }
@@ -649,6 +867,7 @@ impl<'t> Filler<'t> {
             found.extend(
                 self.own
                     .iter()
+                    .filter(|(id, _)| !self.hidden.contains(id))
                     .filter(|(_, declaration)| fits(declaration, wanted))
                     .map(|(id, _)| (None, *id, wanted)),
             );
@@ -662,6 +881,7 @@ impl<'t> Filler<'t> {
                 found.extend(
                     each.declarations
                         .iter()
+                        .filter(|(id, _)| !each.imported.contains(id))
                         .filter(|(_, declaration)| fits(declaration, wanted))
                         .map(|(id, _)| (Some(position), *id, wanted)),
                 );
@@ -707,6 +927,7 @@ impl<'t> Filler<'t> {
             let mut runs_here: Vec<(u64, &str)> = each
                 .declarations
                 .iter()
+                .filter(|(id, _)| !each.imported.contains(id))
                 .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
                 .filter_map(|(id, declaration)| Some((*id, text(declaration, "name")?)))
                 .filter(|(_, name)| match runs {
@@ -784,6 +1005,7 @@ impl<'t> Filler<'t> {
         let mut imported_runs: Vec<u64> = self
             .own
             .iter()
+            .filter(|(id, _)| !self.hidden.contains(id))
             .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
             .filter(
                 |(_, declaration)| match (check.runs, text(declaration, "name")) {
