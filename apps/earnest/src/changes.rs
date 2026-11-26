@@ -1,3 +1,4 @@
+use crate::changes_quint::quint_changes;
 use crate::discovery::{
     IN_EVERY_MODEL_FILE, Language, is_model_file, is_model_name, is_searched, language_of,
 };
@@ -104,7 +105,7 @@ impl Difference {
     }
 }
 
-fn git(folder: &Path) -> Command {
+pub(crate) fn git(folder: &Path) -> Command {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -146,7 +147,7 @@ fn nearest_folder(path: &Path) -> (&Path, PathBuf) {
     }
 }
 
-fn bytes_at(base: &str, file: &str) -> Option<Vec<u8>> {
+pub(crate) fn bytes_at(base: &str, file: &str) -> Option<Vec<u8>> {
     let (folder, below) = nearest_folder(Path::new(file));
     let name = below.to_str()?;
     let shown = git(folder)
@@ -191,7 +192,7 @@ fn at_base(base: &str, language: Language, file: &str) -> AtBase {
     bytes_at(base, file).map_or(AtBase::Absent, |bytes| understood(language, file, bytes))
 }
 
-fn names_from(output: &std::process::Output) -> Vec<&str> {
+pub(crate) fn names_from(output: &std::process::Output) -> Vec<&str> {
     output
         .stdout
         .split(|byte| *byte == 0)
@@ -788,6 +789,9 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             }
         }
     }
+    let (changes, unreadable) = quint_changes(compare);
+    compared.changes.extend(changes);
+    compared.unreadable_at_base.extend(unreadable);
     compared
 }
 

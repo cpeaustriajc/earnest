@@ -700,7 +700,7 @@ fn parse_failed(shown: &str, real_file: &Path, said: &str) -> Problem {
     Problem::new(&file, place, feature, explanation)
 }
 
-fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
+pub(crate) fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
     let unread = |error: io::Error| {
         Problem::new(
             shown,
@@ -822,7 +822,7 @@ fn declared(job: &Job) -> Declared {
     }
 }
 
-fn program_for(
+pub(crate) fn program_for(
     programs: &mut HashMap<PathBuf, Result<Quint, String>>,
     folder: &Path,
 ) -> Result<Quint, String> {

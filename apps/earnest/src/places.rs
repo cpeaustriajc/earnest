@@ -1,3 +1,4 @@
+use crate::changes_quint::meaning_of;
 use crate::quint::shown_in_folder;
 use earnest_diagnostics::Problem;
 use earnest_quint::{Located, Runs};
@@ -76,6 +77,8 @@ pub(crate) struct Imported<'a> {
     pub(crate) written: Option<(&'a str, usize, usize)>,
 }
 
+pub(crate) type Written<'a> = (&'a str, usize, usize);
+
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Places {
     pub(crate) read: u64,
@@ -87,6 +90,7 @@ pub(crate) struct Places {
     spans: HashMap<u64, (usize, usize)>,
     kinds: HashMap<u64, String>,
     parameters: BTreeSet<u64>,
+    meanings: HashMap<u64, (u64, u64)>,
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -224,6 +228,15 @@ impl Places {
             })
             .filter_map(|declaration| declaration.get("id").and_then(Value::as_u64))
             .collect();
+        let meanings = declarations
+            .iter()
+            .filter_map(|declaration| {
+                let id = declaration.get("id").and_then(Value::as_u64)?;
+                let expr = declaration.get("expr")?;
+                let written = expr.get("id").and_then(Value::as_u64)?;
+                Some((id, (written, meaning_of(expr))))
+            })
+            .collect();
         Some(Self {
             read: 0,
             files,
@@ -234,7 +247,17 @@ impl Places {
             spans,
             kinds: kept("kind"),
             parameters,
+            meanings,
         })
+    }
+
+    pub(crate) fn definition_of(&self, id: u64) -> Option<(u64, Option<Written<'_>>)> {
+        let (written, meaning) = self.meanings.get(&id)?;
+        let span = self.spans.get(written).and_then(|(start, end)| {
+            let file = self.files.get(&self.at.get(written)?.0)?;
+            Some((file.as_str(), *start, *end))
+        });
+        Some((*meaning, span))
     }
 
     pub(crate) fn files_read(&self) -> Vec<&str> {
