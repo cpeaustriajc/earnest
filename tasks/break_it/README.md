@@ -2548,3 +2548,62 @@ Checks, each with its last line, on the tree merged with the integration head 63
 - `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
   model, on `fair_parts`' four, on `start_implies`, on `act(b + 1)`, and on #68's `buyers`,
   `FairArgs`, `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`.
+
+## Fourth Quint pass
+
+An adversarial pass over what was merged after the third one (#78: properties whose parts come
+out empty, fairness given a part of a pick, conditions before `implies`, steps named with their
+written arguments, `--rule` of a run alone; #71: setups whose spec imports other modules, built
+from the typecheck, `assume`, path printing, `match` branches named by variant), made on commit
+caf9310 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_fourth.rs` and its files in `models/quint_fourth/`: each `.qnt` beside the
+JSON Quint wrote for it, to a file, so the tests need no Node. The oracles: `quint verify
+--backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal
+properties, and `quint test --backend typescript` for runs; `confirm --tlc` with the `v1.8.0`
+release's `tla2tools.jar` at `target/tools/`. Only cases where earnest matches neither backend, or
+contradicts its own docs, are findings.
+
+### Fairness of an action the step guards is judged with the step's guard
+
+`models/quint_fourth/guarded_fair/`. `guarded_step.qnt`: `pay = all { not(paid), paid' = true,
+open' = open }`, `toggle` flips `open`, and the step is `all { open or paid, any { pay, toggle }
+}`; the property `pays` is `weakFair(pay, (paid, open)) implies eventually(paid)`. TLC reads it as
+`WF_vars(pay)`, whose `ENABLED` is that of `pay` alone: `not(paid)`, true in the start state, where
+the step can't happen. The only behaviour stays in the start state with `pay` enabled forever and
+never taken, so it is not fair, no fair behaviour exists, and the property holds: `quint verify
+--backend tlc --temporal pays guarded_step.qnt` prints `1 distinct states found` and `[ok] No
+violation found`. The same with the step `guardedBranch = any { all { open, pay }, toggle }` (4
+states, `[ok]`), and with an argument, `guarded_fair.qnt`: `any { nondet b = Buyers.oneOf() all
+{ open, pay(b) }, toggle }` and `onePays = weakFair(pay(1), (paid, open)) implies
+eventually(paid.get(1))` (8 states, `[ok]`). Earnest: `broken` in all three, the path `start
+paid = false, open = false` with `the run may stop here, because no step it must take can change
+the state from here` (or `nothing changes the state from here`). It takes `pay` to be enabled only
+where the step can take it, so the guard `open` the step puts before the call counts against the
+fairness. The same holds for `if (open) any { pay, toggle } else toggle` and `any { if (open) pay
+else toggle, toggle }`, all `[ok]` in TLC and broken in earnest. `earnest confirm --tlc` says
+`same` on `guarded_fair` and `guarded_step`: the export writes the fairness over the step's
+guarded action too. The docs say a step counts for such fairness "as TLC judges
+`WF_vars(reachDeadline(buyer))`", and refuse an argument the step never gives because "TLC holds
+such a step possible where the step never takes it"; a guard of the step around the call is the
+same case and is not refused. A step of the form `all { not(done), any { … } }` or `if (phase ==
+Run) any { … } else …` meets it. Right result: each property holds, or the check refused naming
+the guard. Test:
+`fairness_of_an_action_the_step_guards_is_judged_by_the_action_alone_as_tlc_judges_it`.
+
+### A spec that imports helpers under a name beside their types module is unreadable
+
+`models/quint_fourth/named_helpers/named_helpers.qnt`: `types` (a sum type), `helpers` (`import
+types.*`, `pure def up`), `spec` (`import types.*`, `import helpers as H`, a constant `N`, `step`
+calls `H::up(x)`, a run `upTest`) and the setup `small` (`import spec(N = 2).*`). The docs read a
+spec that imports modules of definitions and types "at any depth", and a spec that imports under a
+name "as the same spec written with `.*`", from one typecheck. `quint test --backend typescript
+--main small` prints `ok small::spec::upTest passed 1 test(s)`. Earnest compiles the check instead,
+and `quint compile` (so `quint verify` too) stops with `Error: Internal error while flattening
+[QNT404] Name 'small::spec::H::up' not found`: the check is `unreadable`, and the problem's place
+is Quint's own `…/node_modules/@informalsystems/quint/dist/src/cli.js:58:39`. Without the spec's
+own `import types.*`, or with `import helpers.*` in place of `as H`, the same file is built from
+the typecheck: `pass  small  3 states`, `inRange` and `upTest` hold. The test gives earnest a fake
+`quint` that answers `parse` and `typecheck` with `quint typecheck --out`'s JSON
+(`typecheck.json`) and fails `compile` as Quint does. Right result: `pass`, 3 states, `inRange`
+and `upTest` hold. Test:
+`a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_from_the_typecheck`.
