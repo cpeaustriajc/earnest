@@ -1,7 +1,7 @@
 use crate::discovery::{
     IN_EVERY_MODEL_FILE, Language, is_model_file, is_model_name, is_searched, language_of,
 };
-use crate::reading::{ModelFile, read};
+use crate::reading::{ModelFile, Readable, read};
 use crate::run::Bounds;
 use crate::select::Target;
 use earnest_ast::{ConditionDraft, Draft, Quoting, RuleDraft, same_condition_text};
@@ -618,24 +618,32 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             AtBase::Absent => Vec::new(),
             AtBase::Models(drafts) => drafts,
         };
-        let now: Vec<&Draft> = file
+        let declared: Vec<&Readable> = file
             .models()
             .iter()
             .filter(|readable| readable.model.runs.chosen.is_none())
+            .collect();
+        let now: Vec<&Draft> = declared
+            .iter()
             .filter_map(|readable| readable.draft.as_ref())
             .collect();
         let old_drafts: Vec<&Draft> = old.iter().collect();
-        for target in targets.iter().filter(|target| {
-            target.file.path == file.path && target.readable.model.runs.chosen.is_none()
-        }) {
-            let Some(new) = &target.readable.draft else {
+        for readable in declared {
+            let Some(new) = &readable.draft else {
                 continue;
             };
-            let before = namesakes_before(&now, target.readable.position);
+            let before = namesakes_before(&now, readable.position);
             let was = namesake(&old_drafts, &new.name, before);
-            compared
-                .changes
-                .extend(model_changes(was, new, compare.bounds));
+            let has_a_chosen_run = targets.iter().any(|target| {
+                target.file.path == file.path && target.readable.position == readable.position
+            });
+            let named_at_base =
+                compare.rule.is_some() && was.is_some_and(|was| compare.selects(was));
+            if has_a_chosen_run || named_at_base {
+                compared
+                    .changes
+                    .extend(model_changes(was, new, compare.bounds));
+            }
         }
         compared
             .changes
