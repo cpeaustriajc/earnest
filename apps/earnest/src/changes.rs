@@ -634,12 +634,12 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
             };
             let before = namesakes_before(&now, readable.position);
             let was = namesake(&old_drafts, &new.name, before);
-            let has_a_chosen_run = targets.iter().any(|target| {
+            let a_run_is_selected = targets.iter().any(|target| {
                 target.file.path == file.path && target.readable.position == readable.position
             });
             let named_at_base =
                 compare.rule.is_some() && was.is_some_and(|was| compare.selects(was));
-            if has_a_chosen_run || named_at_base {
+            if a_run_is_selected || named_at_base {
                 compared
                     .changes
                     .extend(model_changes(was, new, compare.bounds));
