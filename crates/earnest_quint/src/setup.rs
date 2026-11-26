@@ -145,7 +145,7 @@ impl Typechecked {
     /// has neither `q::init` nor `q::step`, and only [`crate::read_runs`] reads it.
     #[must_use]
     pub fn setup(&self, check: &Setup<'_>) -> Option<String> {
-        let filler = Filler::new(self, check.main, check.runs_only())?;
+        let filler = Filler::new(self, check)?;
         filler.filled(check)
     }
 }
@@ -255,7 +255,8 @@ fn instance<'t>(
 }
 
 impl<'t> Filler<'t> {
-    fn new(typechecked: &'t Typechecked, main_name: &str, runs_only: bool) -> Fill<Self> {
+    fn new(typechecked: &'t Typechecked, check: &Setup<'_>) -> Fill<Self> {
+        let (main_name, runs_only) = (check.main, check.runs_only());
         let main = typechecked.module(main_name)?;
         let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();

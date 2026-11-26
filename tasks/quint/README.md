@@ -3675,6 +3675,15 @@ broken at `count = 1`, with no `quint compile` call
 `Shapes.qnt`'s `OwnVariables` (an instance and a var of its own) is now built in the same way, and
 the other five shapes are still compiled once each.
 
+On the tree merged with the integration head `b4c54a9`: `cargo fmt --check` exit 0; clippy and
+`just lint-library` no warnings; `cargo test --locked` 83 suites, 2079 passed, 0 failed; `just
+typescript` 192, 22 and 76 passed; `just docs` 18 pages, `Complete!`; `just counts` every row
+`met` (largest `+0.38%`, `mixed/shelf`); `just benchmark` every budget `met`; `just same-answers
+origin/main` sweeps 0 differences, `392 runs, 64 differences` all in `tasks/conformance/runs/`
+(not on `origin/main`), and 0 against the integration head; `tests kept: 1656 tests, 4805
+assertions (base: 1304, 3798)`.
+
+
 ## Real project, second reads (#67): report
 
 The owner's run of the integration build on a real project left 7 setups unreadable on two forms
