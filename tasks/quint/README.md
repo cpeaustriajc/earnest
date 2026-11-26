@@ -4777,3 +4777,8 @@ Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`8fe5534`): `cargo fm
 clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2216 passed, 0 failed;
 `just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
 differences.
+
+After merging `claude/lucid-brown-f5xvr8` at `4b9d3a0` (the fifth pass's first fix, in
+`eventually.rs`; its test reads compiled JSON, so nothing to move): `cargo fmt --check`, clippy,
+`just lint-library` clean; `cargo test --locked` 2217 passed, 0 failed; `just docs` `Complete!`;
+`just same-answers` 0 differences. The real-Quint runs above were made at `17b1c8a`, before it.
