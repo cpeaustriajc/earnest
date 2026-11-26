@@ -23,6 +23,7 @@ mod quint_marks;
 mod quint_picks;
 mod quint_problems;
 mod quint_reads;
+mod quint_review;
 mod quint_runs;
 mod quint_setups;
 mod quint_temporal;
