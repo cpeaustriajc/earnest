@@ -4734,3 +4734,46 @@ Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`844238e`): `cargo fm
 clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2196 passed, 0 failed;
 `just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
 differences.
+
+## The third review (#72): report [ran]
+
+The seven tests of `quint_review.rs` from `claude/feedback-marked-checks-review-3` (`35bb1cf`)
+pass, and so do four built-against-compiled tests, which run each set with the typecheck (built)
+and without it (compiled, from fixtures of `quint compile` 0.33.1) and compare states, every
+property's verdict and path:
+`a_spec_whose_state_holds_a_sum_type_…`, `a_spec_that_imports_its_types_from_another_file_…`,
+`a_spec_that_holds_an_assumption_…` (also `falseassume`, a false `assume`: `quint compile --main
+Setup` leaves out the `assume` of the module it imports and Quint's TLC run finds the
+counterexample, not the assumption; the built check leaves it out too) and
+`a_spec_that_imports_a_helper_under_a_name_…`.
+
+1. The builder takes a spec imported whole with types (inlined, of its own or from a types module
+   in another file), `assume`s (left out) and helpers imported under a name (`L::inc`, as `quint
+   compile` names it). None of the four shapes was left `unfinished`.
+2. A check that imports a module whole is built, so `twosetups` `Whole` is judged (`small` broken;
+   `confirm --quint` says `cannot`, as Quint's TLC stops on the compiled module). The refusal of a
+   compiled module that writes a variable twice names both causes: a module brought in under a
+   name beside `import Spec.*`, or through an `export`.
+3. `/// @check,` and `/// @check broken,` then a line of names are a list (`barecomma` `W3` passes).
+4. A mark whose comma is followed by a sentence is said to be so, at the mark's line.
+5. A doc ending with a blank `///` line no longer moves its mark one line down (`marked/blank`).
+6. The reason of an `unfinished` check names the declaration the checker does not build and its
+   line: `import Spec.specTest` at `one_name.qnt:10`, `import Limit.L` at `compiled.qnt:32`; the
+   note keeps copying runs as the last resort.
+
+The fourth pass's samples (`8fe5534`) read marks: the seeded setups and `named_helpers` with real
+typechecks and maps, and `quint_fourth/project` follows the migration message (`three` ->
+`threeChecked`, states and verdicts the same; `threePick` +`oneEachTest`).
+
+Every Quint model under `tasks/quint` and `tasks/break_it/models` (191) against `c891672`, with
+Quint 0.33.1: the four shapes and `falseassume` go from `unfinished` to judged with the same
+property verdicts and paths and the imported run played; `twosetups` `Whole` and `barecomma`
+`W3` are judged; `quint_fourth` `named_helpers` `small` is built (it was unreadable on Quint's
+compile); `marked/blank` is reported at line 7. Still `unfinished`: 2, `OneName` and `Single`,
+each with its cause. `confirm --quint`: `same` on `sumtype`, `typesmodule`, `specassume`,
+`spechelper`, `falseassume`, `barecomma`, `twosetups` `Named`; `cannot` on `Whole`.
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`8fe5534`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2216 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences.
