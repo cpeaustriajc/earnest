@@ -333,8 +333,10 @@ pub(crate) fn read(chart: &str) -> Read {
     let after: Vec<&str> = lines.collect();
     match after.as_slice() {
         [] => {}
-        ["", note] if note.starts_with("Not shown: ") => read.note = Some((*note).to_owned()),
-        ["", premises] => read.premises = Some((*premises).to_owned()),
+        ["", premises] if !premises.starts_with("Not shown: ") => {
+            read.premises = Some((*premises).to_owned());
+        }
+        ["", note] => read.note = Some((*note).to_owned()),
         ["", note, "", premises] if note.starts_with("Not shown: ") => {
             read.note = Some((*note).to_owned());
             read.premises = Some((*premises).to_owned());

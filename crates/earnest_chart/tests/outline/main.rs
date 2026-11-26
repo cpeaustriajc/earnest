@@ -8,7 +8,8 @@ use earnest_chart::{
     Charted, Section, chart_outline, chart_with_limit, report_with_charts, report_with_limit,
 };
 use earnest_check::{Graph, Limits, Outcome, Outline, explore};
-use earnest_ir::{Expr, Model, Op};
+use earnest_ir::Model;
+use earnest_ir::{Expr, Op};
 use earnest_value::Value;
 use models::{Dice, random_model};
 
