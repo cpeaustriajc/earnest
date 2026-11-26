@@ -4080,3 +4080,124 @@ The checks-file slice (#69), on its tree merged with the integration head `05838
   and `clock.model.ts`, which `origin/main` reports `unreadable` (`m.eventually`, `m.setup`).
 - `tests_kept.py --base origin/main`: `tests kept: 1693 tests, 4897 assertions (base: 1304,
   3798)`.
+
+## Real project 5 (#71): a spec that imports, `assume`, and shorter paths
+
+The second adversarial pass wrote a model as a project writes one (a types module, a spec with
+constants, setups) and found the spec compiled once per setup, its runs not played, `assume`
+refused at line 1 when checked directly and dropped without a word in a setup, and long
+messages and paths. Quint 0.33.1 from npm in a scratch folder, Node 22, 4 cores.
+
+### What Quint does [ran; read `flattening/fullFlattener.js`, `flattener.js`, `instanceFlattener.js`]
+
+- `flattenModules` flattens the modules in order. For an instance, `instanceFlattener` copies the
+  spec's declarations as they were before flattening, with every name prefixed by the instance's
+  namespace and fresh ids; its imports are kept and flattened after, so a definition the spec
+  imports (`import Helpers.*`, a constructor of `import types.*`) lands in the instance's
+  namespace: `two::doors::closed`, `Star::SpecStar::quad`, `Star::SpecStar::Down`, with fresh ids.
+  A helper of a helper (`Helpers` imports `Lib.*`) is reached the same way (`Star::SpecStar::twice`).
+  The setup's own `import Helpers.*` keeps the bare names and Quint's ids (`twice`, `quad`).
+- Quint 0.33.1 can't compile a spec that imports under a name and is instantiated: `import Lib as L`
+  gives `Internal error while flattening [QNT404] Name 'S::Spec::L::twice' not found`, and one
+  module of a file that imports a helper chain under a name (`import Helpers as H`, `Helpers`
+  imports `Lib.*`) breaks every compile of the file (`Name 'twice' not found`). `quint test`
+  plays both.
+- A plain import's own `.*` imports are copied bare or under the import's name (`H::twice`), with
+  Quint's ids (`first/fixtures/Plain.PlainNested.json`).
+- `assume`: `quint typecheck` takes a false one; `quint test` and `quint run` ignore it; `quint
+  verify --backend tlc` on a module checked directly stops with `Assumption line 14, col 21 to
+  line 14, col 25 of module Direct is false.`; `quint compile` of a setup drops the spec's
+  assumptions (they are not reached), so `quint verify --main Bad` with `N = 0` is `[ok]`.
+
+### earnest
+
+- **Built from the typecheck** (`crates/earnest_quint/src/setup.rs`): an instantiated spec may
+  import whole modules of definitions and types (`.*` or `as A`, any file, any depth). Their
+  definitions join the instance's, under `<setup>::<instance>::<alias>::<name>`, and are reached
+  only through the spec; `init`, `step`, the properties and the runs are looked up among the
+  spec's own. A module copied in more than one place (the spec and the setup, two specs) gets
+  fresh ids in each instance that copies it, the rest keeps Quint's ids, so places through the
+  source map stay. A plain import's `.*` imports are taken too: `PlainNested` is built.
+- **Still compiled**: one name imported alone into a spec (`import Lib.twice`), a spec that
+  imports a module with variables, a setup that imports one module both whole and under a name
+  (`imports/compiled.qnt`), an instance of an instance (`setups/compiled.qnt`'s `Nested`), and a
+  helper imported under a name inside a plain import. Their imported runs are not played, and
+  the #70 note names them.
+- **`assume`**: read as Quint's TLC run reads it in a module it checks, in both places: worked out
+  from the constants when the file is read; a false one is `unreadable` at the assumption
+  (``the assumption `Positive` is false, so no state is checked. Quint's TLC run (`quint verify
+  --backend tlc`) stops on a false assumption of the module it checks; `quint test` and `quint
+  run` do not check it. Make it true, in a setup by giving the constants other values``). The
+  builder keeps the spec's and the setup's assumptions that `quint compile` drops. Decided
+  against ignoring it: Quint's own tools disagree, and a setup with a false assumption is a
+  mistake the owner wants to see.
+- **Short names in messages**: `refuse` and the fairness message name a definition by the
+  shortest ending no other declaration of the module has (``in the definition `picked` ``,
+  not `Few::C::picked`), worked out only when a message is written.
+- **A `match` branch** is `deliver Request`, `deliver _` (the path's branch tags, outer first,
+  up to the innermost named action); a repeat keeps `#n`. The export spells it
+  `Action_deliver_Request`. Fairness goes by the action's name, so `weakFair(deliver, vars)` is
+  unchanged.
+- **A path step** in Quint notation (`earnest_chart::path_lines_in`, `detail_lines_in`, called by
+  the CLI with the model's notation) prints at most three changed parts of a map, record, set or
+  list when that is shorter than the whole change: `balances.get("ann"): 3 -> 4`,
+  `peers.get("a").status: "idle" -> "waiting"`, `seen: + 4`, `queue: + 3 at the end`,
+  `net: - Request("a") at the head`, `queue[2]: 5 -> 6`. A change from or to an empty value
+  prints whole. The parts are found in the printed text, which Quint's notation makes
+  unambiguous; earnest's own notation is never split. `start`/`end` and the JSON keep whole
+  values. The Markdown report keeps whole values.
+- **Left over from #66**: a run whose first action can't happen prints `start  no state: the
+  first action gives none`; a fault while working out its start states names the action
+  (``a value `seed` gives takes a division ...``).
+- **Small ones**: a literal between 2^63 and 2^64 is shown as written. `fieldNames` of an open
+  record already said what to write. Not done: the `getOnlyElement` fault still does not name
+  the operator; it is read as a map lookup, and naming it needs its own operator or fault in
+  `earnest_ir`, which is search code under the budgets.
+
+### The sample, `imports/`
+
+`types.qnt`, `lib.qnt` (imports `types`), `doors.qnt` (constants `NODES`, `LIMIT`, imports both;
+a `match` action, an invariant broken in one setup, a temporal property, three runs),
+`setups.qnt` (`two` and `three` with `.*`, `named` with `as D` and an own run named like the
+spec's, `scenarios`, runs only), `star.qnt` (`Star`; `Both`: two specs that import the same
+helpers), `as.qnt` (`As`: the spec with `import Kinds as T`, `import Helpers as H`),
+`compiled.qnt` (the shapes left to compile), `assume.qnt`, `printing.qnt`, `short.qnt`, `big.qnt`.
+
+| Check | `quint verify --backend tlc` | `quint test` | earnest |
+|---|---|---|---|
+| `two` | 57 states, `neverAllOpen` violated after 4 steps, `drains` holds | `openTest`, `pingTest`, `bothOpenTest` ok, `overTest` failed | the same, built |
+| `three` | 764 states, holds | `overTest` failed | the same, built |
+| `named` | 25 states, holds | `pingTest` and `named::D::pingTest` ok, `overTest` failed | `pingTest`, `D::pingTest`, built |
+| `scenarios` | (runs only) | `sendTest`, `closeTest` ok, `overTest` failed | the same, `0 states`, built |
+| `Star` | 16 states, `noDownAtTop` violated after 4 steps | 2 ok | the same, built |
+| `Both` | 40 states, `tagged` violated after 2 steps | 4 ok | the same, built |
+| `As` | (Quint can't compile it) | 2 ok | as `Star` |
+| `Direct`, `Bad` (`assume.qnt`) | `Assumption ... is false`; `Bad` `[ok]` (dropped) | ok | both `unreadable` at the assumption |
+| `Good` | 3 states | ok | 3 states, built |
+
+Run by the orchestrator (this session's permissions refused running TLC's jar): `earnest verify`
+on `tasks/quint/imports` gives As 16, two 57, three 764, named 25, scenarios 0, Star 16, Both 40
+states in 2.2 s cold, and `earnest confirm --tlc target/tools/tla2tools.jar .` says `same` on all
+seven.
+
+One `earnest verify` of the folder starts `quint --version`, one `parse` per file and one
+`typecheck` per file with a setup, and no `compile`. The second pass's project
+(`tasks/break_it/models/quint_second/project`): one parse and one typecheck, no compile, 2.4 s
+(7.8 s with three Node starts before), the same five state counts.
+
+Tests: `quint_imports::a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_flattens`
+(status, states, reason and every rule with its path against the compiled fixtures, and the
+counts against TLC), `quint_imports::the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_them`,
+`quint_imports::a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike`,
+`quint_imports::a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes`;
+`setup_tests::a_spec_that_imports_a_name_alone_or_a_module_with_variables_is_left_to_quint_compile`,
+`setup_tests::a_definition_imported_into_a_spec_is_named_in_the_instance_with_its_alias`,
+`setup_tests::a_refusal_in_a_setup_names_the_definition_by_its_short_name`,
+`setup_tests::a_literal_past_two_to_the_63_is_shown_in_its_refusal_as_written`; `parts::tests`.
+
+### Tests of earlier slices changed (none is on `origin/main`)
+
+- `quint_first::a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly`: it
+  asserted that `PlainNested` is compiled; now nothing is.
+- `actions_tests::each_branch_of_a_match_of_actions_is_an_action_and_each_branch_in_init_a_start`:
+  `follow#2`, `turn#3` are now `follow Jump`, `turn Idle`.

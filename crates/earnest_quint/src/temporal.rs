@@ -459,6 +459,7 @@ impl<'a> Properties<'_, 'a> {
                 .iter()
                 .find(|(position, _)| path.assigns.iter().all(|(given, _)| given != position));
             if let Some((_, variable)) = open {
+                let (name, variable) = (self.reader.short(name), self.reader.short(variable));
                 return self.reader.refuse(
                     "`weakFair`",
                     &format!(

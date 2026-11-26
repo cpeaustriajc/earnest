@@ -86,6 +86,10 @@ pub(crate) enum Declaration {
         name: String,
     },
     Def(Def),
+    Assume {
+        name: String,
+        assumption: Expr,
+    },
     Typedef {},
     #[serde(other)]
     Other,

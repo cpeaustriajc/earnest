@@ -13,7 +13,12 @@ fn slots_of(path: &Path, slots: usize) -> usize {
         .max(slots)
 }
 
-fn values_of(choice: &Choice, path: &Path, picked: &[Value], slots: usize) -> Read<Vec<Value>> {
+fn values_of(
+    choice: &Choice,
+    (path, what): (&Path, &str),
+    picked: &[Value],
+    slots: usize,
+) -> Read<Vec<Value>> {
     let Some(set) = &choice.from else {
         return Ok(choice.values.clone());
     };
@@ -21,26 +26,26 @@ fn values_of(choice: &Choice, path: &Path, picked: &[Value], slots: usize) -> Re
     for (earlier, value) in path.choices.iter().zip(picked) {
         frame.put(earlier.slot, value.clone());
     }
-    match eval(set, &mut frame).map_err(fault("a set `init` picks from"))? {
+    match eval(set, &mut frame).map_err(fault(what, &format!("a set {what} picks from")))? {
         Value::Set(items) => Ok(items.iter().cloned().collect()),
         _ => Err(refusal(
-            "`init`",
-            "`init` picks with `oneOf` from a value that is not a set",
+            what,
+            &format!("{what} picks with `oneOf` from a value that is not a set"),
         )),
     }
 }
 
-fn combinations(path: &Path, slots: usize) -> Read<Vec<Vec<Value>>> {
+fn combinations((path, what): (&Path, &str), slots: usize) -> Read<Vec<Vec<Value>>> {
     let slots = slots_of(path, slots);
     let mut all: Vec<Vec<Value>> = vec![Vec::new()];
     for choice in &path.choices {
         let mut longer_all = Vec::new();
         for picked in &all {
-            for value in values_of(choice, path, picked, slots)? {
+            for value in values_of(choice, (path, what), picked, slots)? {
                 if u128::try_from(longer_all.len()).unwrap_or(u128::MAX) >= MOST_VALUES_LISTED {
                     return Err(refusal(
-                        "`init`",
-                        &format!("`init` picks among more than {MOST_VALUES_LISTED} combinations"),
+                        what,
+                        &format!("{what} picks among more than {MOST_VALUES_LISTED} combinations"),
                     ));
                 }
                 let mut longer = picked.clone();
@@ -53,12 +58,13 @@ fn combinations(path: &Path, slots: usize) -> Read<Vec<Vec<Value>>> {
     Ok(all)
 }
 
-fn fault(why: &str) -> impl Fn(earnest_ir::Fault) -> crate::reader::Refusal {
-    move |fault| refusal("`init`", &format!("{why} {}", fault.describe()))
+fn fault(what: &str, why: &str) -> impl Fn(earnest_ir::Fault) -> crate::reader::Refusal + use<> {
+    let (what, why) = (what.to_owned(), why.to_owned());
+    move |fault| refusal(&what, &format!("{why} {}", fault.describe()))
 }
 
 fn start_of(
-    path: &Path,
+    (path, what): (&Path, &str),
     picked: &[Value],
     fields: &[String],
     slots: usize,
@@ -68,26 +74,27 @@ fn start_of(
         frame.put(choice.slot, value.clone());
     }
     for guard in &path.guards {
-        if !truth(guard, &mut frame).map_err(fault("a condition of `init`"))? {
+        if !truth(guard, &mut frame).map_err(fault(what, &format!("a condition of {what}")))? {
             return Ok(None);
         }
     }
     let mut state = Vec::with_capacity(fields.len());
-    for expr in assigned(path, fields, "init")? {
-        state.push(eval(&expr, &mut frame).map_err(fault("a value `init` gives"))?);
+    for expr in assigned(path, fields, what.trim_matches('`'))? {
+        let given = fault(what, &format!("a value {what} gives"));
+        state.push(eval(&expr, &mut frame).map_err(given)?);
     }
     Ok(Some(state))
 }
 
 pub(crate) fn start_states(
-    paths: &[Path],
+    (paths, what): (&[Path], &str),
     fields: &[String],
     slots: usize,
 ) -> Read<Vec<Vec<Value>>> {
     let mut found = BTreeSet::new();
     for path in paths {
-        for picked in combinations(path, slots)? {
-            if let Some(state) = start_of(path, &picked, fields, slots)? {
+        for picked in combinations((path, what), slots)? {
+            if let Some(state) = start_of((path, what), &picked, fields, slots)? {
                 found.insert(state);
             }
         }
