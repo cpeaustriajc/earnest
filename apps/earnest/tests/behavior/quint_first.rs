@@ -43,7 +43,8 @@ case "$1" in
 esac
 "#;
 
-const FILES: [&str; 10] = [
+const FILES: [&str; 11] = [
+    "OwnRuns",
     "RunFromHelper",
     "TwoInstances",
     "OnlyRuns",
@@ -332,7 +333,6 @@ fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows()
         ("AsImport", "L::init"),
         ("FromFile", "F::init"),
         ("Several", "F::init"),
-        ("OwnVariables", "A::init"),
         ("Mixed", "init"),
     ] {
         assert!(
@@ -344,8 +344,8 @@ fn a_module_of_runs_only_brings_in_what_its_runs_use_in_every_way_quint_allows()
     }
     assert_eq!(
         compiled.len(),
-        6,
-        "the instances are built, the rest compiled once each"
+        5,
+        "the instances and `OwnVariables` are built, the rest compiled once each: {compiled:?}"
     );
 }
 
@@ -387,5 +387,42 @@ fn a_definition_that_chains_steps_is_played_where_a_run_calls_it() {
     assert!(
         matches!(refused.as_slice(), [only] if only.contains("make a run, not one step")),
         "a chain of steps as the search's `step` is refused: {refused:?}"
+    );
+}
+
+#[test]
+fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck() {
+    let quint =
+        Quint::new(r#"{ "checks": [{ "file": "OwnRuns.qnt", "main": "OwnRuns", "runs": true }] }"#);
+    let run = quint.earnest(&["verify", "specs"]);
+    run.exits(1);
+    assert_eq!(
+        run.model_line("OwnRuns")[..3],
+        ["fail", "OwnRuns", "0 states"]
+    );
+    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    assert_eq!(
+        verdicts(&report, "OwnRuns"),
+        pairs(&[
+            ("seededTest", "holds"),
+            ("closedTest", "holds"),
+            ("wrongTest", "broken"),
+        ]),
+        "as `quint test --main OwnRuns` judges them\n{report}"
+    );
+    assert_eq!(
+        run.detail("OwnRuns"),
+        [
+            "broken  wrongTest  \"The Quint run `wrongTest` passes\"",
+            "start  open = true, count = 0",
+            "1. bump  count: 0 -> 1",
+            "end    open = true, count = 1",
+            "why    what the run expects after step 1 is false here",
+        ]
+    );
+    assert!(
+        quint.compiled().is_empty(),
+        "nothing to compile: {:?}",
+        quint.compiled()
     );
 }

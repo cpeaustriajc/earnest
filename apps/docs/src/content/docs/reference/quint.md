@@ -90,7 +90,7 @@ module Small {
 }
 ```
 
-For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one. No compile runs. Earnest builds a setup module made of any of these:
+For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one, and its module may also declare variables of its own, with no instance at all. No compile runs. Earnest builds a setup module made of any of these:
 
 | In the setup module | Example | Names |
 |---|---|---|

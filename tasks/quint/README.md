@@ -3687,7 +3687,6 @@ On the tree merged with the integration head `bb60c5f` (#66's early push):
   step is one piece.
 - `problems.qnt`'s run `repsTest` is refused for `0.reps(...)`: #66 now reads a run that starts
   with an action other than `init`, so that form no longer gives a stable refusal.
-
 ## Real models 1, second part: after the owner's re-run of bb60c5f
 
 Two gaps from the real project, each with its fixtures in `first/`:
@@ -3780,3 +3779,28 @@ On the tree merged with the integration head `641c099`:
 - The path of a run whose first action can't happen prints an empty `start` line.
 - An argument of a chained helper that reads the state is refused; Quint would evaluate it.
 - `start_states`' own fault messages name `init` even for a run's first action.
+
+### A module of runs only with variables of its own
+
+`first/OwnRuns.qnt` (the orchestrator's sample, renamed from `RunsOnly` so as not to clash with
+the owner's): `var open`, `var count`, actions `seed(o)` and `bump`, three runs, no `init`, no
+`step`, no import. There is no `init` for `quint compile` to take, so the typecheck build now
+takes, for a check of runs only, the module's own `var`s and a module with no instance
+(`Filler::new(…, runs_only)`). A var whose type is an alias is still left to the compile. The
+build is only used this way for checks of runs only, so every setup built before is built the
+same. `quint test --backend typescript --main OwnRuns`: `2 passing`, `1 failed` (`wrongTest`,
+QNT508). earnest: `fail  OwnRuns  0 states`, `seededTest` and `closedTest` hold, `wrongTest`
+broken at `count = 1`, with no `quint compile` call
+(`quint_first::a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck`).
+`Shapes.qnt`'s `OwnVariables` (an instance and a var of its own) is now built in the same way, and
+the other five shapes are still compiled once each.
+
+On the tree merged with the integration head `b4c54a9`: `cargo fmt --check` exit 0; clippy and
+`just lint-library` no warnings; `cargo test --locked` 83 suites, 2079 passed, 0 failed; `just
+typescript` 192, 22 and 76 passed; `just docs` 18 pages, `Complete!`; `just counts` every row
+`met` (largest `+0.38%`, `mixed/shelf`); `just benchmark` every budget `met`; `just same-answers
+origin/main` sweeps 0 differences, `392 runs, 64 differences` all in `tasks/conformance/runs/`
+(not on `origin/main`), and 0 against the integration head; `tests kept: 1656 tests, 4805
+assertions (base: 1304, 3798)`.
+
+
