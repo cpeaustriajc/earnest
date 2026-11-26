@@ -2,10 +2,11 @@
 //!
 //! `quint compile --target json --main <module> --invariant <names> <file>.qnt` writes the JSON
 //! that [`read`] takes. [`read`] gives an [`earnest_ir::Model`] ready to search, or a
-//! [`Problem`] for each construct the reader refuses. It reads `int` and `bool` variables, the
-//! integer and boolean operators, `if`, `let`, `nondet` over a set written out or a range, and
-//! the module's `init`, `step` and listed invariants. Everything else makes the file
-//! unreadable; nothing is skipped.
+//! [`Problem`] for each construct the reader refuses. It reads variables of every type but
+//! operators, the integer, boolean, text, record, tuple, set, map, list and variant operators
+//! (`match` among them), `if`, `let`, `nondet` over a set that does not change, and the
+//! module's `init`, `step` and listed invariants. Everything else makes the file unreadable;
+//! nothing is skipped.
 //!
 //! The compiled JSON holds no line numbers, so every problem is placed at line 1, column 1,
 //! and names the definition it was found in.

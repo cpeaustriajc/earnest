@@ -1038,3 +1038,108 @@ The tests: `crates/earnest_ir/tests/folds.rs` (each new form against values work
 the walk and the prepared code agreeing), `crates/earnest_quint/src/table.rs` (the operator
 table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/src/faulting.rs`
 (the TLA+ helpers) and `apps/earnest/tests/behavior/quint_data.rs` (the command line).
+
+## Slice 2: report
+
+### Done
+
+- `earnest_ir`, general path only: `Expr::Fold` (a running value through a set, in its order, or a
+  list; it names the kind of collection it takes, and another kind is `WrongKind`), `Op::Power`,
+  `Op::Interval`, `Op::Ascending`, `MapOp::MustGet`, `MapOp::Replace`, `SeqOp::Nth`, `Head`,
+  `Tail`, `Concat`, `Slice`, `ReplaceAt`, and the faults `Fault::Missing` and `Fault::Undefined`.
+  A fold's slots are binders like a sweep's in `parts.rs` and `code/shared.rs`, so no binding
+  inside one is kept across items; `Reads::of` in `code/packed.rs` refuses a fold, so it never
+  reaches a packed table. No field was added to `Model`, `Field` or `Action`.
+- `earnest_quint`: `data.rs` maps every builtin of the table in "Slice 2: what is checked";
+  operators passed to `map`, `filter`, `fold`, `setBy`, `match` and the others are read with
+  their parameters bound to fresh slots; texts are named in code-point order (the module is
+  read twice); a `oneOf` takes any set that does not change; type definitions are skipped
+  (variants are read from their constructors). `reader.rs` gained the hooks (`Str`, the data
+  builtins, `with_values`, `reads_state` that knows bound slots) and `model.rs`/`starts.rs` size
+  each frame by the slots the reader handed out.
+- `earnest_tla`: a spelling for every new form. The faulting ones are helpers that call `Fault`
+  (`MapMustGet`, `MapReplace`, `SeqNth`, `SeqHead`, `SeqTail`, `SeqSlice`, `SeqReplaceAt`,
+  `Power`, `Ascending`, in `faulting.rs`); `Interval` is `a..b`, `Concat` is `\o`, and a fold is
+  a `LET RECURSIVE` operator that takes a list from its head and a set from its least item in
+  earnest's order (or by `CHOOSE` when the item kind is unknown).
+- Fixed in the export: `with` on a record whose kind is unknown rebuilt the record from the
+  fields it was given, dropping the others (the bank's `{ ...e, balance: ..., tags: ... }` lost
+  `owner`). It now keeps the kind unknown and writes `EXCEPT`.
+
+### Checks, each with its last line
+
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,735,410 | +0.05% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark`: every budget line `met` (5 of 5); the last is `wide, search time with all
+  cores (0.104 s) over search time with 1 worker (0.371 s): 0.28x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps
+  `0 differences`. The 64 are the 16 model files of the integration branch that are not on
+  `origin/main` (4 runs each: `tasks/conformance/runs/cart.model.ts`, `cart_broken`, `clock` and
+  the rest of that folder's witness and setup models), which `origin/main` cannot read.
+  `just same-answers fdbd03a` (this branch's base): `every model file: 392 runs, 0 differences`,
+  every sweep 0.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 1839 passed, 0 failed.
+- `tests_kept.py --base origin/main`: `tests kept: 1507 tests, 4396 assertions (base: 1304, 3798)`.
+  **Against the integration branch** (`--base origin/claude/lucid-brown-f5xvr8`) it reports 8
+  changed lines, all in one test: `apps/earnest/tests/behavior/quint.rs`,
+  `a_record_variable_makes_the_file_unreadable_and_names_the_construct`. That slice-1 test pins
+  the refusal of a record variable, which this slice lifts, so it failed by design. It is now
+  `a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit`, line for line
+  in the same place with three assertions, and needs the owner's override at the merge. Four
+  slice-1 unit tests in `crates/earnest_quint/src/tests.rs` (not a guarded path) that pinned the
+  refusal of text, a set variable, a set operator and `ipow` now test that these are read.
+
+### The operator table's source
+
+`quint repl -q --backend typescript -r table.qnt::table`, Quint 0.33.1, one case name per line;
+84 cases in `crates/earnest_quint/fixtures/table.qnt`, the printed answers in
+`crates/earnest_quint/src/table.rs`. The case list and the raw output are reproducible from the
+`.qnt` alone.
+
+### Refused, by name
+
+`chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (the refusal says to write
+`foldl`), `fieldNames`, `apalache::generate`, `q::debug`, `powerset` of a set computed from the
+state or of more than 19 items, a `oneOf` over a set computed from the state or from another
+`nondet` (slice 3), temporal properties and runs (as in slice 1), a field name, tag or tuple
+position that is not written out, an operator argument that takes the wrong number of
+parameters, and a variable whose type the reader does not know. Everything slice 1 refused
+beyond records, tuples, sets, maps, lists, text, variants and `ipow` is still refused.
+
+### Forms without a full TLA+ spelling
+
+- Comparing two variants whose values are of different kinds (`s == Dot` with `s` a
+  `Circle(1)`) stops TLC: it compares the `value` field first and cannot compare `1` with
+  `<<>>`. The `everything` fixture tests `select` through `match` instead. Writing a variant's
+  value apart per tag would fix it; left for later.
+- A fold over a set whose item kind is unknown (a `Domain::Any` field's keys) takes the items in
+  TLC's `CHOOSE` order. A fold whose answer depends on the order can then differ from earnest
+  (the same caveat as Quint's own evaluator, above).
+- A condition a fold's step needs (`Written::sound`, for `Unwrap` and `Fit`) is not carried out
+  of the `LET RECURSIVE`; Quint models produce neither, and the faulting helpers stop TLC with
+  their `Assert`.
+
+### Doubts about existing code
+
+- `Kind::join(Unknown, known)` gives `known`, so a joined kind can claim to know every field of
+  a record it saw part of. The `with` fix covers the unknown base; other uses of the join are
+  unchanged.
+- TLC prints a record's fields in its own order (`[value |-> ..., tag |-> ...]`), unlike
+  earnest. This matters only for reading traces.
+- The spike's "15 states for shapes" is TLC's count when it stops at the violation; the model
+  has 21.
+
+### Unfinished, and the next step
+
+- Not done: a spelling of mixed-kind variant equality in TLA+, `foldr`, `fieldNames`.
+- Inputs over a set of records or variants show the value as a record (`name = {tag: ...}`);
+  printing variants as Quint does (`Ping(0)`) would need a marker in `Value` or in the model,
+  which this slice did not add.
+- Next: slice 3 (`oneOf` over a set computed from the state, and lines from the source map).
+  `picked_from` in `reader.rs` already works out any set that does not change; slice 3 replaces
+  its `computed` refusal.
