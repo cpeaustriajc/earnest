@@ -3,7 +3,7 @@ title: Quint models
 description: List Quint modules in earnest.quint.json, check them with earnest verify, and see how earnest finds and runs quint and caches what it compiles.
 ---
 
-`earnest verify` checks a Quint module (`.qnt`) listed in `earnest.quint.json`. It starts the project's own `quint` to compile the module to JSON, then searches every reachable state as it does for a TypeScript or Rust model. Nothing else in earnest starts Node.
+`earnest verify` checks a Quint module (`.qnt`) listed in `earnest.quint.json`. It starts the project's own `quint` to get the module as JSON, then searches every reachable state as it does for a TypeScript or Rust model. Nothing else in earnest starts Node.
 
 ## The checks file
 
@@ -69,7 +69,27 @@ First, earnest runs `quint parse` once for each listed `.qnt` file, to learn whi
 quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
 ```
 
-Then it runs one compile for each check, up to `--jobs` at a time:
+Then, for each file with a check of a setup module of the plain shape below, it runs `quint typecheck` once, whatever the number of setups in the file:
+
+```sh
+quint typecheck specs/clock.qnt --out .earnest/quint/...
+```
+
+```quint
+module Small {
+  import Clock(MaxTime = 3, Nodes = Set("a", "b")).*
+  val neverLate = time < MaxTime
+}
+```
+
+For such a check, earnest builds the module `quint compile --main Small` would give from what `quint typecheck` wrote: the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), each constant replaced by the expression the import gives it, the definitions of `Small`, and the check's `init`, `step`, invariants and temporal properties. No compile runs. The shape is:
+
+- one `import Spec(...).*` and nothing else but definitions of the setup's own;
+- `Spec` imports, instantiates and exports nothing, and declares only constants, variables, definitions and types;
+- each constant of `Spec` is given an expression of numbers, text, booleans and builtin operators, such as `Set("a", "b")` or `{ low: 1, high: 4 }`, not one that names a definition;
+- `init`, `step`, each invariant and each temporal property is the name of one definition of the setup or of `Spec`.
+
+Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, `import Spec(...) as C`, an instance of a module that has an instance itself, `export`, several imports, a constant given a definition's value (`import Spec(K = Limit).*`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -88,11 +108,13 @@ When the reader refuses a construct of a compiled module, the source map from `q
 
 ## What is read today
 
-The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet` over a set that does not change, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
+The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
+
+A `nondet x = S.oneOf()` may pick from a set that does not change, from a state variable (`pending.oneOf()`), from an expression over the state (`balances.keys().filter(k => balances.get(k) < 3)`, `1.to(left)`), or from a set that reads an earlier `nondet` of the same action or of `init` (`Set("a", "b", "c").exclude(Set(giver))`). In each state the search works the set out and tries every value, with no bound, however large the set grows: a path step prints the value picked, such as `serve  who = "ann"`. Where the set is empty, the action can't happen. Runs and temporal properties try every value in the same way.
 
 Still refused, each named in the problem:
 
-- Not yet read, and being built: a `oneOf` over a set computed from the state or from another `nondet`.
+- Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
 - Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (write `foldl`), `fieldNames`, `apalache::generate`, `q::debug`, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
 
 The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
@@ -130,9 +152,15 @@ A run with more than 100,000 branches from one start state is `unknown`, and its
 
 Refused, each named in the problem: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
 
-The compiled JSON holds only the runs written in the checked module itself. Runs written in a module it imports, such as the runs of `Clock` in `module Small { import Clock(MaxTime = 3).* }`, are not in it yet.
+The runs of the spec module are played in a setup that earnest builds from `quint typecheck`, as `quint test --main Small` plays them: with `"runs": true`, the runs of `Clock` whose name ends in `Test` and those of `Small`; with a list, the runs it names from either. They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
 
-A module flattened from an instance names its definitions after it: a rule of `import Clock(MaxTime = 3).*` in the module `Small` is `Small::Clock::inRange`.
+A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
+
+## Names
+
+Quint names what it flattens from an instance after the instance: `Small::Clock::time`. Earnest prints each field, action, rule, temporal property and run by its last segment, `time`, when no other name of its kind in the model ends the same way. When two do, each keeps the shortest end that tells them apart: a check of `module Large { import Clock(MaxTime = 8) as C  temporal allHeard = C::allHeard }` that lists both `allHeard` and `C::allHeard` prints them so, where Quint names the second `Large::C::allHeard`. Invariants, temporal properties and runs count as one kind, because `--rule` selects among all of them.
+
+`--rule` takes the printed name, and so does a check's `runs` list. The TLA+ export uses the same names.
 
 ## The cache
 
@@ -141,6 +169,7 @@ Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with n
 - A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants`, `temporal` and `runs`, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again.
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
+- What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
 The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON is unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 

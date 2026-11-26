@@ -1,6 +1,7 @@
 use crate::explore::{Search, Starts};
 use crate::outcome::{Change, Named, Path, RuleKind, RuleOutcome, Step, Verdict};
-use earnest_ir::{Action, Code, Fault, Frame, Plan, Script, Witness};
+use crate::picks::{combinations_of, sets_for, sets_of};
+use earnest_ir::{Action, Code, Fault, Frame, Model, Pick, Plan, Script, Witness};
 use earnest_value::Value;
 use rustc_hash::FxHashSet;
 
@@ -27,6 +28,7 @@ enum Taken {
 struct Alternative<'a> {
     action: Option<&'a Action>,
     input: Option<&'a [Value]>,
+    sets: Option<Box<[Option<Code>]>>,
 }
 
 struct Leg<'a> {
@@ -45,7 +47,7 @@ struct Course<'a> {
 }
 
 impl<'a> Course<'a> {
-    fn of_witness(witness: &'a Witness, actions: &'a [Action]) -> Self {
+    fn of_witness(witness: &'a Witness, model: &'a Model) -> Self {
         Self {
             start: None,
             legs: witness
@@ -53,8 +55,9 @@ impl<'a> Course<'a> {
                 .iter()
                 .map(|played| Leg {
                     choices: vec![Alternative {
-                        action: actions.get(played.action),
+                        action: model.actions.get(played.action),
                         input: Some(&played.input),
+                        sets: sets_of(model, played.action),
                     }],
                     asserts: None,
                     expect: None,
@@ -67,7 +70,8 @@ impl<'a> Course<'a> {
         }
     }
 
-    fn of_plan(plan: &'a Plan, script: &'a Script) -> Self {
+    fn of_plan(plan: &'a Plan, script: &'a Script, picked: (&[Pick], usize)) -> Self {
+        let (picks, number) = picked;
         Self {
             start: plan.start.as_ref(),
             legs: plan
@@ -77,9 +81,15 @@ impl<'a> Course<'a> {
                     choices: stage
                         .choices
                         .iter()
-                        .map(|position| Alternative {
-                            action: script.actions.get(*position),
-                            input: None,
+                        .map(|position| {
+                            let action = script.actions.get(*position);
+                            Alternative {
+                                action,
+                                input: None,
+                                sets: action.and_then(|found| {
+                                    sets_for(picks, Some(number), *position, found.inputs.len())
+                                }),
+                            }
                         })
                         .collect(),
                     asserts: stage.asserts.as_ref(),
@@ -214,7 +224,24 @@ impl Player<'_, '_> {
                 ));
             };
             let id = &action.id;
-            let inputs = every_input(action, choice.input).ok_or(Stop::TooManyBranches)?;
+            let inputs = match &choice.sets {
+                Some(sets) => match combinations_of(action, sets, state) {
+                    (_, Some(fault)) => {
+                        let fault = fault.describe();
+                        return Err(Stop::Broken(
+                            path.clone(),
+                            format!(
+                                "step {number}: the set the action `{id}` picks from {fault} here"
+                            ),
+                        ));
+                    }
+                    (all, None) => match choice.input {
+                        Some(given) => all.into_iter().filter(|each| each == given).collect(),
+                        None => all,
+                    },
+                },
+                None => every_input(action, choice.input).ok_or(Stop::TooManyBranches)?,
+            };
             for input in inputs {
                 self.played = self.played.saturating_add(1);
                 if self.played > MOST_BRANCHES {
@@ -366,9 +393,10 @@ impl Search<'_> {
         Ended::Held
     }
 
-    fn play_script(&self, script: &Script) -> Ended {
+    fn play_script(&self, number: usize, script: &Script) -> Ended {
+        let picked = (self.model.runs.picks.as_slice(), number);
         for plan in &script.plans {
-            match self.play_course(&Course::of_plan(plan, script)) {
+            match self.play_course(&Course::of_plan(plan, script, picked)) {
                 Ended::Held => {}
                 Ended::Broken(path, why) if !plan.chosen.is_empty() => {
                     let chosen: Vec<String> = plan
@@ -435,14 +463,18 @@ impl Search<'_> {
             .filter(|witness| witness.setup == runs.chosen)
             .filter(|witness| wanted(&witness.id))
             .map(|witness| {
-                let course = Course::of_witness(witness, &self.model.actions);
+                let course = Course::of_witness(witness, self.model);
                 Self::played_outcome(&witness.id, &witness.says, self.play_course(&course))
             });
         let scripts = runs
             .scripts
             .iter()
-            .filter(|script| wanted(&script.id))
-            .map(|script| Self::played_outcome(&script.id, &script.says, self.play_script(script)));
+            .enumerate()
+            .filter(|(_, script)| wanted(&script.id))
+            .map(|(number, script)| {
+                let ended = self.play_script(number, script);
+                Self::played_outcome(&script.id, &script.says, ended)
+            });
         witnesses.chain(scripts).collect()
     }
 }

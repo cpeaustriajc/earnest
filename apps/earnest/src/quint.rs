@@ -3,9 +3,10 @@ use crate::checks::{CHECKS_FILE, Check, example, read_checks};
 use crate::discovery::Listed;
 use crate::places::{Places, place_all};
 use crate::reading::{Content, Declared, ModelFile, Readable};
+use crate::typecheck::typechecked;
 use crate::workers::run_each;
 use earnest_diagnostics::{Place, Problem};
-use earnest_quint::{Located, Runs};
+use earnest_quint::{Located, Runs, Setup, Typechecked};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -53,9 +54,9 @@ struct Job {
 }
 
 #[derive(Clone, Debug)]
-struct Quint {
-    program: PathBuf,
-    version: String,
+pub(crate) struct Quint {
+    pub(crate) program: PathBuf,
+    pub(crate) version: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,7 +71,7 @@ fn real(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn shown_string(path: &Path) -> String {
+pub(crate) fn shown_string(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
@@ -205,11 +206,11 @@ fn find_program(folder: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| NOT_FOUND.to_owned())
 }
 
-fn cache_path(name: &str) -> PathBuf {
+pub(crate) fn cache_path(name: &str) -> PathBuf {
     folder_in(Path::new(HERE), CACHE).join(name)
 }
 
-fn store(target: &Path, text: &str) {
+pub(crate) fn store(target: &Path, text: &str) {
     if let Err(error) = write_whole(target, text) {
         crate::print::to_stderr(&format!(
             "warning: {} was not cached: {error}",
@@ -228,7 +229,7 @@ fn first_lines(output: &Output) -> String {
     first.unwrap_or_else(|| format!("`{PROGRAM}` stopped with {}", output.status))
 }
 
-fn scratch(what: &str) -> io::Result<PathBuf> {
+pub(crate) fn scratch(what: &str) -> io::Result<PathBuf> {
     let path = cache_path(&format!(
         ".{what}-{}-{}.json",
         std::process::id(),
@@ -346,7 +347,7 @@ fn key_of(job: &Job, quint: &Quint, source: &[u8]) -> String {
     format!("{:016x}", fingerprint_of(&pieces))
 }
 
-fn kept(target: &Path, key: &str) -> Option<String> {
+pub(crate) fn kept(target: &Path, key: &str) -> Option<String> {
     let text = fs::read_to_string(target).ok()?;
     let (first, rest) = text.split_once('\n')?;
     (first == key).then(|| rest.to_owned())
@@ -450,6 +451,16 @@ fn compile(job: &Job) -> Result<String, Problem> {
     })?;
     store(&target, &format!("{key}\n{json}"));
     Ok(json)
+}
+
+fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
+    let check = &job.check;
+    typechecked?.setup(&Setup::new(
+        &check.main,
+        (&check.init, &check.step),
+        (&check.invariants, &check.temporal),
+        &check.runs,
+    ))
 }
 
 fn fingerprint_files(paths: &[&str]) -> u64 {
@@ -632,7 +643,28 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             job.read = found.read;
         }
     }
-    let compiled = run_each(&checks, jobs, |job, _| compile(job));
+    let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
+    for job in &checks {
+        if let Ok(quint) = &job.quint
+            && places
+                .get(&job.real)
+                .is_some_and(|found| found.may_be_a_setup(&job.check.main))
+            && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
+        {
+            to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
+        }
+    }
+    let typechecks = run_each(&to_typecheck, jobs, |(file, shown, quint), _| {
+        typechecked(file, shown, quint, places.get(file)?)
+    });
+    let typechecked: HashMap<PathBuf, Typechecked> = to_typecheck
+        .into_iter()
+        .zip(typechecks)
+        .filter_map(|((file, ..), read)| Some((file, read?)))
+        .collect();
+    let compiled = run_each(&checks, jobs, |job, _| {
+        filled(job, typechecked.get(&job.real)).map_or_else(|| compile(job), Ok)
+    });
     let read: Vec<Result<(String, earnest_ir::Model), Vec<Located>>> = checks
         .iter()
         .zip(compiled)

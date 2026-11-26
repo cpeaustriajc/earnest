@@ -17,14 +17,18 @@ mod builtins;
 mod data;
 mod json;
 mod model;
+mod names;
 mod reader;
 mod runs;
 mod scan;
+mod setup;
 mod starts;
 mod temporal;
 
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::Model;
+
+pub use setup::{Setup, Typechecked};
 
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
 
@@ -132,5 +136,7 @@ mod run_tests;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod setup_tests;
 #[cfg(test)]
 mod table;

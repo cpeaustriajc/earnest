@@ -1,8 +1,9 @@
 use crate::Runs;
 use crate::json::{Declaration, Def, Expr as Quint};
-use crate::model::{action, ids};
-use crate::reader::{Read, Reader, Refusal, all_of, constant, refusal};
-use earnest_ir::{Action, Code, Expr, Plan, Script, Stage};
+use crate::model::{action, ids, picks};
+use crate::names::Short;
+use crate::reader::{Picked, Read, Reader, Refusal, all_of, constant, refusal};
+use earnest_ir::{Action, Code, Expr, Pick, Plan, Script, Stage};
 use earnest_value::Value;
 
 const TESTS_END_WITH: &str = "Test";
@@ -40,6 +41,8 @@ struct Run<'r, 'a> {
     name: &'a str,
     actions: Vec<Action>,
     plans: Vec<Plan>,
+    number: usize,
+    picks: Vec<Pick>,
 }
 
 fn both(first: Option<Expr>, second: Expr) -> Expr {
@@ -97,7 +100,13 @@ impl<'a> Run<'_, 'a> {
         }
         match expr {
             Quint::Let { opdef, expr } if opdef.qualifier == "nondet" => {
-                let (_, values) = self.reader.picked_from(opdef)?;
+                let Picked::Listed(_, values) = self.reader.picked_from(opdef)? else {
+                    return self.refuse(
+                        &format!("`nondet {}`", opdef.name),
+                        "a run's own `nondet` over a set read from the state: pick inside the \
+                         step that uses it",
+                    );
+                };
                 if values.is_empty() {
                     return self.push(Plan {
                         must_not_finish: true,
@@ -324,6 +333,8 @@ impl<'a> Run<'_, 'a> {
         let first = self.actions.len();
         for (id, path) in ids(&paths, fallback).into_iter().zip(&paths) {
             let taken = action(id, path, self.fields, self.reader.slots)?;
+            self.picks
+                .extend(picks(Some(self.number), self.actions.len(), path));
             self.actions.push(taken);
         }
         drawn.steps.push(Step {
@@ -338,10 +349,10 @@ impl<'a> Run<'_, 'a> {
 
 fn script<'a>(
     reader: &mut Reader<'a>,
-    def: &'a Def,
+    (def, number): (&'a Def, usize),
     init: &'a Def,
     fields: &[String],
-) -> Read<Script> {
+) -> Read<(Script, Vec<Pick>)> {
     def.name.clone_into(&mut reader.within);
     let mut run = Run {
         reader,
@@ -350,20 +361,38 @@ fn script<'a>(
         name: &def.name,
         actions: Vec::new(),
         plans: Vec::new(),
+        number,
+        picks: Vec::new(),
     };
     run.plans(&def.expr, &mut Vec::new())?;
     let slots = run.reader.slots;
-    Ok(Script {
+    let picked = std::mem::take(&mut run.picks);
+    let script = Script {
         id: def.name.clone(),
         says: format!("The Quint run `{}` passes", def.name),
         line: DECLARED_ON,
         actions: run.actions,
         plans: run.plans,
         slots,
-    })
+    };
+    Ok((script, picked))
 }
 
-fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a Def>, Vec<Refusal>> {
+fn not_found(name: &str, imported: &[String]) -> Refusal {
+    let why = if imported.iter().any(|each| each == name) {
+        "the check names this run, which is written in a module this one imports: `quint \
+         compile` drops the runs of imported modules, so the checker plays them only for a \
+         setup it builds itself from one `import Spec(...).*`"
+    } else {
+        "the check names this run, and the compiled module has no run of this name"
+    };
+    refusal(&format!("`run {name}`"), why).within(name)
+}
+
+fn chosen<'a>(
+    (declarations, imported): (&'a [Declaration], &[String]),
+    runs: &Runs,
+) -> Result<Vec<&'a Def>, Vec<Refusal>> {
     let every = declarations
         .iter()
         .filter_map(|declaration| match declaration {
@@ -381,15 +410,16 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
         }
         Runs::Named(names) => {
             let all: Vec<&Def> = every.collect();
+            let short = Short::of(all.iter().map(|def| def.name.as_str()));
             let mut found = Vec::with_capacity(names.len());
             let mut missing = Vec::new();
             for name in names {
-                match all.iter().find(|def| def.name == *name) {
+                match all
+                    .iter()
+                    .find(|def| def.name == *name || short.name(&def.name) == *name)
+                {
                     Some(def) => found.push(*def),
-                    None => missing.push(refusal(
-                        &format!("`run {name}`"),
-                        "the check names this run, and the compiled module has no run of this name",
-                    )),
+                    None => missing.push(not_found(name, imported)),
                 }
             }
             if missing.is_empty() {
@@ -403,21 +433,25 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
 
 pub(crate) fn scripts<'a>(
     reader: &mut Reader<'a>,
-    declarations: &'a [Declaration],
+    declarations: (&'a [Declaration], &[String]),
     (init, runs): (&'a Def, &Runs),
     fields: &[String],
-) -> Result<Vec<Script>, Vec<Refusal>> {
+) -> Result<(Vec<Script>, Vec<Pick>), Vec<Refusal>> {
     let played_runs = chosen(declarations, runs)?;
     let mut played = Vec::with_capacity(played_runs.len());
+    let mut picked = Vec::new();
     let mut refused = Vec::new();
     for def in played_runs {
-        match script(reader, def, init, fields) {
-            Ok(script) => played.push(script),
+        match script(reader, (def, played.len()), init, fields) {
+            Ok((script, picks)) => {
+                played.push(script);
+                picked.extend(picks);
+            }
             Err(refusal) => refused.push(refusal),
         }
     }
     if refused.is_empty() {
-        Ok(played)
+        Ok((played, picked))
     } else {
         Err(refused)
     }

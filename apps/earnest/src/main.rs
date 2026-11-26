@@ -15,6 +15,7 @@ mod run;
 mod select;
 #[cfg(test)]
 mod sources;
+mod typecheck;
 mod verify;
 mod workers;
 

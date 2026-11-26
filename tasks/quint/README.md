@@ -18,6 +18,8 @@ Files beside this one:
 - `probe/`: one-question models (`dead`, `emptystep`, `partial`, `frame`, `twice`, `initnd`,
   `misc`, `div`, `div2`, `fair2`).
 - `timing/many.qnt`: `Clock` plus 17 setup modules `S1`..`S17`, used for the timing runs.
+- `setups/`: slice 4's shapes of setup modules, with their typecheck and compile JSON in
+  `setups/fixtures/`, and `many.qnt` (17 setups of `Lamp`).
 
 ## Decisions since the spike
 
@@ -1101,6 +1103,305 @@ table), `crates/earnest_quint/src/tests.rs` (the reader), `crates/earnest_tla/sr
   `0 differences`. The 64 are the 16 model files of the integration branch that are not on
   `origin/main` (4 runs each: `tasks/conformance/runs/cart.model.ts`, `cart_broken`, `clock` and
   the rest of that folder's witness and setup models), which `origin/main` cannot read.
+
+## Slice 3: what is checked
+
+`earnest verify <file>.json` reads an action whose `nondet x = S.oneOf()` takes `S` from the
+state (issue #58): a variable (`pending.oneOf()`), an expression over it
+(`balances.keys().filter(k => balances.get(k) < 3)`, `1.to(left)`), or a set that reads an
+earlier `nondet` of the same action (`Set("a", "b", "c").exclude(Set(giver))`). In each state
+the search works the set out and tries every item; an empty set leaves the action unable to
+happen there. The models are in `crates/earnest_quint/fixtures`, each `.qnt` beside the `.json`
+compiled from it with Quint 0.33.1:
+
+```sh
+quint compile --target json --main serve --invariant everyoneOnce,annNotFirst serve.qnt > serve.json
+quint compile --target json --main keys --invariant atMostThree,bobBelowThree keys.qnt > keys.json
+quint compile --target json --main pass --invariant oneHolder,neverC pass.qnt > pass.json
+quint compile --target json --main widening --invariant lastSeen,belowForty widening.qnt > widening.json
+quint compile --target json --main drain --invariant notNegative,notEmpty drain.qnt > drain.json
+quint compile --target json --main mixedpick --invariant inRange,noFour mixedpick.qnt > mixedpick.json
+quint compile --target json --main initpick --invariant small initpick.qnt > initpick.json
+quint compile --target json --main servedRuns --invariant everyoneOnce servedruns.qnt > servedruns.json
+quint compile --target json --main draining --temporal drained,fairDrained,fairDone,bothFair draining.qnt > draining.json
+quint compile --target json --main allNumbers allnumbers.qnt > allnumbers.json    # refused
+quint compile --target json --main flags flags.qnt > flags.json
+```
+
+### State counts and verdicts by hand
+
+| Model | What it picks | States | Holds | Broken, and the path |
+|---|---|---:|---|---|
+| `serve` | `who` from `pending`, one request at a time | 8: each subset of `{"ann", "bob", "cy"}` left pending | `everyoneOnce` | `annNotFirst`: `step  who = "ann"` |
+| `keys` | `who` from the keys of `balances` whose balance is below 3 | 6: ann 1 to 3 times bob 2 to 3 | `atMostThree` | `bobBelowThree`: `step  who = "bob"` |
+| `pass` | `giver` from `has`, then `taker` from everyone but `giver` | 3: one token with `a`, `b` or `c` | `oneHolder` | `neverC`: `step  giver = "a", taker = "c"` |
+| `widening` | `x` from `seen`, which grows to 40 items | 781: `seen = {0..k}` with `last` below `k` for `k` from 1 to 39, 780, and the start | `lastSeen` | `belowForty`: 39 steps `step  x = 0` to `x = 38` |
+| `drain` | `n` from `1.to(left)`, empty at `left = 0`, the only action | 5: `left` from 0 to 4; no stuck state, since a Quint model may stop anywhere | `notNegative` | `notEmpty`: `step  n = 4` |
+| `mixedpick` | `by` from `Set(1, 2)` and `a` from `bag` in `move`; `n` from `1.to(3)` in `add` | 16: every subset of 1 to 4 | `inRange` | `noFour`: `add  n = 2`, `move  by = 2, a = 2` |
+
+### TLC, as Quint runs it
+
+`quint verify --backend tlc --main <module> --invariant <one invariant> <module>.qnt`, one run for
+each invariant, in `crates/earnest_quint/fixtures`. TLC's lines:
+
+| Command | TLC |
+|---|---|
+| `--main serve --invariant everyoneOnce serve.qnt` | `13 states generated, 8 distinct states found, 0 states left on queue.` `[ok] No violation found (647ms).` |
+| `--main serve --invariant annNotFirst serve.qnt` | `Error: Invariant q_inv is violated.` `2 states generated, 2 distinct states found` `[violation] Found an issue (656ms).` |
+| `--main keys --invariant atMostThree keys.qnt` | `8 states generated, 6 distinct states found, 0 states left on queue.` `[ok] No violation found (559ms).` |
+| `--main keys --invariant bobBelowThree keys.qnt` | `Error: Invariant q_inv is violated.` `6 states generated, 6 distinct states found` `[violation] Found an issue (687ms).` |
+| `--main pass --invariant oneHolder pass.qnt` | `7 states generated, 3 distinct states found, 0 states left on queue.` `[ok] No violation found (629ms).` |
+| `--main pass --invariant neverC pass.qnt` | `Error: Invariant q_inv is violated.` `5 states generated, 3 distinct states found` `[violation] Found an issue (621ms).` |
+| `--main widening --invariant lastSeen widening.qnt` | `21283 states generated, 781 distinct states found, 0 states left on queue.` `[ok] No violation found (728ms).` |
+| `--main widening --invariant belowForty widening.qnt` | `Error: Invariant q_inv is violated.` `19762 states generated, 743 distinct states found` `[violation] Found an issue (765ms).` |
+| `--main drain --invariant notNegative drain.qnt` | `11 states generated, 5 distinct states found, 0 states left on queue.` `[ok] No violation found (646ms).` |
+| `--main drain --invariant notEmpty drain.qnt` | `Error: Invariant q_inv is violated.` `11 states generated, 5 distinct states found` `[violation] Found an issue (638ms).` |
+| `--main mixedpick --invariant inRange mixedpick.qnt` | `89 states generated, 16 distinct states found, 0 states left on queue.` `[ok] No violation found (609ms).` |
+| `--main mixedpick --invariant noFour mixedpick.qnt` | `Error: Invariant q_inv is violated.` `42 states generated, 12 distinct states found` `[violation] Found an issue (627ms).` |
+
+Every count where TLC visits everything is the one by hand. A violated run stops early, so its
+count is TLC's count at the stop.
+
+### earnest and its TLA+ export
+
+`earnest verify crates/earnest_quint/fixtures/<module>.json`, each model's result line and the
+steps of its broken rule's path. An action that `step` reaches only through names (`action step = serve`)
+is named `step` since slice 5; `mixedpick`'s `any` keeps `add` and `move`:
+
+```text
+fail        serve  8 states  0 ms
+  broken  annNotFirst  "The Quint invariant `annNotFirst` holds"
+    start  pending = {"ann", "bob", "cy"}, served = {}
+    1. step  who = "ann"  pending: {"ann", "bob", "cy"} -> {"bob", "cy"}, served: {} -> {"ann"}
+fail        keys  6 states  0 ms
+    1. step  who = "bob"  balances: {"ann" -> 1, "bob" -> 2} -> {"ann" -> 1, "bob" -> 3}
+fail        pass  3 states  0 ms
+    1. step  giver = "a", taker = "c"  has: {"a"} -> {"c"}
+fail        widening  781 states  24 ms
+    1. step  x = 0  seen: {0} -> {0, 1}
+    ... 39 steps
+fail        drain  5 states  0 ms
+    1. step  n = 4  left: 4 -> 0
+fail        mixedpick  16 states  0 ms
+    1. add  n = 2  bag: {} -> {2}
+    2. move  by = 2, a = 2  bag: {2} -> {4}
+```
+
+The JSON output gives the same values (`"input": [{"name": "who", "value": "ann"}]`), and so does
+`earnest report`. The TLA+ export writes each picked input as its own `\E` over the set:
+
+```tla
+Action_give ==
+    \E giver \in has : \E taker \in ({"a", "b", "c"} \ {giver}) :
+        IF InRange
+        THEN /\ has' = ((has \ {giver}) \cup {taker})
+        ELSE FALSE
+```
+
+`earnest confirm --tlc target/tools/tla2tools.jar crates/earnest_quint/fixtures/<module>.json`:
+
+```text
+same     serve  8 states  fail
+same     keys  6 states  fail
+same     pass  3 states  fail
+same     widening  781 states  fail
+same     drain  5 states  fail
+same     mixedpick  16 states  fail
+```
+
+## Slice 3: report
+
+### The design: a set worked out in each state
+
+The spike's shape (a). `earnest_ir::Runs` gained `picks: Vec<Pick>`, where
+`Pick { action, input, from: Code }` names an input whose values are the items of `from` in each
+state. `from` reads the state and the action's earlier inputs. No field was added to `Model`,
+`Field`, `Action` or `Input`, and no `Input` literal changed: a picked input keeps
+`domain: Domain::Any` and an empty `values`, so its action has 0 listed combinations. The one
+`Runs` literal outside `earnest_ir` (`earnest_semantic`) already ends in `..Runs::default()`.
+
+- **Reader** (`reader.rs`, `model.rs`): a `nondet` whose `oneOf` set reads the state or an
+  earlier `nondet` (`constant` gives `None`) becomes a `Choice` with `from: Some(set)`. A range
+  with an end read from the state becomes `Op::Interval`. `model.rs` turns each such choice into
+  a `Pick`.
+- **Search** (`expand.rs`, `picks.rs`): `Move::all` attaches a `Picking` (the sets, and the walk)
+  to such an action and keeps it off the packed paths (`FromRow::Not`). Its 0 combinations take it
+  past both existing branches of `Expansion::general` to a last `else` that calls
+  `Picking::walk`. That is `every_pick`, which has a frame of its own and a `Cursor` (`picks.rs`).
+  The cursor works out the first input's set, puts each item in its slot, works out the next
+  input's set with the earlier ones in place, and so on. The first input turns slowest, and each
+  full combination is numbered in that order. Each combination is tried by `try_pick`: the guard,
+  the updates, `Successors::offer`. There is no bound: every item of every set is tried, however
+  large it grows. The state limit, the time limit and the successor budget stop the walk as they
+  stop the listed walk. An empty set gives no combination, so the action cannot happen. A
+  value that is not a set, or a fault while the set is worked out, is a fault of the action's
+  guard. That is a finding and makes the model `fail`.
+- **Paths** (`report.rs`): a path step finds the combination number as before, through
+  `choice_by`, and for a picked action rebuilds that combination from the step's first state with
+  `picks::combinations`. Text, JSON and `earnest report` print the value (`serve  who = "ann"`).
+- **TLA+** (`earnest_tla`): an action with a picked input writes each input as its own `\E`,
+  nested so that a later set can name an earlier input: `\E giver \in has : \E taker \in (... \
+  {giver}) :`. The set is the scribe's spelling of `from`, and its conditions join the action's
+  `IF`.
+
+Shape (b), positions with a bound, was not tried: it needs a bound that adapts and a second way
+to print the value.
+
+**The players** (`witness.rs`, after the merge with slice 6). `Pick` names its script
+(`script: Option<usize>`): `None` for an action of `Model::actions`, `Some(i)` for one of
+`Runs::scripts[i].actions`, which the reader builds for each step of a run. Each alternative of
+the player carries its action's sets. In each state the player plays every combination
+`picks::combinations_of(action, sets, state)` gives, as the search does. A stage that names the
+action with its `nondet` left open tries them all. A witness step that gives a value plays it only
+when the set holds that value in that state. A fault while a set is worked out breaks the run:
+"step N: the set the action `serve` picks from ... here". The path of a broken run prints the value
+picked. Other callers use `picks::combinations(model, action, state)`, which gives the same list
+for an action of the model. Both are `pub(crate)` and give the first fault beside the list.
+
+### Why the walk is reached through a pointer
+
+No model of `tasks/benchmark/models` has a picked input, yet each first shape of the walk moved
+`just counts` above its budget (`tasks/benchmark/TRIED.md` has the row):
+
+- Reusing `try_input::<true>` from the walk: `try_input` and then `known_or_scalar` stopped being
+  inlined into `every_input_told_apart` (callgrind shows them as functions of their own). `wide`
+  went +3.7% and +5.8%.
+- A `FromRow::Picked` variant, never built: `ledger` +0.6%.
+- A direct call from `general` or from `every_input_told_apart`, or a test at the head of
+  `every_input_told_apart`: `ledger` +1.3%, all of it in `Search::level`. Line tables showed
+  `found.width = values.width()` at 11 instructions a state, against 1 before. `wide` +1.7%.
+
+Through `Picking::walk`, called from `general`'s last branch, `every_input_told_apart` executes
+exactly the base's instructions, and every case of `just counts` is within 0.3%.
+
+### After the merge with slices 5, 6 and 7
+
+The branch was brought up to the integration head `e66f839` by a merge.
+
+- My `grows` fixture is now `widening` (module and file), since slice 5 has a `grows.qnt` of its
+  own. Slice 5 names an action that `step` reaches only through names (`action step = serve`)
+  `step`, so those paths print `step  who = "ann"`, and the tests and tables above say so.
+- **Runs over a computed pick**: `servedruns.qnt` (`init.then(add("ann")).then(add("bob")).then(serve)`),
+  compiled with `--main servedRuns --invariant everyoneOnce`. The default evaluator of
+  `quint test` is fetched from GitHub, which refused here ("Release v0.7.1 not found: Failed to
+  fetch from GitHub: Forbidden"), so the run was compared with
+  `quint test --backend typescript --main servedRuns servedruns.qnt`:
+
+  ```text
+      ok serveOneTest passed 10000 test(s)
+      1) serveAnnTest failed after 2 test(s)
+      2) serveNobodyTest failed after 1 test(s)
+      ok serveNobodyFailsTest passed 1 test(s)
+  ```
+
+  earnest gives the same four verdicts. `serveAnnTest` fails for one pick of two, and its path
+  ends `3. serve  who = "bob"` with `why  what the run expects after step 3 is false here`.
+  `serveNobodyTest` gives `step 1, `serve`, can't happen here`. The invariant `everyoneOnce` is
+  broken: TLC says `Invariant q_inv is violated` (12 distinct states at the stop), earnest
+  breaks it after `add`, `serve`, `add` of `"ann"`, and `confirm --tlc` says `same  servedRuns  16 states  fail`.
+- **Temporal properties and fairness over a computed pick**: `draining.qnt` (`serve` picks from
+  `pending`; `finish` sets `done` once `pending` is empty), compiled with
+  `--temporal drained,fairDrained,fairDone,bothFair`. By hand: 9 states (the subsets of
+  `{1, 2, 3}`, and `done` after the empty one). `drained` is broken (a run may stutter),
+  `fairDrained` (`weakFair(serve)`) holds, `fairDone` is broken (`finish` may wait forever), and
+  `bothFair` holds. `quint verify --backend tlc --temporal <one>` gives the same four:
+  `Temporal property q_temporalProps was violated.` with `State 4: Stuttering` and
+  `State 5: Stuttering` for the two broken ones, and `[ok] No violation found` for the others, each
+  `14 states generated, 9 distinct states found`. earnest gives them too, and `confirm --tlc` says
+  `same  draining  9 states  fail`. The liveness pass needed no change: it reads the arrows the
+  search keeps, and a picked action's arrows are kept like any other.
+- **Refusals carry a place**: every refusal from a `nondet`'s pick goes through `Reader::refuse`
+  and, when it has none of its own, takes the id of its `oneOf` expression, so the CLI gives a
+  line in the `.qnt` file. `quint_checks.rs` tests that `Int.oneOf()` is reported at line 4,
+  column 30 of `allnumbers.qnt`, with `allnumbers.parse.json` and `allnumbers.sourcemap.json`
+  as Quint 0.33.1 wrote them (the absolute path in `sourceIndex` replaced by the file's name).
+- **A computed `oneOf` in `init`** is read now. Start states are worked out when the file is
+  read, so `starts.rs` works out each choice's set with the earlier choices in their slots: about
+  30 lines, a quarter of an hour. `initpick.qnt` (`a` from `1.to(2)`, `b` from `0.to(a)`) starts
+  from `x` = 0, 1 and 2. TLC says `Invariant q_inv is violated by the initial state` for
+  `small` (`x <= 1`); earnest breaks it at `start  x = 2`, and `confirm --tlc` says
+  `same  initpick  3 states  fail`.
+- **A bug the merge showed**: the TLA+ export took a pick by its action's position alone, so a
+  run's pick was written on the model's action at the same position (`Action_add` picked from
+  `pending`). It now takes only the model's own picks, and a behaviour test reads the export.
+- **Docs**: `reference/quint.md` says what a `oneOf` may pick from, that every value is tried with
+  no bound, and what is still refused. There is a changelog entry.
+
+### Checks, each with its last line
+
+On the merged tree:
+
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,222,011 | +0.23% | 1.00% | met |`
+  (`wide` 0.00% with 1 and with 4 workers). Not re-recorded.
+- `just benchmark`: every budget line `met` (5 of 5); the last is `wide, search time with all
+  cores (0.082 s) over search time with 1 worker (0.247 s): 0.33x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`; the three sweeps
+  `0 differences`. Every difference is in `tasks/conformance/runs/`, the 16 files of the
+  integration branch that `origin/main` cannot read, as in slice 2.
+  `just same-answers e66f839` (the integration head merged in): `every model file: 392 runs, 0
+  differences`, every sweep 0.
+- `cargo test --locked -p earnest-cli --test reference`: 5 passed.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 81 suites, 1967 passed, 0 failed.
+- `just typescript`: `Test Files  8 passed (8)`, `Tests  76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `tests_kept.py --base origin/main`: `tests kept: 1595 tests, 4647 assertions (base: 1304, 3798)`;
+  against the integration head `tests kept: 1595 tests, 4647 assertions (base: 1574, 4587)`.
+- `earnest confirm --tlc target/tools/tla2tools.jar` on each of the nine fixtures (`serve`,
+  `keys`, `pass`, `widening`, `drain`, `mixedpick`, `initpick`, `servedruns`, `draining`): `same`.
+
+New tests:
+
+- `crates/earnest_check/tests/explore/picks.rs`, 8 tests: every item tried; the value printed in
+  text and JSON; an empty set and a stuck state; a set that reads an earlier input; 40 items alike
+  with 1 and 4 workers; the state limit met while an action tries its items; a set that is not a
+  set; a witness that names a value inside and outside the set.
+- `apps/earnest/tests/behavior/quint_picks.rs`, 12 tests: the fixtures, the state limit, `earnest
+  report`, the TLA+ export, the runs and the temporal properties.
+- One test in `quint_checks.rs`, and five in `crates/earnest_quint/src/tests.rs`.
+
+Two tests there pinned refusals this slice lifts; neither is on `origin/main`:
+
+- slice 1's `a_nondet_over_a_set_computed_from_the_state_is_refused` is now
+  `a_nondet_over_a_set_computed_from_the_state_is_an_input_worked_out_in_each_state`;
+- this slice's own `..._in_init_..._is_refused` is now
+  `a_nondet_in_init_over_a_set_computed_from_another_nondet_starts_from_each_pick`.
+
+### Refused, by name
+
+- `Int.oneOf()` and `Nat.oneOf()`: "picks among numbers without end, which the checker cannot
+  list: pick from a range such as `0.to(9)`". `Bool.oneOf()` is read, as `false` and `true`.
+- `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, as slice 2
+  refuses them.
+- A `nondet` at the top of a run whose set reads the state: "a run's own `nondet` over a set read
+  from the state: pick inside the step that uses it". Before `init` there is no state to read.
+- A `nondet` whose value is not `oneOf` a set (Quint's compiler already refuses most).
+
+Quint has no set of every string, so there is nothing to refuse for one.
+
+### Doubts about existing code
+
+- `just counts` moves by up to 1.5% with code that never runs, through how LLVM lays out
+  `Search::level` and what it inlines into `every_input_told_apart`. The budget then measures
+  placement as much as cost. The pointer in `Picking` is the one way found to add a path beside
+  them without moving either, and a later change that calls `every_pick` directly will look like
+  a slowdown.
+- The picked walk does not drop a repeated successor within one action, as the listed walk does
+  with `Seen`. Each repeat costs one more look-up in the store, which files and counts it once.
+- `witness.rs` plays a witness's given value for a listed input without checking that it is
+  listed. A picked input is checked now; a TypeScript or Rust witness cannot name an unlisted
+  value, so only a hand-built model meets this.
+
+### Unfinished, and the next step
+
+- Nothing of the brief or of the merge request is left open.
+- A run's top-level `nondet` over a set read from the state stays refused. Quint would pick it
+  from the state after `init`; it needs a plan per start state instead of per run.
+- Next: the orchestrator's merge into the integration branch.
 
 ## Slice 5: what is checked
 
@@ -2356,3 +2657,260 @@ runs in. Verified against Quint 0.33.1:
   one-line example in the text output).
 - Next: slices 2, 5 and 6 merge onto this; when slice 6 reads runs it gets `Runs` through
   `read_located`, and needs the spec module's runs as said under "Runs".
+
+## Slice 4: what is checked
+
+Three parts (issue #61): short names; every setup of a file from one Quint call (section 6,
+option A); and the spec module's runs played in a setup. Quint 0.33.1 from npm in a scratch
+folder outside the repository, Node 22, 4 cores.
+
+### How `quint compile` flattens a setup [read: `cliCommands.js` `compile`, `flattening/*.js`, `names/unshadower.js`, `ir/namespacer.js`; ran]
+
+For `module Small { import Clock(MaxTime = 3, ...).* }`, `compile` does, in this order:
+
+1. **Unshadow** every module: a lambda parameter becomes `<name>_<lambda id>` (always); a `let`
+   name becomes `<name>_<let id>` only when the table entry of its definition has
+   `shadowing: true` (so `nondet x` beside a `var x` is `x_72`).
+2. **Inline type aliases** (`var f: Flag` with `type Flag = bool` becomes `bool`).
+3. **Instance flattening**: a new module `Small::Clock` holds, first, a `pureval` per override
+   (`Small::Clock::MaxTime`, its body the override expression), then every non-`const`
+   declaration of `Clock` with **every non-builtin name prefixed** `Small::Clock::` (definition
+   names, `let` names, lambda parameters, names and operator names), with fresh ids. In `Small`
+   itself, a name that comes from the instance becomes `Small::Clock::<name>`.
+4. **Flattening** of `Small`: its declarations are walked in order (its own, then the `q::*`
+   that `compile` appended: `q::init = <init>`, `q::step = <step>`, `q::inv = and(<invariants>)`,
+   `q::temporalProps = and(<temporal>)`). Every name met that is a top-level definition is
+   walked first and then added, if not added yet: a **depth-first post-order** from those roots.
+   Only what is reached is kept, which is why the spec's runs are dropped.
+
+`quint typecheck --out` writes the modules after step 0 (parsed, resolved, unflattened), with
+the table (`shadowing` included), and **no source map and no list of files**: the slice-7
+`quint parse` stays, for the files read (the cache key) and the places.
+
+Earnest's `earnest_quint::Typechecked::setup` (`crates/earnest_quint/src/setup.rs`) does steps
+1 to 4 on the typecheck output, keeping Quint's own ids (so a refusal inside the spec is placed
+at its own expression through the source map), and makes the table say `def` where it said
+`const`. It builds a setup only when it is sure:
+
+| Built from the typecheck | Compiled with `quint compile --main` |
+|---|---|
+| the main module has one `import Spec(...).*` and otherwise only `def`s | `import Spec(...) as C` (sample `Large`, `Aliased`) |
+| `Spec` has only `const`, `var`, `def`, `type` | `Spec` imports, instantiates or exports (`Nested`: an instance of an instance) |
+| every `const` of `Spec` overridden once, by an expression whose every node is a builtin (no id in the table) | a constant given a definition's value (`ByName`: `import Limit.*` then `K = L`) |
+| `init`, `step` name one `action` of the setup or of `Spec`; each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | `export` (`Exported`), several imports, a name that is missing, qualified, of another kind or defined in both (Quint gives the error) |
+| the typecheck succeeded | a typecheck that failed, or a type alias that does not resolve |
+
+### Equality with Quint's own flattening
+
+`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 18 checks, and in `fixtures/` the
+typecheck output of each file and the compile output of each check, written with
+
+```sh
+quint typecheck <file>.qnt --out fixtures/<file>.typecheck.json
+quint compile --target json --main <Main> --init <init> --step <step> [--invariant a,b] [--temporal p,q] <file>.qnt > fixtures/<file>.<Main>.json
+```
+
+| File | Check | What it holds |
+|---|---|---|
+| `ints.qnt` | `Low`, `High` | an int constant in `init`, in a `nondet` set (`1.to(Max)`), in an invariant and in a temporal property with `weakFair`; two setups of one spec |
+| `kinds.qnt` | `Setup` | constants of type bool, text, set, record, tuple, map and list |
+| `pure.qnt` | `Four` | `pure val`, `pure def`, `val` and `def` with a parameter, depending on a constant |
+| `own.qnt` | `Tight` | the setup's own invariants, `pure val` and actions over the spec's, its own `step` |
+| `shadow.qnt` | `S` | a `nondet x` shadowing `var x`, an action with a parameter, a bool alias, a sum type and `match` |
+| `runs.qnt` | `Three`, `One` | a constant in a run (`Steps.reps`), runs in the spec, a run of the setup's own |
+| `clock.qnt` | `Small` | the spike's sample: a set-of-text constant, four temporal properties, runs |
+| `clockbits.qnt` | `SmallBits` | temporal properties with fair parts |
+| `lamp.qnt` | `Dim`, `Bright`, `Blinding` | slice 7's sample, three setups of one spec |
+| `compiled.qnt` | `Nested`, `Aliased`, `ByName`, `Exported` | shapes that are compiled |
+| `clock.qnt` | `Large` | `import ... as C`, compiled |
+
+Tests (no Node: fixtures and a fake `quint`):
+
+- `crates/earnest_quint/src/setup_tests.rs`: for the 13 checks built, the declarations built
+  (name and kind, in order) equal those of Quint's compile; read by the reader, fields, actions,
+  rule ids and start states are equal; the other shapes and wrong names give `None`.
+- `apps/earnest/tests/behavior/quint_setups.rs`
+  `every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens`: earnest runs
+  the 18 checks twice, built (only the 5 others compiled) and all compiled (the typecheck taken
+  away), and for the 17 readable checks the status, state count, reason and every rule (id,
+  sentence, verdict, path with its inputs) are equal. Reversing the declarations built makes it
+  fail.
+
+Before the test, `cmp.py` (scratch, not committed) compared the built and the compiled modules
+with ids stripped: for all 13, the same declarations in the same order and the same bodies,
+the only difference being the spec's runs, kept on purpose.
+
+### Node starts
+
+Fake `quint` (`quint_setups.rs`): a file of 17 setups and 17 checks makes `--version`, `parse`,
+`typecheck`, in this order, and no compile; a second run makes none
+(`seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never`). `Small` beside
+`Large` makes one typecheck and one compile, of `Large`; a second run, none
+(`a_setup_of_another_shape_is_compiled_and_a_second_run_compiles_nothing`). A typecheck that
+fails gives a compile per check (`a_failed_typecheck_falls_back_to_compiling_each_setup`).
+
+### Runs of the spec module, against `quint test`
+
+The default (Rust) backend can't be downloaded here (`Failed to fetch from GitHub: Forbidden`),
+so `--backend typescript`:
+
+```text
+$ quint test --main Three --backend typescript --match 'Test$' runs.qnt
+  Three
+    ok Three::Spec::twoTest passed 1 test(s)
+    ok Three::Spec::allTest passed 1 test(s)
+    1) Three::Spec::overTest failed after 1 test(s)
+    ok ownTest passed 1 test(s)
+  1) Three::Spec::overTest:
+       Error [QNT513]: Reps loop could not continue after iteration #4 evaluated to false
+$ quint test --main One --backend typescript --match 'Test$' runs.qnt
+  One
+    1) One::Spec::twoTest failed after 1 test(s)
+    ok One::Spec::allTest passed 1 test(s)
+    2) One::Spec::overTest failed after 1 test(s)
+  1) One::Spec::twoTest:
+       Error [QNT508]: Cannot continue to "expect"
+  2) One::Spec::overTest:
+       Error [QNT513]: Reps loop could not continue after iteration #2 evaluated to false
+$ quint test --main Small --backend typescript --match 'tickTwice|tickMany|overTick|hearAny' clock.qnt
+  Small
+    ok Small::Clock::tickTwice passed 1 test(s)
+    ok Small::Clock::tickMany passed 1 test(s)
+    1) Small::Clock::overTick failed after 1 test(s)
+    ok Small::Clock::hearAny passed 10000 test(s)
+```
+
+earnest, with `runs: true` for `Three`, the list for `One` and `Small`:
+
+```text
+fail        Three  4 states  0 ms
+  broken  overTest  "The Quint run `overTest` passes"
+    start  t = 0
+    1. tick  t: 0 -> 1
+    2. tick  t: 1 -> 2
+    3. tick  t: 2 -> 3
+    end    t = 3
+    why    step 4, `tick`, can't happen here
+fail        One  2 states  0 ms
+  broken  twoTest  "The Quint run `twoTest` passes"
+    ...    why    step 2, `tick`, can't happen here
+  broken  overTest  "The Quint run `overTest` passes"
+    ...    why    step 2, `tick`, can't happen here
+fail        Small  16 states  0 ms
+  broken  allHeard  ...
+  broken  overTick  "The Quint run `overTick` passes"
+    ...    why    step 4, `tick`, can't happen here
+```
+
+Every other run holds, as in Quint: 11 of 11 verdicts agree (test
+`the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck`). The compiled
+`ByName` with `runs: ["upTest"]` is `unreadable`: ``compiled.qnt:8:7  `run upTest`  the check
+names this run, which is written in a module this one imports: `quint compile` drops the runs
+of imported modules, so the checker plays them only for a setup it builds itself from one
+`import Spec(...).*` ``.
+
+### Timing: the 17 setups of `many.qnt`
+
+`tasks/quint/setups/many.qnt`: slice 7's `Lamp` and `S1`..`S17` (`import Lamp(Max = i).*`), one
+check each with `darkWhenOff`. Release builds, real Quint through a wrapper that logs each call,
+4 cores; before is the integration head `e66f839`:
+
+| Run | Before (load 3.1 to 4.6) | After (load 3.8 to 4.0) |
+|---|---|---|
+| nothing cached, all cores | 5.13, 5.10, 4.94 s, 19 Quint starts | 0.97, 1.00, 1.13 s, 3 starts |
+| nothing cached, `--jobs 1` | 9.67 s | 1.21 s |
+| the second run, nothing changed | 0.069 s, no start | 0.011 s, no start |
+
+## Slice 4: report
+
+### Done
+
+- **A. Short names** (`crates/earnest_quint/src/names.rs`, applied at the end of
+  `model::built`): fields, actions, rules, temporal properties and runs get their last segment
+  unless another name of the kind ends the same way; then each keeps the shortest suffix that
+  tells them apart (`allHeard` beside `C::allHeard`). Invariants, temporal properties and runs
+  are one kind, because `--rule` selects among all of them. Inputs take their last segment:
+  Quint qualifies `nondet` names too (`Small::Clock::n`). The `#2` of a repeated id is kept.
+  `--rule`, `--model`, the JSON and the TLA+ export follow the model's ids; a check's `runs` list
+  also matches a run by its short name. Holds for a compiled `.json` named directly and for a
+  check.
+- **B. One typecheck per file** (`crates/earnest_quint/src/setup.rs`, `apps/earnest/src/typecheck.rs`,
+  `places.rs` `may_be_a_setup`, `quint.rs` `filled`): see "How `quint compile` flattens a setup"
+  above. `quint typecheck <file> --out` runs once per file that has a check whose main module
+  has an `import ... .*` of an instance. It is cached in `.earnest/quint/typecheck-<hash>.json`
+  under the version and the fingerprint of the files the parse lists. Each check is then built in
+  Rust and, when the shape is not one it builds, compiled as in slice 7. The parse stays: the
+  typecheck output has no source map and no file list.
+- **C. The spec's runs**: a built setup holds the spec's runs that the check plays (`true`: those
+  ending in `Test`; a list: those named), after Quint's declarations. A compiled setup plays only
+  its own runs; a listed run that only an imported module has is `unreadable` with the reason, at
+  the run's line. Docs: `reference/quint.md` ("What earnest runs", "Runs", "Names", "The cache")
+  and the changelog.
+
+### Shapes
+
+Built from the typecheck: `Low`, `High`, `Setup`, `Four`, `Tight`, `S`, `Three`, `One`, `Small`,
+`SmallBits`, `Dim`, `Bright`, `Blinding`, `S1`..`S17`. Compiled: `Large` and `Aliased`
+(`import ... as C`), `Nested` (an instance of an instance), `ByName` (a second import, a constant
+given a definition), `Exported` (`export`; Quint 0.33.1's compile keeps its `const K`, so it is
+`unreadable` either way), every module that is not a setup, a name Quint would refuse, and a
+file whose typecheck fails.
+
+### Tests
+
+- New: `names.rs` (4), `setup_tests.rs` (5), `quint_setups.rs` (5, a fake `quint` over the
+  committed fixtures), and in `quint_checks.rs`
+  `a_setup_prints_short_names_and_its_rule_is_selected_by_the_printed_name`.
+- Slice 1 to 7 tests changed (none is on `origin/main`):
+  `quint_temporal::a_run_with_no_fairness_may_stop_in_its_start_state` looks for the path under
+  `allHeard` instead of `SmallBits::ClockBits::allHeard`. No other test asserted a qualified
+  name; `places.rs`'s unit test keeps them, because `Located::definition` stays as Quint names
+  it.
+
+### Checks, each with its last line
+
+On the tree before merging the integration head `52cc2ea` (the tenth adversarial pass):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 1958 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the 64 of the 16 conformance files `origin/main` does not have, as in slices
+  2, 5, 6 and 7.
+- `tests_kept.py --base origin/main`: `tests kept: 1580 tests, 4610 assertions (base: 1304, 3798)`.
+
+After merging `52cc2ea`: clippy has no warnings, and `cargo test -p earnest_quint -p earnest-cli`
+gives 462 passed, 0 failed.
+
+`just lint-library`, `just counts` and `just benchmark` were not run: no search or library code
+changed.
+
+### Doubts
+
+- Equality is shown on 13 checks plus the 17 of `many.qnt`, not proved in general. The
+  conservative refusals cover what was not read in Quint's source (`export`, nested instances,
+  overrides that name definitions); anything new in a later Quint version (a flattening change)
+  would silently differ. The version is in every cache key, but the build itself does not check
+  it.
+- A built setup's ids are Quint's parse ids, where `compile` gives fresh ones. Only the places
+  of a refusal use ids: a refusal inside a spec definition now goes to its expression instead of
+  the definition. Runs are ordered by id, so the spec's runs come before the setup's own; with
+  `compile`, the setup's would come first.
+- An input of a shadowing `nondet` is named `x_97`, as Quint's compile names it. It is faithful,
+  but not pleasant.
+- `compiled.qnt` gets a typecheck that builds nothing, because `Nested` has a `.*` instance. It
+  is one Node start for a file of fallback shapes.
+- The `Exported` sample shows Quint 0.33.1 compiling `export B.*` with the constant left in. It
+  was left as a sample of a compiled fallback.
+
+### Unfinished, and the next step
+
+- Slice 3 (`oneOf` over a set from the state) had not reached the integration branch when this
+  report was written. Merge it, then run the Quint tests and the equality test again: the builder
+  copies expressions unchanged, so a new read operator needs nothing here.
+- Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
+  treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.

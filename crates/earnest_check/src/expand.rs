@@ -1,3 +1,4 @@
+use crate::picks::{Cursor, Next, sets_of};
 use crate::store::{Decoder, RangeSlot, RowLayout, Store, hash_words};
 use earnest_ir::{
     Action, Code, Fault, Frame, Input, Model, PackedTest, PackedUpdate, Scalar, Slot,
@@ -201,6 +202,7 @@ pub(crate) struct Move<'a> {
     tried: Tried,
     refill: Refill,
     reuse: Option<Reuse>,
+    picked: Option<Box<Picking>>,
 }
 
 #[derive(Debug)]
@@ -317,13 +319,40 @@ enum Tried {
     FirstOfEach(Vec<Vec<bool>>),
 }
 
+type Walk =
+    fn(&Picking, &Move<'_>, Origin<'_>, &mut Work, &mut Mark, &mut dyn Successors, Tally) -> Tally;
+
+#[derive(Debug)]
+struct Picking {
+    sets: Box<[Option<Code>]>,
+    walk: Walk,
+}
+
 impl<'a> Move<'a> {
     pub(crate) fn all(model: &'a Model, layout: &RowLayout, slots: &[Option<Slot>]) -> Vec<Self> {
         model
             .actions
             .iter()
-            .map(|action| Self::of(action, model.fields.len(), layout, slots))
+            .enumerate()
+            .map(|(position, action)| {
+                let planned = Self::of(action, model.fields.len(), layout, slots);
+                match sets_of(model, position) {
+                    Some(sets) => planned.picking(sets),
+                    None => planned,
+                }
+            })
             .collect()
+    }
+
+    fn picking(self, sets: Box<[Option<Code>]>) -> Self {
+        Self {
+            from_row: FromRow::Not,
+            picked: Some(Box::new(Picking {
+                sets,
+                walk: every_pick,
+            })),
+            ..self
+        }
     }
 
     fn of(action: &'a Action, fields: usize, layout: &RowLayout, slots: &[Option<Slot>]) -> Self {
@@ -423,6 +452,7 @@ impl<'a> Move<'a> {
             tried,
             refill,
             reuse,
+            picked: None,
         }
     }
 
@@ -868,6 +898,21 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 set_inputs(planned.action, 0, self.values.frame());
             }
             self.try_once(position, planned);
+        } else if let Some(picking) = &planned.picked {
+            self.values.frame();
+            let origin = Origin {
+                position,
+                base: self.values.base(),
+            };
+            self.tally = (picking.walk)(
+                picking,
+                planned,
+                origin,
+                self.scratch,
+                self.found,
+                self.sink,
+                self.tally,
+            );
         }
     }
 
@@ -1034,6 +1079,28 @@ fn every_input_told_apart(
     trying.tally
 }
 
+#[cold]
+#[inline(never)]
+fn every_pick(
+    picking: &Picking,
+    planned: &Move<'_>,
+    origin: Origin<'_>,
+    work: &mut Work,
+    found: &mut Mark,
+    sink: &mut dyn Successors,
+    tally: Tally,
+) -> Tally {
+    let mut frame =
+        Frame::new(origin.base.values, planned.action.slots).until(tally.timer.deadline);
+    let mut trying = Trying::of(planned, origin, &mut frame, work, found, sink, tally);
+    trying.every_pick(&picking.sets);
+    let tally = trying.tally;
+    if frame.computed_beyond_32_bits() {
+        found.width = Width::Beyond32Bits;
+    }
+    tally
+}
+
 struct Trying<'t, 'v, S: ?Sized> {
     planned: &'t Move<'t>,
     origin: Origin<'t>,
@@ -1110,6 +1177,60 @@ impl<'t, 'v, S: Successors + ?Sized> Trying<'t, 'v, S> {
             self.try_input::<true>(input);
         }
         self.work.digits = digits;
+    }
+
+    fn every_pick(&mut self, sets: &[Option<Code>]) {
+        let mut cursor = Cursor::new(&self.planned.action.inputs, sets);
+        let mut number = 0_usize;
+        while self.may_go_on_noting_a_time_stop() {
+            match cursor.next(self.frame) {
+                Next::Ready => {
+                    self.try_pick(number);
+                    number = number.saturating_add(1);
+                }
+                Next::Faulted(fault) => {
+                    let stopped = fault == Fault::Stopped;
+                    self.found.note(Whence::Guard(self.origin.position), fault);
+                    self.tally.moving.unsure = true;
+                    if stopped {
+                        break;
+                    }
+                }
+                Next::Done => break,
+            }
+        }
+    }
+
+    fn try_pick(&mut self, input: usize) {
+        let Origin { position, base } = self.origin;
+        match self.planned.action.guard.truth(self.frame) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(fault) => {
+                self.found.note(Whence::Guard(position), fault);
+                self.tally.moving.unsure = true;
+                return;
+            }
+        }
+        self.tally.moving.enabled = true;
+        let updates = &mut self.work.updates;
+        updates.clear();
+        for (field, code) in &self.planned.updates {
+            if *field >= base.values.len() {
+                break;
+            }
+            match code.eval(self.frame) {
+                Ok(value) => updates.push((*field, value)),
+                Err(fault) => {
+                    self.found.note(Whence::Update(position), fault);
+                    return;
+                }
+            }
+        }
+        if self.sink.offer(position, input, base, updates) {
+            self.tally.count();
+        }
+        self.reopen();
     }
 
     #[inline]

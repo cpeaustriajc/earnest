@@ -5,6 +5,20 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `--base` reads a witness's inputs by name
+
+`earnest verify --base <ref>` compares each step of a witness by its action and the value it gives each input, by the input's name.
+
+- **No longer listed:** a witness whose action now declares its inputs in another order, as in `input: { by, to }` for `input: { to, by }`.
+- **Now listed:** a Rust witness whose call, such as `self.turn(1, 2)?`, now gives its arguments to other parameters because the action's parameters were swapped.
+- **Said in the docs:** a part is listed when what it says changed, not when the model under it changed. An edited action under an unchanged witness lists nothing, and `earnest verify` judges the witness again.
+
+See [Rule changes](/reference/output/#rule-changes---base).
+
+## November 2026: Quint picks from sets the state holds
+
+The Quint reader reads a `nondet x = S.oneOf()` whose set comes from the state, from an expression over it, or from an earlier `nondet` of the same action or of `init`. In each state the search tries every value of the set, with no bound, and an empty set means the action can't happen there. Paths, runs, temporal properties and the TLA+ export pick from the same set, and a path step prints the value picked. `Int.oneOf()` and `Nat.oneOf()` are refused by name. See [What is read today](/reference/quint/#what-is-read-today).
+
 ## November 2026: Quint modules listed in `earnest.quint.json`
 
 `earnest verify` checks Quint modules. List each module to check, with its invariants, in `earnest.quint.json` beside the specs:
@@ -19,6 +33,9 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **Results:** each check is one model, named after its module, with the `.qnt` file as its file. A failed compile is `unreadable` at the line Quint gives, and a construct the reader refuses is reported at its line in the `.qnt` file.
 - **Cache:** the compiled JSON is kept in `.earnest/quint/` by `quint --version`, the check and the content of the `.qnt` files, so a second run with nothing changed starts no Node.
 - **Runs:** a check with `"runs": true` or a list of run names plays the module's `run` definitions, trying every choice where `quint test` samples. See [Runs](/reference/quint/#runs).
+- **Setups:** a check of `module Small { import Spec(K = 3).* }` is built from one `quint typecheck` of its file instead of its own `quint compile`, so a file of 17 setups starts Quint three times, not nineteen. Other shapes are compiled as before. See [What earnest runs](/reference/quint/#what-earnest-runs).
+- **Runs of the spec:** such a setup plays the runs written in `Spec` too, as `quint test --main Small` does. A compiled setup still plays only its own, and a listed run it lacks is `unreadable` with the reason.
+- **Names:** a field, action, rule or run flattened from an instance is printed by its last segment (`time`, not `Small::Clock::time`) unless another name of its kind ends the same way, and `--rule` takes that name. See [Names](/reference/quint/#names).
 - **Reads:** what the Quint reader reads from compiled JSON, now also from a listed `.qnt` file. A module compiled beforehand with `quint compile --target json` is still read with no Node.
 
 See [Quint models](/reference/quint/).

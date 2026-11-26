@@ -1,0 +1,408 @@
+#![cfg(unix)]
+
+use std::collections::BTreeSet;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+
+use serde_json::Value;
+
+use crate::support::{Run, Sandbox, find_model, model, repository, rule};
+
+const FAKE: &str = r#"#!/bin/sh
+PATH=/usr/bin:/bin
+here="$(dirname "$(readlink -f "$0")")"
+echo "$*" >> "$here/calls"
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "--main" ]; then main="$argument"; fi
+  if [ "$previous" = "--out" ]; then out="$argument"; fi
+  if [ "$previous" = "--source-map" ]; then map="$argument"; fi
+  previous="$argument"
+done
+case "$1" in
+  --version)
+    echo "0.33.1"
+    ;;
+  parse)
+    name="$(basename "$2" .qnt)"
+    folder="$(cd "$(dirname "$2")" && pwd)"
+    if [ -f "$here/typechecked/$name.json" ]; then
+      cp "$here/typechecked/$name.json" "$out"
+    else
+      echo '{"modules":[]}' > "$out"
+    fi
+    echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    ;;
+  typecheck)
+    name="$(basename "$2" .qnt)"
+    if [ ! -f "$here/typechecked/$name.json" ]; then
+      echo "error: typechecking failed" >&2
+      exit 1
+    fi
+    cp "$here/typechecked/$name.json" "$out"
+    ;;
+  compile)
+    if [ ! -f "$here/compiled/$main.json" ]; then
+      echo "error: module $main does not exist" >&2
+      exit 1
+    fi
+    cat "$here/compiled/$main.json"
+    ;;
+esac
+"#;
+
+const SPECS: [&str; 10] = [
+    "ints",
+    "kinds",
+    "pure",
+    "own",
+    "shadow",
+    "runs",
+    "clock",
+    "clockbits",
+    "lamp",
+    "compiled",
+];
+
+const COMPILED: [&str; 18] = [
+    "ints.Low",
+    "ints.High",
+    "kinds.Setup",
+    "pure.Four",
+    "own.Tight",
+    "shadow.S",
+    "runs.Three",
+    "runs.One",
+    "clock.Small",
+    "clock.Large",
+    "clockbits.SmallBits",
+    "lamp.Dim",
+    "lamp.Bright",
+    "lamp.Blinding",
+    "compiled.Nested",
+    "compiled.Aliased",
+    "compiled.ByName",
+    "compiled.Exported",
+];
+
+const FALLBACKS: [&str; 5] = ["Large", "Nested", "Aliased", "ByName", "Exported"];
+
+fn setups(name: &str) -> String {
+    let path = repository().join("tasks/quint/setups").join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+}
+
+struct Quint {
+    sandbox: Sandbox,
+    program: PathBuf,
+}
+
+impl Quint {
+    fn new(checks: &str) -> Self {
+        let sandbox = Sandbox::empty();
+        let program = sandbox.path().join("fake/quint");
+        sandbox.write("fake/quint", FAKE);
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755))
+            .expect("the fake can be made a program");
+        for spec in SPECS {
+            sandbox.write(
+                &format!("specs/{spec}.qnt"),
+                &setups(&format!("{spec}.qnt")),
+            );
+            sandbox.write(
+                &format!("fake/typechecked/{spec}.json"),
+                &setups(&format!("fixtures/{spec}.typecheck.json")),
+            );
+        }
+        for compiled in COMPILED {
+            let main = compiled.split_once('.').map_or(compiled, |(_, main)| main);
+            sandbox.write(
+                &format!("fake/compiled/{main}.json"),
+                &setups(&format!("fixtures/{compiled}.json")),
+            );
+        }
+        sandbox.write("specs/earnest.quint.json", checks);
+        sandbox.write("fake/calls", "");
+        Self { sandbox, program }
+    }
+
+    fn earnest(&self, arguments: &[&str]) -> Run {
+        let empty = self.sandbox.path().join("no-programs");
+        fs::create_dir_all(&empty).expect("an empty folder can be made");
+        Run::of(
+            self.sandbox
+                .command()
+                .env("EARNEST_QUINT", &self.program)
+                .env("PATH", &empty)
+                .args(arguments),
+        )
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.sandbox
+            .read("fake/calls")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn of_kind(&self, kind: &str) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter(|call| call.split(' ').next() == Some(kind))
+            .collect()
+    }
+
+    fn compiled_mains(&self) -> BTreeSet<String> {
+        self.of_kind("compile")
+            .iter()
+            .filter_map(|call| {
+                let mut words = call.split(' ');
+                words.find(|word| *word == "--main")?;
+                words.next().map(str::to_owned)
+            })
+            .collect()
+    }
+
+    fn forget(&self) {
+        self.sandbox.write("fake/calls", "");
+        fs::remove_dir_all(self.sandbox.path().join(".earnest")).unwrap_or_default();
+    }
+
+    fn without_typecheck(&self) {
+        fs::remove_dir_all(self.sandbox.path().join("fake/typechecked"))
+            .expect("the typechecked fixtures go");
+    }
+}
+
+fn checks_without_runs() -> String {
+    let mut checks: Value =
+        serde_json::from_str(&setups("earnest.quint.json")).expect("the checks file is JSON");
+    for check in checks["checks"].as_array_mut().into_iter().flatten() {
+        if let Some(fields) = check.as_object_mut() {
+            fields.remove("runs");
+        }
+    }
+    checks.to_string()
+}
+
+fn names(set: &[&str]) -> BTreeSet<String> {
+    set.iter().map(|each| (*each).to_owned()).collect()
+}
+
+fn rule_ids(model: &Value) -> Vec<String> {
+    model["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|rule| rule["id"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens() {
+    let quint = Quint::new(&checks_without_runs());
+    let ours = quint.earnest(&["verify", "--json", "specs"]).json();
+    assert_eq!(
+        quint.compiled_mains(),
+        names(&FALLBACKS),
+        "only the setups of other shapes are compiled: {:?}",
+        quint.calls()
+    );
+    assert_eq!(
+        quint.of_kind("typecheck").len(),
+        SPECS.len(),
+        "one typecheck per file: {:?}",
+        quint.calls()
+    );
+    quint.forget();
+    quint.without_typecheck();
+    let theirs = quint.earnest(&["verify", "--json", "specs"]).json();
+    assert_eq!(
+        quint.compiled_mains().len(),
+        COMPILED.len(),
+        "with no typecheck, every setup is compiled: {:?}",
+        quint.calls()
+    );
+    let mut compared = 0;
+    for compiled in COMPILED {
+        let main = compiled.split_once('.').map_or(compiled, |(_, main)| main);
+        let Some(flattened) = find_model(&theirs, main) else {
+            continue;
+        };
+        let built = model(&ours, main);
+        for key in ["status", "states", "reason"] {
+            assert_eq!(
+                built[key], flattened[key],
+                "{main}: {key}\n{built}\n{flattened}"
+            );
+        }
+        assert_eq!(rule_ids(built), rule_ids(flattened), "{main}");
+        for id in rule_ids(flattened) {
+            assert_eq!(
+                rule(built, &id),
+                rule(flattened, &id),
+                "{main}: the rule {id}, its verdict and its path"
+            );
+        }
+        compared += 1;
+    }
+    assert_eq!(compared, 17, "every readable setup is compared\n{theirs}");
+}
+
+#[test]
+fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() {
+    let quint = Quint::new(&setups("earnest.quint.json"));
+    let report = quint.earnest(&["verify", "--json", "specs"]).json();
+    let verdicts = |main: &str| -> Vec<(String, String)> {
+        let found = model(&report, main);
+        found["rules"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| {
+                rule["says"]
+                    .as_str()
+                    .is_some_and(|says| says.contains("run"))
+            })
+            .map(|rule| {
+                (
+                    rule["id"].as_str().unwrap_or_default().to_owned(),
+                    rule["verdict"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect()
+    };
+    let pairs = |list: &[(&str, &str)]| -> Vec<(String, String)> {
+        list.iter()
+            .map(|(id, verdict)| ((*id).to_owned(), (*verdict).to_owned()))
+            .collect()
+    };
+    assert_eq!(
+        verdicts("Small"),
+        pairs(&[
+            ("tickTwice", "holds"),
+            ("tickMany", "holds"),
+            ("overTick", "broken"),
+            ("hearAny", "holds"),
+        ]),
+        "as `quint test --main Small` judges them\n{report}"
+    );
+    assert_eq!(
+        verdicts("Three"),
+        pairs(&[
+            ("twoTest", "holds"),
+            ("allTest", "holds"),
+            ("overTest", "broken"),
+            ("ownTest", "holds"),
+        ]),
+        "the spec's runs ending in `Test` and the setup's own\n{report}"
+    );
+    assert_eq!(
+        verdicts("One"),
+        pairs(&[
+            ("twoTest", "broken"),
+            ("allTest", "holds"),
+            ("overTest", "broken"),
+        ]),
+        "{report}"
+    );
+    let by_name = report["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|problem| problem["feature"] == "`run upTest`")
+        .unwrap_or_else(|| panic!("a compiled setup can't play an imported run\n{report}"));
+    assert!(
+        by_name["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("drops the runs of imported modules")),
+        "{by_name}"
+    );
+}
+
+#[test]
+fn seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never() {
+    let quint = Quint::new(r#"{ "checks": [] }"#);
+    quint.sandbox.write("specs/many.qnt", &setups("many.qnt"));
+    quint.sandbox.write(
+        "fake/typechecked/many.json",
+        &setups("fixtures/many.typecheck.json"),
+    );
+    let listed: Vec<String> = (1..=17)
+        .map(|number| {
+            format!(
+                r#"{{ "file": "many.qnt", "main": "S{number}", "invariants": ["darkWhenOff"] }}"#
+            )
+        })
+        .collect();
+    quint.sandbox.write(
+        "specs/earnest.quint.json",
+        &format!(r#"{{ "checks": [{}] }}"#, listed.join(", ")),
+    );
+    let run = quint.earnest(&["verify", "specs"]);
+    run.exits(0);
+    let kinds: Vec<String> = quint
+        .calls()
+        .iter()
+        .filter_map(|call| call.split(' ').next().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        kinds,
+        ["--version", "parse", "typecheck"],
+        "no compile at all\n{run}"
+    );
+    assert_eq!(
+        run.summary_line(),
+        "17 models: 17 pass, 0 fail, 0 unfinished",
+        "{run}"
+    );
+    assert_eq!(run.model_line("S9")[2], "20 states", "{run}");
+    quint.sandbox.write("fake/calls", "");
+    let again = quint.earnest(&["verify", "specs"]);
+    again.exits(0);
+    assert_eq!(quint.calls(), Vec::<String>::new(), "{again}");
+}
+
+#[test]
+fn a_setup_of_another_shape_is_compiled_and_a_second_run_compiles_nothing() {
+    let quint = Quint::new(
+        r#"{ "checks": [
+          { "file": "clock.qnt", "main": "Small", "invariants": ["timeBounded"] },
+          { "file": "clock.qnt", "main": "Large", "invariants": ["inv"] }
+        ] }"#,
+    );
+    let run = quint.earnest(&["verify", "specs"]);
+    run.exits(0);
+    assert_eq!(
+        quint.compiled_mains(),
+        names(&["Large"]),
+        "`import Clock(...) as C` is compiled, `Small` is built\n{run}"
+    );
+    assert_eq!(quint.of_kind("typecheck").len(), 1, "{:?}", quint.calls());
+    quint.sandbox.write("fake/calls", "");
+    let again = quint.earnest(&["verify", "specs"]);
+    again.exits(0);
+    assert_eq!(quint.calls(), Vec::<String>::new(), "{again}");
+}
+
+#[test]
+fn a_failed_typecheck_falls_back_to_compiling_each_setup() {
+    let quint = Quint::new(
+        r#"{ "checks": [
+          { "file": "lamp.qnt", "main": "Dim", "invariants": ["levelOk"] },
+          { "file": "lamp.qnt", "main": "Bright", "invariants": ["levelOk"] }
+        ] }"#,
+    );
+    let mut failed: Value = serde_json::from_str(&setups("fixtures/lamp.typecheck.json"))
+        .expect("the typecheck fixture is JSON");
+    failed["errors"] = serde_json::json!([{ "code": "QNT000" }]);
+    quint
+        .sandbox
+        .write("fake/typechecked/lamp.json", &failed.to_string());
+    let run = quint.earnest(&["verify", "specs"]);
+    run.exits(0);
+    assert_eq!(quint.compiled_mains(), names(&["Bright", "Dim"]), "{run}");
+}
