@@ -1966,8 +1966,8 @@ helper `MapSet(map, key, value)`, written whenever the model updates a map, make
 before `tag`, so TLC compares `"a"` with `<<>>` before it sees that the tags differ. Without the
 map the same module is `same`. Apalache writes a variant as a record with one field named by the
 tag (`[Held |-> "a"]`, as TLC's state prints show in Quint's own runs), which TLC compares
-without error. The project model meets it on its state count and every rule (`holder == Held(n)`, `net` of three
-kinds of message). Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the
+without error. The project model meets it on its state count and every rule (`holder ==
+Held(n)`, `net` of three kinds of message). Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the
 `tlc` feature, as the first pass's TLC tests are: `cargo test --locked -p earnest_break_it
 --features tlc --test tlc quint_second`. Test:
 `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
@@ -2001,6 +2001,7 @@ likely to write it; *unclear* where the message does not say what to write inste
 | `temporal served = weakFair(step, vars) implies NODES.forall(n => always(P(n) implies eventually(Q(n))))` (*likely*) | `` `always` ``: a temporal operator under `forall` is not read, in the definition `setups::Two::served`. Clear, but the definition is named by Quint's long name. Writing the `forall` inside (`always(eventually(NODES.forall(n => …)))`) is read, and then faults (the first finding) |
 | `assume Positive = N > 0` in a module checked as it is (*likely*, *unclear*) | `a declaration`: a declaration the reader does not know, such as an import or an instance, at 1:1: it names neither `assume` nor its line. In a spec used through a setup the `assume` is dropped without a word, `N = 0` included; Quint's TLC run drops it too (`[ok]` for `Bad` with `N = 0`), so it is not a finding |
 | a spec that imports a types module (`import types.* from "./types"`) (*likely*) | not refused: each setup of it is compiled, one Node start for each check, and the spec's runs are not played (the docs say so). The runs written in the setup module itself are played |
+| `init = match M { \| Fixed(n) => x' = n \| Range(s) => all { nondet v = s.oneOf() x' = v } }` (*unclear*) | `` `nondet v` ``: a `nondet` whose value is not `oneOf` a set, in the definition `init`: it is `oneOf` a set, the one the branch binds. In a step the same shape is read, and faults (the second finding) |
 | `weakFair(R::step, (P::v, R::v))` with two instances `P`, `R` | refused as the docs say, with Quint's long names in the message: ``where `Both::R::step` alone does not give `Both::P::v'` `` |
 
 ### Attacked and found correct
@@ -2050,6 +2051,11 @@ likely to write it; *unclear* where the message does not say what to write inste
   `earnest report`, as the docs' table says; `confirm --tlc` says `same` for both modules.
 - Paths: every broken invariant's path has as many steps as TLC's breadth-first counterexample
   (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 43).
+- `confirm --tlc` says `same` on 11 of the samples above (`ByOuter`, `Whole`, `Setup2`, `op`,
+  `OverName`, `Both`, `Dot`, `Cap`, `CapLambda`, and the printing samples `pr` and `tagrec`);
+  where it says
+  `differs`, it is one of the three `confirm` findings (`Setup1` and the `oneOf` sample compare
+  variants of different value types, the `match` sample has broken rules about runs).
 - The cache and `--rule`: 68 rules in 7 folders, a second cached run and `--rule` for each rule
   give the verdict and the path length of a full `--no-cache` run.
 
@@ -2089,6 +2095,9 @@ s of search in 9.9 s; `quint verify --backend tlc --main huge` 10.1 s for the fo
   say so of texts and field names, not of tags.
 - `earnest replay` does not exist: the CLI has `verify`, `chart`, `report`, `tla` and `confirm`,
   and replay is the TypeScript library's, so a printed Quint path can't be replayed.
+- When TLC prints no state count, `confirm` shows the first line TLC wrote to its standard
+  error, which here is the JVM's `Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=…`
+  notice, not TLC's error.
 - Several `quint verify --backend tlc` started together fail on the Apalache server's port
   (`Failed to bind to address 0.0.0.0:8822`); `--server-endpoint localhost:PORT` per process
   avoids it. This is Quint's, not earnest's, but it costs a comparison script an evening.

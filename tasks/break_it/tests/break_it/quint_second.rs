@@ -333,3 +333,105 @@ fn confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken() {
          false, as earnest says, so confirm says `same`\n{said}"
     );
 }
+
+const SEEDED: [(&str, &str, &str); 10] = [
+    (
+        "H14",
+        include_str!("../../models/quint_second/random/H14.qnt"),
+        include_str!("../../models/quint_second/random/H14.typecheck.json"),
+    ),
+    (
+        "H25",
+        include_str!("../../models/quint_second/random/H25.qnt"),
+        include_str!("../../models/quint_second/random/H25.typecheck.json"),
+    ),
+    (
+        "H37",
+        include_str!("../../models/quint_second/random/H37.qnt"),
+        include_str!("../../models/quint_second/random/H37.typecheck.json"),
+    ),
+    (
+        "H45",
+        include_str!("../../models/quint_second/random/H45.qnt"),
+        include_str!("../../models/quint_second/random/H45.typecheck.json"),
+    ),
+    (
+        "H54",
+        include_str!("../../models/quint_second/random/H54.qnt"),
+        include_str!("../../models/quint_second/random/H54.typecheck.json"),
+    ),
+    (
+        "H63",
+        include_str!("../../models/quint_second/random/H63.qnt"),
+        include_str!("../../models/quint_second/random/H63.typecheck.json"),
+    ),
+    (
+        "H1002",
+        include_str!("../../models/quint_second/random/H1002.qnt"),
+        include_str!("../../models/quint_second/random/H1002.typecheck.json"),
+    ),
+    (
+        "H1006",
+        include_str!("../../models/quint_second/random/H1006.qnt"),
+        include_str!("../../models/quint_second/random/H1006.typecheck.json"),
+    ),
+    (
+        "H1010",
+        include_str!("../../models/quint_second/random/H1010.qnt"),
+        include_str!("../../models/quint_second/random/H1010.typecheck.json"),
+    ),
+    (
+        "H1013",
+        include_str!("../../models/quint_second/random/H1013.qnt"),
+        include_str!("../../models/quint_second/random/H1013.typecheck.json"),
+    ),
+];
+
+const SEEDED_EXPECTED: &str = include_str!("../../models/quint_second/random/expected.json");
+
+#[test]
+fn every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test() {
+    let expected: Value =
+        serde_json::from_str(SEEDED_EXPECTED).expect("the expected answers are JSON");
+    let mut wrong = Vec::new();
+    for (name, source, typecheck) in SEEDED {
+        let answers = &expected[name];
+        let checks = serde_json::json!({ "checks": [ {
+            "file": format!("{name}.qnt"),
+            "main": name,
+            "invariants": ["inv0", "inv1", "inv2"],
+            "temporal": ["t0", "t1", "t2", "t3", "t4"],
+            "runs": true,
+        } ] })
+        .to_string();
+        let file = format!("{name}.qnt");
+        let report = verified_with_recorded_quint(&QuintFixtures {
+            file: &file,
+            source,
+            typecheck,
+            compiled: "",
+            checks: &checks,
+        });
+        let model = model_named(&report, name);
+        if model["states"] != answers["states"] {
+            wrong.push(format!(
+                "{name}: {} states, Quint's TLC run finds {}",
+                model["states"], answers["states"]
+            ));
+        }
+        for kind in ["verdicts", "runs"] {
+            for (id, verdict) in answers[kind].as_object().into_iter().flatten() {
+                let found = &rule(model, id)["verdict"];
+                if found != verdict {
+                    wrong.push(format!("{name}: `{id}` is {found}, Quint says {verdict}"));
+                }
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "each seeded setup checks as `quint verify --backend tlc` (states, invariants, temporal \
+         properties) and `quint test` (runs) judge it:\n{}",
+        wrong.join("\n")
+    );
+}
