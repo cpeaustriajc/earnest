@@ -79,21 +79,21 @@ fn listed(rows: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
-fn cart(approved: bool, offers: bool) -> Value {
+fn cart(approved: &Value) -> Value {
     named(&[
-        ("approved", json!(approved)),
-        ("offers", json!(offers)),
+        ("approved", approved.clone()),
+        ("offers", json!(false)),
         ("paid", json!(false)),
     ])
 }
 
-fn step(action: &str, label: &str, field: &str, before: bool, state: Value) -> Value {
+fn approval(action: &str, label: &str, before: &Value, after: &Value) -> Value {
     json!({
         "action": action,
         "label": label,
         "input": [],
-        "changes": [{ "field": field, "before": before, "after": !before }],
-        "state": state,
+        "changes": [{ "field": "approved", "before": before, "after": after }],
+        "state": cart(after),
     })
 }
 
@@ -180,11 +180,11 @@ fn the_json_gives_the_kind_the_reason_and_where_the_loop_starts() {
             "says": "Once approved, the cart offers checkout",
             "verdict": "broken",
             "path": {
-                "start": cart(false, false),
+                "start": cart(&json!(false)),
                 "steps": [
-                    step("approve", "the shop approves the cart", "approved", false, cart(true, false)),
-                    step("cancel", "the shop takes the approval back", "approved", true, cart(false, false)),
-                    step("approve", "the shop approves the cart", "approved", false, cart(true, false)),
+                    approval("approve", "the shop approves the cart", &json!(false), &json!(true)),
+                    approval("cancel", "the shop takes the approval back", &json!(true), &json!(false)),
+                    approval("approve", "the shop approves the cart", &json!(false), &json!(true)),
                 ],
             },
             "kind": "eventually",

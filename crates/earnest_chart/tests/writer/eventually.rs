@@ -5,21 +5,21 @@ use serde_json::json;
 
 const STAYS: &str = "nothing changes the state from here, so the run can stay in it forever";
 
-fn flag(value: bool) -> Shown {
+fn flag(value: &str) -> Shown {
     Shown {
-        text: value.to_string(),
-        json: json!(value),
+        text: value.to_owned(),
+        json: json!(value == "true"),
     }
 }
 
-fn flips(action: &str, field: &str, before: bool) -> earnest_check::Step {
+fn flips(action: &str, field: &str, before: &str, after: &str) -> earnest_check::Step {
     step(
         action,
         Vec::new(),
         vec![Change {
             field: field.to_owned(),
             before: flag(before),
-            after: flag(!before),
+            after: flag(after),
         }],
     )
 }
@@ -41,17 +41,17 @@ fn about_runs(
 }
 
 fn worker() -> Outcome {
-    let start = vec![named("busy", flag(false)), named("done", flag(false))];
+    let start = vec![named("busy", flag("false")), named("done", flag("false"))];
     let looping = Path {
         start: start.clone(),
         steps: vec![
-            flips("fidget", "busy", false),
-            flips("fidget", "busy", true),
+            flips("fidget", "busy", "false", "true"),
+            flips("fidget", "busy", "true", "false"),
         ],
     };
     let staying = Path {
         start,
-        steps: vec![flips("finish", "done", false)],
+        steps: vec![flips("finish", "done", "false", "true")],
     };
     Outcome {
         rules: vec![
