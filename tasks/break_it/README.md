@@ -2485,7 +2485,7 @@ release's `tla2tools.jar` at `target/tools/`.
   (two buyers, two items): `payEach`, `payOne` (2 parts), `payOneOnly` over `pay(p._1)` and over
   `pay(r.who)`, and `allPay`, `onePays`, `oneOnly` over `buy(p._1, p._2)`: 4, 4 and 7 states and
   every verdict as `quint verify --backend tlc`; `confirm --tlc` `same` on all four checks, the
-  export writing `WF_<<paid, last>>(Fair_pay_1 \/ Fair_pay_2)` with each fair step's pick in a set
+  export writing `WF_<<paid>>(Fair_pay_1 \/ Fair_pay_2)` for buyer 1, each fair step with its pick in a set
   of one. `act(b + 1)`, refused before, is read the same way (`same` with TLC). Test:
   `fairness_of_an_action_given_a_part_of_a_picked_tuple_or_record_is_judged_as_tlc_judges_it`.
 - **Messages.** `written` prints Quint's surface form: `t._2`, `r.who`, tuples, records,
@@ -2528,3 +2528,23 @@ Tests of earlier Quint slices changed (none is on `origin/main`):
 the start, so it holds), and
 `arguments_tests::an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_lambda`
 (`caller  k = 2`).
+
+Checks, each with its last line, on the tree merged with the integration head 6362d76:
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2153 passed, 0
+  failed.
+- `cargo test -p earnest_break_it --features tlc --test tlc`: 14 passed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.42%`, `mixed/shelf`; `grid_1m` `+0.27%` and
+  `+0.31%`, as on the integration head).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.809 s, 1 worker 2.304 s).
+- `just same-answers 6362d76`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
+  `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
+- `tests_kept.py --base origin/main`: `tests kept: 1709 tests, 4941 assertions (base: 1304, 3798)`.
+- `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
+  model, on `fair_parts`' four, on `start_implies`, on `act(b + 1)`, and on #68's `buyers`,
+  `FairArgs`, `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`.
