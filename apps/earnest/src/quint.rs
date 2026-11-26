@@ -1,4 +1,4 @@
-use crate::cache::{fingerprint_of, folder_in, write_whole};
+use crate::cache::{ENGINE, fingerprint_of, folder_in, write_whole};
 use crate::checks::{
     CHECKS_FILE, Check, EXPECT_COUNTEREXAMPLE, Written, example, is_a_name, read_entries,
 };
@@ -603,12 +603,16 @@ fn fingerprint_files(paths: &[&str]) -> u64 {
     fingerprint_of(&pieces)
 }
 
+fn places_key(engine: &str, quint: &Quint, source: &[u8]) -> String {
+    format!(
+        "{:016x}",
+        fingerprint_of(&[engine.as_bytes(), quint.version.as_bytes(), source])
+    )
+}
+
 fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
     let source = fs::read(real_file).ok()?;
-    let key = format!(
-        "{:016x}",
-        fingerprint_of(&[quint.version.as_bytes(), &source])
-    );
+    let key = places_key(ENGINE, quint, &source);
     let target = cache_path(&format!(
         "places-{:016x}.json",
         fingerprint_of(&[shown_string(real_file).as_bytes()])
@@ -1072,4 +1076,42 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         });
     }
     files
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Quint, places_key};
+    use crate::cache::ENGINE;
+    use std::path::PathBuf;
+
+    #[test]
+    fn what_another_build_read_from_a_parse_is_not_kept_for_this_build() {
+        let quint = Quint {
+            program: PathBuf::from("quint"),
+            version: "0.33.1".to_owned(),
+        };
+        let source = b"module counter { var n: int }";
+        let ours = places_key(ENGINE, &quint, source);
+        assert_eq!(
+            ours,
+            places_key(ENGINE, &quint, source),
+            "one build, one Quint and one file keep one entry"
+        );
+        assert_ne!(
+            ours,
+            places_key("0.1.0+0000000000000000", &quint, source),
+            "the entry holds what the checker made of Quint's output, so a build from other \
+             sources reads the parse again"
+        );
+        let newer = Quint {
+            version: "0.34.0".to_owned(),
+            ..quint.clone()
+        };
+        assert_ne!(ours, places_key(ENGINE, &newer, source), "another Quint");
+        assert_ne!(
+            ours,
+            places_key(ENGINE, &quint, b"module counter { var m: int }"),
+            "another text"
+        );
+    }
 }

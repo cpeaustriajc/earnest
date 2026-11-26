@@ -5,6 +5,12 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: a kept Quint parse is read again by another build
+
+- **Fixed:** `.earnest/quint/` kept what earnest read from `quint parse` by the version of Quint and the file alone, so a newer build reused what an older build had read. After an update, a check that lists a `val` in `expectCounterexample` was `unreadable` with `which is not an invariant, a temporal property or a run`, and `--no-cache` did not clear it. The entry is now kept for one build, as [cached results](/reference/cli/#caching) are. On an older build, delete `.earnest/quint/` after updating.
+
+See [The cache](/reference/quint/#the-cache).
+
 ## November 2026: Quint checks under a name, and counterexamples that must be found
 
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.
