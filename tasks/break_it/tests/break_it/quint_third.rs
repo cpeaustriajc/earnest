@@ -157,3 +157,87 @@ fn the_note_of_runs_not_played_names_only_runs_quint_test_plays() {
          it did not play `specOverTest`, which no Quint command plays here\n{report:#}"
     );
 }
+
+const SEEDED: [(&str, &str); 10] = [
+    (
+        "R6",
+        include_str!("../../models/quint_third/random/R6.json"),
+    ),
+    (
+        "R9",
+        include_str!("../../models/quint_third/random/R9.json"),
+    ),
+    (
+        "R13",
+        include_str!("../../models/quint_third/random/R13.json"),
+    ),
+    (
+        "R14",
+        include_str!("../../models/quint_third/random/R14.json"),
+    ),
+    (
+        "R15",
+        include_str!("../../models/quint_third/random/R15.json"),
+    ),
+    (
+        "R16",
+        include_str!("../../models/quint_third/random/R16.json"),
+    ),
+    (
+        "R25",
+        include_str!("../../models/quint_third/random/R25.json"),
+    ),
+    (
+        "R30",
+        include_str!("../../models/quint_third/random/R30.json"),
+    ),
+    (
+        "R35",
+        include_str!("../../models/quint_third/random/R35.json"),
+    ),
+    (
+        "R36",
+        include_str!("../../models/quint_third/random/R36.json"),
+    ),
+];
+
+fn whole_verdicts(model: &Value) -> serde_json::Map<String, Value> {
+    let mut verdicts = serde_json::Map::new();
+    for found in model["rules"].as_array().into_iter().flatten() {
+        let id = found["id"].as_str().unwrap_or_default();
+        let base = id.split('#').next().unwrap_or(id).to_owned();
+        let verdict = found["verdict"].as_str().unwrap_or_default();
+        let earlier = verdicts.get(&base).and_then(Value::as_str);
+        let joined = [Some("broken"), Some("unknown")]
+            .into_iter()
+            .flatten()
+            .find(|worst| earlier == Some(*worst) || verdict == *worst)
+            .unwrap_or(verdict)
+            .to_owned();
+        verdicts.insert(base, Value::from(joined));
+    }
+    verdicts
+}
+
+#[test]
+fn every_seeded_model_of_buyers_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test() {
+    let expected: Value = serde_json::from_str(include_str!(
+        "../../models/quint_third/random/expected.json"
+    ))
+    .expect("the expected answers are JSON");
+    for (name, json) in SEEDED {
+        for jobs in ["1", "4"] {
+            let file = format!("{name}.json");
+            let report = Sandbox::with(&[(file.as_str(), json)]).verify(&[&file, "--jobs", jobs]);
+            let model = report.model(name);
+            let wanted = &expected[name];
+            assert_eq!(
+                (&model["states"], Value::Object(whole_verdicts(model))),
+                (&wanted["states"], wanted["verdicts"].clone()),
+                "`{name}` with {jobs} jobs: the states `quint verify --backend tlc` counts, \
+                 each invariant and temporal property as TLC judges it (a property in parts \
+                 broken when one part is), and each run as `quint test` judges it\n{report}"
+            );
+        }
+    }
+}
