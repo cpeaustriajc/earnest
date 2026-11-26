@@ -163,6 +163,8 @@ mod first_tests;
 #[cfg(test)]
 mod fixes_tests;
 #[cfg(test)]
+mod kept_tests;
+#[cfg(test)]
 mod reads_tests;
 #[cfg(test)]
 mod run_tests;

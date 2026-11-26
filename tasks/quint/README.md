@@ -3347,3 +3347,222 @@ On the tree merged with the integration head `a94146b`:
 - A module that writes a record shaped like a variant prints all its variants as records. A
   typed printer (walking each field's Quint type) would avoid it; it was not worth the size.
 - Action ids of `match` branches are numbered (`follow#2`), as `any` branches already are.
+
+## Real models 1: runs from any first action, and checks of runs only (issue #66)
+
+The owner ran the branch build on a real project's Quint models: 42 runs in 12 files started
+with a helper (`initWith(Set())`, `Fixed::InitOn("up")`) and were refused, three setups import
+one spec twice and play a run on the second copy, and four modules hold only runs. Quint
+0.33.1 from npm in a scratch folder outside the repository, Node 22, 4 cores.
+
+The models are in `first/`, each `.qnt` beside the JSON Quint wrote for it in `first/fixtures/`
+(redirected to a file, never a pipe):
+
+- `RunFromHelper.qnt` and `TwoInstances.qnt`: the owner's samples, as written.
+- `OnlyRuns.qnt`: a module of runs only (no `init`, no `step`), three instances of one spec, a
+  run on each, a run that mixes two instances' variables, and one that breaks.
+- `FirstSteps.qnt`: first actions with arguments (`seed("on")`), through a module name
+  (`Other::InitOn(v)`), written in place (`all { ... }`), with a `nondet` inside and before
+  them, one that can't happen, and `Other::n` reached by runs alone.
+- `Unset.qnt`: runs that read a variable their first action leaves unset, and `partialTest`,
+  which touches `x` alone.
+- `earnest.quint.json`: one check of each.
+
+```sh
+quint typecheck <File>.qnt --out fixtures/<File>.typecheck.json
+quint compile --target json --main RunFromHelper RunFromHelper.qnt > fixtures/RunFromHelper.RunFromHelper.json
+quint compile --target json --main TwoInstances TwoInstances.qnt > fixtures/TwoInstances.TwoInstances.json
+quint compile --target json --main FirstSteps --invariant bounded FirstSteps.qnt > fixtures/FirstSteps.FirstSteps.json
+quint compile --target json --main Unset Unset.qnt > fixtures/Unset.Unset.json
+```
+
+`quint compile --main OnlyRuns` fails with `error: [QNT404] Name 'init' not found`, and
+`--init fixedTest` with `[QNT501] default --init action name 'fixedTest' is used by a run
+declaration`, so a module of runs only can't be compiled; earnest builds it from the typecheck.
+
+### What `quint test` does [ran]
+
+- A run's first action is played from no state. `quint test` errors with `QNT502 Variable x not
+  set` where the run reads a variable no earlier step gave a value: in the first action itself
+  (`incX.then(setX)`, `all { y > 0, x' = 1 }.then(incX)`), in a later step
+  (`setX.then(xFromY)`) or in an `expect` (`setX.expect(y == 0)`).
+- Quint's typechecker makes every operand of `then` update the same variables: `setX.then(both)`
+  is `Expected [x] and [x,y] to be the same`. So a run's variables are the ones its first action
+  assigns, and what it reads beyond them is unset.
+- A variable the run never touches does not matter: `partialTest = setX.then(incX)` passes in a
+  module that also has `y`, and `Before::init.then(Before::step)` passes where `init` sets only
+  `Fixed::n`.
+- Quint's own TLC run can't take a module whose runs reach a variable `init` leaves unset:
+  `quint verify --backend tlc --main TwoInstances` stops on `TwoInstances_Before_n = null`, and
+  the same for `FirstSteps` (`FirstSteps_Other_n = null`). Without those runs it gives `4 states
+  generated, 4 distinct states found` for both, and `bounded` holds in `FirstSteps`.
+
+### The design
+
+- **The search's variables** are the variables that `q::init`, `q::step`, `q::inv` and
+  `q::temporalProps` reach, through every name they use (`reach.rs`: a walk over the compiled
+  JSON's names, following each to its definition through the table). They are the model's
+  fields, in declaration order, with the short names taken over all the module's variables. A
+  variable only a run reaches is no field, so `init` is not asked for it, the TLA+ export and
+  the cache see only the search, and a variable `step` or a property reads and `init` leaves
+  unset is refused as before.
+- **A run's variables** are the ones it reaches, the same way. When they are the search's, the
+  run is played over the model's fields as before (`Script::fields` is empty); otherwise
+  `Script::fields` lists them and the reader reads the run with its own positions
+  (`Reader::place_fields`). `Model`, `Field` and `Action` are unchanged.
+- **The first action**: `init` (any name for the check's `init`) starts from the search's start
+  states, as before. Any other first action is read like `init` (`in_init`, so reading a
+  variable is refused), every path must assign every variable of the run, and its start states
+  are worked out when the file is read, by the code that works out `init`'s
+  (`start_states`). They are `Plan::starts`, one list per plan, so a `nondet` before the first
+  action gives each plan its own.
+- **The player** (`witness.rs`) is the same walk: a course carries the fields it prints and
+  checks against, and the start states it starts from (the plan's, or the model's). A plan
+  with listed starts and none at all breaks with ``the run's first action can't happen: it
+  gives no state to start from``, unless the plan is that action alone under `fail()`, as Quint
+  passes `A.fail()` where `A` can't happen.
+- **A check of runs only** (`runs`, and no `invariants` or `temporal`): `earnest_quint::read_runs`
+  reads the runs and no search, so the model has no fields, no actions and no start states, its
+  line says `0 states`, and every run starts from its first action, `init` too. Where the module
+  declares no `init` or no `step` of its own (from `quint parse`), the CLI typechecks the file,
+  and the setup builder of slice 4 builds the module without `q::init` and `q::step`. A module of
+  another shape is `unreadable` with a message that says to name an `init` and a `step` the
+  module has; `quint` is never asked for an `init` it lacks.
+- **Decided differently**: the issue left open whether a check of runs only of a module *with*
+  `init` and `step` still searches. It does not: `RunFromHelper`'s step grows `n` without end,
+  so its search could only end `unfinished` (5,000,000 states in 17 s here), and a user who
+  lists only runs asks for the runs. To search and play, list an invariant or a temporal
+  property. A compiled `.json` named on the command line keeps the search, so `earnest verify
+  first/fixtures/TwoInstances.TwoInstances.json` gives `pass  TwoInstances  4 states`.
+
+### The verdicts
+
+`quint test --backend typescript --main <M> --match 'Test$' <M>.qnt` (the Rust backend can't
+be downloaded here) against `earnest verify first` with the real Quint:
+
+| Run | `quint test` | earnest |
+|---|---|---|
+| `RunFromHelper::fromHelperTest` | ok | holds |
+| `TwoInstances::beforeStartsAtFiveTest` | ok | holds |
+| `TwoInstances::fixedStartsAtZeroTest` | ok | holds |
+| `OnlyRuns::fixedTest`, `listTest`, `thirdTest`, `mixTest` | ok | holds |
+| `OnlyRuns::thirdOverTest` | failed (QNT513, reps #4) | broken: step 4, `Third::step`, can't happen here |
+| `FirstSteps::seedTest`, `inPlaceTest`, `ownInitTest`, `otherTest`, `noStartFailTest` | ok | holds |
+| `FirstSteps::pickTest`, `nondetRunTest` | ok (10000 samples) | holds |
+| `FirstSteps::pickOverTest` | failed (QNT508, expect) | broken: start `Other::n = 3`, what the run expects after step 1 is false here |
+| `FirstSteps::otherOverTest` | failed (QNT511, false) | broken: step 1, `Other::step`, can't happen here |
+| `FirstSteps::noStartTest` | failed (QNT513, then) | broken: the run's first action can't happen |
+| `Unset::partialTest` (`runs: ["partialTest"]`) | ok | holds |
+| `Unset::readFirstTest` | failed (QNT502, `x` not set) | unreadable: `x`, starts with `incX`, which reads it |
+| `Unset::partialReadTest`, `partialExpectTest` | failed (QNT502, `y` not set) | unreadable: `y`, starts with `setX`, which gives it no value |
+| `Unset::guardReadsTest` | failed (QNT502, `y` not set) | unreadable: `y`, starts with an action written in place, which reads it |
+| `Pair::P::upTest`, `P::fullTest`, `R::upTest`, `R::fullTest` (`setups/more.qnt`) | ok | holds (slice 4 refused them) |
+
+Every verdict agrees: 27 runs.
+
+```text
+$ quint test --backend typescript --main RunFromHelper --match 'Test$' RunFromHelper.qnt
+    ok fromHelperTest passed 1 test(s)
+  1 passing (5ms)
+$ quint test --backend typescript --main TwoInstances --match 'Test$' TwoInstances.qnt
+    ok beforeStartsAtFiveTest passed 1 test(s)
+    ok fixedStartsAtZeroTest passed 1 test(s)
+  2 passing (6ms)
+$ quint test --backend typescript --main OnlyRuns --match 'Test$' OnlyRuns.qnt
+  4 passing (6ms)
+  1 failed
+$ quint test --backend typescript --main FirstSteps --match 'Test$' FirstSteps.qnt
+  7 passing (380ms)
+  3 failed
+$ quint test --backend typescript --main Unset --match 'Test$' Unset.qnt
+  1 passing (5ms)
+  4 failed
+```
+
+```text
+$ EARNEST_QUINT=.../node_modules/.bin/quint earnest verify first
+fail        FirstSteps  4 states  0 ms
+  broken  pickOverTest  "The Quint run `pickOverTest` passes"
+    start  Other::n = 3
+    1. Other::step  Other::n: 3 -> 4
+    end    Other::n = 4
+    why    what the run expects after step 1 is false here
+  broken  otherOverTest  "The Quint run `otherOverTest` passes"
+    start  Other::n = 8
+    why    step 1, `Other::step`, can't happen here
+  broken  noStartTest  "The Quint run `noStartTest` passes"
+    start
+    why    the run's first action can't happen: it gives no state to start from
+fail        OnlyRuns  0 states  0 ms
+  broken  thirdOverTest  "The Quint run `thirdOverTest` passes"
+    start  Third::n = 10
+    1. Third::step  Third::n: 10 -> 11
+    2. Third::step  Third::n: 11 -> 12
+    3. Third::step  Third::n: 12 -> 13
+    end    Third::n = 13
+    why    step 4, `Third::step`, can't happen here
+pass        RunFromHelper  0 states  0 ms
+pass        TwoInstances  0 states  0 ms
+unreadable  first/Unset.qnt  Unset
+  first/Unset.qnt:11:23  `x`  the run starts with `incX`, which reads this variable before anything gives it a value, and Quint stops the run there ("not set"): start the run with an action that gives each variable a value without reading one, in the run `readFirstTest`
+  first/Unset.qnt:13:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+  first/Unset.qnt:14:27  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialExpectTest`
+  first/Unset.qnt:15:24  `y`  the run starts with an action written in place, which reads this variable before anything gives it a value, and Quint stops the run there ("not set"): start the run with an action that gives each variable a value without reading one, in the run `guardReadsTest`
+5 models: 2 pass, 2 fail, 0 unfinished, 1 unreadable
+```
+
+The searched models against TLC: `earnest confirm --tlc` (Apalache 0.62.4's jar) gives `same
+TwoInstances  4 states  pass` and `same  FirstSteps  4 states  fail` on the compiled JSON, and
+the exported `TwoInstances.tla` declares `VARIABLES Fixed__n` alone.
+
+### Refused, by name
+
+- A run that reads a variable its first action gives no value (above), at the first action's
+  line, naming the run, the action and the variable.
+- A run that starts with the check's `init` and reaches a variable the search does not have:
+  `init` gives it no value, the same refusal.
+- A check of runs only of a module without its own `init` or `step` that the setup builder can't
+  build.
+- A check that lists invariants or temporal properties of a module without `init`: Quint's own
+  `QNT404` from the compile; a compiled JSON with `q::inv` and no `q::init` says ``the check
+  lists invariants or temporal properties, ... and the module has no `init` ``.
+- Everything slice 6 refused, except "a run that does not start with `init`", which is lifted.
+
+## Real models 1: report
+
+### Done
+
+1. **A run starts with whatever its first step is**: `runs.rs` (`first_states`), proved by
+   `first_tests::a_run_that_starts_with_a_helper_starts_from_the_states_the_helper_gives`,
+   `a_first_action_may_take_arguments_pick_with_nondet_or_be_written_in_place` and
+   `quint_first::every_run_is_judged_as_quint_test_judges_it_and_the_search_has_only_its_own_variables`.
+2. **Each run has its own variables**: `Script::fields`, `Plan::starts`; proved by
+   `first_tests::the_search_holds_only_what_init_step_and_the_properties_reach_and_a_run_its_own`,
+   `a_run_that_reads_a_variable_its_first_action_leaves_unset_is_refused_and_named`,
+   `the_runs_of_one_of_two_instances_of_a_spec_are_played_over_that_instance_s_variable`, and in
+   the player `scripts::a_script_with_fields_of_its_own_plays_from_its_plan_s_starts_and_prints_its_own_fields`
+   and `a_plan_whose_listed_starts_are_empty_breaks_unless_its_fail_expects_that`. `Pair` with
+   `runs: true` plays its four runs (`quint_setups::the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck`).
+3. **The search has its own variables**: `model.rs` (`layout`), `reach.rs`; the same tests, and
+   `confirm --tlc` above.
+4. **A module of runs only**: `read_runs`, the setup builder without `q::init`/`q::step`, the
+   CLI's `runs_only`; proved by `first_tests::a_module_of_runs_only_is_built_from_the_typecheck_and_searches_nothing`,
+   `a_check_of_runs_only_plays_a_run_from_init_as_from_any_other_first_action`,
+   `invariants_without_init_are_refused_and_name_what_is_missing` and
+   `quint_first::the_owner_s_three_samples_each_print_one_pass_line` (which also checks no
+   `compile` is asked for `OnlyRuns`).
+5. **Paths and messages**: the path starts at the first action's state over the run's own
+   variables (`pickOverTest` above); each refusal names the run and says what to write.
+
+### Tests of earlier slices changed (none is on `origin/main`)
+
+- `run_tests::a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name`: `noInitTest =
+  step.then(step)` is now refused as reading `y` before it is set, so the feature is `` `y` ``.
+- `actions_tests::a_refusal_inside_a_run_knows_the_run_and_the_refused_expression`: unchanged
+  lines; it passes because the new refusal keeps the first action's id.
+- `quint_actions::a_refusal_inside_a_run_is_reported_at_the_refused_expression_in_the_quint_file`:
+  the feature at 9:25 is `` `x` `` in place of `a run`.
+- `quint_setups::the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck`:
+  `Pair`'s runs hold, where the test asserted the refusal.
+- `crates/earnest_check/tests/explore/scripts.rs`: the helpers `plan` and `played` set the new
+  fields `starts: None` and `fields: Vec::new()`.

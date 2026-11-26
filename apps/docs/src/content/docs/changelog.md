@@ -5,6 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint runs that start anywhere, and checks of runs only
+
+- **Any first action:** a run may start with a helper (`initWith(2).then(inc)`), an action through a module name (`Before::init`), an `all { ... }` written in place, or a `nondet`, as `quint test` plays it. It was refused unless it started with `init`.
+- **Each run its own variables:** a run is played over the variables it reaches, and the search over those that `init`, `step` and the listed properties reach. A module that imports one spec twice and plays a run on the second copy is no longer refused for leaving its variable unassigned, and a setup with two instances of one spec plays the spec's runs.
+- **Unset variables:** a run that reads a variable its first action gives no value is `unreadable`, naming the run, the action and the variable, where `quint test` stops with `Variable y not set`.
+- **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`.
+
+See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
+
 ## November 2026: `earnest --version` names the build
 
 `earnest --version` prints the commit and a fingerprint of the sources after the version, as in `earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)`, so a hook can tell two builds of one version apart. See [Which build is this](/reference/cli/#which-build-is-this).

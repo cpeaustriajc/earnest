@@ -30,6 +30,14 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 
 Each check is one model in every output: its result line, its JSON entry and `--model` use `main` as the name, and the `.qnt` file is its file. Each invariant is a rule with the invariant's name as its id, so `--rule inRange` selects it.
 
+A check with `runs` and no `invariants` or `temporal` is a check of runs only. It plays the runs and searches no state, even when the module has an `init` and a `step`, so a spec whose step never stops growing still gives an answer. The module needs no `init` or `step`. Its result line has `0 states`, and its JSON entry the same keys as any other, with `"states": 0`:
+
+```text
+pass        OnlyRuns  0 states  0 ms
+```
+
+A check that lists invariants or temporal properties needs the module's `init` and `step`, and a module without them makes it `unreadable` with Quint's error, `Name 'init' not found`. To search a module and also play its runs, list at least one invariant or temporal property.
+
 The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two entries name the same `file` and `main`. A file written two ways, as `a.qnt`, `./a.qnt` or `sub/../a.qnt`, is the same file. The problem names the key, such as `` `checks[1].runs` ``, and nothing in the file is checked.
 
 ## Which `.qnt` files are checked
@@ -69,7 +77,7 @@ First, earnest runs `quint parse` once for each listed `.qnt` file, to learn whi
 quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
 ```
 
-Then, for each file with a check of a setup module, it runs `quint typecheck` once, whatever the number of setups in the file. A setup module instantiates a spec:
+Then, for each file with a check of a setup module, or a check of runs only whose module declares no `init` or no `step` of its own, it runs `quint typecheck` once, whatever the number of checks in the file. A setup module instantiates a spec:
 
 ```sh
 quint typecheck specs/clock.qnt --out .earnest/quint/...
@@ -82,7 +90,7 @@ module Small {
 }
 ```
 
-For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. No compile runs. Earnest builds a setup module made of any of these:
+For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one. No compile runs. Earnest builds a setup module made of any of these:
 
 | In the setup module | Example | Names |
 |---|---|---|
@@ -96,7 +104,7 @@ For such a check, earnest builds from what `quint typecheck` wrote the module th
 
 The spec itself must import, instantiate and export nothing, and declare only constants, variables, definitions and types. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
+A check of runs only, of a module with no `init` or `step` of its own and of another shape, is `unreadable`, and the problem says to name an `init` and a `step` the module has. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -142,6 +150,8 @@ The reader also takes:
 - A definition that takes an operator, such as `pure def app(f: int => int, v: int): int = f(v)`, called with a lambda (`app(v => v + 1, x)`), with a named operator (`app(inc, x)`), with a lambda of two parameters, or passing the operator on to another definition. The reader puts the operator in at the call, as it does for a value.
 - `q::debug(message, value)`, read as `value`.
 
+The searched state holds only the variables that `init`, `step`, the listed invariants and the listed temporal properties reach. A variable that only a run reaches is no field of the search: `init` need not give it a value, the TLA+ export leaves it out, and the run plays it (see [Runs](#runs)). A variable that `step` or a listed property reads and `init` does not give a value makes the check `unreadable`, as Quint's TLC run stops there.
+
 Only the definitions that `init`, `step`, a listed invariant, a listed temporal property or a played run reaches are read. A helper nothing reaches is never looked at, so a construct earnest refuses in it does not refuse the check. A refusal in a helper names the helper and the check that reaches it: `` `chooseSome` ... in the definition `deeper`, which `reached` reaches through `check` ``.
 
 Still refused, each named in the problem with what to write instead:
@@ -182,12 +192,26 @@ fail        runs  12 states  0 ms
     why    what the run expects after step 1 is false here
 ```
 
-A run starts with `init`, from every start state. Earnest reads these run operators as `quint test` judges them:
+A run starts with its first action, which `quint test` plays from no state. It may be `init`, a helper with arguments (`initWith(2)`, `Fixed::InitOn("up")`), an action through a module name (`Before::init`), an `all { ... }` written in place, or any of them with a `nondet` inside or before it. The states it gives are the run's start states, one for each value of each `nondet`. A run that starts with the check's `init` starts from the search's start states.
+
+Each run is played over its own variables: the ones it reaches through its actions and `expect`s. A variable the run never reaches does not exist for it, so `Before::init.then(Before::step)` is played over `Before::n` alone in a module whose `init` sets only `Fixed::n`. Its path prints only its own variables, from the state its first action gave:
+
+```text
+  broken  pickOverTest  "The Quint run `pickOverTest` passes"
+    start  Other::n = 3
+    1. Other::step  Other::n: 3 -> 4
+    end    Other::n = 4
+    why    what the run expects after step 1 is false here
+```
+
+A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`.
+
+Earnest reads these run operators as `quint test` judges them:
 
 | Operator | What earnest does |
 |---|---|
 | `A.then(B)` | `B` is the next step. A step that can't happen breaks the run |
-| `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after `init` |
+| `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
 | `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
 | `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step |
@@ -198,11 +222,18 @@ A step plays every way its action can happen: each branch of an `any` or a `matc
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
-Refused, each named in the problem and reported at its line in the `.qnt` file: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
+A run that reads a variable its first action gives no value is `unreadable`, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`).
+
+```text
+unreadable  specs/Unset.qnt  Unset
+  specs/Unset.qnt:13:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+```
+
+Also refused, each named in the problem and reported at its line in the `.qnt` file: a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
 
 The runs of the spec module are played in a setup that earnest builds from `quint typecheck`, as `quint test --main Small` plays them: with `"runs": true`, the runs of `Clock` whose name ends in `Test` and those of `Small`; with a list, the runs it names from either (`tickTwice`, or `C::tickTwice` under a name). They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
 
-A run must start with the check's `init`. With two instances of one spec, `P::upTest` starts with `P::init`, which sets only part of the state. `quint test` plays it from that part, and earnest can't, so such a run makes the check `unreadable`. Check that setup without `runs`, or write the run in the setup module from its own `init`.
+With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3) as R`, the run `P::upTest` starts with `P::init` and is played over `P::v` alone, as `quint test --main Pair` plays it.
 
 A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
 
