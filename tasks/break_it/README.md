@@ -2909,3 +2909,21 @@ built a `FairStep` by literal (`::fairness_over_some_variables_is_fair_to_the_st
 `::fairness_of_an_action_given_a_buyer_counts_its_steps_with_that_buyer_that_change_the_tuple`);
 and `quint_fairness::the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tuple_written`,
 which pins `Fair_reachDeadline_1_way_1`.
+
+Checks, each with its last line, on the tree merged with the integration head 844238e and the
+pass at c5d2751:
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2189 passed, 0
+  failed.
+- `cargo test -p earnest_break_it --features tlc --test tlc`: 15 passed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%`, `+0.21%`).
+- `just benchmark`, with no TLC beside it: every budget `met` (grid_10m 4 workers 0.723 s, 1
+  worker 1.986 s; `wide` 0.35x). A run with four TLC jobs beside it had missed `wide`'s ratio.
+- `just same-answers 844238e`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
+  `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
+- `tests_kept.py --base origin/main`: `tests kept: 1740 tests, 4987 assertions (base: 1304, 3798)`.
