@@ -5,6 +5,14 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint `all` over conditions, actions as arguments, and every problem of a check
+
+- **`all` and `any` over conditions:** `val TypeOK = all { n >= 0, n <= 3 }` is read as `and`, and `any { … }` as `or`, wherever a condition is read, where they were refused as an action.
+- **Actions as arguments:** `between(all { a' = true })`, with `action between(changes: bool)`, puts the argument in where `changes` stands. A named action, an action call, a `nondet` block and a lambda that gives an action are read the same way.
+- **Every problem:** an `unreadable` check lists one problem for each piece that holds one (`init`, each action of the step, each invariant, temporal property and run), in the order of the file. Before, it showed only the first.
+
+See [What is read today](/reference/quint/#what-is-read-today) and [What earnest runs](/reference/quint/#what-earnest-runs).
+
 ## November 2026: Quint answers as its TLC run gives them
 
 Five Quint expressions gave a verdict that neither Quint's TLC run nor its TypeScript evaluator gives. See [Where Quint's backends differ](/reference/quint/#where-quints-backends-differ).

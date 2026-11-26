@@ -1,4 +1,4 @@
-use crate::read;
+use crate::{Runs, read, read_located};
 use earnest_diagnostics::Problem;
 use earnest_ir::{Frame, Model};
 use earnest_value::Value;
@@ -6,6 +6,8 @@ use earnest_value::Value;
 const ALL_AS_BOOL: &str = include_str!("../fixtures/allasbool.json");
 const ACTION_ARGUMENT: &str = include_str!("../fixtures/actionargument.json");
 const WIDER: &str = include_str!("../fixtures/wider.json");
+const PROBLEMS: &str = include_str!("../fixtures/problems.json");
+const REPEATED: &str = include_str!("../fixtures/repeated.json");
 
 fn model(source: &str) -> Model {
     read("model.json", source).unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
@@ -133,4 +135,44 @@ fn an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_
         .map(|each| each.id.as_str())
         .collect();
     assert_eq!(played, ["moveTest", "wrongTest"]);
+}
+
+fn features(source: &str) -> Vec<(String, Option<String>)> {
+    match read_located("model.json", source, &Runs::Tests) {
+        Ok(found) => panic!("{} was read, but it must be refused", found.name),
+        Err(found) => found
+            .into_iter()
+            .map(|each| (each.problem.feature, each.definition))
+            .collect(),
+    }
+}
+
+fn pairs(all: &[(&str, &str)]) -> Vec<(String, Option<String>)> {
+    all.iter()
+        .map(|(feature, within)| ((*feature).to_owned(), Some((*within).to_owned())))
+        .collect()
+}
+
+#[test]
+fn each_piece_of_a_check_gives_its_first_problem_in_the_order_of_the_file() {
+    assert_eq!(
+        features(PROBLEMS),
+        pairs(&[
+            ("`chooseSome`", "chosen"),
+            ("a run", "fromNowhereTest"),
+            ("`fail`", "lateFailTest"),
+        ])
+    );
+}
+
+#[test]
+fn a_problem_reached_from_the_step_a_run_and_a_fairness_is_listed_once() {
+    assert_eq!(
+        features(REPEATED),
+        pairs(&[
+            ("`chooseSome`", "pick"),
+            ("`allListsUpTo`", "listed"),
+            ("`strongFair`", "strong"),
+        ])
+    );
 }
