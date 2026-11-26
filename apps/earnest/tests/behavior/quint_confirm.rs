@@ -513,3 +513,129 @@ fn a_model_that_is_not_read_from_a_qnt_file_cannot_be_confirmed_by_quint() {
         "{run}"
     );
 }
+
+const SKIPPED_FAKE: &str = r#"#!/bin/sh
+PATH=/usr/bin:/bin
+here="$(dirname "$(readlink -f "$0")")"
+echo "$*" >> "$here/calls"
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "--out" ]; then out="$argument"; fi
+  if [ "$previous" = "--source-map" ]; then map="$argument"; fi
+  previous="$argument"
+done
+case "$1" in
+  --version)
+    echo "0.33.1"
+    ;;
+  parse)
+    folder="$(cd "$(dirname "$2")" && pwd)"
+    cp "$here/parse.json" "$out"
+    sed "s#FOLDER#$folder#" "$here/map.json" > "$map"
+    ;;
+  typecheck)
+    echo "error: typechecking failed" >&2
+    exit 1
+    ;;
+  compile)
+    cat "$here/setup.json"
+    ;;
+  verify)
+    printf '4 states generated, 4 distinct states found, 0 states left on queue.\n[ok] No violation found (1ms).\n'
+    ;;
+  test)
+    cat "$here/test"
+    if grep -q 'failed after' "$here/test"; then exit 1; fi
+    ;;
+esac
+"#;
+
+const SKIPPED_RUN_FAILS: &str = "\n  setup\n    1) setup::spec::upTest failed after 1 test(s)\n\n  1 failed\nerror: Tests failed\n";
+
+fn a_setup_whose_spec_imports_a_module_with_variables(played: &str) -> Sandbox {
+    let sandbox = Sandbox::empty();
+    let samples = repository().join("tasks/quint/confirm/fixtures/skipped");
+    let read = |name: &str| {
+        fs::read_to_string(samples.join(name))
+            .unwrap_or_else(|error| panic!("{name} can't be read: {error}"))
+    };
+    sandbox.write("specs/skipped.qnt", &read("skipped.qnt"));
+    sandbox.write(
+        "specs/earnest.quint.json",
+        r#"{ "checks": [ { "file": "skipped.qnt", "main": "setup", "invariants": ["ok"], "runs": true } ] }"#,
+    );
+    for name in ["parse.json", "map.json", "setup.json"] {
+        sandbox.write(&format!("fake/{name}"), &read(name));
+    }
+    sandbox.write("fake/quint", SKIPPED_FAKE);
+    sandbox.write("fake/test", played);
+    sandbox.write("fake/calls", "");
+    sandbox.write("java/java", "#!/bin/sh\nexit 0\n");
+    for program in ["fake/quint", "java/java"] {
+        fs::set_permissions(
+            sandbox.path().join(program),
+            fs::Permissions::from_mode(0o755),
+        )
+        .expect("the fakes can be made programs");
+    }
+    sandbox
+}
+
+fn confirm_in(sandbox: &Sandbox, quint: &Path) -> Run {
+    Run::of(
+        sandbox
+            .command()
+            .env("EARNEST_QUINT", quint)
+            .env("PATH", sandbox.path().join("java"))
+            .args(["confirm", "--quint", "specs"]),
+    )
+}
+
+#[test]
+fn a_run_the_checker_did_not_play_and_quint_test_breaks_is_never_the_same() {
+    let sandbox = a_setup_whose_spec_imports_a_module_with_variables(SKIPPED_RUN_FAILS);
+    let verified = Run::of(
+        sandbox
+            .command()
+            .env("EARNEST_QUINT", sandbox.path().join("fake/quint"))
+            .args(["verify", "specs"]),
+    );
+    assert!(
+        verified
+            .stdout
+            .contains("note  runs not played: setup::spec::upTest"),
+        "the checker says it did not play the run\n{verified}"
+    );
+    let run = confirm_in(&sandbox, &sandbox.path().join("fake/quint"));
+    run.exits(1);
+    assert!(
+        !run.stdout.starts_with("same "),
+        "`quint test` broke a run that the checker never played, so nothing was compared\n{run}"
+    );
+}
+
+#[test]
+fn a_run_only_quint_test_plays_differs_even_when_a_run_the_checker_did_not_play_ends_alike() {
+    let sandbox = a_setup_whose_spec_imports_a_module_with_variables(
+        "\n  setup\n    ok setup::spec::upTest passed 1 test(s)\n    1) upTest failed after 1 test(s)\n\n  1 passing (1ms)\n  1 failed\nerror: Tests failed\n",
+    );
+    let run = confirm_in(&sandbox, &sandbox.path().join("fake/quint"));
+    run.exits(1);
+    assert!(
+        run.stdout
+            .lines()
+            .any(|line| line == "  run upTest: `quint test` played it, and the checker did not"),
+        "`upTest` of `setup` itself is not the run `setup::spec::upTest` the checker did not play\n{run}"
+    );
+}
+
+#[test]
+fn quint_given_by_a_relative_path_runs_for_confirm_as_it_runs_for_verify() {
+    let sandbox =
+        a_setup_whose_spec_imports_a_module_with_variables("\n  setup\n\n  0 passing (1ms)\n");
+    let run = confirm_in(&sandbox, Path::new("fake/quint"));
+    assert!(
+        !run.stdout.contains("did not start"),
+        "`quint` is found from the folder earnest was started in\n{run}"
+    );
+}
