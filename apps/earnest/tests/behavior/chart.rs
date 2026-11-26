@@ -203,6 +203,53 @@ fn r09_a_chart_where_every_rule_holds_draws_the_route_to_the_premise_of_a_rule()
     );
 }
 
+const TWO_SIDES: &str = r#"import { m } from "@earnestjs/model";
+export const T = m.model("T", { side: m.enum(["root", "L", "R"]).initial("root"), d: m.int(0, 8).initial(0), tag: m.boolean().initial(false) });
+export const goL = m.action(T, "go left", { when: (s) => s.side === "root", changes: () => ({ side: "L", d: 1, tag: true }) });
+export const goR = m.action(T, "go right", { when: (s) => s.side === "root", changes: () => ({ side: "R", d: 1 }) });
+export const deeper = m.action(T, "deeper", { when: (s) => s.side === "R" && s.d < 8, changes: (s) => ({ d: s.d + 1, tag: s.d + 1 === 5 }) });
+export const noBoom = m.rule(T, "noBoom", (s) => s.d !== 8);
+export const tagged = m.rule(T, "tagged", (s) => !s.tag || s.d >= 0);
+"#;
+
+const LATE_START: &str = r#"import { m } from "@earnestjs/model";
+export const E = m.model("E", { n: m.int(0, 6).initial(0) });
+export const inc = m.action(E, "inc", { when: (s) => s.n < 6, changes: (s) => ({ n: s.n + 1 }) });
+export const late = m.eventually(E, "late", { after: (s) => s.n === 4, reaches: (s) => s.n === 1 });
+export const never = m.eventually(E, "never", { after: (s) => s.n === 99, reaches: (s) => s.n === 2 });
+export const end = m.end(E, "end", (s) => s.n === 6);
+"#;
+
+fn premise_line(file: &str, text: &str) -> String {
+    let sandbox = Sandbox::empty();
+    sandbox.write(&format!("models/{file}"), text);
+    let run = sandbox.earnest(&["chart", &format!("models/{file}")]);
+    mermaid_block(&run);
+    run.stdout
+        .lines()
+        .last()
+        .map(str::to_owned)
+        .unwrap_or_default()
+}
+
+#[test]
+fn r09_the_note_names_the_nearest_box_of_a_premise_although_a_farther_one_is_drawn() {
+    assert_eq!(
+        premise_line("sides.model.ts", TWO_SIDES),
+        "The premise of `tagged` first holds in `side = L, d = 1, tag = true`.",
+        "the broken route to `d = 8` draws `d = 5`, where `tag` is true too, but `side = L` is nearer"
+    );
+}
+
+#[test]
+fn r09_the_note_of_an_eventually_rule_names_only_what_can_follow_its_start() {
+    assert_eq!(
+        premise_line("late.model.ts", LATE_START),
+        "`late` starts in `n = 4`.",
+        "n = 1 can't follow n = 4, and `never` starts nowhere"
+    );
+}
+
 #[test]
 fn r09_a_model_without_a_view_still_has_a_chart() {
     let sandbox = Sandbox::with(&["turnstile.model.ts"]);
