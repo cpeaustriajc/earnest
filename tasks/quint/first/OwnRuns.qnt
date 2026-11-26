@@ -1,5 +1,6 @@
 // The orchestrator's sample: a module of runs only with variables and actions of its own,
 // no `init`, no `step` and no import.
+/// @check
 module OwnRuns {
   var open: bool
   var count: int

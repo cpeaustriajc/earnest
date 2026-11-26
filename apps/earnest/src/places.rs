@@ -347,13 +347,27 @@ impl Places {
         self.module(main)?.id
     }
 
+    pub(crate) fn owner_of(&self, id: u64) -> Option<(&str, &str)> {
+        self.modules.iter().find_map(|module| {
+            module
+                .declared
+                .iter()
+                .find(|(_, each)| *each == id)
+                .map(|(name, _)| (module.name.as_str(), name.as_str()))
+        })
+    }
+
     pub(crate) fn test_runs(&self, main: &str) -> Vec<String> {
+        self.runs_played(main, &[])
+    }
+
+    pub(crate) fn runs_played(&self, main: &str, marked: &[String]) -> Vec<String> {
         let Some(module) = self.module(main) else {
             return Vec::new();
         };
         let is_a_test = |name: &str, id: &u64| {
-            name.ends_with(TESTS_END_WITH)
-                && self.qualifiers.get(id).map(String::as_str) == Some(RUN)
+            self.qualifiers.get(id).map(String::as_str) == Some(RUN)
+                && (name.ends_with(TESTS_END_WITH) || marked.iter().any(|each| each == name))
         };
         let mut found: Vec<String> = module
             .declared
@@ -366,7 +380,7 @@ impl Places {
                 found.extend(
                     spec.declared
                         .iter()
-                        .filter(|(name, id)| is_a_test(name, id))
+                        .filter(|(name, id)| is_a_test(&format!("{}{name}", seen.prefix), id))
                         .filter(|(name, _)| seen.only.as_ref().is_none_or(|only| only == name))
                         .map(|(name, _)| format!("{}{name}", seen.prefix)),
                 );

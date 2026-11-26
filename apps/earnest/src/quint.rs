@@ -985,11 +985,7 @@ fn with_marks(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
         }
     }
     if !job.marked_runs.is_empty() {
-        let mut played = places.test_runs(&job.check.main);
-        for run in &job.marked_runs {
-            push_new(&mut played, run);
-        }
-        job.check.runs = Runs::Named(played);
+        job.check.runs = Runs::Named(places.runs_played(&job.check.main, &job.marked_runs));
     }
     let check = &job.check;
     if check.invariants.is_empty() && check.temporal.is_empty() && check.runs == Runs::None {
@@ -1146,18 +1142,12 @@ fn compiled_all(
         .collect()
 }
 
-type Spot = (PathBuf, u32, u32);
-
-fn spot_key(spot: Option<(&str, u32, u32)>) -> Option<Spot> {
-    spot.map(|(file, line, column)| (real(Path::new(file)), line, column))
-}
-
 fn unseen_marks(
     checks: &[Job],
     candidates: &[Candidate],
     places: &HashMap<PathBuf, Places>,
 ) -> Vec<ModelFile> {
-    let mut seen: BTreeSet<Spot> = BTreeSet::new();
+    let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
     for job in checks {
         let Some(found) = places.get(&job.real) else {
             continue;
@@ -1167,7 +1157,8 @@ fn unseen_marks(
                 .documented(&job.check.main)
                 .iter()
                 .filter(|each| mark_of(each.doc).is_some())
-                .filter_map(|each| spot_key(found.spot_of(each.id))),
+                .filter_map(|each| found.owner_of(each.id))
+                .map(|(module, name)| (module.to_owned(), name.to_owned())),
         );
     }
     let mut files = Vec::new();
@@ -1180,7 +1171,11 @@ fn unseen_marks(
             .marks_in(&candidate.real)
             .into_iter()
             .filter(|each| mark_of(each.doc).is_some())
-            .filter(|each| spot_key(each.spot).is_none_or(|spot| !seen.contains(&spot)))
+            .filter(|each| {
+                found.owner_of(each.id).is_none_or(|(module, name)| {
+                    !seen.contains(&(module.to_owned(), name.to_owned()))
+                })
+            })
             .map(|each| {
                 let mut problem = Problem::new(
                     &shown,

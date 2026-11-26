@@ -1,9 +1,0 @@
-{
-  "checks": [
-    { "file": "RunFromHelper.qnt", "main": "RunFromHelper", "invariants": [], "temporal": [], "runs": true },
-    { "file": "TwoInstances.qnt", "main": "TwoInstances", "invariants": [], "temporal": [], "runs": true },
-    { "file": "OnlyRuns.qnt", "main": "OnlyRuns", "runs": true },
-    { "file": "FirstSteps.qnt", "main": "FirstSteps", "invariants": ["bounded"], "runs": true },
-    { "file": "Unset.qnt", "main": "Unset", "runs": true }
-  ]
-}

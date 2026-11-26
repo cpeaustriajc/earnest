@@ -1,5 +1,6 @@
 // Runs whose first action leaves a variable unset that the run reads, which `quint test`
 // stops on with "Variable ... not set", and one that touches `x` alone and passes.
+/// @check
 module Unset {
   var x: int
   var y: int
