@@ -2868,6 +2868,34 @@ ran on a scratch copy of the fixtures.
   the problem is at the check's `.qnt` file with Quint's message. Test:
   `quint_fourth_fixes::a_compile_quint_fails_on_is_reported_in_the_qnt_file_and_not_in_quint_s_own_code`.
 
+From the pass's notes, each checked with Quint 0.33.1:
+
+- `weakFair(pay(1), …)` where the step reaches `pay` only inside a named action, `payG = all {
+  open, nondet b = … pay(b) }`, is read by `pay` alone, as the same guard written in place
+  (`temporal.rs` `step_reaches`: an action the step reaches through any definition; one it never
+  reaches stays refused). Both shapes: 8 states, `onePays` holds and `twoPays` is broken, as
+  `quint verify --backend tlc`; `confirm --tlc` `same`; a `payOwn` that carries the guard itself
+  is broken, as TLC. Test: `fairness_of_an_action_behind_a_named_guarded_action_is_read_as_the_same_guard_in_place`.
+- A step's name lists the written arguments after the branch tags, in a run as in the search:
+  `handle Req  w = 1  m = Req`. An `all` of two `match`es is named after both branches (`both A
+  C`, `both A D`, `both B C`), where `Path::joined` kept only the second's. Test:
+  `an_action_of_two_matches_is_named_after_both_and_a_run_names_a_step_as_the_search_does`.
+- Two identical calls, `go("a b")` twice in one `any`, keep their ids `go  s = "a b"` and `go  s =
+  "a b"#2`, and the chart shows both arrows; a path names the first action that gives a step, so
+  both steps print `go  s = "a b"`. They are one transition, and telling them apart would need the
+  search to keep which action it took on each arrow; not changed.
+- `weakFair(A, vars)` alone, as a property or a part of an `and`, and an `implies` whose left side
+  is a temporal formula but not fairness, are refused saying what each is and what to write
+  (`weakFair(A, vars) implies eventually(P)`; `always(P implies eventually(Q))` or
+  `P.leadsTo(Q)`). A bare fairness formula was not read: TLC checks that every run is fair, which
+  needs the fairness of every run of the model, not a cheap fall-out of the fairness code.
+- Fairness of `buy(b)` in a setup that makes the pick's set empty names `buy` by its short name and
+  says ``Here the step picks `p` from a set that is empty``. Test:
+  `a_refusal_says_what_a_bare_fairness_an_implies_of_a_temporal_formula_and_an_empty_pick_are`.
+- A spec that imports one helpers module both `.*` and `as H` is now built from the typecheck by
+  the finding-2 fix: `pass  small  3 states`, `upTest` as `quint test`, `confirm --tlc` `same`.
+  A compile Quint fails on in another shape is placed at the `.qnt` file as finding 2 says.
+
 Tests of earlier Quint slices changed (none is on `origin/main`): seven that asserted the
 fairness of an action as the action's position, now its stand-alone fair step by name
 (`temporal::tests::fairness_of_a_top_level_action_is_that_action_alone`,
