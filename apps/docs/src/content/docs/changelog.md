@@ -5,12 +5,36 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint checks marked in the model
+
+`earnest verify specs/` checks the `.qnt` files below `specs/` with no `earnest.quint.json`:
+
+```quint title="specs/bank.qnt"
+module bank {
+  var balance: int
+  action init = balance' = 0
+  action deposit = all { balance < 3, balance' = balance + 1 }
+  action withdraw = all { balance > 0, balance' = balance - 1 }
+  action step = any { deposit, withdraw }
+  /// @check
+  /// The balance never goes below zero.
+  val nonNegative = balance >= 0
+  run depositTest = init.then(deposit).expect(balance == 1)
+}
+```
+
+- **Marks:** `/// @check` on a `val` or `temporal` definition checks it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. The lines below the mark are the rule's sentence. A mark with a word earnest does not know is `unreadable` at its line.
+- **Modules:** a module is checked when it sees an `init` and a `step`, declares no `const`, and sees a mark or a run whose name ends in `Test`. A mark on a spec counts in every setup that imports it.
+- **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
+- **The checks file:** `earnest.quint.json` is optional, and takes names only. An expression in `invariants` or `expectCounterexample` is `unreadable`, and the message shows the `val` to write.
+
+See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
+
 ## November 2026: Quint checks under a name, and counterexamples that must be found
 
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.
 - **`expectCounterexample`:** invariants, temporal properties or runs listed there must break. A broken one prints `broken  P  (expected)` and keeps its path in the JSON with `"expected": "broken"`; one that holds fails the check.
 - **Stopping early:** a check whose only properties are expected invariants stops once it has found each counterexample, so a model with no end passes.
-- **Invariants as expressions:** an item of `invariants` or `expectCounterexample` may be a Quint expression, such as `Guard implies Inv`, named by its text or by `{ "name": ..., "is": ... }`.
 
 See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 

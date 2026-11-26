@@ -1,13 +1,88 @@
 ---
 title: Quint models
-description: List Quint modules in earnest.quint.json, check them with earnest verify, and see how earnest finds and runs quint and caches what it compiles.
+description: Mark the checks of a Quint model in its doc comments, check every .qnt file with earnest verify, and see how earnest finds and runs quint and caches what it reads.
 ---
 
-`earnest verify` checks a Quint module (`.qnt`) listed in `earnest.quint.json`. It starts the project's own `quint` to get the module as JSON, then searches every reachable state as it does for a TypeScript or Rust model. Nothing else in earnest starts Node.
+`earnest verify` checks the Quint modules (`.qnt`) of a folder: each property marked in a doc comment, and each run whose name ends in `Test`. It starts the project's own `quint` to read the files, then searches every reachable state as it does for a TypeScript or Rust model. Nothing else in earnest starts Node.
+
+## Checks marked in the model
+
+Mark a property with a doc comment that starts with `@check`. The lines below the mark are the rule's sentence:
+
+```quint title="specs/clock.qnt"
+module Clock {
+  const Limit: int
+  var time: int
+  action init = time' = 0
+  action step = time' = if (time < Limit) time + 1 else 0
+  /// @check
+  /// The time stays between zero and the limit.
+  val inRange = time >= 0 and time <= Limit
+  /// @check broken
+  /// The time reaches the limit, so it is not always below it.
+  val belowLimit = time < Limit
+  /// @check reachable
+  /// The clock shows the limit.
+  val atTop = time == Limit
+  /// @check
+  /// The time is in range in every state of every run.
+  temporal alwaysInRange = always(inRange)
+  run tickTest = init.then(step).expect(time == 1)
+}
+
+module Small {
+  import Clock(Limit = 3).*
+}
+
+module Large {
+  import Clock(Limit = 5) as C
+  action init = C::init
+  action step = C::step
+}
+```
+
+`earnest verify specs/` checks `Small` and `Large` with no other file:
+
+```text
+pass        Small  4 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    end    time = 3
+pass        Large  6 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    4. step  time: 3 -> 4
+    5. step  time: 4 -> 5
+    end    time = 5
+2 models: 2 pass, 0 fail, 0 unfinished
+```
+
+| Mark | On | The check passes when |
+|---|---|---|
+| `/// @check` | a `val` or `def` of type `bool`, or a `temporal` definition | the property holds |
+| `/// @check broken` | the same | the property has a counterexample. See [Expected counterexamples](#expected-counterexamples) |
+| `/// @check reachable` | a `val` or `def` of type `bool` | a reachable state makes it true. The result prints `reached  atTop` and the path to that state |
+
+- A module is checked when it sees an `init` and a `step`, declares no `const`, and sees a marked property or a run whose name ends in `Test`. `Clock` sets no `Limit`, so it is not checked itself. A mark on its definition counts in every module that imports it: `inRange` in `Small`, `C::inRange` in `Large`.
+- A run whose name ends in `Test` is played with no mark, as `quint test` picks it. The runs of a module it imports are played as described in [Runs](#runs).
+- The result line of each `.qnt` model counts its rules and its runs, `4 rules, 1 run`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
+- `@check` followed by a word earnest does not know, such as `@check reachble`, makes the check `unreadable` at the line of the mark. So does a mark on a definition it does not fit, such as `@check reachable` on an `action`.
+- A `reachable` mark that no reachable state meets prints `never reached  atTop` and fails the check. A search stopped by `--max-states` or `--time-limit` before it is judged prints `unknown  atTop`, and the model is `unfinished`, as for `broken`.
+- In the JSON a `reachable` rule keeps its verdict, `broken` when the state was reached, and adds `"expected": "reached"`.
+- A `.qnt` file with no module to check, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a property.
+- Earnest reads the marks from what `quint parse` gives, so a mark is a `///` doc comment directly above the definition. A `//` comment is not read.
 
 ## The checks file
 
-Put `earnest.quint.json` beside the specs. Each entry is one check: a module of a `.qnt` file, with what holds in it.
+`earnest.quint.json` beside the specs is optional. It says what the model can't: another `init` or `step`, which modules of a file to check, or a second check of one module under a `name`. Each entry is one check: a module of a `.qnt` file, with the names of what holds in it. The marked properties of the module are checked too.
 
 ```json title="specs/earnest.quint.json"
 {
@@ -24,7 +99,7 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 | `main` | required | The module to check, as `quint compile --main` takes it |
 | `init` | `"init"` | The action that makes the start states |
 | `step` | `"step"` | The action that makes each next state |
-| `invariants` | none | Values that must hold in every reachable state: names, or expressions. See [Invariants written as expressions](#invariants-written-as-expressions) |
+| `invariants` | none | Names of values that must hold in every reachable state |
 | `temporal` | none | Temporal properties, by name |
 | `runs` | `false` | `true` for the runs whose name ends in `Test` (as `quint test` picks them), or a list of run names |
 | `name` | `main` | The check's name, so one module can be checked several times |
@@ -35,16 +110,18 @@ Each check is one model in every output: its result line, its JSON entry, `--mod
 A check with `runs` and no `invariants` or `temporal` is a check of runs only. It plays the runs and searches no state, even when the module has an `init` and a `step`, so a spec whose step never stops growing still gives an answer. The module needs no `init` or `step`. Its result line has `0 states`, and its JSON entry the same keys as any other, with `"states": 0`:
 
 ```text
-pass        OnlyRuns  0 states  0 ms
+pass        OnlyRuns  0 states  0 ms  0 rules, 4 runs
 ```
 
 A check that lists invariants or temporal properties needs the module's `init` and `step`, and a module without them makes it `unreadable` with Quint's error, `Name 'init' not found`. To search a module and also play its runs, list at least one invariant or temporal property.
+
+`invariants`, `temporal` and `expectCounterexample` take names of definitions in the module. An item that is an expression, such as `"Late implies Small"`, makes the file `unreadable`, and the problem shows the definition to write instead: `` val property = Late implies Small ``.
 
 The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two checks of one `file` and `main` have the same name. Two such checks are read when each has a `name` that no other check in the file has. A `name` must be text on one line with no space at either end. A file written two ways, as `a.qnt`, `./a.qnt` or `sub/../a.qnt`, is the same file. The problem names the key, such as `` `checks[1].runs` `` or `` `checks[1].name` ``, and nothing in the file is checked. For two checks of one module with no name, it says to give each its own `name`.
 
 ## Expected counterexamples
 
-A known bug can stay in the spec as a property that must break. List it in `expectCounterexample`, and the check passes while the bug is there:
+A known bug can stay in the spec as a property that must break. Mark it `/// @check broken`, or list it in `expectCounterexample`, and the check passes while the bug is there:
 
 ```json title="specs/earnest.quint.json"
 {
@@ -78,10 +155,10 @@ module vault {
 The three checks are one module under three names. `vaultForever` has no end, since `reopen` counts up forever:
 
 ```text
-pass        vaultLimits  5 states  0 ms
-pass        vaultKnownBugs  5 states  0 ms
+pass        vaultLimits  5 states  0 ms  1 rule, 0 runs
+pass        vaultKnownBugs  5 states  0 ms  2 rules, 0 runs
   broken  nonNegative  (expected)
-pass        vaultForever  8 states  0 ms  (every expected counterexample was found)
+pass        vaultForever  8 states  0 ms  1 rule, 0 runs  (every expected counterexample was found)
   broken  nonNegative  (expected)
 3 models: 3 pass, 0 fail, 0 unfinished
 ```
@@ -102,46 +179,6 @@ A temporal property that earnest checks in parts, `P`, `P#2`, …, is met when a
 
 A met expectation prints one line, `broken  nonNegative  (expected)`, with no path under it. The path is in the JSON and in `earnest report`. One that is not met prints `holds  nonNegative  a counterexample was expected`. In the JSON both keep their verdict and add `"expected": "broken"`; see [the JSON output](/reference/output/#json-output).
 
-### Invariants written as expressions
-
-An item of `invariants` or of `expectCounterexample` may be a Quint expression, as `quint verify --invariant` takes one. A known bug that shows only where a guard holds is the expression `Guard implies Inv`: its counterexample ends in a state where `Guard` is true and `Inv` is false.
-
-```quint title="specs/guard.qnt"
-module guard {
-  var n: int
-
-  action init = n' = 0
-  action step = any {
-    all { n < 4, n' = n + 1 },
-    all { n >= 4, n' = n },
-  }
-
-  val Small = n < 2
-  val Late = n >= 3
-}
-```
-
-```json title="specs/earnest.quint.json"
-{
-  "checks": [
-    { "file": "guard.qnt", "main": "guard", "invariants": ["n >= 0"], "expectCounterexample": [{ "name": "LateBreak", "is": "Late implies Small" }] }
-  ]
-}
-```
-
-`Small` alone first breaks at `n = 2`, where `Late` is false. `LateBreak` breaks at `n = 3`, as `quint verify --backend tlc --invariant 'Late implies Small'` finds:
-
-```text
-pass        guard  5 states  0 ms
-  broken  LateBreak  (expected)
-```
-
-- The rule's id, on the result line, in the JSON and for `--rule`, is the text as written, trimmed: `--rule 'n >= 0'`. The object form `{ "name": "LateBreak", "is": "Late implies Small" }` gives it a short id instead. Two properties of a check with one id make the file `unreadable`.
-- Earnest passes the expressions to `quint compile --invariant`, joined by commas as for names. Quint reads the list as `and(...)` of its items, so a comma inside brackets is part of an item. An item with a comma outside brackets would be two, and makes the file `unreadable`.
-- A check with an expression is always compiled, never built from `quint typecheck`, and is cached as any compile.
-- An expression Quint refuses makes the check `unreadable` with Quint's own error, such as ``Name 'Smal' not found``, at the item in `earnest.quint.json`. An expression that plainly gives no boolean, as `n + 1` or `Set(1)`, is refused by earnest; one whose type shows only when it is evaluated is a fault, as for a named invariant.
-- `temporal` takes names only: define a temporal property in the module and list its name.
-
 ### Stopping once every counterexample is found
 
 When every property the check judges is in `expectCounterexample` and is an invariant, or a temporal property that earnest reads as one (`always(P)`, or such parts of an `and`), the search stops at the end of the level in which it finds the last of them broken. A property in parts stops the search only once every part is broken. The model is `pass`, its count is the states found so far, and the result line ends with `(every expected counterexample was found)`. The search goes breadth first and stops only at the end of a level, so each counterexample is a shortest one, as in a full search. Runs need no search and are played as usual.
@@ -154,18 +191,12 @@ A check that also lists an invariant that must hold, or a temporal property abou
 
 | You run | What is checked |
 |---|---|
-| `earnest verify` or `earnest verify specs/` | Every entry of every `earnest.quint.json` in the folders searched. A `.qnt` file without an entry is not looked at |
-| `earnest verify specs/clock.qnt` | The entries for `clock.qnt` in `specs/earnest.quint.json` |
+| `earnest verify` or `earnest verify specs/` | In a folder with no `earnest.quint.json`, every `.qnt` file, by its marks and runs. In a folder with one, every entry of it, with the marks of the modules it lists; a `.qnt` file it does not list is not looked at |
+| `earnest verify specs/clock.qnt` | The entries for `clock.qnt` in `specs/earnest.quint.json`, or the file by its marks and runs when no entry lists it |
 | `earnest verify specs/earnest.quint.json` | Every entry of that file |
 | `earnest verify compiled/small.json` | The JSON `quint compile --target json` wrote, read with no Node |
 
-A `.qnt` file named on the command line with no entry is `unreadable`. The problem says to list it and shows an entry to copy:
-
-```json
-{ "checks": [
-  { "file": "clock.qnt", "main": "clock", "invariants": ["inv"] }
-] }
-```
+A `.qnt` file named on the command line with no module to check is `unreadable`, and the problem says how to mark a property.
 
 Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting with `.` are skipped, as for other model files.
 
@@ -367,7 +398,7 @@ With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3
 A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why. With `"runs": true`, the check plays the runs the compiled module holds and says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as `quint test` names them: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note.
 
 ```text
-pass        Plays  0 states  0 ms
+pass        Plays  0 states  0 ms  0 rules, 1 run
   note  runs not played: S::upTest (written in a module this one imports, whose runs `quint compile` drops: the checker plays them only in a setup it builds itself, so write them in this module to play them here)
 ```
 
@@ -401,10 +432,10 @@ Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with n
 
 - A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants` and `temporal` (with the names of `expectCounterexample` that are invariants or temporal properties), and every `.qnt` file the module reads are the same. Two checks that compile alike start one compile, and a `name`, `runs` or `expectCounterexample` that changes nothing Quint is given compiles nothing again. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
-- What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
+- What `quint parse` gave, the marks among it, is reused while `quint --version` and every file it lists are the same, so editing a mark reads the file again.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` (its `name`, `expectCounterexample` and expressions among them) are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose entry in `earnest.quint.json` (its `name` and `expectCounterexample` among them) and whose marks are unchanged are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
 
 ## Compiled JSON
 
