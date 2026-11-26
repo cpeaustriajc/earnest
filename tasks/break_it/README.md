@@ -1687,6 +1687,15 @@ the `setToMap` test asserts something else than it did.
   instructions, past its budget. `wide_range` passes with
   3 states in 5 ms.
 
+The TLA+ export (`earnest confirm --tlc`) writes a fold over `Op::InTlcOrder` with its own
+order predicate, sizes first, and not with `CHOOSE x \in S : TRUE`. TLC's `CHOOSE` order
+depends on how a value was built: a function from `MapSet(MapSet(EmptyMap, 2, 3), 0, 3)` keeps
+its domain as `<<2, 0>>`, so TLC put `(0 :> 0 @@ 3 :> 3)` before `(0 :> 3 @@ 2 :> 3)` there, while
+Quint's own encoding gives normalized functions (the seeded comparison above agrees). A second
+value for a key of `setToMap` is written as `Fault`. `confirm --tlc` gives `same` on
+`fold_seeded`, `fold_order` and `set_to_map`
+(`tlc_on_the_export_folds_sets_in_the_order_earnest_folds_them` in `tests/tlc/quint_random.rs`).
+
 Unit tests: `crates/earnest_ir/tests/tlc_order.rs` and `crates/earnest_quint/src/fixes_tests.rs`
 (fixture `fixes.qnt`, compiled once with its invariants and two temporal properties as
 `fixes.json` and once with only `bumpFair` as `fairpart.json`). Two bullets of "Seen, not

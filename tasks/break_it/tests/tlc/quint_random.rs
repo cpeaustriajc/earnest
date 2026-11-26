@@ -122,3 +122,45 @@ fn every_seeded_quint_model_has_the_states_and_verdicts_of_quint_s_tlc_run() {
         found.join("\n")
     );
 }
+
+const EXPORTED_IN_TLC_ORDER: [(&str, &str); 3] = [
+    (
+        "fold_seeded.json",
+        include_str!("../../models/quint_first/fold_seeded/fold_seeded.json"),
+    ),
+    (
+        "fold_order.json",
+        include_str!("../../models/quint_first/fold_order.json"),
+    ),
+    (
+        "set_to_map.json",
+        include_str!("../../models/quint_first/set_to_map.json"),
+    ),
+];
+
+#[test]
+fn tlc_on_the_export_folds_sets_in_the_order_earnest_folds_them() {
+    let jar = tlc_jar();
+    assert!(
+        jar.is_file(),
+        "TLC is missing at {}: `just tlc` downloads it to target/tools, and {TLC_JAR_VARIABLE} \
+         names another copy",
+        jar.display()
+    );
+    let jar = jar.to_string_lossy().into_owned();
+    let mut found = Vec::new();
+    for (file, json) in EXPORTED_IN_TLC_ORDER {
+        let folder = TempDir::new().expect("a temporary folder can be made");
+        fs::write(folder.path().join(file), json).expect("the compiled module can be written");
+        let (confirmed, success) = said(&folder, &["confirm", "--tlc", &jar, file]);
+        if !success || !confirmed.starts_with("same") {
+            found.push(format!("{file}: `earnest confirm --tlc` says\n{confirmed}"));
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "the export writes a fold over a set of collections in TLC's order, sizes first, and a \
+         second value for one key of `setToMap` as a fault, so TLC agrees with earnest:\n{}",
+        found.join("\n")
+    );
+}
