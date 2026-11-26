@@ -18,7 +18,7 @@ val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
 
 - A text prints without quotes, and any other value as Quint's REPL writes it. States with the same label and group are drawn as one box.
 - A check uses the labels it sees, its own and those its imports bring, as it sees marked properties. The labels change no verdict, state count or result line, and `confirm` and `earnest tla` leave them out.
-- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, a second `@view` in one doc comment, `@view` on anything but a `val` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read, and a label no check that searches sees.
+- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, a second `@view` in one doc comment, `@view` on anything but a `val` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read or that `quint compile` fails on, and a label no check that searches sees. A label is never judged as an invariant.
 
 ## November 2026: Quint checks marked in the model, and no `earnest.quint.json`
 

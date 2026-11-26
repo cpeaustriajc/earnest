@@ -292,7 +292,7 @@ val seen =
 ```
 
 - A check uses the `@view state` and `@view group` definitions it sees, its own and those its imports and exports bring, as it sees marked properties. In `module Named { import Spec(Limit = 2) as S ... }` a `@view state` on `Spec`'s `stage` labels `Named`'s states, as `S::stage`.
-- A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives the labels to `quint compile` after the check's invariants, so that it keeps them, and takes them out again before it reads the invariants.
+- A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives the labels to `quint compile` after the check's invariants, so that it keeps their definitions, and takes them out of the compiled JSON again before it reads the invariants, leaving every other byte, numbers among them, as Quint wrote it. Quint 0.33.1 takes a text or a record there: it checks that each name exists and does not check the type of the `and` it writes from the list. A setup built from `quint typecheck` is built with its labels the same way, and stays built from the typecheck, so its imported runs are still played.
 - A check that plays only runs searches nothing and draws no chart, so it uses no label. `confirm --quint`, `confirm --tlc` and `earnest tla` leave the labels out.
 - A `val` may carry both a `@check` and a `@view` mark: the property is judged, and the chart shows `true` or `false`. The lines of the doc comment other than the marks are the rule's sentence. A `val` holds at most one `@view` mark.
 - Each of these is `unreadable`, at the line of the mark:
@@ -300,11 +300,14 @@ val seen =
   - anything after the word, such as `@view state, phase`;
   - `///@view state` with no space after the slashes, which `quint parse` hands over as `view state`: earnest reads the `///@` in the source line;
   - a second `@view` mark in one doc comment;
-  - `@view` on anything but a `val` or `def` with no parameters: a definition with parameters, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
+  - `@view` on anything but a `val` with no parameters: a `def` (the message says to write a `val`), a definition with parameters, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
   - a check that sees two `@view state` definitions, or two `@view group` definitions: the message names both;
   - a label that reads a variable that `init`, `step` and the checked properties do not read, since the search does not hold that variable;
   - a label the reader can't read, such as one that uses `chooseSome`: the message is the reader's own, and says what to write;
-  - a `@view` definition that no check that searches sees.
+  - a `@view` definition that no check that searches sees;
+  - a label that `quint compile` fails on when it follows the invariants, while the check compiles without it: the message gives Quint's error;
+  - a label with which a setup can't be built from `quint typecheck` while it can without it;
+  - a compiled module whose invariants do not end with the labels the check was compiled with. A label is never judged as an invariant.
 
 ## Which `.qnt` files are checked
 
@@ -637,7 +640,7 @@ Only what the check reaches counts: a `range` or a `fold` in another module of t
 
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
-- A compiled module is reused while the text of `quint --version`, the check's module, its marked invariants and temporal properties, its chart labels, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them, a mark among them, compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of the file stand in for them.
+- A compiled module is reused while the text of `quint --version`, the check's module, its marked invariants and temporal properties, its chart labels, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them, a mark among them, compiles the check again. Adding, editing or removing a `@view` mark changes the file, so the next run parses it and compiles the check again, once. When `quint parse` fails, the `.qnt` files below the folder of the file stand in for them.
 - The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
 - What `quint parse` gave, the marks among it, is reused while `quint --version` and every file it lists are the same, and only by a build compiled from the same sources as the build that kept it: the entry holds what earnest read from the parse, not Quint's own output. The compiled and typechecked JSON are Quint's output as written, so any build reads them. Editing a mark reads the file again.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
