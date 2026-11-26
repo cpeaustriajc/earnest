@@ -23,8 +23,9 @@ pub(crate) enum Next {
 pub(crate) struct Cursor<'a> {
     inputs: &'a [Input],
     sets: &'a [Option<Code>],
-    lists: Vec<Vec<Value>>,
-    digits: Vec<usize>,
+    lists: Box<[Vec<Value>]>,
+    digits: Box<[usize]>,
+    depth: usize,
     descending: bool,
 }
 
@@ -40,34 +41,41 @@ impl<'a> Cursor<'a> {
         Self {
             inputs,
             sets,
-            lists: Vec::with_capacity(inputs.len()),
-            digits: Vec::with_capacity(inputs.len()),
+            lists: inputs.iter().map(|_| Vec::new()).collect(),
+            digits: inputs.iter().map(|_| 0).collect(),
+            depth: 0,
             descending: true,
         }
     }
 
+    fn chosen_values(&self) -> impl Iterator<Item = &Value> {
+        self.lists
+            .iter()
+            .zip(&self.digits)
+            .take(self.depth)
+            .filter_map(|(list, digit)| list.get(*digit))
+    }
+
     fn put_chosen(&self, frame: &mut Frame<'_>) {
-        for (input, (list, digit)) in self.inputs.iter().zip(self.lists.iter().zip(&self.digits)) {
-            if let Some(value) = list.get(*digit) {
-                frame.put_copy(input.slot, value);
-            }
+        for (input, value) in self.inputs.iter().zip(self.chosen_values()) {
+            frame.put_copy(input.slot, value);
         }
     }
 
     fn chosen(&self) -> Vec<Value> {
-        self.lists
-            .iter()
-            .zip(&self.digits)
-            .filter_map(|(list, digit)| list.get(*digit).cloned())
-            .collect()
+        self.chosen_values().cloned().collect()
     }
 
     pub(crate) fn next(&mut self, frame: &mut Frame<'_>) -> Next {
         loop {
             if self.descending {
-                let depth = self.lists.len();
                 self.put_chosen(frame);
-                let Some(input) = self.inputs.get(depth) else {
+                let depth = self.depth;
+                let (Some(input), Some(list), Some(digit)) = (
+                    self.inputs.get(depth),
+                    self.lists.get_mut(depth),
+                    self.digits.get_mut(depth),
+                ) else {
                     self.descending = false;
                     return Next::Ready;
                 };
@@ -78,8 +86,9 @@ impl<'a> Cursor<'a> {
                 match listed {
                     Ok(values) => {
                         self.descending = !values.is_empty();
-                        self.lists.push(values);
-                        self.digits.push(0);
+                        *list = values;
+                        *digit = 0;
+                        self.depth = depth.saturating_add(1);
                     }
                     Err(fault) => {
                         self.descending = false;
@@ -87,15 +96,19 @@ impl<'a> Cursor<'a> {
                     }
                 }
             } else {
-                let (Some(digit), Some(list)) = (self.digits.last_mut(), self.lists.last()) else {
+                let Some(deepest) = self.depth.checked_sub(1) else {
+                    return Next::Done;
+                };
+                let (Some(digit), Some(list)) =
+                    (self.digits.get_mut(deepest), self.lists.get(deepest))
+                else {
                     return Next::Done;
                 };
                 *digit = digit.saturating_add(1);
                 if *digit < list.len() {
                     self.descending = true;
                 } else {
-                    self.digits.pop();
-                    self.lists.pop();
+                    self.depth = deepest;
                 }
             }
         }

@@ -498,17 +498,14 @@ impl Writer<'_> {
             .filter(|pick| pick.action == position)
             .collect();
         for (at, input) in action.inputs.iter().enumerate() {
-            let (set, kind) = match picks.iter().find(|pick| pick.input == at) {
-                Some(pick) => {
-                    let written = self.scribe.expr(pick.from.expr(), &mut scope);
-                    needed.extend(written.sound);
-                    (written.text, written.kind.item())
-                }
-                None => {
-                    let kind = Kind::of_domain(&input.domain);
-                    let values = self.scribe.values(input.values.iter(), &kind);
-                    (set_of(&values), kind)
-                }
+            let (set, kind) = if let Some(pick) = picks.iter().find(|pick| pick.input == at) {
+                let written = self.scribe.expr(pick.from.expr(), &mut scope);
+                needed.extend(written.sound);
+                (written.text, written.kind.item())
+            } else {
+                let kind = Kind::of_domain(&input.domain);
+                let values = self.scribe.values(input.values.iter(), &kind);
+                (set_of(&values), kind)
             };
             let name = scope.bind(input.slot, &input.name, kind);
             choices.push(format!("{name} \\in {set}"));

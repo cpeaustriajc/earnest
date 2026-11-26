@@ -35,7 +35,13 @@ fn picked(mut model: Model, picks: &[(usize, usize, Expr)]) -> Model {
     model
 }
 
-fn serving(ends: bool) -> Model {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Stops {
+    Anywhere,
+    OnlyAtAnEnd,
+}
+
+fn serving(stops: Stops) -> Model {
     let mut sketch = Sketch::new();
     let pending = sketch.field("pending", Domain::Any, vec![set_of(&[1, 2, 3])]);
     sketch.action_with(
@@ -48,7 +54,7 @@ fn serving(ends: bool) -> Model {
         "twoIsNotServedFirst",
         apply(Op::Differ, &pending, Expr::Const(set_of(&[1, 3]))),
     );
-    if ends {
+    if stops == Stops::Anywhere {
         sketch.end("anywhere", yes());
     }
     let model = sketch.model();
@@ -91,7 +97,7 @@ fn grows(jobs: usize, max_states: usize) -> Outcome {
 
 #[test]
 fn every_item_of_a_set_read_from_the_state_is_tried_in_every_state() {
-    let outcome = explore(&serving(true), &Limits::default());
+    let outcome = explore(&serving(Stops::Anywhere), &Limits::default());
     assert_eq!(
         outcome.states, 8,
         "every subset of {{1, 2, 3}} is left pending"
@@ -101,7 +107,7 @@ fn every_item_of_a_set_read_from_the_state_is_tried_in_every_state() {
 
 #[test]
 fn a_path_prints_the_item_picked_not_its_position() {
-    let outcome = explore(&serving(true), &Limits::default());
+    let outcome = explore(&serving(Stops::Anywhere), &Limits::default());
     let rule = &outcome.rules[0];
     assert_eq!(rule.verdict, Verdict::Broken);
     let path = rule.path.as_ref().expect("a path to {1, 3}");
@@ -115,7 +121,7 @@ fn a_path_prints_the_item_picked_not_its_position() {
 
 #[test]
 fn an_empty_set_leaves_the_action_unable_to_happen() {
-    let outcome = explore(&serving(false), &Limits::default());
+    let outcome = explore(&serving(Stops::OnlyAtAnEnd), &Limits::default());
     assert_eq!(outcome.states, 8);
     let stuck = outcome
         .findings
@@ -147,7 +153,7 @@ fn a_set_may_read_an_earlier_input_of_the_same_action() {
         )],
     );
     sketch.end("anywhere", yes());
-    let up_to_limit = Expr::Apply(Op::Interval, vec![int(1), limit.clone()]);
+    let up_to_limit = Expr::Apply(Op::Interval, vec![int(1), limit]);
     let up_to_who = Expr::Apply(Op::Interval, vec![int(0), Expr::Local(WHO)]);
     let model = picked(sketch.model(), &[(0, WHO, up_to_limit), (0, BY, up_to_who)]);
     let outcome = explore(&model, &Limits::default());

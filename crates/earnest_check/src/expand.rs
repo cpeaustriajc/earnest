@@ -202,6 +202,7 @@ pub(crate) struct Move<'a> {
     tried: Tried,
     refill: Refill,
     reuse: Option<Reuse>,
+    picked: Option<Box<Picking>>,
 }
 
 #[derive(Debug)]
@@ -210,7 +211,6 @@ enum FromRow {
     Once(Packed),
     Each(Box<[Option<Packed>]>),
     Not,
-    Picked(Box<[Option<Code>]>),
 }
 
 #[derive(Debug)]
@@ -319,6 +319,15 @@ enum Tried {
     FirstOfEach(Vec<Vec<bool>>),
 }
 
+type Walk =
+    fn(&Picking, &Move<'_>, Origin<'_>, &mut Work, &mut Mark, &mut dyn Successors, Tally) -> Tally;
+
+#[derive(Debug)]
+struct Picking {
+    sets: Box<[Option<Code>]>,
+    walk: Walk,
+}
+
 impl<'a> Move<'a> {
     pub(crate) fn all(model: &'a Model, layout: &RowLayout, slots: &[Option<Slot>]) -> Vec<Self> {
         model
@@ -326,19 +335,27 @@ impl<'a> Move<'a> {
             .iter()
             .enumerate()
             .map(|(position, action)| {
-                let picked = sets_of(model, position);
-                Self::of(action, model.fields.len(), layout, slots, picked)
+                let planned = Self::of(action, model.fields.len(), layout, slots);
+                match sets_of(model, position) {
+                    Some(sets) => planned.picking(sets),
+                    None => planned,
+                }
             })
             .collect()
     }
 
-    fn of(
-        action: &'a Action,
-        fields: usize,
-        layout: &RowLayout,
-        slots: &[Option<Slot>],
-        picked: Option<Box<[Option<Code>]>>,
-    ) -> Self {
+    fn picking(self, sets: Box<[Option<Code>]>) -> Self {
+        Self {
+            from_row: FromRow::Not,
+            picked: Some(Box::new(Picking {
+                sets,
+                walk: every_pick,
+            })),
+            ..self
+        }
+    }
+
+    fn of(action: &'a Action, fields: usize, layout: &RowLayout, slots: &[Option<Slot>]) -> Self {
         let combinations = input_count(action);
         let tried = if combinations <= 1 {
             Tried::Once
@@ -357,7 +374,7 @@ impl<'a> Move<'a> {
             .enumerate()
             .filter_map(|(position, update)| Some((position, update.as_ref()?)))
             .collect::<Vec<_>>();
-        let refill = if picked.is_some() || action.inputs_may_be_overwritten() {
+        let refill = if action.inputs_may_be_overwritten() {
             Refill::Every
         } else {
             Refill::Turned
@@ -408,9 +425,7 @@ impl<'a> Move<'a> {
             })
             .collect::<Option<Vec<_>>>()
             .map_or(InPlace::SomeUpdateHasNoSlot, InPlace::Writes);
-        let from_row = if let Some(sets) = picked {
-            FromRow::Picked(sets)
-        } else if action.inputs.is_empty() {
+        let from_row = if action.inputs.is_empty() {
             Packed::of(action, &updates, slots, &[]).map_or(FromRow::Not, FromRow::Once)
         } else {
             Packed::each_combination(action, &updates, slots, &tried)
@@ -437,6 +452,7 @@ impl<'a> Move<'a> {
             tried,
             refill,
             reuse,
+            picked: None,
         }
     }
 
@@ -855,22 +871,6 @@ impl<S: Successors> Expansion<'_, '_, S> {
                     self.general(position, planned);
                 }
             }
-            (FromRow::Picked(_), _) => {
-                self.values.frame();
-                let origin = Origin {
-                    position,
-                    base: self.values.base(),
-                };
-                self.tally = every_pick(
-                    planned,
-                    origin,
-                    self.values.frame(),
-                    self.scratch,
-                    self.found,
-                    self.sink,
-                    self.tally,
-                );
-            }
             (FromRow::Once(_) | FromRow::Each(_) | FromRow::Not, _) => {
                 self.general(position, planned);
             }
@@ -898,6 +898,21 @@ impl<S: Successors> Expansion<'_, '_, S> {
                 set_inputs(planned.action, 0, self.values.frame());
             }
             self.try_once(position, planned);
+        } else if let Some(picking) = &planned.picked {
+            self.values.frame();
+            let origin = Origin {
+                position,
+                base: self.values.base(),
+            };
+            self.tally = (picking.walk)(
+                picking,
+                planned,
+                origin,
+                self.scratch,
+                self.found,
+                self.sink,
+                self.tally,
+            );
         }
     }
 
@@ -1064,21 +1079,26 @@ fn every_input_told_apart(
     trying.tally
 }
 
+#[cold]
 #[inline(never)]
 fn every_pick(
+    picking: &Picking,
     planned: &Move<'_>,
     origin: Origin<'_>,
-    frame: &mut Frame<'_>,
     work: &mut Work,
     found: &mut Mark,
     sink: &mut dyn Successors,
     tally: Tally,
 ) -> Tally {
-    let mut trying = Trying::of(planned, origin, frame, work, found, sink, tally);
-    if let FromRow::Picked(sets) = &planned.from_row {
-        trying.every_pick(sets);
+    let mut frame =
+        Frame::new(origin.base.values, planned.action.slots).until(tally.timer.deadline);
+    let mut trying = Trying::of(planned, origin, &mut frame, work, found, sink, tally);
+    trying.every_pick(&picking.sets);
+    let tally = trying.tally;
+    if frame.computed_beyond_32_bits() {
+        found.width = Width::Beyond32Bits;
     }
-    trying.tally
+    tally
 }
 
 struct Trying<'t, 'v, S: ?Sized> {
@@ -1160,13 +1180,12 @@ impl<'t, 'v, S: Successors + ?Sized> Trying<'t, 'v, S> {
     }
 
     fn every_pick(&mut self, sets: &[Option<Code>]) {
-        self.work.seen.forget();
         let mut cursor = Cursor::new(&self.planned.action.inputs, sets);
         let mut number = 0_usize;
         while self.may_go_on_noting_a_time_stop() {
             match cursor.next(self.frame) {
                 Next::Ready => {
-                    self.try_input::<true>(number);
+                    self.try_pick(number);
                     number = number.saturating_add(1);
                 }
                 Next::Faulted(fault) => {
@@ -1180,6 +1199,38 @@ impl<'t, 'v, S: Successors + ?Sized> Trying<'t, 'v, S> {
                 Next::Done => break,
             }
         }
+    }
+
+    fn try_pick(&mut self, input: usize) {
+        let Origin { position, base } = self.origin;
+        match self.planned.action.guard.truth(self.frame) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(fault) => {
+                self.found.note(Whence::Guard(position), fault);
+                self.tally.moving.unsure = true;
+                return;
+            }
+        }
+        self.tally.moving.enabled = true;
+        let updates = &mut self.work.updates;
+        updates.clear();
+        for (field, code) in &self.planned.updates {
+            if *field >= base.values.len() {
+                break;
+            }
+            match code.eval(self.frame) {
+                Ok(value) => updates.push((*field, value)),
+                Err(fault) => {
+                    self.found.note(Whence::Update(position), fault);
+                    return;
+                }
+            }
+        }
+        if self.sink.offer(position, input, base, updates) {
+            self.tally.count();
+        }
+        self.reopen();
     }
 
     #[inline]
