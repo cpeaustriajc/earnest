@@ -338,16 +338,6 @@ fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() 
             "as `quint test --main {main}` judges them\n{report}"
         );
     }
-    let problem = |feature: &str, file: &str| -> String {
-        report["unreadable"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|problem| problem["feature"] == feature && problem["file"] == file)
-            .and_then(|problem| problem["message"].as_str())
-            .unwrap_or_else(|| panic!("{feature} in {file} is unreadable\n{report}"))
-            .to_owned()
-    };
     assert_eq!(
         model(&report, "Single")["runsNotPlayed"],
         serde_json::json!(["Single::Base::upTest"]),
