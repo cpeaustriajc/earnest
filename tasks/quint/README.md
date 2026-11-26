@@ -1793,6 +1793,34 @@ fail        stuck  3 states  0 ms
 1 model: 0 pass, 1 fail, 0 unfinished
 ```
 
+### Through the checks file
+
+`clock.qnt` with the real Quint 0.33.1, from a folder holding it and this `earnest.quint.json`:
+
+```json
+{
+  "checks": [
+    { "file": "clock.qnt", "main": "Large", "invariants": ["inv"], "runs": ["largeTick"] },
+    { "file": "clock.qnt", "main": "Small", "invariants": ["timeBounded"] }
+  ]
+}
+```
+
+```text
+$ EARNEST_QUINT=.../node_modules/.bin/quint earnest verify specs
+pass        Large  72 states  1 ms
+pass        Small  16 states  0 ms
+2 models: 2 pass, 0 fail, 0 unfinished
+```
+
+`Large` lists `inv` and `largeTick` (`"kind": "witness"`), both `holds`; `quint test --backend
+typescript --main Large --match largeTick clock.qnt` gives `ok largeTick passed 1 test(s)`.
+`largeTick` starts with `C::init`, which `Large`'s `init` is a name for, so it starts from the
+start states. `Small` asks for no runs, so it lists `Small::Clock::timeBounded` alone, and the
+module's runs neither count nor are refused (slice 7's tree refused it: "`run largeTick`  runs
+are not read yet"). The command slice 7 runs (`quint compile --target json --main <main> --init
+<init> --step <step> ...`, stdout to a file) keeps the main module's runs, so it is unchanged.
+
 ### How earnest plays a run [ran: the probes above]
 
 - `init` as the first step is the start states, which the reader works out from `q::init`.
@@ -1876,17 +1904,25 @@ fail        stuck  3 states  0 ms
   of an `all`, `picked_from` and `is_action`; `model.rs` calls the run reader; `scan.rs` leaves
   `run` definitions to it; the refusal of a run operator elsewhere now says "run operators are
   read only in a `run`". Every refused run is listed, not only the first.
-- Which runs are played is a parameter: `earnest_quint::read_runs(path, source, &Runs)` with
-  `Runs::{None, Tests, Named(Vec<String>)}`; `read` is `read_runs` with `Runs::Tests`, which the
-  CLI uses for a compiled `.json` named directly. A listed run the module lacks makes the file
-  unreadable and is named (`` `run missingTest` ``). Slice 7 wires its checks file to it.
+- Which runs are played is the `runs` of slice 7's `earnest_quint::read_located(path, source,
+  &Runs)`, from the check's `runs` key: `Runs::None` (no key, or `false`) ignores the module's
+  runs, neither playing nor refusing them; `Runs::Tests` (`true`) plays those whose name ends in
+  `Test`; `Runs::Named` (a list) plays exactly those, in the list's order, and a name the module
+  lacks makes the check unreadable and is named (`` `run missingTest` ``). `read`, which the CLI
+  uses for a compiled `.json` named directly, is `read_located` with `Runs::Tests`.
+- A run's first step may be any name for `init`: `Large`'s `largeTick` starts with `C::init`,
+  and `Large`'s `init` is `C::init`.
 - An `unknown` witness or script makes the model `unfinished` when nothing is broken: a script
   stopped at the branch cap gives the reason ``the run `<id>` has more than 100000 branches from
   one start state``, a witness with more start states than the state limit keeps the search's
   own reason (the search stopped at the same limit), and so does a search that stopped at its
   state limit. Before, such a model was `pass`.
-- Merged with the integration head (slices 2 and 5): the run reader takes their records, sets,
-  maps and text in steps and conditions, and counts slots as slice 2's reader does.
+- Merged with the integration head twice (slices 2 and 5, then slice 7): the run reader takes
+  their records, sets, maps and text in steps and conditions, and counts slots as slice 2's
+  reader does.
+- `apps/docs/src/content/docs/reference/quint.md` has a "Runs" section (the operators, every
+  choice tried where `quint test` samples, the branch limit and `unfinished`, runs of imported
+  modules not in the JSON yet), and the changelog a line.
 - The CLI needed no change: `rule_ids` gives `--rule` and the declared rules, the cache stores
   outcomes as they are, `earnest confirm` compares only the rules of kind `always` with TLC, and
   `earnest tla` exports no witness.
@@ -1902,11 +1938,14 @@ fail        stuck  3 states  0 ms
   conditions and runs that must not finish, the branch cap, `only_rule` and the order after the
   rules; the model `unfinished` at the branch cap, with the search's own reason when it stopped
   at its state limit, and for a witness with more start states than the limit.
-- `crates/earnest_quint/src/run_tests.rs` (11): the reading of every run of `runs_ints`,
+- `crates/earnest_quint/src/run_tests.rs` (11, through `read_located`): the reading of every run of `runs_ints`,
   `stuck`, `played` and `unstarted`, and `Runs::None`, `Tests` and `Named`, with a name the
   module lacks.
 - `apps/earnest/tests/behavior/quint_runs.rs` (6): the verdicts in JSON, for `runs_ints` and the
   original `runs`, the text path and `why`, `--rule`, the `stuck` module and an unreadable file.
+- `apps/earnest/tests/behavior/quint_checks.rs` (4 more, through slice 7's fake `quint`): a
+  check with `runs: true`, with a list, with a name the module lacks, and with no `runs` on a
+  module that has runs.
 - Brought to the new truth (slice 1, not on `origin/main`): `a_run_is_refused_and_named` in
   `crates/earnest_quint/src/tests.rs` is now
   `a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules`.
@@ -1960,8 +1999,6 @@ refuses inside a step is still refused, by name.
 
 ### Unfinished, and the next step
 
-- Slice 7 passes its checks file's choice of runs to `read_runs`; once both are on the
-  integration head, the wiring is a call with its list in place of `Runs::Tests`.
 - Runs written in a spec that a setup module imports are dropped by `quint compile --main
   <setup>` (spike 1.4); slice 4 has to compile the spec module too, or read `quint typecheck`.
 - Problems are at line 1, column 1 (slice 3).
