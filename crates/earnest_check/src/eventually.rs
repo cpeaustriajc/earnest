@@ -180,9 +180,15 @@ struct Hunt<'h> {
     edges: &'h Edges,
     fair: &'h [Vec<u32>],
     possible: &'h [Vec<bool>],
-    stutters: bool,
+    stops: Stops,
     depth: &'h [u32],
     parents: &'h [u32],
+}
+
+#[derive(Clone, Copy)]
+enum Stops {
+    WhereNothingChangesTheState,
+    WhereNothingFairChangesTheState,
 }
 
 fn part_of(part: &[u32], action: u32) -> bool {
@@ -191,10 +197,12 @@ fn part_of(part: &[u32], action: u32) -> bool {
 
 impl Hunt<'_> {
     fn stays(&self, state: u32) -> bool {
-        if self.stutters {
-            return !self.possible.iter().any(|flags| at(flags, state));
+        match self.stops {
+            Stops::WhereNothingFairChangesTheState => {
+                !self.possible.iter().any(|flags| at(flags, state))
+            }
+            Stops::WhereNothingChangesTheState => self.edges.out(state).is_empty(),
         }
-        self.edges.out(state).is_empty()
     }
 
     fn doomed(&self, inside: &[bool], groups: &Groups) -> Vec<bool> {
@@ -465,13 +473,13 @@ impl Kept {
         &'k self,
         fair: &'k [Vec<u32>],
         possible: &'k [Vec<bool>],
-        stutters: bool,
+        stops: Stops,
     ) -> Hunt<'k> {
         Hunt {
             edges: &self.edges,
             fair,
             possible,
-            stutters,
+            stops,
             depth: &self.depth,
             parents: &self.parents,
         }
@@ -648,7 +656,11 @@ impl Search<'_> {
                 trouble: None,
             };
         };
-        let hunt = kept.hunt(&kept.fair, &kept.possible, false);
+        let hunt = kept.hunt(
+            &kept.fair,
+            &kept.possible,
+            Stops::WhereNothingChangesTheState,
+        );
         let mut trouble = None;
         let outcomes = rules
             .iter()
@@ -666,7 +678,12 @@ impl Search<'_> {
                     Some(fairness) => {
                         let fair = parts(fairness);
                         let possible = kept.possible(&fair);
-                        kept.hunt(&fair, &possible, !fairness.step).lasso(&judged)
+                        let stops = if fairness.step {
+                            Stops::WhereNothingChangesTheState
+                        } else {
+                            Stops::WhereNothingFairChangesTheState
+                        };
+                        kept.hunt(&fair, &possible, stops).lasso(&judged)
                     }
                 };
                 match hunted {

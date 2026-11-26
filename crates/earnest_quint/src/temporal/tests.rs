@@ -40,11 +40,18 @@ fn the_rule<'m>(model: &'m Model, id: &str) -> &'m Eventually {
         .unwrap_or_else(|| panic!("no rule about runs {id}: {:?}", model.runs.eventually))
 }
 
-fn fair(step: bool, actions: &[&[usize]]) -> Option<Fairness> {
-    Some(Fairness {
-        step,
+fn fair_to(actions: &[&[usize]]) -> Fairness {
+    Fairness {
+        step: false,
         actions: actions.iter().map(|part| part.to_vec()).collect(),
-    })
+    }
+}
+
+fn with_the_step(actions: &[&[usize]]) -> Fairness {
+    Fairness {
+        step: true,
+        ..fair_to(actions)
+    }
 }
 
 fn refused(property: &str, feature: &str, why: &str) {
@@ -78,7 +85,7 @@ fn eventually_without_fairness_lets_every_run_stop() {
     let model = model_of("reach");
     let rule = the_rule(&model, "reach");
     assert_eq!(rule.after, None);
-    assert_eq!(rule.fair, fair(false, &[]));
+    assert_eq!(rule.fair, Some(fair_to(&[])));
     assert!(
         model.runs.fair.is_empty(),
         "the model's own fairness is untouched"
@@ -88,7 +95,7 @@ fn eventually_without_fairness_lets_every_run_stop() {
 #[test]
 fn fairness_of_a_top_level_action_is_that_action_alone() {
     let model = model_of("upFair");
-    assert_eq!(the_rule(&model, "upFair").fair, fair(false, &[&[UP]]));
+    assert_eq!(the_rule(&model, "upFair").fair, Some(fair_to(&[&[UP]])));
 }
 
 #[test]
@@ -96,8 +103,8 @@ fn leads_to_is_read_however_it_is_spelled() {
     let leads = model_of("leads");
     let spelled = model_of("spelled");
     let (leads, spelled) = (the_rule(&leads, "leads"), the_rule(&spelled, "spelled"));
-    assert_eq!(leads.fair, fair(true, &[]));
-    assert_eq!(spelled.fair, fair(true, &[]));
+    assert_eq!(leads.fair, Some(with_the_step(&[])));
+    assert_eq!(spelled.fair, Some(with_the_step(&[])));
     assert!(
         leads.after.is_some(),
         "a leads-to starts from where its left side holds"
@@ -113,7 +120,7 @@ fn leads_to_is_read_however_it_is_spelled() {
 fn always_eventually_starts_everywhere_and_keeps_both_fairness() {
     let model = model_of("often");
     let rule = the_rule(&model, "often");
-    assert_eq!(rule.fair, fair(true, &[&[FLIP]]));
+    assert_eq!(rule.fair, Some(with_the_step(&[&[FLIP]])));
     assert_eq!(
         rule.after.as_ref().map(earnest_ir::Code::expr),
         Some(&Expr::Const(Value::Bool(true)))
@@ -133,13 +140,13 @@ fn each_part_of_a_conjunction_is_a_rule_of_its_own() {
     let model = model_of("mixed");
     let rules: Vec<&str> = model.rules.iter().map(|rule| rule.id.as_str()).collect();
     assert_eq!(rules, ["mixed"]);
-    assert_eq!(the_rule(&model, "mixed#2").fair, fair(false, &[&[UP]]));
+    assert_eq!(the_rule(&model, "mixed#2").fair, Some(fair_to(&[&[UP]])));
 }
 
 #[test]
 fn a_property_named_after_another_is_read_as_that_one() {
     let model = model_of("named");
-    assert_eq!(the_rule(&model, "named").fair, fair(false, &[&[UP]]));
+    assert_eq!(the_rule(&model, "named").fair, Some(fair_to(&[&[UP]])));
 }
 
 #[test]

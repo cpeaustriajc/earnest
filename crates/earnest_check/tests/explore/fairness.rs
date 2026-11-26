@@ -9,15 +9,22 @@ const A: usize = 0;
 const B: usize = 1;
 const OUT: usize = 2;
 
-fn fair(step: bool, actions: &[&[usize]]) -> Fairness {
+fn only(actions: &[&[usize]]) -> Fairness {
     Fairness {
-        step,
+        step: false,
         actions: actions.iter().map(|part| part.to_vec()).collect(),
     }
 }
 
+fn with_the_step(actions: &[&[usize]]) -> Fairness {
+    Fairness {
+        step: true,
+        ..only(actions)
+    }
+}
+
 fn nothing_fair() -> Fairness {
-    fair(false, &[])
+    only(&[])
 }
 
 fn reaches(id: &str, goal: Expr, fairness: Fairness) -> Eventually {
@@ -106,14 +113,10 @@ fn one_way_out() -> (Sketch, Expr) {
     (sketch, n)
 }
 
-fn swing(out_from_both: bool) -> (Sketch, Expr) {
+fn swing(out_from: fn(&Expr) -> Expr) -> (Sketch, Expr) {
     let mut sketch = Sketch::new();
     let n = sketch.number("n", 0, 2, &[0]);
-    let out_from = if out_from_both {
-        below(&n, 2)
-    } else {
-        is(&n, 1)
-    };
+    let out_from = out_from(&n);
     sketch.action("a", is(&n, 0), &[(&n, int(1))]);
     sketch.action("b", is(&n, 1), &[(&n, int(0))]);
     sketch.action("out", out_from, &[(&n, int(2))]);
@@ -127,7 +130,7 @@ fn a_state_without_ways_out_is_kept_forever_whatever_is_fair() {
         sketch,
         vec![
             reaches("unfair", is(&n, 1), nothing_fair()),
-            reaches("stepFair", is(&n, 1), fair(true, &[])),
+            reaches("stepFair", is(&n, 1), with_the_step(&[])),
         ],
     );
     let outcome = searched(&model);
@@ -146,9 +149,9 @@ fn a_run_may_stop_where_it_could_go_on_when_nothing_there_is_fair() {
         sketch,
         vec![
             reaches("unfair", is(&n, 1), nothing_fair()),
-            reaches("neverFair", is(&n, 1), fair(false, &[&[1]])),
-            reaches("upFair", is(&n, 1), fair(false, &[&[0]])),
-            reaches("stepFair", is(&n, 1), fair(true, &[])),
+            reaches("neverFair", is(&n, 1), only(&[&[1]])),
+            reaches("upFair", is(&n, 1), only(&[&[0]])),
+            reaches("stepFair", is(&n, 1), with_the_step(&[])),
         ],
     );
     let outcome = searched(&model);
@@ -177,15 +180,15 @@ fn the_model_fairness_is_kept_for_a_rule_without_its_own() {
 
 #[test]
 fn a_loop_of_fair_actions_needs_each_one_s_turn() {
-    let (sketch, n) = swing(true);
+    let (sketch, n) = swing(|n| below(n, 2));
     let model = with(
         sketch,
         vec![
-            reaches("swingFair", is(&n, 2), fair(false, &[&[A], &[B]])),
-            reaches("outFair", is(&n, 2), fair(false, &[&[OUT]])),
-            reaches("allFair", is(&n, 2), fair(false, &[&[A], &[B], &[OUT]])),
-            reaches("eitherFair", is(&n, 2), fair(false, &[&[OUT, A]])),
-            reaches("stepFair", is(&n, 2), fair(true, &[])),
+            reaches("swingFair", is(&n, 2), only(&[&[A], &[B]])),
+            reaches("outFair", is(&n, 2), only(&[&[OUT]])),
+            reaches("allFair", is(&n, 2), only(&[&[A], &[B], &[OUT]])),
+            reaches("eitherFair", is(&n, 2), only(&[&[OUT, A]])),
+            reaches("stepFair", is(&n, 2), with_the_step(&[])),
         ],
     );
     let outcome = searched(&model);
@@ -204,13 +207,13 @@ fn a_loop_of_fair_actions_needs_each_one_s_turn() {
 
 #[test]
 fn a_fair_action_that_is_not_always_possible_can_be_put_off() {
-    let (sketch, n) = swing(false);
+    let (sketch, n) = swing(|n| is(n, 1));
     let model = with(
         sketch,
         vec![
-            reaches("outFair", is(&n, 2), fair(false, &[&[OUT]])),
-            reaches("outAndAFair", is(&n, 2), fair(false, &[&[OUT], &[A]])),
-            reaches("outAndStepFair", is(&n, 2), fair(true, &[&[OUT]])),
+            reaches("outFair", is(&n, 2), only(&[&[OUT]])),
+            reaches("outAndAFair", is(&n, 2), only(&[&[OUT], &[A]])),
+            reaches("outAndStepFair", is(&n, 2), with_the_step(&[&[OUT]])),
         ],
     );
     let outcome = searched(&model);
