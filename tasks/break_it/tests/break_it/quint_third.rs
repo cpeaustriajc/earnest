@@ -300,7 +300,7 @@ fn fairness_of_an_action_given_a_part_of_a_picked_tuple_or_record_is_judged_as_t
         let model = report.model("fair_parts");
         let mut found = verdicts_of(model);
         found.sort();
-        let mut wanted = expected.clone();
+        let mut wanted = expected;
         wanted.sort();
         assert_eq!(
             (model["states"].as_u64(), found),
