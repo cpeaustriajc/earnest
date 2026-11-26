@@ -72,6 +72,12 @@ pub struct Setup<'c> {
     runs: &'c Runs,
 }
 
+impl Setup<'_> {
+    fn runs_only(&self) -> bool {
+        self.invariants.is_empty() && self.temporal.is_empty() && *self.runs != Runs::None
+    }
+}
+
 impl<'c> Setup<'c> {
     /// The check of the module `main`, with its `init` and `step`, the invariants and temporal
     /// properties it lists, and the runs it plays.
@@ -139,7 +145,7 @@ impl Typechecked {
     /// has neither `q::init` nor `q::step`, and only [`crate::read_runs`] reads it.
     #[must_use]
     pub fn setup(&self, check: &Setup<'_>) -> Option<String> {
-        let filler = Filler::new(self, check.main)?;
+        let filler = Filler::new(self, check.main, check.runs_only())?;
         filler.filled(check)
     }
 }
@@ -249,7 +255,7 @@ fn instance<'t>(
 }
 
 impl<'t> Filler<'t> {
-    fn new(typechecked: &'t Typechecked, main_name: &str) -> Fill<Self> {
+    fn new(typechecked: &'t Typechecked, main_name: &str, runs_only: bool) -> Fill<Self> {
         let main = typechecked.module(main_name)?;
         let mut instances: Vec<Instance<'t>> = Vec::new();
         let mut own = HashMap::new();
@@ -288,11 +294,14 @@ impl<'t> Filler<'t> {
                 "def" => {
                     own.insert(number(declaration, "id")?, declaration);
                 }
+                "var" if runs_only => {
+                    own.insert(number(declaration, "id")?, declaration);
+                }
                 "typedef" => {}
                 _ => return None,
             }
         }
-        if instances.iter().all(|each| each.declared.is_none()) {
+        if !runs_only && instances.iter().all(|each| each.declared.is_none()) {
             return None;
         }
         for export in exports {
@@ -448,7 +457,12 @@ impl<'t> Filler<'t> {
         copy["name"] = Value::String(shown);
         copy["id"] = json!(self.id_in(within, target));
         if text(declaration, "kind") == Some("var") {
-            copy["typeAnnotation"] = self.inlined(within?, declaration.get("typeAnnotation")?)?;
+            let annotation = declaration.get("typeAnnotation")?;
+            copy["typeAnnotation"] = match within {
+                Some(position) => self.inlined(position, annotation)?,
+                None if text(annotation, "kind") == Some("const") => return None,
+                None => annotation.clone(),
+            };
             self.keep_type(within, target)?;
         } else {
             copy["expr"] = self.expr(declaration.get("expr")?, within)?;
@@ -722,8 +736,7 @@ impl<'t> Filler<'t> {
     fn filled(mut self, check: &Setup<'_>) -> Fill<String> {
         self.roots()?;
         let actions = ["action"];
-        let runs_only =
-            check.invariants.is_empty() && check.temporal.is_empty() && *check.runs != Runs::None;
+        let runs_only = check.runs_only();
         let searched = match (
             self.named(check.init, &actions),
             self.named(check.step, &actions),
