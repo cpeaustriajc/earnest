@@ -346,6 +346,25 @@ fn parts<'a>(
     Ok((starts, actions, rules, read.eventually, picks))
 }
 
+fn both<A, B>(
+    first: Result<A, Vec<Refusal>>,
+    second: Result<B, Vec<Refusal>>,
+    defs: &HashMap<u64, &Def>,
+) -> Result<(A, B), Vec<Refusal>> {
+    match (first, second) {
+        (Ok(first), Ok(second)) => Ok((first, second)),
+        (first, second) => {
+            let refused = first
+                .err()
+                .into_iter()
+                .chain(second.err())
+                .flatten()
+                .collect();
+            Err(listed(refused, defs))
+        }
+    }
+}
+
 fn listed(mut refused: Vec<Refusal>, defs: &HashMap<u64, &Def>) -> Vec<Refusal> {
     let mut seen = HashSet::new();
     refused.retain(|each| {
@@ -537,18 +556,7 @@ fn built(
         },
     );
     let ((starts, mut actions, mut rules, mut eventually, picks), (mut scripts, script_picks)) =
-        match (read, played) {
-            (Ok(read), Ok(played)) => (read, played),
-            (read, played) => {
-                let refused = read
-                    .err()
-                    .into_iter()
-                    .chain(played.err())
-                    .flatten()
-                    .collect();
-                return Err(listed(refused, &defs));
-            }
-        };
+        both(read, played, &defs)?;
     let picks = picks.into_iter().chain(script_picks).collect();
     shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);

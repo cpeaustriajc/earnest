@@ -8,7 +8,7 @@ module problems {
   val small = x < 5
   val chosen = Set(x).chooseSome() >= 0
 
-  run fromNowhereTest = grow.then(grow)
+  run repsTest = init.then(0.reps(_ => grow))
   run growTest = init.then(grow)
   run lateFailTest = init.then(grow).fail().then(grow)
 }

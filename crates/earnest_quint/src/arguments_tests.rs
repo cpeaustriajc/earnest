@@ -159,7 +159,7 @@ fn each_piece_of_a_check_gives_its_first_problem_in_the_order_of_the_file() {
         features(PROBLEMS),
         pairs(&[
             ("`chooseSome`", "chosen"),
-            ("a run", "fromNowhereTest"),
+            ("`reps`", "repsTest"),
             ("`fail`", "lateFailTest"),
         ])
     );

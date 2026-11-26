@@ -118,7 +118,7 @@ Each piece of a check is read on its own: `init`, each action of the step's `any
 ```text
 unreadable  specs/problems.qnt  problems
   specs/problems.qnt:9:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `chosen`
-  specs/problems.qnt:11:25  a run  a run that does not start with `init`: ..., in the run `fromNowhereTest`
+  specs/problems.qnt:11:7  `reps`  a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: ..., in the run `repsTest`
   specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
 ```
 

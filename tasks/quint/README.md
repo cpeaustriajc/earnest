@@ -3347,3 +3347,124 @@ On the tree merged with the integration head `a94146b`:
 - A module that writes a record shaped like a variant prints all its variants as records. A
   typed printer (walking each field's Quint type) would avoid it; it was not worth the size.
 - Action ids of `match` branches are numbered (`follow#2`), as `any` branches already are.
+
+## Real project, second reads (#67): report
+
+The owner's run of the integration build on a real project left 7 setups unreadable on two forms
+`quint typecheck` accepts, and showed one problem per check at a time. The fixtures are in
+`crates/earnest_quint/fixtures`, each `.qnt` beside what Quint 0.33.1 wrote (to a file):
+
+```sh
+# crates/earnest_quint/fixtures
+quint compile --target json --main AllAsBool --invariant TypeOK allasbool.qnt > allasbool.json
+quint compile --target json --main ActionArgument --invariant Bounded actionargument.qnt > actionargument.json
+quint compile --target json --main wider --invariant Sane,Few,Low wider.qnt > wider.json
+quint compile --target json --main problems --invariant small,chosen problems.qnt > problems.json
+quint compile --target json --main repeated --invariant small,listed --temporal strong,fairPick problems.qnt > repeated.json
+quint parse problems.qnt --out problems.parse.json --source-map problems.sourcemap.json
+```
+
+(`problems.sourcemap.json`'s `sourceIndex` made relative.)
+
+### What Quint does [ran]
+
+- `allasbool.qnt` and `actionargument.qnt`, the owner's samples as written: `quint verify --backend
+  tlc` finds 4 distinct states in each; `TypeOK` and `Bounded` hold.
+- `wider.qnt`: `all`/`any` of conditions in a `pure def`, a `val`, an argument, `forall`, `filter`
+  and `expect`; an action given as an argument used in both branches of an `if` (`either`), passed
+  two levels down (`outer` to `between`), reading the caller's parameter (`caller(k)` gives
+  `all { flag' = k > 1 }` to `plus(k, changes)`), a `nondet` block (`outer({ nondet v = ...
+  flag' = v })`), in a run step, and a lambda-taking action (`action each(f: int => bool)` called
+  with `v => all { flag' = v >= 2 }`, which the typechecker accepts). TLC: 9 distinct states,
+  `Sane` holds, `Few` and `Low` violated. `quint test`: `moveTest` passes, `wrongTest` fails.
+- `any` over conditions (`tasks/quint/probe/anyprobe.qnt`): TLC and `quint run` agree it is `or`:
+  `any { n >= 0, n <= 3 }` holds, `not(any { n == 1, n == 2 })` is violated at `n = 1`,
+  `any { n > 5, n < 0 }` at the start, `not(all { n >= 2, n <= 2 })` at `n = 2`.
+- Quint's effect checker refuses every other action where a value is wanted: `val V = all { x' = 1,
+  x > 0 }` (`QNT200`: `val operators may only read state variables`), an action inside `exists`,
+  `forall` or an `if` condition in an action (`only allowed in temporal definitions`), and a `val`
+  that names an action.
+
+### Done
+
+1. **`all`/`any` of conditions** (`reader.rs`, `acts`): `is_action` counts an `all`/`any` as an
+   action, as before; `assigns` counts only what reaches an assignment. In `pure`, an
+   `actionAll`/`actionAny` whose items assign nothing is `and`/`or`; one that assigns is refused
+   before its items are read, so the message names the `all { … }`: "an `all { … }` with an
+   assignment in it is an action, not a condition, and it stands where Quint wants a value, such
+   as a `val`, a `def`, an invariant or a guard: ...; write the condition without the assignment,
+   or move the assignment into an action". Tests: `arguments_tests::an_all_of_conditions_in_a_val_
+   is_read_as_and`, `..._in_a_def_an_argument_a_forall_and_a_filter`,
+   `..._is_refused_as_an_action`; `quint_arguments::the_owners_all_of_conditions_...`.
+2. **Actions as arguments** (`Bound::Action`): at a call, an argument that is an action is bound
+   by its parameter's Quint id as written, and read where the parameter stands: as paths in
+   action position, as a value elsewhere (so `all { x > 0 }` given to a `def` is `and`). A name
+   bound to an action is passed on as the binding itself, so two levels down reads the caller's
+   argument, and the caller's parameters stay bound while the callee is read. A lambda parameter
+   called in action position binds its parameters and reads its body as paths. No second
+   evaluator: it is the substitution #64 does for operators. Tests:
+   `arguments_tests::an_action_given_as_an_argument_...`, `..._twice_two_levels_down_with_a_
+   nondet_and_through_a_lambda`; `quint_arguments::the_owners_action_given_as_an_argument_...`,
+   `the_wider_sample_gives_tlcs_nine_states_...`.
+3. **Every problem** (`model.rs` `parts`, `stepped`, `listed`; `reader.rs` `alternatives`;
+   `temporal.rs` `temporal`): `init`, each item of the step's top `any` (through `q::step` and its
+   aliases), each listed invariant, each temporal property and each run are read on their own,
+   and each gives its first refusal. A refused step item that is a name is kept in the step's parts
+   with no actions, so a fairness over it gives no second problem. A refusal with a Quint id is
+   listed once per feature and id (`pickTest` playing the refused `pick` and `fairPick`'s fairness
+   over it read the same `chooseSome`); one without an id once per feature and definition. The
+   list is sorted by the refusal's id, else its definition's id, which is the order of the file;
+   the app sorts placed problems by line as before. `Result<Model, Vec<Refusal>>` and the JSON
+   `unreadable` list keep their shape. Tests: `quint_problems::two_unread_runs_and_an_unread_
+   invariant_print_three_problems_under_one_unreadable_line` (9:16, 11:7, 13:22),
+   `..._does_not_repeat_its_problem_and_the_json_carries_them_all`,
+   `arguments_tests::each_piece_of_a_check_gives_its_first_problem_...`,
+   `a_problem_reached_from_the_step_a_run_and_a_fairness_is_listed_once`.
+4. **Messages**: an assignment where a value is wanted says "an assignment is an action, not a
+   condition, ..." and shows `` `x' = …` `` with the variable's own name; a named action used as a
+   value (`an action used inside an expression` before) says it is an action, where actions are
+   read, and to write a `def` or `val` for a condition.
+
+`earnest confirm --tlc` (Apalache 0.62.4's jar): `same` for `AllAsBool` (4 states),
+`ActionArgument` (4) and `wider` (9); `tasks/break_it/tests/tlc/quint_arguments.rs` asserts it.
+
+### Still refused
+
+An `all`/`any` with an assignment, an assignment or a named action where a value is wanted, which
+only a temporal definition reaches from legal Quint, with the messages above. A `def` that takes
+an action is read as an action takes one, but Quint refuses a `def` with an assignment
+(`QNT200`), so it is not in a fixture.
+
+### Tests of earlier slices changed
+
+None.
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `bb60c5f` (#66's early push):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings. `just lint-library`: no
+  warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2074 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, the conformance files `origin/main` does not have, as in earlier slices.
+- `tests_kept.py --base origin/main`: `tests kept: 1652 tests, 4792 assertions (base: 1304,
+  3798)`.
+- `cargo test --locked -p earnest_break_it --features tlc --test tlc quint_`: `quint_arguments`,
+  `quint_reads` and `quint_random` pass; `stutters::tlc_judges_every_quint_temporal_property_...`
+  fails (`m2`: "the checker says broken, TLC says unknown (Temporal property Eventually_p0 was
+  violated.)"), and fails the same way on `bb60c5f` without this slice.
+
+`just counts` and `just benchmark` were not run: `earnest_ir` and `earnest_check` are unchanged.
+
+### Doubts
+
+- A problem without a Quint id (a `reps` count, `strongFair`) is placed at its definition's line,
+  not at the expression.
+- Only the step's top `any` is split into pieces; an `all` of named actions at the top of the
+  step is one piece.
+- `problems.qnt`'s run `repsTest` is refused for `0.reps(...)`: #66 now reads a run that starts
+  with an action other than `init`, so that form no longer gives a stable refusal.

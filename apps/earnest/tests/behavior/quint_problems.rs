@@ -111,10 +111,10 @@ fn two_unread_runs_and_an_unread_invariant_print_three_problems_under_one_unread
         under(&run, "problems"),
         [
             "models/problems.qnt:9:16  `chooseSome`",
-            "models/problems.qnt:11:25  a run",
+            "models/problems.qnt:11:7  `reps`",
             "models/problems.qnt:13:22  `fail`",
         ],
-        "the invariant `chosen` on line 9, the run `fromNowhereTest` on line 11 and the run \
+        "the invariant `chosen` on line 9, the run `repsTest` on line 11 and the run \
          `lateFailTest` on line 13, in the order of the file\n{run}"
     );
     assert_eq!(
@@ -126,7 +126,7 @@ fn two_unread_runs_and_an_unread_invariant_print_three_problems_under_one_unread
         "{run}"
     );
     assert!(
-        run.stdout.contains("in the run `fromNowhereTest`")
+        run.stdout.contains("in the run `repsTest`")
             && run.stdout.contains("in the run `lateFailTest`")
             && run.stdout.contains("in the definition `chosen`"),
         "each problem names the piece it is in\n{run}"
@@ -141,7 +141,7 @@ fn a_run_that_plays_a_refused_action_does_not_repeat_its_problem_and_the_json_ca
     let found = places(&report);
     let expected: Vec<(u64, u64, String)> = [
         (9, 16, "`chooseSome`"),
-        (11, 25, "a run"),
+        (11, 7, "`reps`"),
         (13, 22, "`fail`"),
         (21, 22, "`chooseSome`"),
         (25, 16, "`allListsUpTo`"),
