@@ -19,6 +19,31 @@ const INIT: &str = "q::init";
 const STEP: &str = "q::step";
 const INVARIANTS: &str = "q::inv";
 const PROPERTIES: &str = "q::temporalProps";
+const WRITTEN_INVARIANT: &str = "invariant";
+const NOT_BOOLEAN: [&str; 22] = [
+    "iadd",
+    "isub",
+    "imul",
+    "idiv",
+    "imod",
+    "ipow",
+    "iuminus",
+    "Set",
+    "List",
+    "Map",
+    "Rec",
+    "Tup",
+    "to",
+    "range",
+    "size",
+    "length",
+    "keys",
+    "map",
+    "filter",
+    "union",
+    "intersect",
+    "exclude",
+];
 const STOPS_ANYWHERE: &str = "stops_anywhere";
 const STOPS_ANYWHERE_SAYS: &str =
     "A run may stop in any state, as in Quint's TLC runs, which do not check deadlock";
@@ -177,6 +202,15 @@ fn kept<T>(read: Read<T>, refused: &mut Vec<Refusal>) -> Option<T> {
     read.map_err(|refusal| refused.push(refusal)).ok()
 }
 
+fn gives_no_boolean(expr: &Quint) -> bool {
+    match expr {
+        Quint::Int { .. } | Quint::Str { .. } | Quint::Lambda { .. } => true,
+        Quint::App { opcode, .. } => NOT_BOOLEAN.contains(&opcode.as_str()),
+        Quint::Let { expr, .. } => gives_no_boolean(expr),
+        Quint::Bool { .. } | Quint::Name { .. } => false,
+    }
+}
+
 fn rules<'a>(
     reader: &mut Reader<'a>,
     defs: &HashMap<u64, &'a Def>,
@@ -190,17 +224,22 @@ fn rules<'a>(
         other => std::slice::from_ref(other),
     };
     let mut rules = Vec::with_capacity(conjuncts.len());
-    for conjunct in conjuncts {
+    for (position, conjunct) in conjuncts.iter().enumerate() {
         INVARIANTS.clone_into(&mut reader.within);
-        let Quint::Name { name, .. } = conjunct else {
-            kept(
-                reader.refuse::<()>(
-                    "an invariant",
-                    "an invariant that is not the name of a definition",
-                ),
-                refused,
-            );
-            continue;
+        let name = match conjunct {
+            Quint::Name { name, .. } => name.clone(),
+            other if gives_no_boolean(other) => {
+                kept(
+                    reader.refuse::<()>(
+                        "an invariant",
+                        "an invariant that gives a value that is not a boolean, which Quint's \
+                         TLC runs refuse",
+                    ),
+                    refused,
+                );
+                continue;
+            }
+            _ => format!("{WRITTEN_INVARIANT} {}", position.saturating_add(1)),
         };
         let Some(holds) = kept(reader.pure(conjunct), refused) else {
             continue;
@@ -210,7 +249,7 @@ fn rules<'a>(
             id: name.clone(),
             says: format!("The Quint invariant `{name}` holds"),
             line: DECLARED_ON,
-            text: name.clone(),
+            text: name,
             holds: Code::new(holds),
             slots,
         });

@@ -26,6 +26,10 @@ case "$1" in
       if [ "$previous" = "--temporal" ]; then temporal="$argument"; fi
       previous="$argument"
     done
+    if [ -f "$here/fails/$main@$invariants@$temporal" ]; then
+      cat "$here/fails/$main@$invariants@$temporal" >&2
+      exit 1
+    fi
     if [ -f "$here/compiled/$main@$invariants@$temporal.json" ]; then
       cat "$here/compiled/$main@$invariants@$temporal.json"
     else
@@ -50,7 +54,14 @@ case "$1" in
 esac
 "##;
 
-const COMPILED: [(&str, &str); 8] = [
+const COMPILED: [(&str, &str); 12] = [
+    ("guard@Late implies Small@", "guard-late-implies-small.json"),
+    (
+        "guard@n >= 0,Late implies Small@",
+        "guard-nonnegative-late-implies-small.json",
+    ),
+    ("guard@n + 1@", "guard-not-boolean.json"),
+    ("guard@Small@", "guard-small.json"),
     ("expect@small@", "expect-small.json"),
     ("parts@@partly", "parts-partly.json"),
     ("parts@@wholly", "parts-wholly.json"),
@@ -61,7 +72,7 @@ const COMPILED: [(&str, &str); 8] = [
     ("stuck@ok@", "stuck.json"),
 ];
 
-const MODULES: [&str; 5] = ["expect", "counter", "swing", "stuck", "parts"];
+const MODULES: [&str; 6] = ["expect", "counter", "swing", "stuck", "parts", "guard"];
 
 const NO_END: &str = "every expected counterexample was found";
 
@@ -553,5 +564,162 @@ fn a_temporal_property_in_parts_is_met_when_one_part_is_broken() {
         held.detail("parts"),
         ["holds  wholly  a counterexample was expected"],
         "{held}"
+    );
+}
+
+fn last_n(rule: &serde_json::Value) -> serde_json::Value {
+    let steps = rule["path"]["steps"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    steps.last().map_or(serde_json::Value::Null, |step| {
+        step["state"][0]["value"].clone()
+    })
+}
+
+#[test]
+fn an_expected_expression_breaks_where_its_guard_holds() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "guard.qnt", "main": "guard", "expectCounterexample": ["Late implies Small"] }"#,
+    );
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(0);
+    let report = run.json();
+    let found = rule(model(&report, "guard"), "Late implies Small");
+    assert_eq!(
+        (&found["verdict"], &found["expected"], &found["says"]),
+        (
+            &serde_json::json!("broken"),
+            &serde_json::json!("broken"),
+            &serde_json::json!("The Quint invariant `Late implies Small` holds")
+        ),
+        "{run}"
+    );
+    assert_eq!(
+        last_n(found),
+        3,
+        "the path ends where `Late` holds and `Small` does not\n{run}"
+    );
+    quint.checks(r#"{ "file": "guard.qnt", "main": "guard", "expectCounterexample": ["Small"] }"#);
+    let plain = quint.earnest(&["verify", "--json"]);
+    plain.exits(0);
+    assert_eq!(
+        last_n(rule(model(&plain.json(), "guard"), "Small")),
+        2,
+        "without the guard the shortest counterexample has `Late` false\n{plain}"
+    );
+}
+
+#[test]
+fn an_expression_takes_a_short_name_and_rule_selects_it() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "guard.qnt", "main": "guard", "invariants": ["n >= 0"], "expectCounterexample": [{ "name": "LateBreak", "is": "Late implies Small" }] }"#,
+    );
+    let run = quint.earnest(&["verify"]);
+    run.exits(0);
+    assert_eq!(
+        run.detail("guard"),
+        ["broken  LateBreak  (expected)"],
+        "{run}"
+    );
+    let json = quint.earnest(&["verify", "--json"]);
+    let report = json.json();
+    let ids: Vec<String> = model(&report, "guard")["rules"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|each| each["id"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(ids, ["n >= 0", "LateBreak"], "{json}");
+    for id in ["LateBreak", "n >= 0"] {
+        let one = quint.earnest(&["verify", "--json", "--rule", id]);
+        one.exits(0);
+        let report = one.json();
+        assert_eq!(
+            model(&report, "guard")["rules"].as_array().map(Vec::len),
+            Some(1),
+            "{one}"
+        );
+        assert_eq!(rule(model(&report, "guard"), id)["id"], id, "{one}");
+    }
+}
+
+#[test]
+fn an_expression_quint_or_earnest_refuses_makes_the_check_unreadable() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "guard.qnt", "main": "guard",
+      "invariants": ["Late implies Smal"] }"#,
+    );
+    quint.sandbox.write(
+        "fake/fails/guard@Late implies Smal@",
+        "error: [QNT404] Name 'Smal' not found\nerror: name resolution failed\n",
+    );
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let problem = &report["unreadable"][0];
+    assert_eq!(
+        (&problem["file"], &problem["line"], &problem["column"]),
+        (
+            &serde_json::json!("models/earnest.quint.json"),
+            &serde_json::json!(2),
+            &serde_json::json!(22)
+        ),
+        "Quint's error, at the item in the checks file\n{run}"
+    );
+    assert!(
+        message_of(&report).contains("Name 'Smal' not found"),
+        "{run}"
+    );
+    quint.checks(r#"{ "file": "guard.qnt", "main": "guard", "invariants": ["n + 1"] }"#);
+    let number = quint.earnest(&["verify", "--json"]);
+    number.exits(1);
+    assert!(
+        message_of(&number.json()).contains("not a boolean"),
+        "{number}"
+    );
+    for (checks, feature) in [
+        (
+            r#"{ "file": "guard.qnt", "main": "guard", "invariants": ["Small, Late"] }"#,
+            "`checks[0].invariants[0]`",
+        ),
+        (
+            r#"{ "file": "guard.qnt", "main": "guard", "temporal": ["always(Small)"] }"#,
+            "`checks[0].temporal[0]`",
+        ),
+        (
+            r#"{ "file": "guard.qnt", "main": "guard", "invariants": [{ "name": "A", "is": "Small", "more": 1 }] }"#,
+            "`checks[0].invariants[0].more`",
+        ),
+        (
+            r#"{ "file": "guard.qnt", "main": "guard", "invariants": [{ "name": "Late", "is": "n > 1" }, "Late"] }"#,
+            "`checks[0].invariants[1]`",
+        ),
+    ] {
+        quint.checks(checks);
+        let refused = quint.earnest(&["verify", "--json"]);
+        refused.exits(1);
+        assert_eq!(feature_of(&refused.json()), feature, "{refused}");
+    }
+}
+
+#[test]
+fn editing_an_expression_checks_again_and_the_same_text_is_cached() {
+    let quint = Quint::with_checks(
+        r#"{ "file": "guard.qnt", "main": "guard", "expectCounterexample": ["Late implies Small"] }"#,
+    );
+    quint.earnest(&["verify"]).exits(0);
+    let again = quint.earnest(&["verify"]);
+    assert!(
+        again.model_line("guard").contains(&"(cached)".to_owned()),
+        "{again}"
+    );
+    quint.checks(r#"{ "file": "guard.qnt", "main": "guard", "expectCounterexample": ["Small"] }"#);
+    let edited = quint.earnest(&["verify"]);
+    edited.exits(0);
+    assert!(
+        !edited.model_line("guard").contains(&"(cached)".to_owned()),
+        "{edited}"
     );
 }
