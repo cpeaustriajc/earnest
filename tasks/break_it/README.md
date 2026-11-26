@@ -1418,6 +1418,122 @@ Oversight"), so no verdict of a model written here was compared with TLC.
 `cargo test --locked -p earnest_break_it --features tlc --test tlc` ran with the jar from the
 latest release: 9 passed, in 173 s. tla-rs. Windows. Quint models (out of scope).
 
+## Eleventh pass
+
+An eleventh adversarial pass, made on commit 52cc2ea against witnesses, rules about runs, fair
+actions and setups in TypeScript and Rust models: their verdicts, paths, loops, `why` lines and
+state counts against an oracle written apart, `--jobs`, TLC and tla-rs, `explore` and `replay` in
+Node, the Rust twin and its compiled witness methods, and then `--rule`, the cache and `--base`.
+It found nothing wrong, so it adds no test and no model. The generators and the oracle are
+Python, need minutes rather than seconds, and are not kept; they are described below with their
+seeds, so a later pass can write them again.
+
+### The oracle and the generators
+
+The oracle reads the generated model, not earnest's code: it enumerates the start states (the
+last field changing fastest), searches breadth first with the actions in declaration order and
+the first input changing fastest, and drops each arrow that keeps the state as it is. For a
+rule about runs it takes the states where `reaches` is false, splits them into strongly
+connected groups (Tarjan), and calls a state doomed when no arrow changes it, or when it is in
+a group with an arrow inside that, for each fair action, has a state where no arrow of that
+action leaves, or an arrow of that action inside the group. The rule is broken when a state
+where it starts (`after` true, or a start state, with `reaches` false) leads to a doomed state
+through states where `reaches` is false; the shortest way in is the least depth of such a state
+plus the distance from it. A witness is played from each start state in order.
+
+Each broken rule about runs that earnest printed was then replayed against the oracle: the
+start is a start state, every step can happen and gives the printed state and changes it, some
+state at or before `repeatsFrom` is one where the rule starts and `reaches` is false from there
+to the end, the loop closes and is not empty, each fair action is taken on the loop or has a
+state of the loop where it can't change the state, a run with no loop ends in a state no action
+changes, the `why` line is the one `output.md` gives for it, and the steps before the loop are
+as many as the oracle's shortest way in. Each broken witness: the first start state that breaks
+it and the length of its path. Each plain rule: the verdict and the depth of its path. The state
+count, when no state went out of range.
+
+- **Free models** (seed 1, 50 models; seeds 100 to 119, 1000 to 1199 and 3000 to 3099, 200 models
+  each): one to three integer fields of 0 to 4, with and without `.initial`; one to four actions,
+  half fair, a third with one or two inputs, `when` built from `===`, `!==`, `<`, `<=`, `&&`, `||`
+  and `!`, changes by `m.rem`, a constant, another field, a condition, or `+ 1`, which can leave
+  the range; an end in four in ten; zero to two plain rules (seeds 3000 on); one to three rules
+  about runs, half with `after`; zero to two setups; zero to three witnesses of zero to four
+  steps, some naming a setup. 128 226 runs: 256 509 verdicts of rules about runs (45 991 broken
+  by a loop, 51 102 by a state the run stays in, 14 142 `unknown`), 95 912 witnesses, 37 926
+  plain rules.
+- **Phases** (seeds 1 to 59 and 100 to 599, 200 models each): a phase `p` of 0 to 4 and a ring
+  `x` of 2 to 5 values, sometimes a flag `y`; per phase a spin round the ring (some only on part
+  of it, some that keep `x` below a bound as it is and move it above, some with an input), a step
+  to the next phase from one place on the ring or from part of it, sometimes a step back, each
+  fair or not at random; `after` and `reaches` on the phase and the ring, so `after` is often true
+  inside a loop and `reaches` often only at a start or in the last phase. The shapes aimed at are
+  groups chained one after another, a doomed group reached only through a late `after`, fair
+  actions enabled on part of a loop, and two fair actions that take turns. 156 573 runs: 391 212
+  verdicts (159 759 broken by a loop, 50 765 by a state the run stays in), 55 994 witnesses.
+- **Large** (seeds 5000 to 5009, 20 models each, two to four fields of 8 to 40): 402 runs,
+  6 829 866 states, 779 verdicts, 287 witnesses. Seed 777: 12 models of 104 052 to 586 040
+  states found by trying models of three fields of 50 to 99 until each had 10^5 states or more
+  (26 runs with their setups, 5 703 247 states, 54 verdicts, 7 witnesses).
+- **`--max-states`** 1, 2, 3, 5, 8 and 13 over seeds 1 to 20 (100 free models each): 24 210 runs.
+  Of 48 786 verdicts of rules about runs, the 21 276 whose run was cut are all `unknown`, never
+  `holds`, and the rest equal the oracle; of 18 600 witnesses, each is what playing only the first
+  `--max-states` start states gives (877 `unknown`, where no start played broke it and more were
+  left).
+
+Every comparison agreed: no verdict, path, loop, `why` line or state count differed.
+
+### Also attacked and found correct
+
+- `--jobs`: 1, 2, 4, 8, 1, 4 and 8 on seeds 5000 to 5002 and on the 12 models of seed 777 (10^5
+  to 6 x 10^5 states, with setups, rules about runs and witnesses); 1, 2, 4, 8 and 3 on the
+  phase seeds 10 and 11, the Rust seed 5 and free seed 3010: the same JSON byte for byte apart
+  from `milliseconds`.
+- TLC (`tla2tools.jar` of the latest release at `target/tools`, through `earnest confirm --tlc`,
+  run in the foreground): 406 runs `same`, of free, phase and Rust models (seeds 100, 101, 3000,
+  phase 7, Rust 5). The same command in the background was refused by this session's auto mode
+  classifier.
+- tla-rs 0.3.0 (`cargo install` as `just tla-rs` does): `earnest confirm --tla-rs` on 100 files of
+  seed 3001, 197 runs `same`. tla-rs is not run on rules about runs by `confirm`, so each rule
+  about runs that earnest judged was given to tla-rs alone, with the module `earnest tla` wrote
+  and a configuration of `SPECIFICATION Spec`, `CHECK_DEADLOCK FALSE` and its one `PROPERTY`:
+  7 499 verdicts (free seeds 3002 to 3005, Rust seeds 5 to 8, phase seeds 1 to 4), each the same
+  (`Temporal property ... was violated` for `broken`, `No error has been found` for `holds`).
+- `explore` in Node, with `setup` for a setup's result, against `verify --json` (status, states,
+  rules with paths, reasons and `repeatsFrom`, findings) on free seeds 100 and 1000 to 1040 and
+  phase seeds 1 to 5: 18 113 runs, the same; `replay` with `setup` of every one of the 25 041
+  paths (apart from witnesses broken by a step out of range) ends in the printed last state.
+- The Rust twin: each free model of seeds 1 to 99 written as a `.rs` file (`#[range]` `u8`
+  fields, `require!`, `if` for a condition, `%`, a helper for each `after`, witnesses as chains
+  of `?`): 19 911 runs, the same JSON as the TypeScript form apart from `file` and `line`.
+  Compiled against `crates/earnest` in a crate of its own (seeds 1 to 21), each witness method
+  called from every start state, and from every start state with the setup applied, gives
+  `Some(true)` everywhere exactly where `verify` says `holds`: 3 028 witnesses.
+- `--rule <id>` for every id of 60 files of each of free seeds 3000 to 3002, with the file named:
+  796 selections, each the same verdicts and paths as the run without `--rule`, in every result.
+- The cache: two cached runs of seed 3005 give the JSON of `--no-cache`; cached runs with
+  `--rule`, `--max-states` and both before a full run of seed 3006 leave it the same as with
+  `--no-cache`, and `--max-states 5` and `--time-limit 100` agree cached and not.
+- `--base` on a Rust model: `fair` written without a space is no change; `fair` taken off an
+  action lists each rule about runs `changed`; an action renamed `r#a0` is no change.
+
+### Contract unclear (no test)
+
+- `output.md` says a rule about runs is `unknown` when the search did not finish, a state went
+  out of range or something faulted, "unless a run that breaks it was found". earnest never looks
+  for such a run then: all 21 276 verdicts cut by `--max-states` above, and every one with a state
+  out of range, are `unknown`. `typescript.md` ("the verdict is `unknown`, never `holds`") reads
+  the same. Whether `broken` may come from a search that did not finish is not said.
+
+Settled after the pass: `output.md` now says a run that breaks a rule about runs is looked for
+only after a search that finished, so a search that stopped early never gives `broken` for one.
+The binary did that already.
+
+### Not covered
+
+Fields of other kinds (booleans, enums, optionals, records, collections) in the generators;
+prior passes tried them by hand. `explore` in Node on the large models. A compiled Rust witness
+whose step leaves the range (the docs name that difference). `--time-limit` beyond one run,
+`chart` and `report`. Windows. Quint models.
+
 ## First Quint pass
 
 An adversarial pass over the Quint reader (`crates/earnest_quint`, the `.qnt` side of

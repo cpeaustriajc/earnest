@@ -3,6 +3,7 @@
 //! `just tlc` puts at `target/tools/tla2tools.jar`, or the path in `EARNEST_TLC_JAR`.
 
 mod quint_random;
+mod quint_reads;
 mod runs;
 mod stutters;
 

@@ -1,6 +1,6 @@
 use crate::builtins::{Builtin, builtin, not_read};
 use crate::data::data_builtin;
-use crate::json::{Def, Entry, Expr as Quint};
+use crate::json::{Compiled, Def, Entry, Expr as Quint, Param, Scheme};
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::HashMap;
@@ -80,10 +80,38 @@ impl Path {
 }
 
 pub(crate) const MOST_ACTIONS: usize = 1000;
+const DEBUG: &str = "q::debug";
+const GENERATED: &str = "q::";
+const ACTION: &str = "action";
+const LAMBDA: &str = "def";
+const OPERATOR_AS_VALUE: &str = "an operator used as a value, which the checker does not hold: \
+                                 call it, or give it to a definition or a builtin that calls it";
 
+#[derive(Clone)]
 pub(crate) enum Bound<'a> {
     Value(Expr),
     Operator(&'a Def),
+    Lambda(&'a [Param], &'a Quint),
+}
+
+const BOOLEANS: &str = "Bool";
+const ENDLESS: [(&str, &str); 2] = [
+    ("Nat", "the set of every integer from 0 up"),
+    ("Int", "the set of every integer"),
+];
+
+pub(crate) fn endless(name: &str) -> Option<&'static str> {
+    ENDLESS
+        .iter()
+        .find(|(each, _)| *each == name)
+        .map(|(_, what)| *what)
+}
+
+fn written_out(value: &serde_json::Number) -> String {
+    value
+        .as_f64()
+        .filter(|number| number.is_finite())
+        .map_or_else(|| value.to_string(), |number| format!("{number:.0}"))
 }
 
 pub(crate) struct Reader<'a> {
@@ -97,6 +125,8 @@ pub(crate) struct Reader<'a> {
     pub(crate) in_init: bool,
     pub(crate) unnamed: Vec<u64>,
     pub(crate) within: String,
+    trail: Vec<String>,
+    types: &'a HashMap<String, Scheme>,
 }
 
 fn base_name(parameter: &str) -> &str {
@@ -200,13 +230,13 @@ fn too_many_actions() -> Refusal {
 
 impl<'a> Reader<'a> {
     pub(crate) fn new(
-        table: &'a HashMap<String, Entry>,
+        compiled: &'a Compiled,
         defs: HashMap<u64, &'a Def>,
         fields: HashMap<u64, usize>,
         symbols: Symbols,
     ) -> Self {
         Self {
-            table,
+            table: &compiled.table,
             defs,
             fields,
             bound: HashMap::new(),
@@ -216,6 +246,8 @@ impl<'a> Reader<'a> {
             in_init: false,
             unnamed: Vec::new(),
             within: String::new(),
+            trail: Vec::new(),
+            types: &compiled.types,
         }
     }
 
@@ -224,11 +256,37 @@ impl<'a> Reader<'a> {
     }
 
     pub(crate) fn refuse<T>(&self, feature: &str, why: &str) -> Read<T> {
+        let shown: Vec<String> = self
+            .trail
+            .iter()
+            .filter(|name| {
+                !name.is_empty() && !name.starts_with(GENERATED) && **name != self.within
+            })
+            .map(|name| format!("`{name}`"))
+            .collect();
+        let reached = match shown.split_first() {
+            None => String::new(),
+            Some((first, [])) => format!(", which {first} uses"),
+            Some((first, through)) => {
+                format!(", which {first} reaches through {}", through.join(", "))
+            }
+        };
         Err(refusal(
             feature,
-            &format!("{why}, in the definition `{}`", self.within),
+            &format!("{why}, in the definition `{}`{reached}", self.within),
         )
         .within(&self.within))
+    }
+
+    pub(crate) fn type_of(&self, id: u64) -> Option<&'a Scheme> {
+        self.types.get(&id.to_string())
+    }
+
+    pub(crate) fn variable_id(&self, position: usize) -> Option<u64> {
+        self.fields
+            .iter()
+            .find(|(_, each)| **each == position)
+            .map(|(id, _)| *id)
     }
 
     pub(crate) fn entry(&self, id: u64, name: &str) -> Read<&'a Entry> {
@@ -236,14 +294,45 @@ impl<'a> Reader<'a> {
             Some(entry) => Ok(entry),
             None => self.refuse(
                 &format!("`{name}`"),
-                "the compiled file does not say what this name is",
+                "the reader does not know this name: it is not a definition of the compiled \
+                 module, nor a builtin operator of Quint that earnest reads",
             ),
         }
     }
 
+    fn builtin_set(&self, name: &str) -> Read<Expr> {
+        match endless(name) {
+            None => Ok(Expr::Const(Value::set(
+                [Value::Bool(false), Value::Bool(true)]
+                    .into_iter()
+                    .collect(),
+            ))),
+            Some(what) => self.refuse(
+                &format!("`{name}`"),
+                &format!(
+                    "`{name}` is {what}, a set without end, which the checker cannot hold: it is \
+                     read only in `x.in({name})`, `S.contains(x)` and `S.subseteq({name})`; \
+                     elsewhere write a range such as `0.to(9)`"
+                ),
+            ),
+        }
+    }
+
+    pub(crate) fn is_builtin_set(&self, id: u64, name: &str) -> bool {
+        !self.table.contains_key(&id.to_string()) && (name == BOOLEANS || endless(name).is_some())
+    }
+
     pub(crate) fn operator(&self, entry: &Entry, name: &str) -> Read<&'a Def> {
-        if let Some(Bound::Operator(def)) = self.bound.get(&entry.id) {
-            return Ok(def);
+        match self.bound.get(&entry.id) {
+            Some(Bound::Operator(def)) => return Ok(def),
+            Some(Bound::Lambda(..)) => {
+                return self.refuse(
+                    &format!("`{name}`"),
+                    "an operator given as an argument, used where a definition of the module \
+                     is read",
+                );
+            }
+            _ => {}
         }
         match self.defs.get(&entry.id) {
             Some(def) if entry.kind == "def" => Ok(def),
@@ -273,11 +362,15 @@ impl<'a> Reader<'a> {
     fn enter<T>(&mut self, def: &Def, read: impl FnOnce(&mut Self) -> Read<T>) -> Read<T> {
         let top = self.defs.contains_key(&def.id);
         let outer = if top {
+            self.trail.push(self.within.clone());
             std::mem::replace(&mut self.within, def.name.clone())
         } else {
             self.within.clone()
         };
         let result = read(self);
+        if top {
+            self.trail.pop();
+        }
         self.within = outer;
         result
     }
@@ -316,19 +409,15 @@ impl<'a> Reader<'a> {
         result
     }
 
-    fn with_arguments<T>(
+    fn bind_parameters(
         &mut self,
-        def: &'a Def,
-        arguments: Vec<Expr>,
-        read: impl FnOnce(&mut Self, &'a Quint) -> Read<T>,
-    ) -> Read<T> {
-        let (parameters, body): (&[_], &Quint) = match &def.expr {
-            Quint::Lambda { params, expr } => (params, expr),
-            body => (&[], body),
-        };
+        (name, qualifier): (&str, &str),
+        parameters: &'a [Param],
+        arguments: Vec<Bound<'a>>,
+    ) -> Read<Vec<(u64, Option<Bound<'a>>)>> {
         if parameters.len() != arguments.len() {
             return self.refuse(
-                &format!("`{}`", def.name),
+                &format!("`{name}`"),
                 &format!(
                     "it takes {} arguments and is given {}",
                     parameters.len(),
@@ -338,29 +427,89 @@ impl<'a> Reader<'a> {
         }
         let mut outer = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().zip(arguments) {
-            if def.qualifier == "action"
-                && let Expr::Local(slot) = argument
+            if qualifier == ACTION
+                && let Bound::Value(Expr::Local(slot)) = argument
             {
                 self.parameters
                     .insert(slot, base_name(&parameter.name).to_owned());
             }
-            outer.push((
-                parameter.id,
-                self.bound.insert(parameter.id, Bound::Value(argument)),
-            ));
+            outer.push((parameter.id, self.bound.insert(parameter.id, argument)));
         }
-        let result = self.enter(def, |reader| read(reader, body));
+        Ok(outer)
+    }
+
+    fn unbind(&mut self, outer: Vec<(u64, Option<Bound<'a>>)>) {
         for (id, was) in outer {
             match was {
                 Some(was) => self.bound.insert(id, was),
                 None => self.bound.remove(&id),
             };
         }
+    }
+
+    fn with_arguments<T>(
+        &mut self,
+        def: &'a Def,
+        arguments: Vec<Bound<'a>>,
+        read: impl FnOnce(&mut Self, &'a Quint) -> Read<T>,
+    ) -> Read<T> {
+        let (parameters, body): (&[_], &Quint) = match &def.expr {
+            Quint::Lambda { params, expr } => (params, expr),
+            body => (&[], body),
+        };
+        let outer = self.bind_parameters((&def.name, &def.qualifier), parameters, arguments)?;
+        let result = self.enter(def, |reader| read(reader, body));
+        self.unbind(outer);
         result
     }
 
-    fn arguments(&mut self, args: &'a [Quint]) -> Read<Vec<Expr>> {
-        args.iter().map(|each| self.pure(each)).collect()
+    fn called_lambda(
+        &mut self,
+        name: &str,
+        (parameters, body): (&'a [Param], &'a Quint),
+        args: &'a [Quint],
+    ) -> Read<Expr> {
+        let arguments = self.passed(args)?;
+        let outer = self.bind_parameters((name, LAMBDA), parameters, arguments)?;
+        let result = self.pure(body);
+        self.unbind(outer);
+        result
+    }
+
+    fn passed(&mut self, args: &'a [Quint]) -> Read<Vec<Bound<'a>>> {
+        args.iter()
+            .map(|each| match each {
+                Quint::Lambda { params, expr } => Ok(Bound::Lambda(params, expr)),
+                Quint::Name { id, .. } => match self.callable(*id) {
+                    Some(operator) => Ok(operator),
+                    None => self.pure(each).map(Bound::Value),
+                },
+                _ => self.pure(each).map(Bound::Value),
+            })
+            .collect()
+    }
+
+    fn callable(&self, id: u64) -> Option<Bound<'a>> {
+        let entry = self.table.get(&id.to_string())?;
+        match self.bound.get(&entry.id) {
+            Some(Bound::Value(_)) => None,
+            Some(operator) => Some(operator.clone()),
+            None => {
+                let def = self.defs.get(&entry.id).copied()?;
+                (entry.kind == "def"
+                    && def.qualifier != "action"
+                    && matches!(def.expr, Quint::Lambda { .. }))
+                .then_some(Bound::Operator(def))
+            }
+        }
+    }
+
+    pub(crate) fn given_lambda(&self, id: u64) -> Option<(&'a [Param], &'a Quint)> {
+        let entry = self.table.get(&id.to_string())?;
+        match self.bound.get(&entry.id) {
+            Some(Bound::Lambda(parameters, body)) => Some((*parameters, *body)),
+            _ => None,
+        }
     }
 
     fn local<T>(&mut self, opdef: &'a Def, read: impl FnOnce(&mut Self) -> Read<T>) -> Read<T> {
@@ -382,15 +531,18 @@ impl<'a> Reader<'a> {
             Quint::Int { value } => match value.as_i64() {
                 Some(number) => Ok(Expr::Const(Value::Int(number))),
                 None => self.refuse(
-                    &format!("`{value}`"),
-                    "an integer beyond 64 bits, which the checker does not hold",
+                    &format!("`{}`", written_out(value)),
+                    "an integer beyond 64 bits, which the checker does not hold: it holds \
+                     integers from -2^63 to 2^63 - 1, so write a smaller number",
                 ),
             },
             Quint::Bool { value } => Ok(Expr::Const(Value::Bool(*value))),
             Quint::Str { value } => Ok(Expr::Const(Value::Str(self.text(value)))),
             Quint::Lambda { .. } => self.refuse(
                 "an operator as a value",
-                "an operator passed as a value is not read yet",
+                "an operator kept as a value, which the checker does not hold: an operator is \
+                 read where it is called, or given as an argument to a definition or a builtin \
+                 such as `map` or `filter`",
             ),
             Quint::Let { opdef, expr } => self.local(opdef, |reader| reader.pure(expr)),
             Quint::Name { id, name } => self.name(*id, name),
@@ -399,6 +551,9 @@ impl<'a> Reader<'a> {
     }
 
     fn name(&mut self, id: u64, name: &str) -> Read<Expr> {
+        if self.is_builtin_set(id, name) {
+            return self.builtin_set(name);
+        }
         let entry = self.entry(id, name)?;
         match entry.kind.as_str() {
             "var" => match self.fields.get(&entry.id) {
@@ -414,8 +569,12 @@ impl<'a> Reader<'a> {
                 "a constant without a value: compile the module that gives it one",
             ),
             _ => {
-                if let Some(Bound::Value(value)) = self.bound.get(&entry.id) {
-                    return Ok(value.clone());
+                match self.bound.get(&entry.id) {
+                    Some(Bound::Value(value)) => return Ok(value.clone()),
+                    Some(Bound::Lambda(..)) => {
+                        return self.refuse(&format!("`{name}`"), OPERATOR_AS_VALUE);
+                    }
+                    _ => {}
                 }
                 let def = self.operator(entry, name)?;
                 if def.qualifier == "action" {
@@ -423,7 +582,7 @@ impl<'a> Reader<'a> {
                         .refuse(&format!("`{name}`"), "an action used inside an expression");
                 }
                 if matches!(def.expr, Quint::Lambda { .. }) {
-                    return self.refuse(&format!("`{name}`"), "an operator used as a value");
+                    return self.refuse(&format!("`{name}`"), OPERATOR_AS_VALUE);
                 }
                 self.with_arguments(def, Vec::new(), Self::pure)
             }
@@ -434,9 +593,19 @@ impl<'a> Reader<'a> {
         if let Some(data) = data_builtin(opcode) {
             return self.data(data, opcode, args);
         }
+        if opcode == DEBUG
+            && let [_, shown] = args
+        {
+            return self.pure(shown);
+        }
         let Some(found) = builtin(opcode) else {
             if let Some(why) = not_read(opcode) {
-                return self.refuse(&format!("`{opcode}`"), why);
+                return self
+                    .refuse(&format!("`{opcode}`"), why)
+                    .map_err(|refused| refused.at(id));
+            }
+            if let Some(lambda) = self.given_lambda(id) {
+                return self.called_lambda(opcode, lambda, args);
             }
             let entry = self.entry(id, opcode)?;
             let def = self.operator(entry, opcode)?;
@@ -446,7 +615,7 @@ impl<'a> Reader<'a> {
                     "an action used inside an expression",
                 );
             }
-            let arguments = self.arguments(args)?;
+            let arguments = self.passed(args)?;
             return self.with_arguments(def, arguments, Self::pure);
         };
         let mut arguments = self.arguments(args)?;
@@ -491,6 +660,10 @@ impl<'a> Reader<'a> {
         Ok(built)
     }
 
+    fn arguments(&mut self, args: &'a [Quint]) -> Read<Vec<Expr>> {
+        args.iter().map(|each| self.pure(each)).collect()
+    }
+
     pub(crate) fn is_action(&self, expr: &Quint) -> bool {
         match expr {
             Quint::App { id, opcode, args } => match builtin(opcode) {
@@ -514,7 +687,7 @@ impl<'a> Reader<'a> {
         };
         let def = match self.bound.get(&entry.id) {
             Some(Bound::Operator(def)) => Some(*def),
-            Some(Bound::Value(_)) => None,
+            Some(Bound::Value(_) | Bound::Lambda(..)) => None,
             None => self.defs.get(&entry.id).copied(),
         };
         def.is_some_and(|found| found.qualifier == "action")
@@ -549,7 +722,7 @@ impl<'a> Reader<'a> {
                 _ => {
                     let entry = self.entry(*id, opcode)?;
                     let def = self.operator(entry, opcode)?;
-                    let arguments = self.arguments(args)?;
+                    let arguments = self.passed(args)?;
                     self.action(def, arguments)
                 }
             },
@@ -581,7 +754,7 @@ impl<'a> Reader<'a> {
         Ok(joined)
     }
 
-    fn action(&mut self, def: &'a Def, arguments: Vec<Expr>) -> Read<Vec<Path>> {
+    fn action(&mut self, def: &'a Def, arguments: Vec<Bound<'a>>) -> Read<Vec<Path>> {
         let mut paths = self.with_arguments(def, arguments, Self::paths)?;
         if !self.unnamed.contains(&def.id) {
             for path in &mut paths {
@@ -694,7 +867,10 @@ impl<'a> Reader<'a> {
             if domain.count() > MOST_VALUES_LISTED {
                 return self.refuse(
                     &feature,
-                    &format!("a range of more than {MOST_VALUES_LISTED} values"),
+                    &format!(
+                        "a range of more than {MOST_VALUES_LISTED} values, more than the checker \
+                         tries in one step: pick from a smaller range"
+                    ),
                 );
             }
             let values = domain.values();
@@ -706,7 +882,10 @@ impl<'a> Reader<'a> {
                 if u128::try_from(items.len()).unwrap_or(u128::MAX) > MOST_VALUES_LISTED {
                     return self.refuse(
                         &feature,
-                        &format!("a set of more than {MOST_VALUES_LISTED} values"),
+                        &format!(
+                            "a set of more than {MOST_VALUES_LISTED} values, more than the \
+                             checker tries in one step: pick from a smaller set"
+                        ),
                     );
                 }
                 let listed = Expr::Apply(

@@ -69,7 +69,7 @@ First, earnest runs `quint parse` once for each listed `.qnt` file, to learn whi
 quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
 ```
 
-Then, for each file with a check of a setup module of the plain shape below, it runs `quint typecheck` once, whatever the number of setups in the file:
+Then, for each file with a check of a setup module, it runs `quint typecheck` once, whatever the number of setups in the file. A setup module instantiates a spec:
 
 ```sh
 quint typecheck specs/clock.qnt --out .earnest/quint/...
@@ -82,14 +82,21 @@ module Small {
 }
 ```
 
-For such a check, earnest builds the module `quint compile --main Small` would give from what `quint typecheck` wrote: the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), each constant replaced by the expression the import gives it, the definitions of `Small`, and the check's `init`, `step`, invariants and temporal properties. No compile runs. The shape is:
+For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. No compile runs. Earnest builds a setup module made of any of these:
 
-- one `import Spec(...).*` and nothing else but definitions of the setup's own;
-- `Spec` imports, instantiates and exports nothing, and declares only constants, variables, definitions and types;
-- each constant of `Spec` is given an expression of numbers, text, booleans and builtin operators, such as `Set("a", "b")` or `{ low: 1, high: 4 }`, not one that names a definition;
-- `init`, `step`, each invariant and each temporal property is the name of one definition of the setup or of `Spec`.
+| In the setup module | Example | Names |
+|---|---|---|
+| A whole instance | `import Clock(MaxTime = 3).*` | `init`, `time` |
+| An instance under a name | `import Clock(MaxTime = 8) as C` | `C::init`, or the setup's own `action init = C::init` |
+| A constant given by a name | `import Clock(MaxTime = Limit).*`, with `pure val Limit = 3` in the setup or in a module it imports | |
+| Several instances | `import Clock(MaxTime = 3).*` with `import Net(Size = 2).*`, or `import Clock(MaxTime = 2) as P` with `import Clock(MaxTime = 3) as R` | `P::init`, `R::init` |
+| An exported instance | `import Clock(MaxTime = 1) as C` with `export C.*` | `init`, as if imported whole |
+| A module of definitions | `import Lib.*` or `import Lib as L` | `twice`, `L::twice` |
+| Definitions of its own | `val neverLate = time < MaxTime` | `neverLate` |
 
-Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, `import Spec(...) as C`, an instance of a module that has an instance itself, `export`, several imports, a constant given a definition's value (`import Spec(K = Limit).*`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
+The spec itself must import, instantiate and export nothing, and declare only constants, variables, definitions and types. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
+
+Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -112,10 +119,26 @@ The reader takes variables of every type but operators: integers, booleans, text
 
 A `nondet x = S.oneOf()` may pick from a set that does not change, from a state variable (`pending.oneOf()`), from an expression over the state (`balances.keys().filter(k => balances.get(k) < 3)`, `1.to(left)`), or from a set that reads an earlier `nondet` of the same action or of `init` (`Set("a", "b", "c").exclude(Set(giver))`). In each state the search works the set out and tries every value, with no bound, however large the set grows: a path step prints the value picked, such as `serve  who = "ann"`. Where the set is empty, the action can't happen. Runs and temporal properties try every value in the same way.
 
-Still refused, each named in the problem:
+The reader also takes:
 
-- Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
-- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (write `foldl`), `fieldNames`, `apalache::generate`, `q::debug`, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+- `Bool`, the set of both booleans, wherever a set is read: `nondet b = Bool.oneOf()` in a step, in `init` and in a run, `b.in(Bool)`, `Bool.size()`, `Bool.map(...)`, `Bool.powerset()` and `tuples(Bool, S)`.
+- `x.in(Nat)` as `x >= 0`, `x.in(Int)` as true, the same through `Nat.contains(x)`, and `S.subseteq(Nat)` as `S.forall(x => x >= 0)`.
+- `S.getOnlyElement()`, the item of a set of one. On any other set it is a fault with a path, as Quint's TypeScript evaluator stops with `QNT505`. The fault says the step or rule reads something that is not there; it does not name `getOnlyElement`.
+- `r.fieldNames()`, the field names of a record as texts, worked out when the file is read from the record's type.
+- `l.foldr(z, (item, total) => ...)`, which folds from the last item, with the item first, as Quint's `builtin.qnt` writes it.
+- A definition that takes an operator, such as `pure def app(f: int => int, v: int): int = f(v)`, called with a lambda (`app(v => v + 1, x)`), with a named operator (`app(inc, x)`), with a lambda of two parameters, or passing the operator on to another definition. The reader puts the operator in at the call, as it does for a value.
+- `q::debug(message, value)`, read as `value`.
+
+Only the definitions that `init`, `step`, a listed invariant, a listed temporal property or a played run reaches are read. A helper nothing reaches is never looked at, so a construct earnest refuses in it does not refuse the check. A refusal in a helper names the helper and the check that reaches it: `` `chooseSome` ... in the definition `deeper`, which `reached` reaches through `check` ``.
+
+Still refused, each named in the problem with what to write instead:
+
+- Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `Nat` and `Int` anywhere but `in`, `contains` and `subseteq` (such as `Nat.map(...)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
+- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+- Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
+- Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written, such as `` `100000000000000000000` ``.
+
+Quint's typechecker refuses an operator kept as a value (`pure val f = inc`, an `if` that gives an operator, a set of operators), so the reader meets operators only as arguments.
 
 The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
 
@@ -163,7 +186,9 @@ A run with more than 100,000 branches from one start state is `unknown`, and its
 
 Refused, each named in the problem: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
 
-The runs of the spec module are played in a setup that earnest builds from `quint typecheck`, as `quint test --main Small` plays them: with `"runs": true`, the runs of `Clock` whose name ends in `Test` and those of `Small`; with a list, the runs it names from either. They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
+The runs of the spec module are played in a setup that earnest builds from `quint typecheck`, as `quint test --main Small` plays them: with `"runs": true`, the runs of `Clock` whose name ends in `Test` and those of `Small`; with a list, the runs it names from either (`tickTwice`, or `C::tickTwice` under a name). They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
+
+A run must start with the check's `init`. With two instances of one spec, `P::upTest` starts with `P::init`, which sets only part of the state. `quint test` plays it from that part, and earnest can't, so such a run makes the check `unreadable`. Check that setup without `runs`, or write the run in the setup module from its own `init`.
 
 A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
 

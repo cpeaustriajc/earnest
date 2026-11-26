@@ -1,14 +1,8 @@
-use crate::builtins::not_read;
-use crate::data::data_builtin;
-use crate::json::{Declaration, Def, Expr};
+use crate::json::{Declaration, Def};
 use crate::reader::{Refusal, refusal};
 
 const LEFT_FOR_LATER: [(&str, &str); 1] =
     [("q::inductiveInv", "inductive invariants are not read yet")];
-
-fn in_definition(feature: &str, why: &str, name: &str) -> Refusal {
-    refusal(feature, &format!("{why}, in the definition `{name}`")).within(name)
-}
 
 fn variable(name: &str, kind: &str) -> Option<Refusal> {
     let what = match kind {
@@ -26,37 +20,11 @@ fn variable(name: &str, kind: &str) -> Option<Refusal> {
     )
 }
 
-fn expression(expr: &Expr, within: &str) -> Option<Refusal> {
-    match expr {
-        Expr::Int { .. } | Expr::Bool { .. } | Expr::Name { .. } | Expr::Str { .. } => None,
-        Expr::Lambda { expr, .. } => expression(expr, within),
-        Expr::Let { opdef, expr } => body(opdef, within).or_else(|| expression(expr, within)),
-        Expr::App { id, opcode, args } => {
-            if data_builtin(opcode).is_none()
-                && let Some(why) = not_read(opcode)
-            {
-                return Some(in_definition(&format!("`{opcode}`"), why, within).at(*id));
-            }
-            args.iter().find_map(|each| expression(each, within))
-        }
-    }
-}
-
-fn body(def: &Def, within: &str) -> Option<Refusal> {
-    match &def.expr {
-        Expr::Lambda { expr, .. } => expression(expr, within),
-        other => expression(other, within),
-    }
-}
-
 fn definition(def: &Def) -> Option<Refusal> {
-    if let Some((_, why)) = LEFT_FOR_LATER.iter().find(|(name, _)| *name == def.name) {
-        return Some(refusal(&format!("`{}`", def.name), why).within(&def.name));
-    }
-    match def.qualifier.as_str() {
-        "temporal" | "run" => None,
-        _ => body(def, &def.name),
-    }
+    LEFT_FOR_LATER
+        .iter()
+        .find(|(name, _)| *name == def.name)
+        .map(|(_, why)| refusal(&format!("`{}`", def.name), why).within(&def.name))
 }
 
 pub(crate) fn refused(declarations: &[Declaration]) -> Vec<Refusal> {
