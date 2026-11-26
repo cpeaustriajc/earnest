@@ -63,7 +63,7 @@ fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
         .collect();
     names
         .iter()
-        .all(|name| is_a_name(name))
+        .all(|name| is_a_name(name) && name != BROKEN && name != REACHABLE)
         .then_some((kind, names))
 }
 

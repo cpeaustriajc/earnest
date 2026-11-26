@@ -27,16 +27,12 @@ case "$1" in
   parse)
     name="$(basename "$2" .qnt)"
     folder="$(cd "$(dirname "$2")" && pwd)"
-    if [ -f "$here/parsed/$name.json" ]; then
-      cp "$here/parsed/$name.json" "$out"
-    else
-      echo '{"modules":[]}' > "$out"
+    if [ ! -f "$here/parsed/$name.json" ] || [ ! -f "$here/maps/$name.json" ]; then
+      echo "error: no parse of $name.qnt is recorded" >&2
+      exit 1
     fi
-    if [ -f "$here/maps/$name.json" ]; then
-      sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" "$here/maps/$name.json" > "$map"
-    else
-      echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
-    fi
+    cp "$here/parsed/$name.json" "$out"
+    sed "s#\"0\":\"$name.qnt\"#\"0\":\"$folder/$name.qnt\"#" "$here/maps/$name.json" > "$map"
     ;;
   typecheck)
     name="$(basename "$2" .qnt)"

@@ -1028,11 +1028,9 @@ impl<'t> Filler<'t> {
             .iter()
             .filter(|(id, _)| !self.hidden.contains(id))
             .filter(|(_, declaration)| text(declaration, "qualifier") == Some("run"))
-            .filter(
-                |(_, declaration)| {
-                    text(declaration, "name").is_some_and(|name| check.runs.plays(name, None))
-                },
-            )
+            .filter(|(_, declaration)| {
+                text(declaration, "name").is_some_and(|name| check.runs.plays(name, None))
+            })
             .map(|(id, _)| *id)
             .collect();
         imported_runs.sort_unstable();

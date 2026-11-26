@@ -333,7 +333,8 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
     );
     let text = quint.earnest(&["verify", "old"]);
     assert!(
-        text.to_string().contains("\n            module SmallBroken {\n"),
+        text.to_string()
+            .contains("\n            module SmallBroken {\n"),
         "the text output keeps the module on lines of its own, to copy: {text}"
     );
 }
