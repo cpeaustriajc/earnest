@@ -145,16 +145,27 @@ impl Places {
         found
     }
 
-    /// The runs whose name ends in `Test` that the compiled module holds and `quint test --main`
-    /// plays, when it holds others too; `None` when every one of them is played.
+    /// The runs whose name ends in `Test` that the compiled module holds, less those another
+    /// module of the file declares and `quint test --main` does not play; `None` when none is
+    /// left out.
     pub(crate) fn runs_played(&self, main: &str, compiled: &str) -> Option<Vec<String>> {
         let tested = self.runs_quint_tests(main);
         let held: Vec<String> = runs_held(main, compiled)
             .into_iter()
             .filter(|name| name.ends_with(TESTS_END_WITH))
             .collect();
-        let (played, left): (Vec<String>, Vec<String>) =
-            held.into_iter().partition(|name| tested.contains(name));
+        let own = self.module(main);
+        let (left, played): (Vec<String>, Vec<String>) = held.into_iter().partition(|name| {
+            let last = name
+                .rsplit_once(QUALIFIED)
+                .map_or(name.as_str(), |(_, last)| last);
+            !tested.contains(name)
+                && own.is_some_and(|module| in_module(module, name).is_none())
+                && self
+                    .modules
+                    .iter()
+                    .any(|module| module.name != main && in_module(module, last).is_some())
+        });
         (!left.is_empty()).then_some(played)
     }
 
