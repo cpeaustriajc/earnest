@@ -174,3 +174,19 @@ fn a_run_the_reader_can_not_play_makes_the_file_unreadable_and_names_the_run() {
         );
     }
 }
+
+#[test]
+fn the_original_runs_sample_with_a_filtered_set_gets_the_same_verdicts() {
+    let sandbox = with_compiled(&["tasks/quint/models/runs.json"]);
+    let run = verify(&sandbox, "runs.json", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    let runs = model(&report, "runs");
+    for (id, verdict) in AS_QUINT_TEST_JUDGES {
+        assert_eq!(
+            rule(runs, id)["verdict"],
+            verdict,
+            "{id} as quint test judges it\n{run}"
+        );
+    }
+}

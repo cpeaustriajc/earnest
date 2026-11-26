@@ -1,6 +1,6 @@
 use crate::build::{Sketch, apply, below, int, is, plus, steps, texts, yes};
 use earnest_check::{Limits, Outcome, RuleKind, RuleOutcome, Status, Verdict, explore};
-use earnest_ir::{Code, Expr, Math, Model, Op, Order, Plan, Script, Stage};
+use earnest_ir::{Code, Expr, Math, Model, Op, Order, Plan, Script, Stage, Witness};
 use earnest_value::{Domain, Value};
 
 const UP: usize = 0;
@@ -311,8 +311,7 @@ fn an_assertion_a_start_condition_and_a_run_that_must_not_finish_each_say_so() {
     );
 }
 
-#[test]
-fn a_run_with_more_branches_than_the_cap_is_unknown_and_says_so() {
+fn wide_run() -> Model {
     let mut sketch = Sketch::new();
     let m = sketch.field(
         "m",
@@ -329,12 +328,18 @@ fn a_run_with_more_branches_than_the_cap_is_unknown_and_says_so() {
         yes(),
         &[(&m, apply(Op::Math(Math::Add), &m, Expr::Local(0)))],
     );
+    sketch.end("anywhere", yes());
     let mut model = played(
         sketch,
         vec![("wide", vec![plan(vec![stage(&[0]), stage(&[0])])])],
     );
     model.actions.clear();
-    let outcome = explore(&model, &Limits::default());
+    model
+}
+
+#[test]
+fn a_run_with_more_branches_than_the_cap_is_unknown_and_says_so() {
+    let outcome = explore(&wide_run(), &Limits::default());
     let found = the_run(&outcome, "wide");
     assert_eq!(found.verdict, Verdict::Unknown, "never holds: {found:?}");
     assert_eq!(found.path, None, "no path");
@@ -395,4 +400,68 @@ fn only_rule_plays_only_the_run_it_names_and_runs_come_after_the_rules() {
         (vec!["low".to_owned()], Status::Pass),
         "only the rule, so the broken run is not played"
     );
+}
+
+#[test]
+fn a_run_stopped_at_the_branch_cap_leaves_the_model_unfinished_with_a_reason_that_names_it() {
+    let outcome = explore(&wide_run(), &Limits::default());
+    assert_eq!(
+        outcome.status,
+        Status::Unfinished,
+        "never pass: {outcome:?}"
+    );
+    assert_eq!(
+        outcome.reason.as_deref(),
+        Some("the run `wide` has more than 100000 branches from one start state"),
+        "the run and the limit"
+    );
+}
+
+#[test]
+fn a_search_stopped_at_its_state_limit_keeps_its_own_reason() {
+    let mut model = wide_run();
+    let more_starts: Vec<Vec<Value>> = (0..10).map(|start| numbers(&[start])).collect();
+    model.runs.starts = Some(more_starts);
+    let limits = Limits {
+        max_states: 5,
+        ..Limits::default()
+    };
+    let outcome = explore(&model, &limits);
+    assert_eq!(outcome.status, Status::Unfinished, "{outcome:?}");
+    let reason = outcome.reason.unwrap_or_default();
+    assert!(
+        !reason.is_empty() && !reason.contains("branches"),
+        "the state limit is the reason, not the run: {reason}"
+    );
+}
+
+#[test]
+fn a_witness_with_more_start_states_than_the_limit_leaves_the_model_unfinished() {
+    let (sketch, n) = ladder(&[0, 1, 2]);
+    let mut model = sketch.model();
+    model.runs.witnesses = vec![Witness {
+        id: "low".to_owned(),
+        says: "low can be done".to_owned(),
+        line: 1,
+        setup: None,
+        steps: Vec::new(),
+        expect: Code::new(below(&n, 3)),
+        slots: 0,
+    }];
+    let limits = Limits {
+        max_states: 2,
+        ..Limits::default()
+    };
+    let outcome = explore(&model, &limits);
+    assert_eq!(
+        the_run(&outcome, "low").verdict,
+        Verdict::Unknown,
+        "three start states and a limit of two"
+    );
+    assert_eq!(
+        outcome.status,
+        Status::Unfinished,
+        "never pass: {outcome:?}"
+    );
+    assert!(outcome.reason.is_some(), "a reason: {outcome:?}");
 }

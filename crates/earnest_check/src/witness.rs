@@ -409,6 +409,22 @@ impl Search<'_> {
         }
     }
 
+    pub(crate) fn unplayed(rules: &[RuleOutcome]) -> Option<String> {
+        rules
+            .iter()
+            .find(|rule| rule.kind == RuleKind::Witness && rule.verdict == Verdict::Unknown)
+            .map(|rule| match &rule.reason {
+                Some(_) => format!(
+                    "the run `{}` has more than {MOST_BRANCHES} branches from one start state",
+                    rule.id
+                ),
+                None => format!(
+                    "the witness `{}` has more start states than the state limit",
+                    rule.id
+                ),
+            })
+    }
+
     pub(crate) fn witnesses(&self) -> Vec<RuleOutcome> {
         let only_rule = self.limits.only_rule.as_deref();
         let wanted = |id: &str| only_rule.is_none_or(|wanted| wanted == id);

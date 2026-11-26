@@ -1,4 +1,4 @@
-use crate::read;
+use crate::{Runs, read, read_runs};
 use earnest_diagnostics::Problem;
 use earnest_ir::{Model, Plan, Script};
 use earnest_value::Value;
@@ -269,6 +269,46 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
     );
     assert!(
         says("`assert`", "in the run `lateAssertTest`"),
+        "{problems:?}"
+    );
+}
+
+#[test]
+fn the_runs_played_are_a_choice_of_none_the_tests_or_a_list_of_names() {
+    let ids = |runs: &Runs| -> Vec<String> {
+        read_runs("model.json", PLAYED, runs)
+            .unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
+            .runs
+            .scripts
+            .iter()
+            .map(|each| each.id.clone())
+            .collect()
+    };
+    assert!(ids(&Runs::None).is_empty(), "no run is played");
+    assert_eq!(ids(&Runs::Tests).len(), 22, "the 22 names that end in Test");
+    assert_eq!(
+        ids(&Runs::Named(vec![
+            "notTested".to_owned(),
+            "midExpectTest".to_owned()
+        ])),
+        ["notTested", "midExpectTest"],
+        "a list plays the runs it names, in its order, whatever their names end in"
+    );
+}
+
+#[test]
+fn a_listed_run_the_module_lacks_makes_the_file_unreadable_and_is_named() {
+    let listed = Runs::Named(vec!["midExpectTest".to_owned(), "missingTest".to_owned()]);
+    let Err(problems) = read_runs("model.json", PLAYED, &listed) else {
+        panic!("a run the module lacks is refused");
+    };
+    let named: Vec<&str> = problems
+        .iter()
+        .map(|problem| problem.feature.as_str())
+        .collect();
+    assert_eq!(named, ["`run missingTest`"], "{problems:?}");
+    assert!(
+        problems[0].message.contains("has no run of this name"),
         "{problems:?}"
     );
 }

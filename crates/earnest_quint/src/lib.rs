@@ -33,14 +33,27 @@ pub fn is_compiled_quint(source: &str) -> bool {
     serde_json::from_str::<json::Probe>(source).is_ok_and(|probe| probe.stage == "compiling")
 }
 
-/// Reads the compiled Quint module in `source`, from the file at `path`.
+pub use runs::Runs;
+
+/// Reads the compiled Quint module in `source`, from the file at `path`, with the runs whose
+/// names end in `Test` played, as [`read_runs`] with [`Runs::Tests`].
+///
+/// # Errors
+///
+/// As [`read_runs`].
+pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
+    read_runs(path, source, &Runs::Tests)
+}
+
+/// Reads the compiled Quint module in `source`, from the file at `path`, with the `run`
+/// definitions that `runs` chooses played as scripts.
 ///
 /// # Errors
 ///
 /// Every construct the reader does not take, each as a [`Problem`] at the top of the file that
-/// names the construct and the definition it is in. A source that is not compiled Quint JSON is
-/// one problem.
-pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
+/// names the construct and the definition it is in, and each run that `runs` names and the
+/// module lacks. A source that is not compiled Quint JSON is one problem.
+pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Problem>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
         vec![Problem::new(
             path,
@@ -52,7 +65,7 @@ pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
             ),
         )]
     })?;
-    model::model(path, &compiled).map_err(|refused| {
+    model::model(path, &compiled, runs).map_err(|refused| {
         refused
             .into_iter()
             .map(|refusal| Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why))

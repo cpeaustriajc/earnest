@@ -10,6 +10,18 @@ const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
 
+/// Which `run` definitions of the compiled main module [`crate::read_runs`] plays.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Runs {
+    /// None of them.
+    None,
+    /// Each one whose name ends in `Test`, as `quint test` chooses them when it is given no
+    /// `--match`.
+    Tests,
+    /// These, in this order. A name the module has no run of makes the file unreadable.
+    Named(Vec<String>),
+}
+
 struct Step {
     choices: Vec<usize>,
     asserts: Option<Expr>,
@@ -342,27 +354,54 @@ fn script<'a>(reader: &mut Reader<'a>, def: &'a Def, init: u64, fields: &[String
     })
 }
 
+fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a Def>, Vec<Refusal>> {
+    let every = declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Def(def) if def.qualifier == "run" => Some(def),
+            _ => None,
+        });
+    match runs {
+        Runs::None => Ok(Vec::new()),
+        Runs::Tests => {
+            let mut tests: Vec<&Def> = every
+                .filter(|def| def.name.ends_with(TESTS_END_WITH))
+                .collect();
+            tests.sort_by_key(|def| def.id);
+            Ok(tests)
+        }
+        Runs::Named(names) => {
+            let all: Vec<&Def> = every.collect();
+            let mut found = Vec::with_capacity(names.len());
+            let mut missing = Vec::new();
+            for name in names {
+                match all.iter().find(|def| def.name == *name) {
+                    Some(def) => found.push(*def),
+                    None => missing.push(refusal(
+                        &format!("`run {name}`"),
+                        "the check names this run, and the compiled module has no run of this name",
+                    )),
+                }
+            }
+            if missing.is_empty() {
+                Ok(found)
+            } else {
+                Err(missing)
+            }
+        }
+    }
+}
+
 pub(crate) fn scripts<'a>(
     reader: &mut Reader<'a>,
     declarations: &'a [Declaration],
-    init: u64,
+    (init, runs): (u64, &Runs),
     fields: &[String],
 ) -> Result<Vec<Script>, Vec<Refusal>> {
-    let mut tests: Vec<&Def> = declarations
-        .iter()
-        .filter_map(|declaration| match declaration {
-            Declaration::Def(def)
-                if def.qualifier == "run" && def.name.ends_with(TESTS_END_WITH) =>
-            {
-                Some(def)
-            }
-            _ => None,
-        })
-        .collect();
-    tests.sort_by_key(|def| def.id);
-    let mut played = Vec::with_capacity(tests.len());
+    let played_runs = chosen(declarations, runs)?;
+    let mut played = Vec::with_capacity(played_runs.len());
     let mut refused = Vec::new();
-    for def in tests {
+    for def in played_runs {
         match script(reader, def, init, fields) {
             Ok(script) => played.push(script),
             Err(refusal) => refused.push(refusal),

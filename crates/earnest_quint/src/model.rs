@@ -1,6 +1,6 @@
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
-use crate::runs::scripts;
+use crate::runs::{Runs as Chosen, scripts};
 use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
@@ -247,12 +247,17 @@ fn parts<'a>(
     Ok((starts, actions, rules, read.eventually))
 }
 
-pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusal>> {
-    let met = built(path, compiled, Symbols::default())?;
-    built(path, compiled, met.symbols.alphabetical())
+pub(crate) fn model(path: &str, compiled: &Compiled, runs: &Chosen) -> Result<Model, Vec<Refusal>> {
+    let met = built(path, compiled, Symbols::default(), runs)?;
+    built(path, compiled, met.symbols.alphabetical(), runs)
 }
 
-fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec<Refusal>> {
+fn built(
+    path: &str,
+    compiled: &Compiled,
+    symbols: Symbols,
+    runs: &Chosen,
+) -> Result<Model, Vec<Refusal>> {
     if !compiled.errors.is_empty() {
         return Err(vec![refusal(
             "the compiled module",
@@ -300,7 +305,12 @@ fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec
         Quint::Name { name, .. } => named(&defs, name).map_or(init.id, |def| def.id),
         _ => init.id,
     };
-    let scripts = scripts(&mut reader, &module.declarations, started_by, &names)?;
+    let scripts = scripts(
+        &mut reader,
+        &module.declarations,
+        (started_by, runs),
+        &names,
+    )?;
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
