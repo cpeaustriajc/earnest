@@ -448,9 +448,9 @@ fn a_file_that_is_not_compiled_quint_is_one_problem() {
 
 #[test]
 fn each_problem_keeps_the_definition_it_is_in_and_the_id_of_a_refused_operator() {
-    let source = include_str!("../../../tasks/quint/models/record.json");
-    let located = crate::read_located("record.json", source, &crate::Runs::Tests)
-        .expect_err("records are refused");
+    let source = include_str!("../../../tasks/quint/models/choose.json");
+    let located = crate::read_located("choose.json", source, &crate::Runs::Tests)
+        .expect_err("`chooseSome` is refused");
     let found: Vec<(&str, Option<&str>, bool)> = located
         .iter()
         .map(|each| {
@@ -463,16 +463,11 @@ fn each_problem_keeps_the_definition_it_is_in_and_the_id_of_a_refused_operator()
         .collect();
     assert_eq!(
         found,
-        [
-            ("`var r`", Some("r"), false),
-            ("`Rec`", Some("step"), true),
-            ("`field`", Some("ok"), true),
-            ("`Rec`", Some("init"), true),
-        ],
-        "the variable by its name, each operator by its definition and its id"
+        [("`chooseSome`", Some("step"), true)],
+        "the operator by its definition and its id"
     );
     assert_eq!(
-        read("record.json", source).expect_err("records are refused"),
+        read("choose.json", source).expect_err("`chooseSome` is refused"),
         located
             .into_iter()
             .map(|each| each.problem)

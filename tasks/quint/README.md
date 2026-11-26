@@ -839,6 +839,31 @@ and names the construct and the definition it is in.
 - `cargo test --locked`: 80 suites, 1673 passed, 0 failed.
 - `tests_kept.py --base origin/main`: `tests kept: 1365 tests, 3953 assertions (base: 1304, 3798)`.
 
+### After merging slices 2 and 5 (the orchestrator's review)
+
+- Merged `claude/lucid-brown-f5xvr8` at `7773aea` (a merge, no rebase). Conflicts: `scan.rs`
+  (the head's meaning kept: its read types and message for `var`, its `data_builtin`/`not_read`
+  test, `Typedef` no longer refused; with `.within(name)` and `.at(*id)` added), `main.rs` of the
+  behavior tests, this README and the changelog (both sides kept).
+- Places for the new refusals: every refusal in `data.rs` and `temporal.rs` goes through
+  `Reader::refuse`, so it carries the definition; `model.rs`'s "assigns this variable twice" and
+  "leaves this variable unassigned" now carry the action's name too.
+- The line test uses `models/choose.qnt` (`chooseSome`, still refused), with its parse and source
+  map from Quint 0.33.1 (`sourceIndex` made relative); the record fixtures are gone.
+- (a) An unreadable check's header names its module after the file: `unreadable  clock.qnt  Small`
+  (`ModelFile::quint_check`, shared with the result cache's name). Test:
+  `two_unreadable_checks_of_one_file_are_told_apart_by_their_module`.
+- (b) The compiled JSON names imported files only as `importedFrom.fromSource` (`"./sub/spec"`),
+  relative to the importing file and only for the definitions flattening kept, so it was not used.
+  `quint parse --source-map` lists every file it loaded, by absolute path, in `sourceIndex`. So
+  earnest now parses each listed `.qnt` file first (once, cached), and keys the compile on the
+  contents of exactly those files; the cached parse is reused while each of them is unchanged.
+  When the parse fails, the `.qnt` tree below the checks folder stands in, as before. Test:
+  `editing_a_file_imported_from_a_parent_folder_compiles_the_check_again`; with real Quint, an
+  edit of `../shared/lib.qnt` turned `pass use 4 states (cached)` into `fail` with a new path.
+- Docs: `reference/quint.md` lists what the head reads and refuses, runs and a `oneOf` over a set
+  computed from the state as "not yet"; `output.md` shows the header.
+
 ### Unfinished, and the next step
 
 - Problems sit at line 1, column 1: slice 3 matches ids against `quint parse --source-map`.
@@ -1716,34 +1741,30 @@ pass        fast  7 states  0 ms
 | | | | | `small` | broken, 4 steps | violation, 4 steps | broken, 4 steps |
 | fast | 7 | 7 | 7 | `parity` | holds | ok | holds |
 
-The same samples with refused constructs (`clock.qnt`, `record.qnt` from `models/`), with real
-Quint, give each problem at its line:
+A construct the reader still refuses after slices 2 and 5 (`models/choose.qnt`, `chooseSome`),
+with real Quint, is reported at its line: line 7 is `  action step = x' = Set(1, 2).chooseSome()`,
+and Quint's source map starts the call at its receiver, column 22.
 
 ```text
-unreadable  record.qnt
-  record.qnt:3:3  `var r`  a variable that holds records: only `int` and `bool` variables are read yet
-  record.qnt:5:22  `Rec`  records are not read yet, in the definition `init`
-  record.qnt:7:22  `Rec`  records are not read yet, in the definition `step`
-  record.qnt:9:12  `field`  records are not read yet, in the definition `ok`
-unreadable  clock.qnt
-  clock.qnt:5:3  text  text is not read yet, in the definition `Large::C::Nodes`
-  clock.qnt:8:3  `var Large::C::seen`  a variable that holds sets: only `int` and `bool` variables are read yet
-  clock.qnt:13:10  `contains`  sets are not read yet, in the definition `Large::C::hear`
-  clock.qnt:42:7  `run largeTick`  runs are not read yet, in the definition `largeTick`
+unreadable  choose.qnt  choose
+  choose.qnt:7:22  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read, in the definition `step`
 ```
+
+Before the merge, `record.qnt` and `clock.qnt` gave each refused record, set and text construct at
+its line the same way (`record.qnt:3:3 var r`, `5:22 Rec`, `7:22 Rec`, `9:12 field`); slice 2
+reads them now.
 
 ### Timing: 17 checks of one file
 
 `many.qnt`: the `Lamp` module above plus 17 setup modules `S1`..`S17`
 (`module S5 { import Lamp(Max = 5).* }`), one check each with `darkWhenOff`, the shape of
-section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores, load average
-2.0 to 2.4:
+section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores:
 
-| Run | Time |
-|---|---|
-| nothing cached, `--jobs` all cores (4 compiles at a time) | 4.06 s |
-| nothing cached, `--jobs 1` | 8.36 s |
-| the second run, nothing changed (no Node started) | 0.040 s |
+| Run | Before the merge (load 2.0 to 2.4) | After it, one `parse` first (load 1.3 to 2.3) |
+|---|---|---|
+| nothing cached, `--jobs` all cores (4 at a time) | 4.06 s | 3.91 s |
+| nothing cached, `--jobs 1` | 8.36 s | 7.69 s |
+| the second run, nothing changed (no Node started) | 0.040 s | 0.039 s |
 
 The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
 
@@ -1776,8 +1797,8 @@ The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
   shared with the result cache).
 - The result cache (`verify.rs`): an entry is matched to its `ModelFile` by identity instead of
   by path, and a check is cached under `<path>\n<main>`, because two checks share a `.qnt` path.
-- Lines (`places.rs`): when a check's module is refused, `quint parse <file> --out ... --source-map
-  ...` runs once for that file. A problem goes to the place of its expression id when the source
+- Lines (`places.rs`): `quint parse <file> --out ... --source-map ...` runs once for each listed
+  file (before the merge below: only for a file whose module was refused). A problem goes to the place of its expression id when the source
   map has it, else to the definition it names (the main module first; `A::C::name` through the
   module `C`, or the module that the instance alias `C` makes; else the one module that declares
   `name`), else stays at 1:1. A place in another file (`import ... from "./other"`) is reported in
@@ -1790,11 +1811,11 @@ The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
   "No runtime" and "Nothing runs" bullets), `reference/cli.md`, `tutorials/pull-request.md` and a
   Quint bullet in `start/install.md`; `index.mdx` does not repeat the promise, so it is unchanged.
   A changelog entry. `earnest --help` says "TypeScript, Rust or Quint".
-- Tests: `apps/earnest/tests/behavior/quint_checks.rs` (12 tests, unix only, a fake `quint` shell
+- Tests: `apps/earnest/tests/behavior/quint_checks.rs` (14 tests, unix only, a fake `quint` shell
   script), unit tests in `checks.rs` (3) and `places.rs` (1), and one in
-  `crates/earnest_quint/src/tests.rs`. `record.parse.json` and `record.sourcemap.json` in
-  `models/` are what Quint 0.33.1 wrote for `record.qnt`, with the absolute path in
-  `sourceIndex` replaced by `record.qnt`; the fake writes the sandbox's path back.
+  `crates/earnest_quint/src/tests.rs`. `choose.parse.json` and `choose.sourcemap.json` in
+  `models/` are what Quint 0.33.1 wrote for `choose.qnt`, with the absolute path in
+  `sourceIndex` replaced by `choose.qnt`; the fake writes the sandbox's path back.
 
 ### The commands earnest runs
 
@@ -1804,8 +1825,8 @@ quint compile --target json --main <main> --init <init> --step <step> [--invaria
 quint parse <file>.qnt --out .earnest/quint/.parse-<pid>-<n>.json --source-map .earnest/quint/.map-<pid>-<n>.json
 ```
 
-`<file>` is the path as earnest shows it (relative to where it runs). The second runs once per
-check; the third only for a file with a refused construct. Each starts from the folder earnest
+`<file>` is the path as earnest shows it (relative to where it runs). The parse runs first, once
+per listed `.qnt` file, then the compiles, once per check; each is skipped when its cache holds. Each starts from the folder earnest
 runs in. Verified against Quint 0.33.1:
 
 - `--invariant` and `--temporal` take one argument, names joined by commas (`--help`: "the
@@ -1854,13 +1875,11 @@ runs in. Verified against Quint 0.33.1:
   reader names them, so `--rule levelOk` does not select them although `earnest.quint.json` lists
   `levelOk`. An unreadable check declares the listed names, so there `--rule levelOk` does select
   it. Slice 4 (setups) should decide the names.
-- Two unreadable checks of one `.qnt` file print two headers `unreadable  clock.qnt`; the
-  problems name the definitions (`Large::C::hear`), which tells them apart only for flattened
-  definitions.
 - The example in the "not listed" problem has three lines in the JSON `message`; the text output
   joins them on one line, as it does for every problem.
-- The tree hash covers the `.qnt` files below the checks file's folder. A spec imported from
-  above it (`import ... from "../shared"`) is not hashed, so editing it does not compile again.
+- The JSON `unreadable` list names no check: a problem has only `file`, `line`, `column`,
+  `feature` and `message`, so two checks of one file are told apart there only by the text
+  header.
 - The version is keyed on the program's resolved path: with `node_modules/.bin/quint` that is
   Quint's `cli.js`, which an upgrade rewrites. A wrapper script that runs another `quint` keeps
   its own size and time; then the version text is not asked again.
