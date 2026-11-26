@@ -1336,7 +1336,8 @@ On the merged tree:
 - `just same-answers origin/main`: `every model file: 392 runs, 64 differences`; the three sweeps
   `0 differences`. Every difference is in `tasks/conformance/runs/`, the 16 files of the
   integration branch that `origin/main` cannot read, as in slice 2.
-  SAME_HEAD_LINE
+  `just same-answers e66f839` (the integration head merged in): `every model file: 392 runs, 0
+  differences`, every sweep 0.
 - `cargo test --locked -p earnest-cli --test reference`: 5 passed.
 - `cargo fmt --check`: exit 0.
 - `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
