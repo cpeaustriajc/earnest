@@ -10,7 +10,7 @@ const FOLDER: &str = ".earnest";
 const ENTRIES: &str = "cache";
 const IGNORE_FILE: &str = ".gitignore";
 const IGNORE_EVERYTHING: &str = "*\n";
-const ENGINE: &str = env!("EARNEST_ENGINE");
+pub(crate) const ENGINE: &str = env!("EARNEST_ENGINE");
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
