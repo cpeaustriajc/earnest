@@ -62,7 +62,6 @@ case "$1" in
 esac
 "##;
 
-
 const RUNS_PLAYED: &str = "\n  lift\n    ok upTest passed 1 test(s)\n    1) pickTest failed after 3 test(s)\n\n  1 passing (5ms)\n  1 failed\nerror: Tests failed\n";
 
 fn holds(states: u64) -> String {
