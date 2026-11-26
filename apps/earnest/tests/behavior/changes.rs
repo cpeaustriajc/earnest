@@ -313,3 +313,144 @@ fn r20_the_pr_report_lists_the_rule_changes() {
         );
     }
 }
+
+const DIAL_FILE: &str = "models/dial.model.ts";
+
+const DIAL: &str = r#"import { m } from "@earnestjs/model";
+
+export const Dial = m.model("Dial", {
+	n: m.int(0, 3).initial(0),
+	cap: m.int(1, 3).initial(2),
+});
+
+export const turn = m.action(Dial, "the dial turns", {
+	when: (s) => s.n < s.cap,
+	changes: (s) => ({ n: s.n + 1 }),
+});
+
+export const reset = m.action(Dial, "the dial resets", {
+	when: (s) => s.n === s.cap,
+	changes: () => ({ n: 0 }),
+});
+
+export const one = m.setup(Dial, "the dial starts at one", { n: 1 });
+
+export const twice = m.witness(Dial, "one turn from one gives two", {
+	setup: one,
+	steps: [turn],
+	expect: (s) => s.n === 2,
+});
+
+export const capped = m.eventually(Dial, "the dial reaches its cap", {
+	reaches: (s) => s.n === s.cap,
+});
+"#;
+
+fn dial_edited(from: &str, to: &str) -> Sandbox {
+    assert!(DIAL.contains(from), "the dial has `{from}`");
+    let sandbox = Sandbox::empty();
+    sandbox.write(DIAL_FILE, DIAL);
+    git(&sandbox, &["init", "--quiet"]);
+    git(&sandbox, &["add", DIAL_FILE]);
+    git(
+        &sandbox,
+        &["commit", "--quiet", "--message", "Model the dial"],
+    );
+    sandbox.write(DIAL_FILE, &DIAL.replacen(from, to, 1));
+    sandbox
+}
+
+fn listed_changes(sandbox: &Sandbox) -> Vec<(String, String)> {
+    let report = sandbox
+        .earnest(&["verify", "--base", "HEAD", "--json"])
+        .json();
+    report["ruleChanges"]
+        .as_array()
+        .expect("`ruleChanges` is a list")
+        .iter()
+        .map(|change| {
+            let text = |key: &str| change[key].as_str().unwrap_or_default().to_owned();
+            (text("id"), text("change"))
+        })
+        .collect()
+}
+
+fn witness_verdict(sandbox: &Sandbox, id: &str) -> String {
+    let report = sandbox.earnest(&["verify", "--json"]).json();
+    let found = crate::support::models(&report)
+        .iter()
+        .find_map(|result| crate::support::find_rule(result, id))
+        .unwrap_or_else(|| panic!("no result lists `{id}`: {report}"));
+    found["verdict"].as_str().unwrap_or_default().to_owned()
+}
+
+#[test]
+fn r20_an_edited_action_under_an_unchanged_witness_lists_nothing_and_verify_judges_it_again() {
+    let sandbox = dial_edited(
+        "when: (s) => s.n < s.cap,",
+        "when: (s) => s.n < s.cap && s.n !== 1,",
+    );
+    assert_eq!(
+        listed_changes(&sandbox),
+        [],
+        "the witness `twice` says what it said; only the action it plays changed, which is a \
+         change of the model"
+    );
+    assert_eq!(
+        witness_verdict(&sandbox, "twice"),
+        "broken",
+        "`turn` can't happen at one any more, so the witness no longer holds"
+    );
+    git(&sandbox, &["checkout", "--quiet", "--", DIAL_FILE]);
+    assert_eq!(
+        witness_verdict(&sandbox, "twice"),
+        "holds",
+        "before the edit the witness held"
+    );
+}
+
+#[test]
+fn r20_an_edited_initial_value_under_an_unchanged_setup_lists_nothing() {
+    assert_eq!(
+        listed_changes(&dial_edited(
+            "cap: m.int(1, 3).initial(2),",
+            "cap: m.int(1, 3).initial(3),"
+        )),
+        [],
+        "the setup `one` still starts `n` at one; that `cap` starts elsewhere is a change of the \
+         model"
+    );
+}
+
+#[test]
+fn r20_an_edited_setup_is_listed_once_and_not_under_the_witness_that_names_it() {
+    assert_eq!(
+        listed_changes(&dial_edited("{ n: 1 }", "{ n: 0 }")),
+        [("one".to_owned(), "changed".to_owned())],
+        "the setup starts `n` elsewhere; the witness `twice` still names the setup `one`"
+    );
+}
+
+#[test]
+fn r20_a_rule_about_runs_is_not_listed_when_an_action_that_is_not_fair_changed() {
+    assert_eq!(
+        listed_changes(&dial_edited(
+            "changes: () => ({ n: 0 }),",
+            "changes: () => ({ n: 1 }),"
+        )),
+        [],
+        "`reset` is not fair, so the runs `capped` is judged over are fair to the same actions"
+    );
+}
+
+#[test]
+fn r20_a_rule_about_runs_is_changed_when_an_action_becomes_fair() {
+    assert_eq!(
+        listed_changes(&dial_edited(
+            "changes: (s) => ({ n: s.n + 1 }),",
+            "changes: (s) => ({ n: s.n + 1 }),\n\tfair: true,"
+        )),
+        [("capped".to_owned(), "changed".to_owned())],
+        "`turn` is fair now, and every run of `capped` is a run fair to `turn`"
+    );
+}

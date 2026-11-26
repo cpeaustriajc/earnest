@@ -1382,6 +1382,32 @@ a reordering that changes the values is not. Tests:
 - `--base` with `--rule`, `--model`, both, an unknown rule, an unknown model, an end named as a
   rule and `--jobs 3`: the same listing, or exit 2 with the documented sentence.
 
+### Settled after the pass
+
+Both tests pass. `same_steps` in `apps/earnest/src/changes.rs` compares each step by its action
+id and, for each input name of the base draft's action, the value given to it, found by that name
+in the new draft's action (`same_step`). The base witness is lowered against the base draft's
+actions, so its values carry the names the base file gave them, as the doc comment of
+`EarlierParts` now says. The rest of `--base` was read for the same mistake: setups compare their
+starts by field, and rules about runs compare the set of fair action ids. Unit tests in
+`apps/earnest/src/changes.rs`:
+`a_witness_gives_its_values_to_the_same_input_names_whatever_order_they_are_declared_in`,
+`a_rust_witness_whose_arguments_now_go_to_other_parameters_is_changed`.
+
+The two unclear items are settled by reading one: a part is listed when what it says changed
+(its condition, `after`, `reaches` and the set of fair actions, the setup it names by id, its
+steps, `expect`, its start values, and the constants and helpers it uses), not when the model
+under it changed (an action's `when` or `changes`, a field's declaration or initial value, an
+action that is not fair). An edit of a setup's values lists the setup once and not the witnesses
+that name it. `reference/output.md` says so under "Rule changes" (the bullet that starts "A part
+is listed when what it says changed"). The binary already did this; tests in
+`apps/earnest/tests/behavior/changes.rs` pin it:
+`r20_an_edited_action_under_an_unchanged_witness_lists_nothing_and_verify_judges_it_again`,
+`r20_an_edited_initial_value_under_an_unchanged_setup_lists_nothing`,
+`r20_an_edited_setup_is_listed_once_and_not_under_the_witness_that_names_it`,
+`r20_a_rule_about_runs_is_not_listed_when_an_action_that_is_not_fair_changed`,
+`r20_a_rule_about_runs_is_changed_when_an_action_becomes_fair`.
+
 ### Not covered
 
 TLC: `earnest confirm --tlc target/tools/tla2tools.jar` on models of this pass (a queue, a set,
