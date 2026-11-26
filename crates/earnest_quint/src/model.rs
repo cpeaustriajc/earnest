@@ -452,6 +452,32 @@ fn imported_runs(table: &HashMap<String, Entry>, main: &str) -> Vec<String> {
     found
 }
 
+fn written_twice(declarations: &[Declaration], main: &str) -> Option<Refusal> {
+    let variables: Vec<(u64, &str)> = declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Var { id, name, .. } => Some((*id, name.as_str())),
+            _ => None,
+        })
+        .collect();
+    variables.iter().enumerate().find_map(|(at, (id, first))| {
+        let (_, second) = variables
+            .iter()
+            .skip(at.saturating_add(1))
+            .find(|(other, _)| other == id)?;
+        Some(refusal(
+            &format!("`{first}`"),
+            &format!(
+                "`quint compile --main {main}` writes this variable twice under one id, as \
+                 `{first}` and `{second}`, so the compiled module is not one Quint means: Quint's \
+                 own TLC run (`quint verify --backend tlc`) stops on it too, while `quint test` \
+                 plays the module. Quint compiles it so when another module of the file \
+                 exports a module this one imports: put the two modules in separate files"
+            ),
+        ))
+    })
+}
+
 fn defs_of(declarations: &[Declaration]) -> HashMap<u64, &Def> {
     declarations
         .iter()
@@ -637,7 +663,8 @@ fn built(
     else {
         return Err(missing(&compiled.main));
     };
-    let refusals = refused(&module.declarations);
+    let mut refusals = refused(&module.declarations);
+    refusals.extend(written_twice(&module.declarations, &compiled.main));
     if !refusals.is_empty() {
         return Err(refusals);
     }

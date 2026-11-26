@@ -420,3 +420,26 @@ fn a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_pl
          only its start state is counted, and the run passes as `quint test` says\n{alone:#}"
     );
 }
+
+#[test]
+fn a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile() {
+    let report = compiled(
+        "TwiceImported",
+        include_str!("../../models/quint_third/export_twice/TwiceImported.json"),
+    );
+    let messages: Vec<&str> = report.json["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|problem| problem["message"].as_str())
+        .collect();
+    assert!(
+        messages.iter().any(|message| message.contains(
+            "`quint compile --main TwiceImported` writes this variable twice under one id, as \
+             `A::S::v` and `A::v`"
+        ) && message
+            .contains("put the two modules in separate files")),
+        "`quint compile` writes `v` twice under the id 114 when another module of the file \
+         exports `Spec`; the refusal says it is Quint's compile and what to do\n{report}"
+    );
+}
