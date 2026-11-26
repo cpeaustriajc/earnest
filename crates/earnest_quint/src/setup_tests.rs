@@ -350,3 +350,34 @@ fn a_definition_imported_into_a_spec_is_named_in_the_instance_with_its_alias() {
         "the names `quint compile --main Star` gives"
     );
 }
+
+#[test]
+fn a_refusal_in_a_setup_names_the_definition_by_its_short_name() {
+    let typechecked = typechecked_import("short");
+    let invariants = owned(&["C::picked"]);
+    let built = typechecked
+        .setup(&Setup::new(
+            "Few",
+            ("init", "step"),
+            (&invariants, &[]),
+            &Runs::None,
+        ))
+        .unwrap_or_else(|| panic!("`Few` is built"));
+    let Err(refused) = crate::read_located("short", &built, &Runs::None) else {
+        panic!("`chooseSome` is refused");
+    };
+    let messages: Vec<String> = refused
+        .iter()
+        .map(|each| each.problem.message.clone())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("in the definition `picked`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().all(|message| !message.contains("Few::C::")),
+        "{messages:?}"
+    );
+}

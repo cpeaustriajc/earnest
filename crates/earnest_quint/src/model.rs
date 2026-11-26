@@ -92,7 +92,11 @@ pub(crate) fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
     paths
         .iter()
         .map(|path| {
-            let name = path.name.clone().unwrap_or_else(|| fallback.to_owned());
+            let mut name = path.name.clone().unwrap_or_else(|| fallback.to_owned());
+            for tag in &path.branch {
+                name.push(' ');
+                name.push_str(tag);
+            }
             let count = seen.entry(name.clone()).or_insert(0);
             *count += 1;
             if *count == 1 {
