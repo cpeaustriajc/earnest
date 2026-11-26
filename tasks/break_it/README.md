@@ -2516,9 +2516,19 @@ release's `tla2tools.jar` at `target/tools/`.
   of the file exports a module this one imports: put the two modules in separate files ```. Test:
   `a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile`.
 
-Found on the way, not changed: a compiled module with `export Spec.specTest` holds `specOverTest`
-too, so earnest plays it where `quint test` plays only `specTest`; and a module that writes
-`export S.*` plays `S::specTest` once where `quint test` plays it under both names.
+- **Runs played by a compiled module** (item 7, asked for by the orchestrator after the first
+  push; `places.rs` `runs_played`, one call in `quint.rs`): a compiled module with `export
+  Spec.specTest` holds `specOverTest` too, and earnest played it where `quint test` plays only
+  `specTest`. With `"runs": true` the reader is now given, by name, the runs the compiled module
+  holds that `quint test --main` plays, by the same per-import rule as the note, when it holds
+  others; otherwise `runs` stays as it was. On the twelve shapes above (`quint test --backend
+  typescript`) only `Exporter` changes: it plays `specTest` alone and passes, as `quint test`;
+  on every compiled shape the runs played and the runs noted together are those `quint test`
+  plays. Tests: `a_compiled_module_plays_only_the_runs_quint_test_plays`,
+  `places::tests::a_compiled_module_plays_the_runs_it_holds_that_quint_test_plays`.
+
+Found on the way, not changed: a module that writes `export S.*` plays `S::specTest` once where
+`quint test` plays it under both names (the same run, in a module built from the typecheck).
 
 Tests of earlier Quint slices changed (none is on `origin/main`):
 `temporal::tests::the_actions_are_those_of_the_step` and
@@ -2529,22 +2539,25 @@ the start, so it holds), and
 `arguments_tests::an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_lambda`
 (`caller  k = 2`).
 
-Checks, each with its last line, on the tree merged with the integration head 6362d76:
+Checks, each with its last line, on the tree merged with the integration head 7080544 (#73,
+`confirm --quint`, merged after item 7):
 
 - `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
   `just lint-library`: no warnings.
-- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2153 passed, 0
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2181 passed, 0
   failed.
 - `cargo test -p earnest_break_it --features tlc --test tlc`: 14 passed.
 - `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
-- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
-- `just counts`: every row `met` (largest `+0.42%`, `mixed/shelf`; `grid_1m` `+0.27%` and
-  `+0.31%`, as on the integration head).
-- `just benchmark`: every budget `met` (grid_10m 4 workers 0.809 s, 1 worker 2.304 s).
-- `just same-answers 6362d76`: the three sweeps and `every model file: 392 runs, 0 differences`.
-  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
-  `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
-- `tests_kept.py --base origin/main`: `tests kept: 1709 tests, 4941 assertions (base: 1304, 3798)`.
+- `just docs`: `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%` and
+  `+0.25%`).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.724 s, 1 worker 1.960 s).
+- `just same-answers 7080544`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, in
+  `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts` and `clock.model.ts`, which
+  `origin/main` cannot read (the same 64 as on 6362d76).
+- `tests_kept.py --base origin/main`: `tests kept: 1731 tests, 4977 assertions (base: 1304, 3798)`.
 - `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
-  model, on `fair_parts`' four, on `start_implies`, on `act(b + 1)`, and on #68's `buyers`,
-  `FairArgs`, `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`.
+  model, on `fair_parts`' three compiles and `start_implies`, and on #68's `buyers`, `FairArgs`,
+  `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`; earlier in the slice also on the
+  `tup`, `imp`, `args` and `act(b + 1)` samples.

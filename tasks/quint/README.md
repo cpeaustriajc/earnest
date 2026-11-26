@@ -4677,3 +4677,21 @@ helpers that added modules and ids with no source-map entry are gone. The marked
 - `just docs`: `Complete!`.
 - `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`, `every
   model file: 392 runs, 0 differences`.
+
+### One walk over the imports (after merging `1757e8f`) [ran]
+
+`Places::visible` and #78's runs walk are now one walk (`Places::reached`). Each definition it
+reaches carries both the name the check writes (`B::ok`) and the name `quint test` prints for it
+(an instance as `Owner::alias::`, an import under a name as `alias::`, an export as is). What a
+check judges keeps one entry per definition and instance chain; the runs `quint test --main`
+plays, for the note and for what a compiled module plays, keep each way the module reaches a run
+(`TwiceAs` plays `specTest` and `A::specTest`). Both tables hold on it: the 17 shapes against
+`quint compile`, and #78's against `quint test --main`, the follow-up's compiled `Exporter`
+(`export Spec.specTest`) among them, whose marked sample plays `specTest` alone and passes with
+Quint 0.33.1.
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`1757e8f`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2189 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences. The comparison of every folder with `1757e8f`'s build on its checks file gives the
+same differences as above and nothing else; `confirm --quint` gives the same lines as above.
