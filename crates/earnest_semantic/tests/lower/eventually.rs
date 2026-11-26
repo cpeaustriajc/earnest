@@ -40,7 +40,7 @@ fn counter() -> Draft {
 fn truth(code: &Code, slots: usize, n: i64) -> Result<bool, String> {
     let state = vec![Value::Int(n)];
     code.truth(&mut Frame::new(&state, slots))
-        .map_err(|fault| fault.describe())
+        .map_err(earnest_ir::Fault::describe)
 }
 
 #[test]

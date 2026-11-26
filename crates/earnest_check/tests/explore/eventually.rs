@@ -104,13 +104,19 @@ struct Worker {
 
 const FINISH: usize = 1;
 
-fn worker(finish_needs_busy: bool) -> Worker {
+#[derive(Clone, Copy)]
+enum Finish {
+    WhileWorking,
+    WhenBusy,
+}
+
+fn worker(finish: Finish) -> Worker {
     let mut sketch = Sketch::new();
     let busy = sketch.boolean("busy", &[false]);
     let done = sketch.boolean("done", &[false]);
     let working = not(&done);
     sketch.action("fidget", working.clone(), &[(&busy, not(&busy))]);
-    let can_finish = if finish_needs_busy {
+    let can_finish = if matches!(finish, Finish::WhenBusy) {
         Expr::And(Box::new(busy.clone()), Box::new(working))
     } else {
         working
@@ -120,8 +126,8 @@ fn worker(finish_needs_busy: bool) -> Worker {
     Worker { sketch, done }
 }
 
-fn divided(left: Expr, right: &Expr) -> Expr {
-    apply(Op::Math(Math::Divide), &left, right.clone())
+fn divided(left: &Expr, right: &Expr) -> Expr {
+    apply(Op::Math(Math::Divide), left, right.clone())
 }
 
 #[test]
@@ -272,14 +278,14 @@ fn an_action_that_keeps_the_state_is_no_step_so_the_run_can_stay() {
 
 #[test]
 fn a_loop_that_only_puts_off_a_fair_action_breaks_no_rule() {
-    let Worker { sketch, done } = worker(false);
+    let Worker { sketch, done } = worker(Finish::WhileWorking);
     let fair = searched(sketch, &[FINISH], vec![rule("finishes", None, done)]);
     assert_eq!(
         verdict(&fair, "finishes"),
         Verdict::Holds,
         "`finish` is possible in both states of the `fidget` loop and fair"
     );
-    let Worker { sketch, done } = worker(false);
+    let Worker { sketch, done } = worker(Finish::WhileWorking);
     let lazy = searched(sketch, &[], vec![rule("finishes", None, done)]);
     assert_eq!(
         broken(&lazy, "finishes"),
@@ -295,7 +301,7 @@ fn a_loop_that_only_puts_off_a_fair_action_breaks_no_rule() {
 
 #[test]
 fn a_fair_action_that_is_not_possible_in_every_state_of_a_loop_may_be_put_off() {
-    let Worker { sketch, done } = worker(true);
+    let Worker { sketch, done } = worker(Finish::WhenBusy);
     let outcome = searched(sketch, &[FINISH], vec![rule("finishes", None, done)]);
     let found = broken(&outcome, "finishes");
     assert_eq!(
@@ -544,14 +550,14 @@ fn a_state_out_of_range_leaves_a_rule_about_runs_unknown() {
 fn an_action_that_faults_leaves_a_rule_about_runs_unknown() {
     let mut sketch = Sketch::new();
     let n = sketch.number("n", 0, 2, &[2]);
-    sketch.action("halve", yes(), &[(&n, divided(int(2), &n))]);
+    sketch.action("halve", yes(), &[(&n, divided(&int(2), &n))]);
     sketch.action("down", not(&is(&n, 0)), &[(&n, plus(&n, -1))]);
     let outcome = searched(
         sketch,
         &[],
         vec![
             rule("zero", None, is(&n, 0)),
-            rule("whole", None, is(&divided(int(2), &n), 1)),
+            rule("whole", None, is(&divided(&int(2), &n), 1)),
         ],
     );
     assert_eq!(
@@ -586,8 +592,8 @@ fn a_rule_about_runs_that_faults_is_unknown_and_named_in_a_fault() {
         &[],
         vec![
             rule("low", None, below(&n, 2)),
-            rule("halves", None, is(&divided(int(2), &n), 2)),
-            rule("thirds", Some(is(&divided(int(3), &n), 1)), yes()),
+            rule("halves", None, is(&divided(&int(2), &n), 2)),
+            rule("thirds", Some(is(&divided(&int(3), &n), 1)), yes()),
         ],
     );
     assert_eq!(verdict(&outcome, "low"), Verdict::Holds, "judged as usual");
