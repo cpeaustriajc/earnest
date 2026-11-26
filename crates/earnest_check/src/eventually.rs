@@ -731,7 +731,9 @@ impl Search<'_> {
                     let changes = |next: &[Option<Value>]| {
                         next.iter().enumerate().any(|(field, value)| {
                             (step.over.is_empty() || step.over.contains(&field))
-                                && value.as_ref().is_some_and(|value| before.get(field) != Some(value))
+                                && value
+                                    .as_ref()
+                                    .is_some_and(|value| before.get(field) != Some(value))
                         })
                     };
                     if moves(alone, &before, &changes)? {
@@ -748,13 +750,19 @@ impl Search<'_> {
             return Some(false);
         };
         let (before, after) = (self.store.state(from), self.store.state(to));
-        if !over.is_empty() && over.iter().all(|field| before.get(*field) == after.get(*field)) {
+        if !over.is_empty()
+            && over
+                .iter()
+                .all(|field| before.get(*field) == after.get(*field))
+        {
             return Some(false);
         }
         let gives = |next: &[Option<Value>]| {
-            next.iter()
-                .enumerate()
-                .all(|(field, value)| value.as_ref().is_none_or(|value| after.get(field) == Some(value)))
+            next.iter().enumerate().all(|(field, value)| {
+                value
+                    .as_ref()
+                    .is_none_or(|value| after.get(field) == Some(value))
+            })
         };
         moves(alone, &before, &gives)
     }
@@ -874,7 +882,11 @@ impl Search<'_> {
     }
 }
 
-fn moves(alone: &Alone, before: &[Value], wanted: &dyn Fn(&[Option<Value>]) -> bool) -> Option<bool> {
+fn moves(
+    alone: &Alone,
+    before: &[Value],
+    wanted: &dyn Fn(&[Option<Value>]) -> bool,
+) -> Option<bool> {
     for (position, action) in alone.actions.iter().enumerate() {
         let mut frame = Frame::new(before, action.slots);
         if chosen(alone, (position, action), 0, &mut frame, wanted)? {
@@ -917,7 +929,13 @@ fn chosen(
     };
     for value in values {
         frame.put(each.slot, value);
-        if chosen(alone, (position, action), input.saturating_add(1), frame, wanted)? {
+        if chosen(
+            alone,
+            (position, action),
+            input.saturating_add(1),
+            frame,
+            wanted,
+        )? {
             return Some(true);
         }
     }

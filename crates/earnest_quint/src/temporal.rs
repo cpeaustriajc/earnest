@@ -517,7 +517,10 @@ impl<'a> Properties<'_, 'a> {
     }
 
     fn alone(&self, def: &Def, given: &[Value], paths: &[Path], fields: usize) -> Alone {
-        let shown: Vec<String> = given.iter().map(|value| self.reader.symbols.show(value)).collect();
+        let shown: Vec<String> = given
+            .iter()
+            .map(|value| self.reader.symbols.show(value))
+            .collect();
         let mut picks = Vec::new();
         let actions = paths
             .iter()

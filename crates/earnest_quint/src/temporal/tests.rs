@@ -1,12 +1,10 @@
 use crate::read;
 use earnest_diagnostics::Problem;
-use earnest_ir::{Eventually, Expr, FairStep, Fairness, Model};
+use earnest_ir::{Eventually, Expr, Fairness, Model};
 use earnest_value::Value;
 use serde_json::Value as Json;
 
 const PROPERTIES: &str = include_str!("../../fixtures/properties.json");
-const UP: usize = 0;
-const FLIP: usize = 1;
 
 fn only(property: &str) -> String {
     let mut compiled: Json = serde_json::from_str(PROPERTIES).expect("the fixture is JSON");
@@ -54,6 +52,34 @@ fn with_the_step(actions: &[&[usize]]) -> Fairness {
     }
 }
 
+fn alone_at(model: &Model, named: &str) -> usize {
+    let found = model
+        .runs
+        .fair_steps
+        .iter()
+        .position(|step| {
+            step.alone
+                .as_ref()
+                .is_some_and(|alone| alone.named == named)
+        })
+        .unwrap_or_else(|| panic!("no fair step of {named} alone: {:?}", model.runs.fair_steps));
+    model.actions.len() + found
+}
+
+fn alone_over(model: &Model) -> Vec<(Vec<usize>, Option<String>)> {
+    model
+        .runs
+        .fair_steps
+        .iter()
+        .map(|step| {
+            (
+                step.over.clone(),
+                step.alone.as_ref().map(|alone| alone.named.clone()),
+            )
+        })
+        .collect()
+}
+
 fn refused(property: &str, feature: &str, why: &str) {
     let problems: Vec<Problem> = match read("properties.json", &only(property)) {
         Ok(_) => panic!("{property} was read, but it must be refused"),
@@ -95,7 +121,8 @@ fn eventually_without_fairness_lets_every_run_stop() {
 #[test]
 fn fairness_of_a_top_level_action_is_that_action_alone() {
     let model = model_of("upFair");
-    assert_eq!(the_rule(&model, "upFair").fair, Some(fair_to(&[&[UP]])));
+    let up = alone_at(&model, "up()");
+    assert_eq!(the_rule(&model, "upFair").fair, Some(fair_to(&[&[up]])));
 }
 
 #[test]
@@ -120,7 +147,10 @@ fn leads_to_is_read_however_it_is_spelled() {
 fn always_eventually_starts_everywhere_and_keeps_both_fairness() {
     let model = model_of("often");
     let rule = the_rule(&model, "often");
-    assert_eq!(rule.fair, Some(with_the_step(&[&[FLIP]])));
+    assert_eq!(
+        rule.fair,
+        Some(with_the_step(&[&[alone_at(&model, "flip()")]]))
+    );
     assert_eq!(
         rule.after.as_ref().map(earnest_ir::Code::expr),
         Some(&Expr::Const(Value::Bool(true)))
@@ -140,13 +170,15 @@ fn each_part_of_a_conjunction_is_a_rule_of_its_own() {
     let model = model_of("mixed");
     let rules: Vec<&str> = model.rules.iter().map(|rule| rule.id.as_str()).collect();
     assert_eq!(rules, ["mixed"]);
-    assert_eq!(the_rule(&model, "mixed#2").fair, Some(fair_to(&[&[UP]])));
+    let up = alone_at(&model, "up()");
+    assert_eq!(the_rule(&model, "mixed#2").fair, Some(fair_to(&[&[up]])));
 }
 
 #[test]
 fn a_property_named_after_another_is_read_as_that_one() {
     let model = model_of("named");
-    assert_eq!(the_rule(&model, "named").fair, Some(fair_to(&[&[UP]])));
+    let up = alone_at(&model, "up()");
+    assert_eq!(the_rule(&model, "named").fair, Some(fair_to(&[&[up]])));
 }
 
 #[test]
@@ -200,13 +232,9 @@ fn fairness_over_some_variables_is_fair_to_the_steps_that_change_them() {
         Some(fair_to(&[&[after_the_actions]]))
     );
     assert_eq!(
-        model.runs.fair_steps,
-        [FairStep {
-            action: UP,
-            inputs: Vec::new(),
-            over: vec![0],
-        }],
-        "`weakFair(up, x)` counts an `up` step that changes `x`"
+        alone_over(&model),
+        [(vec![0], Some("up()".to_owned()))],
+        "`weakFair(up, x)` counts a step that `up` alone gives and that changes `x`"
     );
 }
 
@@ -218,11 +246,17 @@ fn fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_actio
         .iter()
         .position(|action| action.id == "move  d = 1")
         .expect("the step calls `move(1)`");
-    assert_eq!(the_rule(&model, "given").fair, Some(fair_to(&[&[moved]])));
-    assert!(
-        model.runs.fair_steps.is_empty(),
-        "{:?}",
-        model.runs.fair_steps
+    let alone = alone_at(&model, "move(1)");
+    assert_eq!(the_rule(&model, "given").fair, Some(fair_to(&[&[alone]])));
+    assert_eq!(
+        model
+            .runs
+            .fair_steps
+            .iter()
+            .map(|step| step.action)
+            .collect::<Vec<_>>(),
+        [moved],
+        "the one fair step is `move(1)` alone, which the step calls as `move  d = 1`"
     );
 }
 
@@ -352,16 +386,20 @@ fn fairness_of_an_action_given_a_buyer_counts_its_steps_with_that_buyer_that_cha
             .unwrap_or_else(|| panic!("no field {name}"))
     };
     assert_eq!(
-        model.runs.fair_steps,
-        [FairStep {
-            action: reach,
-            inputs: vec![(
-                0,
-                Value::Str(model.symbols.find("ann").expect("ann is a text"))
-            )],
-            over: vec![field("controls"), field("lastBuyer"), field("previousPeer")],
-        }],
-        "the tuple keeps the order the file wrote"
+        alone_over(&model),
+        [(
+            vec![field("controls"), field("lastBuyer"), field("previousPeer")],
+            Some("reachDeadline(\"ann\")".to_owned())
+        )],
+        "the tuple keeps the order the file wrote, and `reachDeadline(\"ann\")` is read alone"
+    );
+    assert!(
+        model
+            .runs
+            .fair_steps
+            .iter()
+            .all(|step| step.action == reach),
+        "the step takes `reachDeadline`"
     );
     assert_eq!(
         the_rule(&model, "annReaches").fair,
