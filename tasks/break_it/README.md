@@ -2552,7 +2552,10 @@ Checks, each with its last line, on the tree merged with the integration head 70
 - `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%` and
   `+0.25%`).
 - `just benchmark`: every budget `met` (grid_10m 4 workers 0.724 s, 1 worker 1.960 s).
-- `just same-answers 7080544` and `just same-answers origin/main`: still running when this list was written.
+- `just same-answers 7080544`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, in
+  `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts` and `clock.model.ts`, which
+  `origin/main` cannot read (the same 64 as on 6362d76).
 - `tests_kept.py --base origin/main`: `tests kept: 1731 tests, 4977 assertions (base: 1304, 3798)`.
 - `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
   model, on `fair_parts`' three compiles and `start_implies`, and on #68's `buyers`, `FairArgs`,
