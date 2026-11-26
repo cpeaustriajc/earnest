@@ -4695,3 +4695,42 @@ clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2189 p
 `just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
 differences. The comparison of every folder with `1757e8f`'s build on its checks file gives the
 same differences as above and nothing else; `confirm --quint` gives the same lines as above.
+
+## The second review (#72): report [ran]
+
+The six tests of `quint_review.rs` from `claude/feedback-marked-checks-review-2` (`b3f42cc`) pass,
+by the decisions given:
+
+1. A name list goes on over the next doc line when its line ends with a comma (`Comma` judges
+   `inRange`, `small`, `tiny`); a doc line of a check made only of names it sees after a line with
+   no comma is `unreadable` at that line (`wrapped.qnt:17`, `Bare`).
+2. `///@check small` above a module: the source line is read, and every `///@` line among the `///`
+   lines above a module or a definition whose doc starts with `check` is `unreadable` at its own
+   line with the no-space message (`onename.qnt:8`).
+3. a. `Plain` (`import Counter.*` and a property) was compiled because a typecheck was asked only
+   for modules with an instance or of runs only, and the setup builder took a plain import's
+   variables only for a module of runs only and wanted an instance otherwise. Now a check that
+   plays a run declared in a module it imports (a run ending in `Test`, or a marked or named one)
+   is built from the typecheck, with plain imports and their variables, as a module of runs only
+   is; every other check is compiled as before.
+   b. A compiled check that sees a run it can't play and would pass is `unfinished`, `(runs not
+   played: …)` on its line, with the `note`, and exits 1; `confirm --quint` still compares it.
+   c. With Quint 0.33.1 over every `.qnt` under `tasks/quint` and `tasks/break_it/models` (148
+   models): 2 end `unfinished` by (b), `quint_third/one_name` `OneName` (`import Spec.specTest`
+   alone, not built) and `setups/compiled.qnt` `Single` (`import Limit.L`).
+4. A run marked in a module the check imports: played where the check is built (`importedrun`
+   `Plain` plays `skips`, broken as expected, and passes); where it is compiled, it is one of the
+   runs not played and the properties are still judged.
+5. A name a module's doc lists after two marks is `unreadable` (`twowords.qnt:9`). The check's doc
+   still wins over a mark on the definition, as `reference/quint.md` says.
+
+Every model of the 148 against `5ce68a6`, both with Quint 0.33.1: the changes are the review
+samples, `quint_second/runs_not_played` `Plays` (now built, plays `S::upTest` and `ownTest`, still
+`pass`), `OneName` and `Single` (`pass` -> `unfinished`); nothing else.
+`confirm --quint`: `importedtests` `Plain` `same` (fail), `importedrun` `Plain` `same` (pass),
+`Plays` `same` (pass).
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`844238e`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2196 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences.
