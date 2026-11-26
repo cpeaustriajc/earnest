@@ -381,3 +381,21 @@ fn a_refusal_in_a_setup_names_the_definition_by_its_short_name() {
         "{messages:?}"
     );
 }
+
+#[test]
+fn a_literal_past_two_to_the_63_is_shown_in_its_refusal_as_written() {
+    let path = format!(
+        "{}/../../tasks/quint/imports/fixtures/big.Big.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+    let Err(refused) = crate::read_located("big", &source, &Runs::None) else {
+        panic!("a literal beyond 64 bits is refused");
+    };
+    assert!(
+        refused
+            .iter()
+            .any(|each| each.problem.feature == "`18446744073709551615`"),
+        "{refused:?}"
+    );
+}

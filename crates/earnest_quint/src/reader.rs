@@ -156,6 +156,9 @@ pub(crate) fn endless(name: &str) -> Option<&'static str> {
 }
 
 fn written_out(value: &serde_json::Number) -> String {
+    if value.is_u64() {
+        return value.to_string();
+    }
     value
         .as_f64()
         .filter(|number| number.is_finite())
