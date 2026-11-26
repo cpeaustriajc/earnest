@@ -2620,3 +2620,69 @@ the typecheck: `pass  small  3 states`, `inRange` and `upTest` hold. The test gi
 (`typecheck.json`) and fails `compile` as Quint does. Right result: `pass`, 3 states, `inRange`
 and `upTest` hold. Test:
 `a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_from_the_typecheck`.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-3` (#79), with the pass branch merged up to a7fbeeb and the
+integration head 844238e. Both tests of the findings pass with no assertion changed, and so
+does the pass's seeded test of setups over types and helpers. Quint 0.33.1 from npm, `quint
+verify --backend tlc`, and the `v1.8.0` release's `tla2tools.jar`; every `confirm --tlc` below
+ran on a scratch copy of the fixtures.
+
+- **Fairness of an action, by the action alone** (`earnest_ir` `FairStep::alone`, `Alone`;
+  `temporal.rs` `alone`; `earnest_check` `eventually.rs` `possible_alone`, `taken_alone`;
+  `earnest_tla` `alone`). `weakFair(A(c), e)` now gives one fair step that carries `A` read from
+  its own definition with its arguments: each way through it as an action, its own guards and
+  `nondet`s (a set that reads the state is worked out in the state), and the fields it assigns,
+  the others free. In the liveness pass only, and only for a rule with such fairness, the step is
+  possible in a kept state where some way through `A` alone changes a field of `e`, and an arrow
+  counts when some way through `A` alone gives its target on every field `A` assigns and `e`
+  changes, whichever alternative of the step made it. Nothing changed on the search path, in
+  `Model`, `Field` or `Action`; the fairness of the whole step and the #63 refusal are as they
+  were. The export writes `Fair_A_k` as `A` alone (`Fair_A_k_way_j`, no `UNCHANGED` for what `A`
+  leaves free) and the fairness as `WF_e(Fair_A_k)`. Against TLC, every verdict and state count
+  as `quint verify --backend tlc`, and `confirm --tlc` `same`, on: the pass's three fixtures; a
+  sample of eleven steps over `pay`, `toggle` and a counter (`all { open or paid, any { … } }`,
+  `any { all { open, pay }, toggle }`, `if (open) any { … } else toggle`, `any { if (open) pay
+  else toggle, toggle }`, a guard false forever, one always true, `pay` reached guarded and
+  unguarded, a twin action that gives `pay`'s transition, `pay` with its own guard `open` under
+  `any { payOpen, toggle }` and with the toggle held once open (both broken, as TLC), an action
+  whose own successor no state reaches (`n' = 9`), and the fairness of the whole step), 27
+  properties; #68's six fairness fixtures; the third pass's project model; the fourth pass's
+  project model (`three`, `threePick`, `twoPick`, `witness`). The third pass's generator takes
+  `guarded` (`generate.py SEED guarded`; without it the output is unchanged): the call of `buy`
+  under a random condition, in an `all` or an `if`, and the direct `buy(1)` too. Seeds 1 to 40:
+  4 774 states and 200 temporal verdicts, each as TLC (one `quint verify` at a time: runs side
+  by side clash in Apalache and fail). The build before the fix says `broken` on the pass's
+  fixtures and `confirm --tlc` says `same` with it, since its export wrote the step's guarded
+  `pay`; with the fix TLC finds the property holds on the export, so the old verdict would be
+  `differs`. Tests: `fairness_of_an_action_the_step_guards_is_judged_by_the_action_alone_as_tlc_judges_it`,
+  `quint_fourth_fixes::the_tla_export_states_the_fairness_of_the_action_alone_without_the_step_s_guard`,
+  and with TLC `tests/tlc/quint_fourth.rs`
+  `tlc_judges_the_export_of_fairness_of_a_guarded_action_as_the_checker_does` (`same` and
+  `pass` on the three fixtures: the old reading gives `differs`, the old export `fail`).
+- **A spec that reaches a module both whole and through a named import** (`setup.rs`
+  `instance`, `imported_into`): `types`' constructors, reached as `Low` through the spec's own
+  `import types.*` and as `H::Low` through `helpers`, are declared once, under the shorter name
+  (a reference goes by id, so one declaration serves both), and a module reached twice counts
+  once. The fixture is built from the typecheck: `pass  small  3 states`, `inRange` and `upTest`
+  hold, as `quint test`; `confirm --tlc` `same`. Test:
+  `a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_from_the_typecheck`.
+- **Where a failed compile is** (`quint.rs` `quint_place`): only an `at file:line:col` of a
+  `.qnt` file is a place; Quint's own stack (`…/quint/dist/src/cli.js:58:39`) is passed over, so
+  the problem is at the check's `.qnt` file with Quint's message. Test:
+  `quint_fourth_fixes::a_compile_quint_fails_on_is_reported_in_the_qnt_file_and_not_in_quint_s_own_code`.
+
+Tests of earlier Quint slices changed (none is on `origin/main`): seven that asserted the
+fairness of an action as the action's position, now its stand-alone fair step by name
+(`temporal::tests::fairness_of_a_top_level_action_is_that_action_alone`,
+`::always_eventually_starts_everywhere_and_keeps_both_fairness`,
+`::each_part_of_a_conjunction_is_a_rule_of_its_own`,
+`::a_property_named_after_another_is_read_as_that_one`,
+`::fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action`,
+`actions_tests::a_tuple_of_variables_through_vals_is_fairness_over_every_variable`,
+`fixes_tests::fairness_of_an_action_that_assigns_every_variable_or_of_the_step_is_read`); two that
+built a `FairStep` by literal (`::fairness_over_some_variables_is_fair_to_the_steps_that_change_them`,
+`::fairness_of_an_action_given_a_buyer_counts_its_steps_with_that_buyer_that_change_the_tuple`);
+and `quint_fairness::the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tuple_written`,
+which pins `Fair_reachDeadline_1_way_1`.
