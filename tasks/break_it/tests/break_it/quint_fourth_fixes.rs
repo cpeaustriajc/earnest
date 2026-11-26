@@ -113,3 +113,119 @@ fn the_tla_export_states_the_fairness_of_the_action_alone_without_the_step_s_gua
          `weakFair(pay, (paid, open))`\n{module}"
     );
 }
+
+fn run_on(file: &str, json: &str, arguments: &[&str]) -> (Value, String) {
+    let folder = TempDir::new().expect("a temporary folder can be made");
+    fs::write(folder.path().join(file), json).expect("the fixture can be written");
+    let verified = Command::new(binary())
+        .args(["verify", "--json", "--no-cache", file])
+        .current_dir(folder.path())
+        .output()
+        .expect("earnest starts");
+    let charted = Command::new(binary())
+        .args(arguments)
+        .arg(file)
+        .current_dir(folder.path())
+        .output()
+        .expect("earnest starts");
+    (
+        serde_json::from_slice(&verified.stdout).expect("earnest verify prints JSON"),
+        String::from_utf8_lossy(&charted.stdout).into_owned(),
+    )
+}
+
+fn messages(report: &Value) -> Vec<String> {
+    report["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|problem| problem["message"].as_str().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn fairness_of_an_action_behind_a_named_guarded_action_is_read_as_the_same_guard_in_place() {
+    let (report, _) = run_on(
+        "named_step.json",
+        include_str!("../../models/quint_fourth/fixes/named_step.json"),
+        &["verify"],
+    );
+    let verdicts: Vec<(String, String)> = report["models"][0]["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|found| {
+            (
+                found["id"].as_str().unwrap_or_default().to_owned(),
+                found["verdict"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        (verdicts, &report["models"][0]["states"]),
+        (
+            vec![
+                ("onePays".to_owned(), "holds".to_owned()),
+                ("twoPays".to_owned(), "broken".to_owned())
+            ],
+            &Value::from(8)
+        ),
+        "the step calls `pay(b)` only inside `payG = all {{ open, nondet b = … pay(b) }}`; \
+         `weakFair(pay(1), …)` is about `pay` alone, as when the guard is written in place, and \
+         `quint verify --backend tlc` finds `onePays` holds and `twoPays` violated in 8 states\n\
+         {report:#}"
+    );
+}
+
+#[test]
+fn an_action_of_two_matches_is_named_after_both_and_a_run_names_a_step_as_the_search_does() {
+    let (report, chart) = run_on(
+        "names.json",
+        include_str!("../../models/quint_fourth/fixes/names.json"),
+        &["chart"],
+    );
+    let run = report["models"][0]["rules"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|found| found["id"] == "handleTest")
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert!(
+        ["both A C", "both A D", "both B C"]
+            .iter()
+            .all(|name| chart.contains(name))
+            && run["path"]["steps"][0]["action"] == "handle Req  w = 1  m = Req",
+        "`both` is an `all` of two `match`es, so each step is named after both branches; a run's \
+         step `handle(1, Req)` reads like the search's `handle Req  …`, branch first, then the \
+         written arguments\n{chart}\n{run:#}"
+    );
+}
+
+#[test]
+fn a_refusal_says_what_a_bare_fairness_an_implies_of_a_temporal_formula_and_an_empty_pick_are() {
+    let (bare, _) = run_on(
+        "bare.json",
+        include_str!("../../models/quint_fourth/fixes/bare.json"),
+        &["verify"],
+    );
+    let (empty, _) = run_on(
+        "no_items.json",
+        include_str!("../../models/quint_fourth/fixes/no_items.json"),
+        &["verify"],
+    );
+    let said = [messages(&bare), messages(&empty)].concat();
+    for part in [
+        "`weakFair` alone, as a property or a part of an `and`, is not read: fairness is read only \
+         as what a property assumes, `weakFair(A, vars) implies eventually(P)`",
+        "For \"once P, then Q\" write `always(P implies eventually(Q))` or `P.leadsTo(Q)`",
+        "fairness of `buy` given arguments the step never gives it is not read: TLC holds such a \
+         step possible where the step never takes it. Here the step picks `p` from a set that is \
+         empty",
+    ] {
+        assert!(
+            said.iter().any(|message| message.contains(part)),
+            "no message has {part:?}: {said:#?}"
+        );
+    }
+}

@@ -1,4 +1,5 @@
 use crate::json::{Def, Entry, Expr as Quint, Param};
+use crate::reach::defs_reached;
 use crate::reader::{Choice, Path, Read, Reader, Refusal, all_of, constant, reads_state};
 use earnest_ir::{
     Action, Alone, Code, Eventually, Expr, FairStep, Fairness, Frame, Input, Op, Pick, Rule, truth,
@@ -639,12 +640,6 @@ impl<'a> Properties<'_, 'a> {
                  it its arguments, as `weakFair(A(c), vars)`",
             );
         }
-        let Some(paths) = step.parts.get(&def.name) else {
-            return self.reader.refuse(
-                &format!("`{name}`"),
-                "fairness of something that is not the step or one of its top-level actions",
-            );
-        };
         let mut given = Vec::with_capacity(args.len());
         for arg in args {
             let read = self.reader.pure(arg)?;
@@ -658,6 +653,19 @@ impl<'a> Properties<'_, 'a> {
             };
             given.push(value);
         }
+        let Some(paths) = step.parts.get(&def.name) else {
+            if self.step_reaches(def, step) {
+                return Ok(Fair::Actions {
+                    def,
+                    given,
+                    part: Vec::new(),
+                });
+            }
+            return self.reader.refuse(
+                &format!("`{name}`"),
+                "fairness of something that is not the step or one of its top-level actions",
+            );
+        };
         let mut part = Vec::with_capacity(paths.len());
         for position in paths {
             let Some(path) = step.paths.get(*position) else {
@@ -668,15 +676,37 @@ impl<'a> Properties<'_, 'a> {
             }
         }
         if part.is_empty() && !paths.is_empty() {
+            let short = self.reader.short(name);
+            let empty = paths
+                .iter()
+                .filter_map(|position| step.paths.get(*position))
+                .flat_map(|path| &path.choices)
+                .find(|choice| choice.from.is_none() && choice.values.is_empty())
+                .map_or_else(String::new, |choice| {
+                    format!(
+                        ". Here the step picks `{}` from a set that is empty",
+                        self.reader.short(&choice.name)
+                    )
+                });
             return self.reader.refuse(
-                &format!("`{name}`"),
+                &format!("`{short}`"),
                 &format!(
-                    "fairness of `{name}` given arguments the step never gives it is not read: \
-                     TLC holds such a step possible where the step never takes it"
+                    "fairness of `{short}` given arguments the step never gives it is not read: \
+                     TLC holds such a step possible where the step never takes it{empty}"
                 ),
             );
         }
         Ok(Fair::Actions { def, given, part })
+    }
+
+    fn step_reaches(&self, def: &Def, step: &Step<'_>) -> bool {
+        let roots: Vec<&Quint> = step
+            .defs
+            .iter()
+            .filter_map(|id| self.defs.get(id))
+            .map(|each| &each.expr)
+            .collect();
+        defs_reached(self.table, self.defs, &roots).contains(&def.id)
     }
 
     fn inputs_of(
@@ -878,7 +908,19 @@ impl<'a> Properties<'_, 'a> {
         };
         if let Some(inner) = self.first_temporal(expr, 0) {
             let why = if opcode == "implies" {
-                "an `implies` that is not fairness `implies` what must hold is not read".to_owned()
+                "an `implies` whose left side is a temporal formula but not fairness, such as \
+                 `eventually(P) implies …` or `(fair and eventually(P)) implies …`, is not read: \
+                 the left side may be fairness (`weakFair(A, vars)`, an `and` or `forall` of \
+                 fairness) or a condition on the start states. For \"once P, then Q\" write \
+                 `always(P implies eventually(Q))` or `P.leadsTo(Q)`"
+                    .to_owned()
+            } else if matches!(opcode, "weakFair" | "strongFair") {
+                format!(
+                    "`{opcode}` alone, as a property or a part of an `and`, is not read: fairness \
+                     is read only as what a property assumes, `weakFair(A, vars) implies \
+                     eventually(P)`. As a property of its own TLC checks that every run is fair, \
+                     which a run that stops while `A` is possible breaks"
+                )
             } else if opcode == "not" {
                 "a temporal operator under `not` is read only as `not(eventually(P))` or \
                  `not(always(P))` over a state condition `P`"
