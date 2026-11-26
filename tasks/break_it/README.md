@@ -1523,6 +1523,10 @@ Every comparison agreed: no verdict, path, loop, `why` line or state count diffe
   out of range, are `unknown`. `typescript.md` ("the verdict is `unknown`, never `holds`") reads
   the same. Whether `broken` may come from a search that did not finish is not said.
 
+Settled after the pass: `output.md` now says a run that breaks a rule about runs is looked for
+only after a search that finished, so a search that stopped early never gives `broken` for one.
+The binary did that already.
+
 ### Not covered
 
 Fields of other kinds (booleans, enums, optionals, records, collections) in the generators;
