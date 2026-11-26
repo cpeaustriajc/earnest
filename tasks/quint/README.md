@@ -808,3 +808,38 @@ and names the construct and the definition it is in.
 - Order inside `all { ... }`: earnest evaluates every condition before any assignment, TLC in
   the order written, so `all { x' = 1 / y, y > 0 }` faults in TLC and is disabled in earnest
   when `y` is 0.
+
+### Checks, each with its last line
+
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,907,658,285 | +0.04% | 1.00% | met |`.
+  Not re-recorded.
+- `just benchmark` (4 cores): last line `wide, search time with all cores (0.235 s) over search
+  time with 1 worker (0.369 s): 0.64x, budget at most 0.75x: met`; every budget line `met`,
+  `grid_10m` with 4 workers 1.083 s.
+- `just same-answers origin/main`: `every model file: 336 runs, 8 differences`; the sweeps
+  `0 differences`. All 8 are `tasks/conformance/runs/lift.model.ts` and `panel.model.ts`, which
+  are not on `origin/main`: they came with the integration branch's witness setups. The binary
+  of this branch prints the same output for both as the binary of its base `19c5023`, and
+  `just same-answers 19c5023` gives `every model file: 336 runs, 0 differences` with every sweep
+  at 0.
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked`: 80 suites, 1673 passed, 0 failed.
+- `tests_kept.py --base origin/main`: `tests kept: 1365 tests, 3953 assertions (base: 1304, 3798)`.
+
+### Unfinished, and the next step
+
+- Problems sit at line 1, column 1: slice 3 matches ids against `quint parse --source-map`.
+- An input slot is numbered across the whole step, so an action can have unused slots (a few
+  `null`s in its frame). Renumbering per action is a small follow-up if a model ever has many.
+- An input takes a parameter's name only when a bare `nondet` is passed to an action; an
+  action called with a constant (`deposit(3)`) is an action of its own, `deposit#2` for the
+  next.
+- The docs and the CLI's `--help` still say "TypeScript or Rust"; the user docs wait until the
+  reader takes the app's models (slice 2 onward).
+- Next: slice 2 (records, sets, maps, lists, tuples, variants, text, must-get), which needs the
+  general-path `Expr`/`Op` additions of 4.3 and lifts the matching refusals in `builtins.rs` and
+  `scan.rs`.
