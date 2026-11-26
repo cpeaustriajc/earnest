@@ -675,6 +675,50 @@ mod tests {
         )
     }
 
+    fn shapes(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tasks/quint/shapes/fixtures")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+    }
+
+    #[test]
+    fn a_module_sees_exactly_the_values_quint_compile_accepts_for_every_import_shape() {
+        let table: serde_json::Value =
+            serde_json::from_str(&shapes("accepted.json")).expect("the table is JSON");
+        let shapes_tried = table.as_object().expect("the table maps each shape");
+        assert_eq!(shapes_tried.len(), 17, "every shape is tried");
+        for (shape, quint) in shapes_tried {
+            let places = Places::from_quint(
+                &shapes(&format!("{shape}.parse.json")),
+                &shapes(&format!("{shape}.sourcemap.json")),
+            )
+            .expect("the parse and the map are read");
+            let mut seen: Vec<String> = places
+                .visible("U")
+                .into_iter()
+                .filter(|each| places.qualifier_of(each.id) == Some("val"))
+                .map(|each| each.name)
+                .collect();
+            seen.sort();
+            let accepted: Vec<String> = quint["accepted"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|name| name.as_str().map(str::to_owned))
+                .collect();
+            if quint["compiles"] == true {
+                assert_eq!(seen, accepted, "{shape}");
+            } else {
+                assert!(
+                    accepted.is_empty(),
+                    "{shape}: Quint compiles nothing, so its own error makes the check unreadable"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_problem_goes_to_its_id_else_to_the_definition_it_names_else_nowhere() {
         let places = Places::from_quint(PARSED, MAP).expect("the parse and the map are read");

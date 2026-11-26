@@ -422,6 +422,9 @@ fn quint_place(said: &str, job: &Job) -> (String, Place) {
         else {
             continue;
         };
+        if Path::new(file).extension().and_then(OsStr::to_str) != Some(QUINT_EXTENSION) {
+            continue;
+        }
         let (Ok(column), Ok(number)) = (column.parse::<u32>(), number.parse::<u32>()) else {
             continue;
         };
