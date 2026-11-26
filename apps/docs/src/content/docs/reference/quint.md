@@ -121,11 +121,20 @@ unreadable  specs/clock.qnt  Small
 
 When the reader refuses a construct of a compiled module, the source map from `quint parse` gives its line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
 
+Each piece of a check is read on its own: `init`, each action of the step's `any`, each listed invariant, each listed temporal property and each played run. Each piece that holds a construct earnest refuses gives one problem, the first it reaches, so one `earnest verify` shows every piece to change. A construct reached from two pieces, such as an action that the step and a run both play, is listed once. The problems are in the order of the file, under one `unreadable` line:
+
+```text
+unreadable  specs/problems.qnt  problems
+  specs/problems.qnt:9:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `chosen`
+  specs/problems.qnt:11:7  `reps`  a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: ..., in the run `repsTest`
+  specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
+```
+
 ## What is read today
 
 The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
 
-Actions may be joined with `all`, `any`, `if (c) A else B` and `match`. A `match` whose branches are actions, in `init`, in a step or in a run step, is one action for each branch, which can happen only when the value has that branch's variant, with the variant's value bound to the branch's name; a `_` branch covers the variants the earlier branches do not name:
+Actions may be joined with `all`, `any`, `if (c) A else B` and `match`. Where Quint reads a condition (a `val`, a `def`, an invariant, a guard, an `expect`, an argument, inside `forall` or `filter`), an `all { … }` whose items assign nothing is `and`, and an `any { … }` is `or`, as both `quint run` and `quint verify --backend tlc` read them: `val TypeOK = all { n >= 0, n <= 3 }`. A `match` whose branches are actions, in `init`, in a step or in a run step, is one action for each branch, which can happen only when the value has that branch's variant, with the variant's value bound to the branch's name; a `_` branch covers the variants the earlier branches do not name:
 
 ```quint
 action step = match order {
@@ -148,6 +157,7 @@ The reader also takes:
 - `r.fieldNames()`, the field names of a record as texts, worked out when the file is read from the record's type.
 - `l.foldr(z, (item, total) => ...)`, which folds from the last item, with the item first, as Quint's `builtin.qnt` writes it.
 - A definition that takes an operator, such as `pure def app(f: int => int, v: int): int = f(v)`, called with a lambda (`app(v => v + 1, x)`), with a named operator (`app(inc, x)`), with a lambda of two parameters, or passing the operator on to another definition. The reader puts the operator in at the call, as it does for a value.
+- An action given as an argument, such as `action between(changes: bool): bool = all { b' = b + 1, changes }` called as `between(all { a' = true })`. The argument (an `all { … }`, an assignment, a named action, an action call, a `nondet` block) is put in wherever the parameter stands as an action, also when it is passed on to another action, in a run step, or as a lambda `f: int => bool` called with `v => all { flag' = v > 2 }`.
 - `q::debug(message, value)`, read as `value`.
 
 The searched state holds only the variables that `init`, `step`, the listed invariants and the listed temporal properties reach. A variable that only a run reaches is no field of the search: `init` need not give it a value, the TLA+ export leaves it out, and the run plays it (see [Runs](#runs)). A variable that `step` or a listed property reads and `init` does not give a value makes the check `unreadable`, as Quint's TLC run stops there.
@@ -158,7 +168,7 @@ Still refused, each named in the problem with what to write instead:
 
 - Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `Nat` and `Int` anywhere but `in`, `contains` and `subseteq` (such as `Nat.map(...)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
 - Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled`, `eventually(always(P))`, `weakFair` of an action given arguments or of an action inside another, `not` over anything but `eventually(P)` or `always(P)` of a state condition, and the nestings the temporal report lists.
-- An action where Quint wants a value, as in an operator's argument or a condition: the problem names it, as `` `all { … }` `` or `` `x' = …` ``.
+- An action where Quint wants a value, which Quint's own effect checker allows only in a temporal property: the problem names what was written, an `` `all { … }` `` or `` `any { … }` `` with an assignment in it, an assignment `` `x' = …` ``, or a named action, and says to write the condition without the assignment or to move the assignment into an action.
 - Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
 - Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written, such as `` `100000000000000000000` ``.
 

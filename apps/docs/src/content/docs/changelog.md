@@ -14,6 +14,14 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
 
+## November 2026: Quint `all` over conditions, actions as arguments, and every problem of a check
+
+- **`all` and `any` over conditions:** `val TypeOK = all { n >= 0, n <= 3 }` is read as `and`, and `any { … }` as `or`, wherever a condition is read, where they were refused as an action.
+- **Actions as arguments:** `between(all { a' = true })`, with `action between(changes: bool)`, puts the argument in where `changes` stands. A named action, an action call, a `nondet` block and a lambda that gives an action are read the same way.
+- **Every problem:** an `unreadable` check lists one problem for each piece that holds one (`init`, each action of the step, each invariant, temporal property and run), in the order of the file. Before, it showed only the first.
+
+See [What is read today](/reference/quint/#what-is-read-today) and [What earnest runs](/reference/quint/#what-earnest-runs).
+
 ## November 2026: `earnest --version` names the build
 
 `earnest --version` prints the commit and a fingerprint of the sources after the version, as in `earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)`, so a hook can tell two builds of one version apart. See [Which build is this](/reference/cli/#which-build-is-this).

@@ -1,5 +1,5 @@
 use crate::json::{Def, Entry, Expr as Quint};
-use crate::reader::{Read, Reader};
+use crate::reader::{Read, Reader, Refusal};
 use earnest_ir::{Code, Eventually, Expr, Fairness, Op, Rule};
 use earnest_value::Value;
 use std::collections::HashMap;
@@ -415,7 +415,7 @@ pub(crate) fn temporal<'a>(
     table: &'a HashMap<String, Entry>,
     defs: &HashMap<u64, &'a Def>,
     step: &Step<'_>,
-) -> Read<Temporal> {
+) -> Result<Temporal, Vec<Refusal>> {
     let mut read = Temporal {
         eventually: Vec::new(),
         rules: Vec::new(),
@@ -428,17 +428,30 @@ pub(crate) fn temporal<'a>(
         table,
         defs,
     };
+    let mut refused = Vec::new();
     for conjunct in conjuncts(&listed.expr) {
         let Some(def) = properties.temporal_def(conjunct) else {
             PROPERTIES.clone_into(&mut properties.reader.within);
-            return properties.reader.refuse(
-                "a temporal property",
-                "a temporal property that is not the name of a definition",
+            refused.extend(
+                properties
+                    .reader
+                    .refuse::<()>(
+                        "a temporal property",
+                        "a temporal property that is not the name of a definition",
+                    )
+                    .err(),
             );
+            continue;
         };
         let name = &def.name;
         name.clone_into(&mut properties.reader.within);
-        let (fair, goals) = properties.property(&def.expr, step)?;
+        let (fair, goals) = match properties.property(&def.expr, step) {
+            Ok(read) => read,
+            Err(refusal) => {
+                refused.push(refusal);
+                continue;
+            }
+        };
         let count = goals.len();
         for (index, goal) in goals.into_iter().enumerate() {
             let number = index.saturating_add(1);
@@ -465,7 +478,11 @@ pub(crate) fn temporal<'a>(
             }
         }
     }
-    Ok(read)
+    if refused.is_empty() {
+        Ok(read)
+    } else {
+        Err(refused)
+    }
 }
 
 #[cfg(test)]
