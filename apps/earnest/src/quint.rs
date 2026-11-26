@@ -607,7 +607,11 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
     let source = fs::read(real_file).ok()?;
     let key = format!(
         "{:016x}",
-        fingerprint_of(&[quint.version.as_bytes(), &source])
+        fingerprint_of(&[
+            env!("EARNEST_ENGINE").as_bytes(),
+            quint.version.as_bytes(),
+            &source
+        ])
     );
     let target = cache_path(&format!(
         "places-{:016x}.json",
