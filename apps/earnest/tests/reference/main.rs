@@ -14,6 +14,7 @@ use tempfile::TempDir;
 const HANG_GUARD: Duration = Duration::from_mins(5);
 const UNREADABLE_FOLDER: &str = "unreadable";
 const SLOW_FOLDER: &str = "limits";
+const SETUPS_FOLDER: &str = "tasks/conformance/setups";
 const STATES_OF_A_SLOW_MODEL: &str = "20";
 
 const HOOKS: &str = r#"import { registerHooks } from "node:module";
@@ -317,6 +318,7 @@ fn node_rules(scratch: &Path, file: &Path, limit: Option<&str>) -> Vec<Value> {
 fn node_and_the_checker_give_the_same_rules_and_witnesses_with_their_paths_and_reasons() {
     let scratch = scratch_folder();
     let files = typescript_models(&repository().join("tasks/conformance/runs"));
+    let files = [files, typescript_models(&repository().join(SETUPS_FOLDER))].concat();
     assert!(
         files.len() >= 2,
         "the models with witnesses are found: {files:?}"
@@ -395,7 +397,11 @@ fn node_and_the_checker_play_a_witness_alike_when_there_are_more_start_states_th
 #[test]
 fn node_and_the_checker_judge_every_rule_about_runs_and_every_setup_alike() {
     let scratch = scratch_folder();
-    let files = typescript_models(&repository().join("tasks/conformance/runs"));
+    let files = [
+        typescript_models(&repository().join("tasks/conformance/runs")),
+        typescript_models(&repository().join(SETUPS_FOLDER)),
+    ]
+    .concat();
     let mut setups = 0_usize;
     let mut about_runs = 0_usize;
     for file in &files {
@@ -431,9 +437,9 @@ fn node_and_the_checker_judge_every_rule_about_runs_and_every_setup_alike() {
                 .count();
         }
     }
-    assert!(setups >= 2, "every setup was compared: {setups}");
+    assert!(setups >= 4, "every setup was compared: {setups}");
     assert!(
-        about_runs >= 15,
+        about_runs >= 23,
         "every rule about runs was compared: {about_runs}"
     );
 }

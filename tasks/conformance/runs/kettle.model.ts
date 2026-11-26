@@ -1,32 +1,40 @@
 import { m } from "@earnestjs/model";
 
 export const Kettle = m.model("Kettle", {
-	heat: m.int(0, 2).initial(0),
-	on: m.boolean().initial(false),
+	phase: m.enum(["Cold", "Warm", "Hot", "Off"]).initial("Cold"),
 });
 
-export const press = m.action(Kettle, "the switch is pressed", {
-	when: (s) => !s.on,
-	changes: () => ({ on: true }),
+export const heat = m.action(Kettle, "the kettle heats the water", {
+	when: (s) => s.phase === "Cold",
+	changes: () => ({ phase: "Warm" }),
 });
 
-export const warm = m.action(Kettle, "the water warms up", {
-	when: (s) => s.on && s.heat < 2,
-	changes: (s) => ({ heat: s.heat + 1 }),
+export const boil = m.action(Kettle, "the water boils", {
+	when: (s) => s.phase === "Warm",
+	changes: () => ({ phase: "Hot" }),
 });
 
-export const simmer = m.action(Kettle, "the boiling water simmers on", {
-	when: (s) => s.on && s.heat === 2,
-	changes: () => ({ on: true }),
+export const unplug = m.action(Kettle, "someone unplugs the cold kettle", {
+	when: (s) => s.phase === "Cold",
+	changes: () => ({ phase: "Off" }),
 });
 
-export const boils = m.eventually(Kettle, "The water boils", {
-	reaches: (s) => s.heat === 2,
+export const stopped = m.end(Kettle, "A kettle that is hot or off is done", (s) => s.phase === "Hot" || s.phase === "Off");
+
+export const boils = m.eventually(Kettle, "Every run comes to hot water", {
+	reaches: (s) => s.phase === "Hot",
 });
 
-export const switchesOff = m.eventually(Kettle, "Once the water boils, the kettle switches off", {
-	after: (s) => s.heat === 2,
-	reaches: (s) => !s.on,
+export const settles = m.eventually(Kettle, "Every run comes to a kettle that is hot or off", {
+	reaches: (s) => s.phase === "Hot" || s.phase === "Off",
 });
 
-export type State = m.Infer<typeof Kettle>;
+export const starts_cold = m.witness(Kettle, "The water starts cold", {
+	steps: [],
+	expect: (s) => s.phase === "Cold",
+});
+
+export const hot_at_once = m.witness(Kettle, "One heat makes the water hot", {
+	steps: [heat],
+	expect: (s) => s.phase === "Hot",
+});

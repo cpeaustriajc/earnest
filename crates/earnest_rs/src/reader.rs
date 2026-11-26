@@ -33,6 +33,7 @@ pub(crate) struct Reader<'a> {
     pub(crate) const_values: BTreeMap<String, Expr>,
     pub(crate) model_name: Option<String>,
     pub(crate) returns_self: Option<bool>,
+    pub(crate) witness_state: Option<String>,
     pub(crate) depth: usize,
 }
 
@@ -145,8 +146,14 @@ impl<'a> Reader<'a> {
             const_values: BTreeMap::new(),
             model_name: None,
             returns_self: None,
+            witness_state: None,
             depth: 0,
         }
+    }
+
+    pub(crate) fn is_the_witness_state(&self, expr: &Expr) -> bool {
+        matches!(unwrapped(expr), Expr::Path(name)
+            if self.witness_state.as_deref().is_some_and(|state| name.path.is_ident(state)))
     }
 
     pub(crate) fn refuse(&mut self, span: Span, feature: &str, message: &str) {

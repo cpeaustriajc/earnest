@@ -304,7 +304,7 @@ impl Reader<'_> {
         if name == "clone" && call.args.is_empty() {
             return self.term(&call.receiver);
         }
-        if is_state(&call.receiver) {
+        if is_state(&call.receiver) || self.is_the_witness_state(&call.receiver) {
             return self.own_method(call, &name);
         }
         if let Some(read) = self.option_method(call, &name) {
@@ -400,7 +400,7 @@ impl Reader<'_> {
         let mut arguments = vec![self.term(&call.receiver)];
         arguments.extend(call.args.iter().map(|argument| self.term(argument)));
         if !self.methods.contains(name) {
-            let feature = format!("self.{name}()");
+            let feature = format!("{}.{name}()", self.short_text(call.receiver.span()));
             return self.nothing(
                 call.method.span(),
                 &feature,

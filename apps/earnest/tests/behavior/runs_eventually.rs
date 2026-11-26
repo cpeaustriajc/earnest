@@ -5,7 +5,7 @@ use crate::support::{Sandbox, finding, model, models, named, rule, without_timin
 const EVENTUALLY: [&str; 7] = [
     "cart.model.ts",
     "cart_broken.model.ts",
-    "kettle.model.ts",
+    "stove.model.ts",
     "ticket.model.ts",
     "worker.model.ts",
     "lazy_worker.model.ts",
@@ -24,8 +24,8 @@ const CART_BROKEN_DETAIL: [&str; 7] = [
     "why    steps 2 to 3 can repeat forever",
 ];
 
-const KETTLE_DETAIL: [&str; 7] = [
-    "broken  switchesOff  \"Once the water boils, the kettle switches off\"",
+const STOVE_DETAIL: [&str; 7] = [
+    "broken  switchesOff  \"Once the water boils, the stove switches off\"",
     "start  heat = 0, on = false",
     "1. press  on: false -> true",
     "2. warm  heat: 0 -> 1",
@@ -105,7 +105,7 @@ fn each_model_whose_rules_about_runs_hold_passes_and_each_with_one_broken_fails(
     for (name, status, states) in [
         ("Cart", "pass", "4 states"),
         ("CartBroken", "fail", "4 states"),
-        ("Kettle", "fail", "4 states"),
+        ("Stove", "fail", "4 states"),
         ("Ticket", "fail", "3 states"),
         ("Worker", "pass", "4 states"),
         ("LazyWorker", "fail", "4 states"),
@@ -122,7 +122,7 @@ fn each_model_whose_rules_about_runs_hold_passes_and_each_with_one_broken_fails(
     assert_eq!(run.summary_count("fail"), 5, "the other five fail\n{run}");
     for (name, detail) in [
         ("CartBroken", CART_BROKEN_DETAIL.as_slice()),
-        ("Kettle", KETTLE_DETAIL.as_slice()),
+        ("Stove", STOVE_DETAIL.as_slice()),
         ("Ticket", TICKET_DETAIL.as_slice()),
         ("LazyWorker", LAZY_DETAIL.as_slice()),
         ("Dispatch", DISPATCH_DETAIL.as_slice()),
@@ -211,7 +211,7 @@ fn the_json_gives_the_kind_the_reason_and_where_the_loop_starts() {
         "the loop starts at the start state\n{run}"
     );
     for (name, id) in [
-        ("Kettle", "switchesOff"),
+        ("Stove", "switchesOff"),
         ("Ticket", "fixed"),
         ("Dispatch", "toTheBack"),
     ] {
@@ -261,14 +261,14 @@ fn checking_only_one_rule_about_runs_by_its_id() {
     let sandbox = Sandbox::with_runs(&EVENTUALLY);
     let run = sandbox.earnest(&["verify", "--rule", "switchesOff"]);
     run.exits(1);
-    assert_eq!(run.model_lines().len(), 1, "only the kettle\n{run}");
-    assert_eq!(run.detail("Kettle"), KETTLE_DETAIL, "only that rule\n{run}");
+    assert_eq!(run.model_lines().len(), 1, "only the stove\n{run}");
+    assert_eq!(run.detail("Stove"), STOVE_DETAIL, "only that rule\n{run}");
     let holds = sandbox.earnest(&["verify", "--rule", "boils", "--json"]);
     holds.exits(0);
     let report = holds.json();
-    assert_eq!(models(&report).len(), 1, "only the kettle\n{holds}");
+    assert_eq!(models(&report).len(), 1, "only the stove\n{holds}");
     assert_eq!(
-        verdicts(model(&report, "Kettle")),
+        verdicts(model(&report, "Stove")),
         listed(&[("boils", "holds")]),
         "only the rule asked for\n{holds}"
     );
@@ -316,7 +316,7 @@ fn a_cached_run_prints_the_same_loop_and_why_line() {
 fn the_report_shows_a_broken_rule_about_runs_with_its_why_line() {
     let sandbox = Sandbox::with_runs(&EVENTUALLY);
     let run = sandbox.earnest(&["report"]);
-    for line in CART_BROKEN_DETAIL.iter().chain(&KETTLE_DETAIL) {
+    for line in CART_BROKEN_DETAIL.iter().chain(&STOVE_DETAIL) {
         assert!(
             run.stdout.lines().any(|printed| printed.trim() == *line),
             "the report has the line `{line}`\n{run}"

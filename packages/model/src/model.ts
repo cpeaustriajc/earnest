@@ -486,7 +486,15 @@ export const setup = <F extends Fields, const Starts extends Partial<StateOf<F>>
         `${model.name}: the setup "${sentence}" starts \`${name}\`, which is not a field of the model`,
       );
     }
-    adopted[name] = startingAt(declared, value);
+    try {
+      adopted[name] = startingAt(declared, value);
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${model.name}: the setup "${sentence}" starts \`${name}\` at a value the field does not declare: ${why}`,
+        { cause: error },
+      );
+    }
   }
   const declaredSetup: Setup<F> = Object.freeze({ kind: "setup", says: sentence, starts });
   partsOf(model).setups.push({ part: declaredSetup, says: sentence, starts: frozen(adopted) });

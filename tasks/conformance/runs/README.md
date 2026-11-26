@@ -68,7 +68,7 @@ How a rule about runs is judged, from the contract:
 |---|---|---|---|---|
 | `cart.model.ts` | `Cart` | 4 | `pass` | `(approved, offers, paid)`, one start `(false, false, false)`. Each action sets one field in order: `approve`, `offer`, `pay`. 4 states. The last is the end `paidFor` |
 | `cart_broken.model.ts` | `CartBroken` | 4 | `fail` | `Cart` with `cancel`, which sets `approved` back while `offers` is false. It reaches no new state: the same 4 |
-| `kettle.model.ts` | `Kettle` | 4 | `fail` | `(heat, on)`, start `(0, false)`. `press` gives `(0, true)`, `warm` gives `(1, true)` and `(2, true)`. There only `simmer` can happen, and it keeps the state. 4 states, none stuck |
+| `stove.model.ts` | `Stove` | 4 | `fail` | `(heat, on)`, start `(0, false)`. `press` gives `(0, true)`, `warm` gives `(1, true)` and `(2, true)`. There only `simmer` can happen, and it keeps the state. 4 states, none stuck |
 | `ticket.model.ts` | `Ticket` | 3 | `fail` | `stage` `open`, `fixed` and `closed`, all reachable. `closed` is the end `done` |
 | `worker.model.ts` | `Worker` | 4 | `pass` | `(busy, done)`, start `(false, false)`. `fidget` flips `busy` while `done` is false; the fair `finish` sets `done` from either. `busy` × `done`: 4. The two done states are the end `over` |
 | `lazy_worker.model.ts` | `LazyWorker` | 4 | `fail` | `Worker` with `finish` not fair: the same 4 |
@@ -80,8 +80,8 @@ How a rule about runs is judged, from the contract:
 | `Cart` | `approvedSoon` | | `s.approved` | holds | | | | From the start only `approve` can happen |
 | `CartBroken` | `offered` | `s.approved` | `s.offers` | broken | `approve`, `cancel`, `approve` | 1 | `steps 2 to 3 can repeat forever` | `(true, false, false)` is the first state the rule starts in, one step from the start. From there `cancel` and `approve` loop without `offers` |
 | `CartBroken` | `approvedSoon` | | `s.approved` | holds | | | | The start is the only state the rule starts in, and only `approve` leaves it |
-| `Kettle` | `boils` | | `s.heat === 2` | holds | | | | `press`, `warm`, `warm` is the only run, and it ends at `heat` 2 |
-| `Kettle` | `switchesOff` | `s.heat === 2` | `!s.on` | broken | `press`, `warm`, `warm` | | `nothing changes the state from here, so the run can stay in it forever` | `(2, true)` is the one state the rule starts in. `simmer` keeps it as it is, so the run stays there with `on` true |
+| `Stove` | `boils` | | `s.heat === 2` | holds | | | | `press`, `warm`, `warm` is the only run, and it ends at `heat` 2 |
+| `Stove` | `switchesOff` | `s.heat === 2` | `!s.on` | broken | `press`, `warm`, `warm` | | `nothing changes the state from here, so the run can stay in it forever` | `(2, true)` is the one state the rule starts in. `simmer` keeps it as it is, so the run stays there with `on` true |
 | `Ticket` | `closes` | | `s.stage === "closed"` | holds | | | | `decline` closes it, and `fix` leads to a state where only `close` can happen |
 | `Ticket` | `fixed` | | `s.stage === "fixed"` | broken | `decline` | | `nothing changes the state from here, so the run can stay in it forever` | `closed` is an end: no action happens there |
 | `Worker` | `finishes` | | `s.done` | holds | | | | `fidget` loops between the two states that are not done, but `finish` is possible in both and fair, so the loop is not a run |
@@ -119,13 +119,16 @@ own run.
 
 ## Totals
 
-Totals for a run over these files: 12 models (10 models, and `Clock` twice more in its two
-setups), 4 pass (`Cart`, `Clock`, `Panel`, `Worker`), 8 fail.
+Totals for a run over the files in the tables above (`cart`, `cart_broken`, `clock`, `dispatch`,
+`lazy_worker`, `lift`, `panel`, `stove`, `ticket`, `worker`): 12 models (10 models, and `Clock`
+twice more in its two setups), 4 pass (`Cart`, `Clock`, `Panel`, `Worker`), 8 fail. The Rust
+twins below and their TypeScript files have totals of their own: a run over this whole folder and
+`../setups` gives 22 models, 6 pass, 16 fail.
 
 ## Copies with one rule broken on purpose
 
 `cart_broken.model.ts` is `Cart` with `offered` broken by a loop, and `lazy_worker.model.ts` is
-`Worker` with `finishes` broken because `finish` is not fair. `Kettle`, `Ticket` and `Dispatch`
+`Worker` with `finishes` broken because `finish` is not fair. `Stove`, `Ticket` and `Dispatch`
 each hold one rule that holds and one that is broken, and `Clock` breaks one rule in each setup, so
 they need no copy. `earnest confirm --tlc` must say `same` for every run of every file.
 
@@ -144,9 +147,50 @@ What each file is there for:
 | `lift.model.ts` | Several start states; each broken reason that needs no fault; the first start state that breaks a witness; an empty path |
 | `cart.model.ts` | A rule about runs with `after` and one without, both holding; an end |
 | `cart_broken.model.ts` | A rule broken by a loop that starts after the first step; a rule that holds beside it |
-| `kettle.model.ts` | A rule broken by a run that stays in a state whose only action changes nothing |
+| `stove.model.ts` | A rule broken by a run that stays in a state whose only action changes nothing |
 | `ticket.model.ts` | A rule broken by a run that stays in an end |
 | `worker.model.ts` | A rule that holds only because an action is `fair` |
 | `lazy_worker.model.ts` | The same model without `fair`: the rule is broken by a loop from the start |
 | `dispatch.model.ts` | A fair action with an input; a broken path whose step takes an input |
 | `clock.model.ts` | Two setups; a field no action changes; a rule broken in one setup alone and a rule about runs broken in the other; a witness in each setup and one in the model's own run |
+
+## Rust twins
+
+`gate.rs`, `kettle.rs` and `../setups/clock.rs` are Rust models, each with a TypeScript twin of
+the same name (`gate.model.ts`, `kettle.model.ts`, `../setups/clock.model.ts`). The clock pair lives
+in `../setups`. `apps/earnest/tests/reference` runs `explore` once for the model and once per
+setup, and compares every TypeScript file in this folder and in `../setups`; the TLC tests in
+`tasks/break_it/tests/tlc/runs.rs` confirm every file of both folders, Rust ones included. `apps/earnest/tests/behavior/runs_rust.rs`
+checks that each file and its twin give the same text, JSON and exit code, and
+`apps/earnest/tests/rust_models/runs.rs` builds the Rust files with the repository's lints and
+checks that each witness method gives `Some(true)` (or `true`) from every start state exactly
+where the table says the witness holds. A run never stops while an action can still change the
+state, and never puts off forever an action declared fair that stays possible.
+
+| File | Model | States | Status | Why that many states |
+|---|---|---|---|---|
+| `gate.rs` | `Gate` | 6 | `fail` | `(door, paid, light)`, one start `(Locked, false, false)`. Unpaid at the locked door, `blink` gives both lights: 2. `pay` keeps the light: `(Locked, true, ·)`, 2. `push` opens: `(Open, true, ·)`, 2. `enter` goes back to unpaid. `blink` needs `!paid`, so no other state. 2 + 2 + 2 = 6, none stuck |
+| `kettle.rs` | `Kettle` | 4 | `fail` | `phase` from `Cold`: `heat` to `Warm`, `boil` to `Hot`, `unplug` to `Off`. `Hot` and `Off` end the model |
+| `../setups/clock.rs` | `Clock` | 6 | `fail` | `(skew, synced)` from `(0, false)`: `drift` by -1 or 1 reaches every skew from -2 to 2 unsynced (5), `sync` gives `(0, true)` from each, which ends the model. 5 + 1 = 6 |
+| `clock.rs` | `Clock (behind)` | 6 | `fail` | Starts at `(-2, false)`: the same 6 states |
+| `clock.rs` | `Clock (synced_already)` | 1 | `pass` | Starts at `(0, true)`, where nothing can happen and the model ends |
+
+| Model | Id | Kind | Verdict | Path | Reason | Why |
+|---|---|---|---|---|---|---|
+| `Gate` | `opens` | eventually | holds | | | A run that never pays blinks forever, but `pay` is fair and stays possible there. Once paid only `push` can happen, and it opens. Without `fair` it is broken: `blink`, `blink`, ``steps 1 to 2 can repeat forever`` |
+| `Gate` | `opens_once_paid` | eventually | holds | | | `after = paid_up`: from a paid locked gate only `push` can happen; a paid open gate is open |
+| `Gate` | `lit_and_paid` | eventually | broken | `pay`, `push`, `enter`, repeating from 0 | `steps 1 to 3 can repeat forever` | That loop never lights a paid gate, and `pay` is taken in it |
+| `Gate` | `pay_then_push` | witness | holds | | | `(Locked, true, false)`, then `(Open, true, false)`, which `after.is_open()` reads |
+| `Gate` | `push_first` | witness | broken | no steps | ``step 1, `push`, can't happen here`` | `push` needs `paid` |
+| `Kettle` | `boils` | eventually | broken | `unplug` | `nothing changes the state from here, so the run can stay in it forever` | An unplugged kettle stops cold |
+| `Kettle` | `settles` | eventually | holds | | | Every run ends at `Hot` or `Off` |
+| `Kettle` | `starts_cold` | witness | holds | | | No steps; the start is cold. The Rust method returns `bool` |
+| `Kettle` | `hot_at_once` | witness | broken | `heat` | `what the witness expects is false here` | One heat makes it warm |
+| `Clock` | `shows_zero` | rule | holds | | | `sync` sets the skew to 0, and nothing changes a synced clock |
+| `Clock` | `syncs` | eventually | broken | `drift[by = -1]`, `drift[by = 1]`, repeating from 0 | `steps 1 to 2 can repeat forever` | `sync` is not fair, so drifting can go on |
+| `Clock` | `drifts_ahead` | witness | holds | | | `drift[by = 1]` from 0 gives 1 |
+| `Clock (behind)` | `syncs` | eventually | broken | `drift[by = 1]`, `drift[by = -1]`, repeating from 0 | `steps 1 to 2 can repeat forever` | As above, from -2 |
+| `Clock (behind)` | `catches_up` | witness | holds | | | `setup = behind`: `drift[by = 1]` to -1, then `sync` to `(0, true)`. It is played only in this setup |
+| `Clock (synced_already)` | `syncs` | eventually | holds | | | The start is synced |
+
+Totals for a run over the three Rust files: 5 models, 1 pass, 4 fail.

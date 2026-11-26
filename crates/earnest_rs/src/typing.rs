@@ -142,7 +142,8 @@ impl Reader<'_> {
             return Some(strip(&receiver).clone());
         }
         let on_state = matches!(unwrapped(&call.receiver),
-            Expr::Path(path) if path.path.is_ident("self"));
+            Expr::Path(path) if path.path.is_ident("self"))
+            || self.is_the_witness_state(&call.receiver);
         if on_state {
             return self.method_types.get(&name).cloned();
         }

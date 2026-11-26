@@ -120,7 +120,9 @@ test("m.setup throws for no field, a name that is not a field, or a value the fi
   expect(() => m.setup(Clock, "Drifting", drift)).toThrow(
     'Clock: the setup "Drifting" starts `drift`, which is not a field of the model',
   );
-  expect(() => m.setup(Clock, "Far behind", { skew: -11 })).toThrow("-11 is not a value");
+  expect(() => m.setup(Clock, "Far behind", { skew: -11 })).toThrow(
+    'Clock: the setup "Far behind" starts `skew` at a value the field does not declare: -11 is not a value',
+  );
 });
 
 test("m.witness throws for a setup of another model or one declared after it", () => {

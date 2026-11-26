@@ -14,6 +14,7 @@ mod results;
 mod runs;
 mod runs_eventually;
 mod runs_setups;
+mod runs_rust;
 mod select;
 mod support;
 mod tla;

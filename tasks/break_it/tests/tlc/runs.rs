@@ -99,20 +99,29 @@ fn confirmed(name: &str, source: &str, jar: &str) -> Confirmed {
     }
 }
 
+const CONFORMANCE_FOLDERS: [&str; 2] = ["tasks/conformance/runs", "tasks/conformance/setups"];
+
 fn conformance_models() -> Vec<PathBuf> {
-    let folder = repository().join("tasks/conformance/runs");
-    let mut files: Vec<PathBuf> = fs::read_dir(&folder)
-        .unwrap_or_else(|error| panic!("{} can't be listed: {error}", folder.display()))
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.to_string_lossy().ends_with(".model.ts"))
-        .collect();
-    files.sort();
+    let mut files = Vec::new();
+    for relative in CONFORMANCE_FOLDERS {
+        let folder = repository().join(relative);
+        let mut found: Vec<PathBuf> = fs::read_dir(&folder)
+            .unwrap_or_else(|error| panic!("{} can't be listed: {error}", folder.display()))
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                let name = path.to_string_lossy();
+                name.ends_with(".model.ts") || name.ends_with(".rs")
+            })
+            .collect();
+        found.sort();
+        files.extend(found);
+    }
     files
 }
 
 #[test]
-fn tlc_confirms_every_model_and_setup_of_the_runs_conformance_models() {
+fn tlc_confirms_every_model_and_setup_of_the_runs_and_setups_conformance_models() {
     let jar = jar();
     let mut runs = 0_usize;
     let mut verdicts = Vec::new();
@@ -127,8 +136,9 @@ fn tlc_confirms_every_model_and_setup_of_the_runs_conformance_models() {
         verdicts.extend(found.verdicts);
     }
     assert_eq!(
-        runs, 12,
-        "the README counts 10 models and 2 setups in tasks/conformance/runs"
+        runs, 22,
+        "the README counts 22 runs in tasks/conformance/runs and tasks/conformance/setups: 12 of \
+         the TypeScript models of its tables, and 10 of the Rust twins and their TypeScript files"
     );
     let broken = verdicts
         .iter()
@@ -140,8 +150,9 @@ fn tlc_confirms_every_model_and_setup_of_the_runs_conformance_models() {
         .count();
     assert_eq!(
         (holds, broken),
-        (9, 6),
-        "the README lists 15 judged rules about runs: 9 hold and 6 are broken"
+        (17, 14),
+        "the README lists 31 judged rules about runs: 9 hold and 6 are broken in its tables, and \
+         4 hold and 4 are broken in each language of the Rust twins"
     );
 }
 

@@ -50,7 +50,7 @@ export const reopens = m.witness(Panel, "Open, show more, close, open: the panel
 - **`--rule <id>`** selects a witness by its id. `earnest tla` does not export witnesses, and `earnest confirm` leaves them out.
 - **`explore`** in `@earnestjs/model` plays witnesses the same way and gives the same results.
 
-Rust models have no witnesses yet. See [Witnesses](/reference/typescript/#witnesses).
+A Rust model writes a witness as a method marked `#[witness("...")]`, a chain of its actions from `self` and a condition on the state after them. See [Witnesses](/reference/typescript/#witnesses) and [Rust models](/reference/rust/#rules-about-runs-witnesses-and-setups).
 
 ## November 2026: check an XState machine from a test
 
