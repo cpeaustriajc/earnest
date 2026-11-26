@@ -16,14 +16,17 @@ module Lamp {
   val darkWhenOff = not(on) implies level <= Max
 }
 
+/// @check levelOk, darkWhenOff
 module Dim {
   import Lamp(Max = 2).*
 }
 
+/// @check levelOk
 module Bright {
   import Lamp(Max = 5).*
 }
 
+/// @check levelOk
 module Blinding {
   import Lamp(Max = 9).*
 }

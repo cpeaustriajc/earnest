@@ -8,12 +8,14 @@ module Counter {
   action InitOn(v: int): bool = n' = v
 }
 
+/// @check
 module FirstSteps {
   import Counter(START = 0) as Fixed from "./FirstSteps"
   import Counter(START = 5) as Other from "./FirstSteps"
   var flag: bool
   action init = all { Fixed::init, flag' = false }
   action step = all { Fixed::step, flag' = not(flag) }
+  /// @check
   val bounded = Fixed::n <= 3
   action seed(v: str): bool = all { Fixed::n' = 0, flag' = v == "on" }
   run seedTest = seed("on").then(step).expect(not(flag) and Fixed::n == 1)

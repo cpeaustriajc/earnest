@@ -32,6 +32,7 @@ module SpecStar {
   run downTest = init.then(down).expect(last == Down(1))
 }
 
+/// @check ok, noDownAtTop, small
 module Star {
   import Kinds.*
   import Helpers.*
@@ -51,6 +52,7 @@ module SpecOther {
   run upTest = init.then(step).expect(n == 5)
 }
 
+/// @check apart, tagged, A::ok, B::ok
 module Both {
   import Kinds.*
   import SpecStar(K = 2) as A

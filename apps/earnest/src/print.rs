@@ -1,11 +1,14 @@
 use crate::changes::Difference;
-use crate::reading::ModelFile;
+use crate::reading::{ModelFile, Readable};
+use crate::run::only_runs_not_played;
 use crate::run::{
     Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
+    whole_of,
 };
 use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines};
 use earnest_check::EVERY_EXPECTED_FOUND;
 use earnest_diagnostics::Problem;
+use earnest_ir::Model;
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -43,6 +46,7 @@ impl Summary {
 }
 
 const EXPECTED: &str = "broken";
+const REACHED: &str = "reached";
 
 #[derive(Debug, Serialize)]
 struct ExpectedRule<'a> {
@@ -75,7 +79,7 @@ enum Shown<'a> {
     Expecting(Expecting<'a>),
 }
 
-fn shown<'a>(result: &'a ModelResult, expected: &[String]) -> Shown<'a> {
+fn shown<'a>(result: &'a ModelResult, (expected, reachable): Marked<'_>) -> Shown<'a> {
     if expected.is_empty() {
         return Shown::Plain(result);
     }
@@ -94,7 +98,11 @@ fn shown<'a>(result: &'a ModelResult, expected: &[String]) -> Shown<'a> {
             .iter()
             .map(|rule| ExpectedRule {
                 rule,
-                expected: is_expected_result(expected, rule).then_some(EXPECTED),
+                expected: if is_expected_result(reachable, rule) {
+                    Some(REACHED)
+                } else {
+                    is_expected_result(expected, rule).then_some(EXPECTED)
+                },
             })
             .collect(),
         findings: &result.findings,
@@ -112,6 +120,8 @@ struct Document<'a> {
     rule_changes: &'a [Difference],
     summary: Summary,
 }
+
+type Marked<'a> = (&'a [String], &'a [String]);
 
 fn counted(count: usize, one: &str, many: &str) -> String {
     let noun = if count == 1 { one } else { many };
@@ -139,13 +149,18 @@ impl Verified<'_> {
         }
     }
 
-    fn expected_of(&self, checked: &Checked) -> &[String] {
+    fn readable_of(&self, checked: &Checked) -> Option<&Readable> {
         self.files
             .iter()
             .filter(|file| file.path == checked.result.file)
             .flat_map(ModelFile::models)
             .find(|readable| checked.is_of(readable))
-            .map_or(&[], |readable| readable.expected.as_slice())
+    }
+
+    fn expected_of(&self, checked: &Checked) -> Marked<'_> {
+        self.readable_of(checked).map_or((&[], &[]), |readable| {
+            (readable.expected.as_slice(), readable.reachable.as_slice())
+        })
     }
 
     pub(crate) fn text(&self) -> String {
@@ -156,7 +171,11 @@ impl Verified<'_> {
                 lines.extend(unreadable_lines(file));
             }
             while let Some(next) = checked.next_if(|next| next.result.file == file.path) {
-                lines.push(model_line(&next.result));
+                let counts = self
+                    .readable_of(next)
+                    .filter(|readable| readable.counted)
+                    .map(|readable| counts_of(&readable.model));
+                lines.push(model_line(&next.result, counts.as_deref()));
                 lines.extend(not_played_line(&next.result));
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
@@ -196,12 +215,32 @@ impl Verified<'_> {
     }
 }
 
-fn model_line(result: &ModelResult) -> String {
-    let so_far = if result
-        .reason
-        .as_deref()
-        .is_some_and(|reason| reason != EVERY_EXPECTED_FOUND)
-    {
+fn counts_of(model: &Model) -> String {
+    let mut rules: Vec<&str> = Vec::new();
+    let always = model.rules.iter().map(|rule| rule.id.as_str());
+    let eventually = model.runs.eventually.iter().map(|rule| rule.id.as_str());
+    for id in always.chain(eventually).map(whole_of) {
+        if !rules.contains(&id) {
+            rules.push(id);
+        }
+    }
+    let mut runs: Vec<&str> = Vec::new();
+    for id in model.runs.scripts.iter().map(|script| whole_of(&script.id)) {
+        if !runs.contains(&id) {
+            runs.push(id);
+        }
+    }
+    format!(
+        "{}, {}",
+        counted(rules.len(), "rule", "rules"),
+        counted(runs.len(), "run", "runs")
+    )
+}
+
+fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
+    let so_far = if result.reason.as_deref().is_some_and(|reason| {
+        reason != EVERY_EXPECTED_FOUND && !only_runs_not_played(reason, &result.runs_not_played)
+    }) {
         " so far"
     } else {
         ""
@@ -212,6 +251,7 @@ fn model_line(result: &ModelResult) -> String {
         format!("{} states{so_far}", result.states),
         format!("{} ms", result.milliseconds),
     ];
+    fields.extend(counts.map(str::to_owned));
     fields.extend(result.reason.as_ref().map(|reason| format!("({reason})")));
     if result.cached {
         fields.push("(cached)".to_owned());
@@ -225,26 +265,32 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
     }
     Some(format!(
         "{INDENT}note{INDENT}runs not played: {} (written in a module this one imports, whose \
-         runs `quint compile` drops: the checker plays them only in a setup it builds itself, \
-         so write them in this module to play them here)",
+         runs `quint compile` drops: the checker plays them only in a setup it builds itself; \
+         as a last resort, write them in this module to play them here)",
         one_line(&result.runs_not_played.join(", "))
     ))
 }
 
 pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
-    file.problems()
-        .iter()
-        .map(|problem| {
-            format!(
-                "{}:{}:{}{INDENT}{}{INDENT}{}",
-                one_line(&problem.file),
-                problem.line,
-                problem.column,
-                one_line(&problem.feature),
-                one_line(&problem.message)
-            )
-        })
-        .collect()
+    let mut lines = Vec::new();
+    for problem in file.problems() {
+        let mut message = problem.message.lines();
+        lines.push(format!(
+            "{}:{}:{}{INDENT}{}{INDENT}{}",
+            one_line(&problem.file),
+            problem.line,
+            problem.column,
+            one_line(&problem.feature),
+            one_line(message.next().unwrap_or_default())
+        ));
+        lines.extend(
+            message
+                .map(str::trim_end)
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| format!("{INDENT}{INDENT}{line}")),
+        );
+    }
+    lines
 }
 
 pub(crate) fn unreadable_lines(file: &ModelFile) -> Vec<String> {

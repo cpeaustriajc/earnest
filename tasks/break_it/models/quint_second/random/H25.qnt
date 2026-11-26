@@ -71,13 +71,21 @@ module Spec25 {
       last' = last,
     }
   action step = any { enqueue, process, drop, spend, toggle }
+  /// @check
   val inv0 = ((last == Clear or pair._2 == "y") and LIM == q.length())
+  /// @check
   val inv1 = pair._2 == "y"
+  /// @check
   val inv2 = pair._2 == "x"
+  /// @check
   temporal t0 = eventually((LIM <= LIM or m.keys().contains("b")))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(m.keys().contains("a"))
+  /// @check
   temporal t2 = weakFair(toggle, vars) implies always(eventually((LIM == m.keys().size() or n <= m.keys().size())))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always((LIM <= useOp(v => v + 1, n) and useOp(v => v + 1, n) == n) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually((LIM <= LIM or m.keys().contains("b"))))
   run r0Test = init.then(process).then(enqueue).then(toggle).expect(pair._2 == "y")
   run r1Test = init.then(toggle).then(toggle).expect((KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 3) or flag))
@@ -85,6 +93,7 @@ module Spec25 {
   run repsTest = init.then(1.reps(_ => step)).expect(q.select(c => isInc(c)).length() <= 2)
 }
 
+/// @check
 module H25 {
   import Spec25(LIM = 3, KEYS = Set("a"), START = (2, "y")).*
 }

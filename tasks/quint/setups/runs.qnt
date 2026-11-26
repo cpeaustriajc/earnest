@@ -15,8 +15,10 @@ module Spec {
   run overTest = init.then((Steps + 1).reps(_ => tick)).fail()
 }
 
+/// @check bounded
 module Three {
   import Spec(Steps = 3).*
   run ownTest = init.then(tick).expect(t == 1)
 }
+/// @check bounded
 module One { import Spec(Steps = 1).* }

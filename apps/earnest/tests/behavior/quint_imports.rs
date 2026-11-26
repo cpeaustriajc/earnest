@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::support::{Run, Sandbox, model, repository, rule};
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 echo "$*" >> "$here/calls"
@@ -27,12 +27,12 @@ case "$1" in
   parse)
     name="$(basename "$2" .qnt)"
     folder="$(cd "$(dirname "$2")" && pwd)"
-    if [ -f "$here/typechecked/$name.json" ]; then
-      cp "$here/typechecked/$name.json" "$out"
-    else
-      echo '{"modules":[]}' > "$out"
+    if [ ! -f "$here/parsed/$name.json" ] || [ ! -f "$here/maps/$name.json" ]; then
+      echo "error: no parse of $name.qnt is recorded" >&2
+      exit 1
     fi
-    echo "{\"sourceIndex\":{\"0\":\"$folder/$name.qnt\"},\"map\":{}}" > "$map"
+    cp "$here/parsed/$name.json" "$out"
+    sed "s#\"\([0-9]*\)\":\"\([^\"/]*\.qnt\)\"#\"\1\":\"$folder/\2\"#g" "$here/maps/$name.json" > "$map"
     ;;
   typecheck)
     name="$(basename "$2" .qnt)"
@@ -50,7 +50,7 @@ case "$1" in
     cat "$here/compiled/$main.json"
     ;;
 esac
-"#;
+"##;
 
 const SOURCES: [&str; 6] = ["types", "lib", "doors", "setups", "star", "as"];
 
@@ -78,7 +78,7 @@ struct Quint {
 }
 
 impl Quint {
-    fn new(checks: &str) -> Self {
+    fn new() -> Self {
         let sandbox = Sandbox::empty();
         let program = sandbox.path().join("fake/quint");
         sandbox.write("fake/quint", FAKE);
@@ -91,10 +91,7 @@ impl Quint {
             );
         }
         for file in TYPECHECKED {
-            sandbox.write(
-                &format!("fake/typechecked/{file}.json"),
-                &imports(&format!("fixtures/{file}.typecheck.json")),
-            );
+            Self::typechecked(&sandbox, file);
         }
         for compiled in COMPILED {
             let main = compiled.split_once('.').map_or(compiled, |(_, main)| main);
@@ -103,9 +100,21 @@ impl Quint {
                 &imports(&format!("fixtures/{compiled}.json")),
             );
         }
-        sandbox.write("specs/earnest.quint.json", checks);
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
+    }
+
+    fn typechecked(sandbox: &Sandbox, file: &str) {
+        for kind in ["parsed", "typechecked"] {
+            sandbox.write(
+                &format!("fake/{kind}/{file}.json"),
+                &imports(&format!("fixtures/{file}.typecheck.json")),
+            );
+        }
+        sandbox.write(
+            &format!("fake/maps/{file}.json"),
+            &imports(&format!("fixtures/{file}.sourcemap.json")),
+        );
     }
 
     fn earnest(&self, arguments: &[&str]) -> Run {
@@ -155,25 +164,12 @@ impl Quint {
     }
 }
 
-fn checks_without_runs() -> String {
-    let mut checks: Value =
-        serde_json::from_str(&imports("earnest.quint.json")).expect("the checks file is JSON");
-    if let Some(listed) = checks["checks"].as_array_mut() {
-        listed.retain(|check| check["main"] != "scenarios");
-        for check in listed {
-            if let Some(fields) = check.as_object_mut() {
-                fields.remove("runs");
-            }
-        }
-    }
-    checks.to_string()
-}
-
 fn rule_ids(model: &Value) -> Vec<String> {
     model["rules"]
         .as_array()
         .into_iter()
         .flatten()
+        .filter(|rule| rule["kind"] != "witness")
         .filter_map(|rule| rule["id"].as_str().map(str::to_owned))
         .collect()
 }
@@ -205,7 +201,7 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
 
 #[test]
 fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_flattens() {
-    let quint = Quint::new(&checks_without_runs());
+    let quint = Quint::new();
     let ours = quint.verify();
     assert_eq!(
         quint.compiled_mains(),
@@ -219,8 +215,8 @@ fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_fl
     );
     assert_eq!(
         quint.of_kind("parse").len(),
-        TYPECHECKED.len(),
-        "one parse per file"
+        SOURCES.len(),
+        "one parse per `.qnt` file, each read for its marks"
     );
     quint.forget();
     quint.without_typecheck();
@@ -234,12 +230,15 @@ fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_fl
     for (main, flattened_as) in mains {
         let flattened = model(&theirs, flattened_as);
         let built = model(&ours, main);
-        for key in ["status", "states", "reason"] {
-            assert_eq!(
-                built[key], flattened[key],
-                "{main}: {key}\n{built}\n{flattened}"
-            );
-        }
+        assert_eq!(
+            built["states"], flattened["states"],
+            "{main}: states\n{built}\n{flattened}"
+        );
+        assert_eq!(
+            search_reason(built),
+            search_reason(flattened),
+            "{main}: the reason the search gives\n{built}\n{flattened}"
+        );
         assert_eq!(rule_ids(built), rule_ids(flattened), "{main}");
         for id in rule_ids(flattened) {
             assert_eq!(
@@ -269,7 +268,7 @@ fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_fl
 
 #[test]
 fn the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_them() {
-    let quint = Quint::new(&imports("earnest.quint.json"));
+    let quint = Quint::new();
     let report = quint.verify();
     assert_eq!(quint.compiled_mains(), BTreeSet::new(), "{report}");
     let spec = [
@@ -327,25 +326,18 @@ fn the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_
 
 #[test]
 fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
-    let quint = Quint::new(
-        r#"{ "checks": [
-          { "file": "assume.qnt", "main": "Direct", "invariants": ["ok"] },
-          { "file": "assume.qnt", "main": "Bad", "invariants": ["ok"], "runs": true },
-          { "file": "assume.qnt", "main": "Good", "invariants": ["ok"], "runs": true }
-        ] }"#,
-    );
+    let quint = Quint::new();
     quint
         .sandbox
         .write("specs/assume.qnt", &imports("assume.qnt"));
-    quint.sandbox.write(
-        "fake/typechecked/assume.json",
-        &imports("fixtures/assume.typecheck.json"),
-    );
+    Quint::typechecked(&quint.sandbox, "assume");
     quint.sandbox.write(
         "fake/compiled/Direct.json",
         &imports("fixtures/assume.Direct.json"),
     );
-    let report = quint.verify();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/assume.qnt"])
+        .json();
     assert_eq!(
         quint.compiled_mains(),
         ["Direct".to_owned()].into_iter().collect::<BTreeSet<_>>(),
@@ -385,20 +377,18 @@ fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
 
 #[test]
 fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
-    let quint = Quint::new(
-        r#"{ "checks": [
-          { "file": "printing.qnt", "main": "Printing", "invariants": ["annBelowFive"], "runs": ["noStartTest"] },
-          { "file": "printing.qnt", "main": "Printing", "name": "fault", "invariants": ["annBelowFive"], "runs": ["faultTest"] }
-        ] }"#,
-    );
+    let quint = Quint::new();
     quint
         .sandbox
         .write("specs/printing.qnt", &imports("printing.qnt"));
-    quint.sandbox.write(
-        "fake/compiled/Printing.json",
-        &imports("fixtures/printing.Printing.json"),
-    );
-    let run = quint.earnest(&["verify", "specs"]);
+    Quint::typechecked(&quint.sandbox, "printing");
+    for main in ["Printing", "fault"] {
+        quint.sandbox.write(
+            &format!("fake/compiled/{main}.json"),
+            &imports(&format!("fixtures/printing.{main}.json")),
+        );
+    }
+    let run = quint.earnest(&["verify", "specs/printing.qnt"]);
     assert_eq!(
         run.detail("Printing"),
         [
@@ -415,7 +405,9 @@ fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
         ],
         "the whole values on the `start` and `end` lines, the change alone on a step's\n{run}"
     );
-    let report = quint.verify();
+    let report = quint
+        .earnest(&["verify", "--json", "specs/printing.qnt"])
+        .json();
     let step = &model(&report, "Printing")["rules"][0]["path"]["steps"][0]["changes"][1];
     assert_eq!(step["field"], "balances", "{report}");
     assert_eq!(
@@ -427,7 +419,30 @@ fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
         .as_str()
         .unwrap_or_default();
     assert!(
-        problem.starts_with("a value `seed` gives takes a division"),
+        problem.starts_with("a value `P::seed` gives takes a division"),
         "a fault in a run's first action names that action, not `init`\n{report}"
     );
+}
+
+fn search_reason(model: &Value) -> Value {
+    let unplayed: Vec<&str> = model["runsNotPlayed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    if unplayed.is_empty() {
+        return model["reason"].clone();
+    }
+    assert_ne!(
+        model["status"], "pass",
+        "a compiled check that did not play every run it sees does not pass: {model}"
+    );
+    assert!(
+        model["reason"].as_str().is_some_and(|reason| {
+            reason.starts_with(&format!("runs not played: {}", unplayed.join(", ")))
+        }),
+        "the reason names the runs not played: {model}"
+    );
+    Value::Null
 }

@@ -72,13 +72,21 @@ module Spec1006 {
     }
   }
   action step = any { enqueue, process, lower, toggle, spend }
+  /// @check
   val inv0 = q.select(c => isInc(c)).length() <= 0
+  /// @check
   val inv1 = isInc(last)
+  /// @check
   val inv2 = flag
+  /// @check
   temporal t0 = eventually(flag)
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(m.keys().contains("a"))
+  /// @check
   temporal t2 = weakFair(process, vars) implies always(eventually(flag))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(m.keys().contains("b") implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(flag))
   run r0Test = init.then(enqueue).expect((q.select(c => isInc(c)).length() <= 0 and KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 3)))
   run r1Test = init.then(toggle).then(step).then(spend).expect((useOp(v => v + 1, n) == useOp(v => v + 1, n) or KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 2)))
@@ -86,6 +94,7 @@ module Spec1006 {
   run repsTest = init.then(1.reps(_ => step)).expect(pair._2 == "x")
 }
 
+/// @check
 module H1006 {
   import Spec1006(LIM = 3, KEYS = Set("a"), START = (2, "y")).*
 }

@@ -1,23 +1,18 @@
 use crate::quint::shown_in_folder;
 use earnest_diagnostics::Problem;
-use earnest_quint::Located;
+use earnest_quint::{Located, Runs};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 const QUALIFIED: &str = "::";
 const RUN: &str = "run";
 const TESTS_END_WITH: &str = "Test";
 const EVERY_NAME: &str = "*";
-
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct Imported {
-    proto: String,
-    prefix: String,
-    only: Option<String>,
-    exported: bool,
-}
+const CONSTANT: &str = "const";
+const DEEPEST: usize = 32;
+const PARAMETERS: &str = "lambda";
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Names {
@@ -25,7 +20,60 @@ struct Names {
     declared: Vec<(String, u64)>,
     instances: Vec<(String, String)>,
     has_an_instance: bool,
-    imports: Vec<Imported>,
+    seen: Vec<Seen>,
+    links: Vec<Link>,
+    constants: bool,
+    file: Option<String>,
+    id: Option<u64>,
+    doc: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Module<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) doc: Option<&'a str>,
+    pub(crate) constants: bool,
+    pub(crate) id: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Marked<'a> {
+    pub(crate) name: String,
+    pub(crate) doc: &'a str,
+    pub(crate) id: u64,
+    pub(crate) spot: Option<(&'a str, u32, u32)>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Seen {
+    proto: String,
+    prefix: String,
+    only: Option<String>,
+    id: Option<u64>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct Link {
+    kind: String,
+    proto: String,
+    alias: Option<String>,
+    only: Option<String>,
+    id: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Visible {
+    pub(crate) name: String,
+    pub(crate) id: u64,
+    origin: Vec<u64>,
+    tested: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Imported<'a> {
+    pub(crate) proto: &'a str,
+    pub(crate) prefix: &'a str,
+    pub(crate) written: Option<(&'a str, usize, usize)>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,19 +83,57 @@ pub(crate) struct Places {
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
     qualifiers: HashMap<u64, String>,
+    docs: HashMap<u64, String>,
+    spans: HashMap<u64, (usize, usize)>,
+    kinds: HashMap<u64, String>,
+    parameters: BTreeSet<u64>,
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
 
-fn names_of(module: &Value) -> Option<Names> {
+fn seen_of(kind: &str, declaration: &Value, proto: &str) -> Seen {
+    let alias = text(declaration, "qualifiedName");
+    let all = text(declaration, "defName");
+    let prefix = match (kind, alias, all) {
+        (_, Some(alias), _) => format!("{alias}{QUALIFIED}"),
+        ("instance", None, _) | (_, None, Some(_)) => String::new(),
+        _ => format!("{proto}{QUALIFIED}"),
+    };
+    Seen {
+        proto: proto.to_owned(),
+        prefix,
+        only: all.filter(|name| *name != EVERY_NAME).map(str::to_owned),
+        id: declaration.get("id").and_then(Value::as_u64),
+    }
+}
+
+fn names_of(module: &Value, at: &HashMap<u64, (String, u32, u32)>) -> Option<Names> {
     let mut names = Names {
         name: text(module, "name")?.to_owned(),
+        id: module.get("id").and_then(Value::as_u64),
+        doc: text(module, "doc").map(str::to_owned),
+        file: module
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|id| at.get(&id))
+            .map(|spot| spot.0.clone()),
         ..Names::default()
     };
     for declaration in module.get("declarations")?.as_array()? {
         let id = declaration.get("id").and_then(Value::as_u64);
+        if let (Some(kind @ ("instance" | "import" | "export")), Some(proto)) =
+            (text(declaration, "kind"), text(declaration, "protoName"))
+        {
+            names.links.push(Link {
+                kind: kind.to_owned(),
+                proto: proto.to_owned(),
+                alias: text(declaration, "qualifiedName").map(str::to_owned),
+                only: text(declaration, "defName").map(str::to_owned),
+                id,
+            });
+        }
         match (text(declaration, "kind"), text(declaration, "name"), id) {
             (Some(kind @ ("instance" | "import" | "export")), _, _) => {
                 if kind == "instance" {
@@ -58,27 +144,24 @@ fn names_of(module: &Value) -> Option<Names> {
                     if kind != "export" {
                         names.instances.push((alias.to_owned(), proto.to_owned()));
                     }
-                    let prefix = match (kind, text(declaration, "qualifiedName")) {
-                        ("instance", _) => format!("{}{QUALIFIED}{alias}{QUALIFIED}", names.name),
-                        (_, Some(alias)) => format!("{alias}{QUALIFIED}"),
-                        (_, None) => String::new(),
-                    };
-                    let only = text(declaration, "defName")
-                        .filter(|name| *name != EVERY_NAME)
-                        .map(str::to_owned);
-                    names.imports.push(Imported {
-                        proto: proto.to_owned(),
-                        prefix,
-                        only,
-                        exported: kind == "export",
-                    });
+                    names.seen.push(seen_of(kind, declaration, proto));
                 }
+            }
+            (Some(CONSTANT), Some(name), Some(id)) => {
+                names.constants = true;
+                names.declared.push((name.to_owned(), id));
             }
             (Some(_), Some(name), Some(id)) => names.declared.push((name.to_owned(), id)),
             _ => {}
         }
     }
     Some(names)
+}
+
+fn span(entry: &Value) -> Option<(usize, usize)> {
+    let start = usize::try_from(entry.get(1)?.get("index")?.as_u64()?).ok()?;
+    let end = usize::try_from(entry.get(2)?.get("index")?.as_u64()?).ok()?;
+    Some((start, end))
 }
 
 fn spot(entry: &Value) -> Option<(String, u32, u32)> {
@@ -109,23 +192,48 @@ impl Places {
             .iter()
             .filter_map(|(id, entry)| Some((id.parse().ok()?, spot(entry)?)))
             .collect();
+        let spans = map
+            .get("map")?
+            .as_object()?
+            .iter()
+            .filter_map(|(id, entry)| Some((id.parse().ok()?, span(entry)?)))
+            .collect();
         let listed = parsed.get("modules")?.as_array()?;
-        let modules = listed.iter().filter_map(names_of).collect();
-        let qualifiers = listed
+        let modules = listed
+            .iter()
+            .filter_map(|module| names_of(module, &at))
+            .collect();
+        let declarations: Vec<&Value> = listed
             .iter()
             .filter_map(|module| module.get("declarations")?.as_array())
             .flatten()
-            .filter_map(|declaration| {
-                let id = declaration.get("id").and_then(Value::as_u64)?;
-                Some((id, text(declaration, "qualifier")?.to_owned()))
+            .collect();
+        let kept = |key: &str| -> HashMap<u64, String> {
+            declarations
+                .iter()
+                .filter_map(|declaration| {
+                    let id = declaration.get("id").and_then(Value::as_u64)?;
+                    Some((id, text(declaration, key)?.to_owned()))
+                })
+                .collect()
+        };
+        let parameters = declarations
+            .iter()
+            .filter(|declaration| {
+                declaration.get("expr").and_then(|expr| text(expr, "kind")) == Some(PARAMETERS)
             })
+            .filter_map(|declaration| declaration.get("id").and_then(Value::as_u64))
             .collect();
         Some(Self {
             read: 0,
             files,
             at,
             modules,
-            qualifiers,
+            qualifiers: kept("qualifier"),
+            docs: kept("doc"),
+            spans,
+            kinds: kept("kind"),
+            parameters,
         })
     }
 
@@ -169,57 +277,23 @@ impl Places {
         (!left.is_empty()).then_some(played)
     }
 
+    pub(crate) fn runs_held(&self, main: &str, compiled: &str) -> Vec<String> {
+        self.module(main)
+            .map_or_else(Vec::new, |_| runs_held(main, compiled))
+    }
+
     fn runs_quint_tests(&self, main: &str) -> Vec<String> {
-        let Some(module) = self.module(main) else {
-            return Vec::new();
-        };
-        let mut found = self.runs_seen_in(module, 0);
-        for imported in &module.imports {
-            found.extend(self.runs_through(module, imported, self.modules.len()));
-        }
-        found
-    }
-
-    fn runs_through(&self, module: &Names, imported: &Imported, depth: usize) -> Vec<String> {
-        let proto = if imported.exported {
-            module
-                .instances
-                .iter()
-                .find(|(alias, _)| *alias == imported.proto)
-                .map_or(imported.proto.as_str(), |(_, proto)| proto.as_str())
-        } else {
-            imported.proto.as_str()
-        };
-        let Some(spec) = self.module(proto) else {
-            return Vec::new();
-        };
-        let prefix = imported.prefix.as_str();
-        self.runs_seen_in(spec, depth)
-            .into_iter()
-            .filter(|name| imported.only.as_ref().is_none_or(|only| only == name))
-            .map(|name| format!("{prefix}{name}"))
-            .collect()
-    }
-
-    fn runs_seen_in(&self, spec: &Names, depth: usize) -> Vec<String> {
-        let mut seen: Vec<String> = spec
-            .declared
-            .iter()
-            .filter(|(name, id)| {
-                name.ends_with(TESTS_END_WITH)
-                    && self
-                        .qualifiers
-                        .get(id)
-                        .is_some_and(|qualifier| qualifier == RUN)
-            })
-            .map(|(name, _)| name.clone())
-            .collect();
-        if let Some(deeper) = depth.checked_sub(1) {
-            for exported in spec.imports.iter().filter(|each| each.exported) {
-                seen.extend(self.runs_through(spec, exported, deeper));
+        let mut found: Vec<String> = Vec::new();
+        for each in self.reached(main) {
+            let tested = each.tested;
+            if self.qualifier_of(each.id) == Some(RUN)
+                && tested.ends_with(TESTS_END_WITH)
+                && !found.contains(&tested)
+            {
+                found.push(tested);
             }
         }
-        seen
+        found
     }
 
     pub(crate) fn declares(&self, main: &str, name: &str) -> bool {
@@ -228,25 +302,175 @@ impl Places {
     }
 
     pub(crate) fn sees(&self, main: &str, name: &str) -> bool {
-        let Some(module) = self.module(main) else {
-            return false;
-        };
-        let (alias, last) = name
-            .rsplit_once(QUALIFIED)
-            .map_or((None, name), |(alias, last)| (Some(alias), last));
-        match alias {
-            None if in_module(module, last).is_some() => true,
-            _ => module.instances.iter().any(|(each, proto)| {
-                let reached = match alias {
-                    Some(alias) => each == alias,
-                    None => each == proto,
-                };
-                reached
-                    && self
-                        .module(proto)
-                        .is_some_and(|spec| in_module(spec, last).is_some())
-            }),
+        self.visible(main).iter().any(|each| each.name == name)
+    }
+
+    fn own(module: &Names, origin: &[u64]) -> Vec<Visible> {
+        module
+            .declared
+            .iter()
+            .map(|(name, id)| Visible {
+                name: name.clone(),
+                id: *id,
+                origin: origin.to_vec(),
+                tested: name.clone(),
+            })
+            .collect()
+    }
+
+    fn exported(&self, module: &Names, origin: &[u64], depth: usize) -> Vec<Visible> {
+        let mut found = Self::own(module, origin);
+        for link in module.links.iter().filter(|link| link.kind == "export") {
+            found.extend(Self::tested_by(
+                module,
+                link,
+                self.exported_by(module, link, origin, depth),
+            ));
         }
+        found
+    }
+
+    fn exported_by(
+        &self,
+        module: &Names,
+        link: &Link,
+        origin: &[u64],
+        depth: usize,
+    ) -> Vec<Visible> {
+        if depth > DEEPEST {
+            return Vec::new();
+        }
+        let imported = module.links.iter().find(|each| {
+            each.kind != "export" && each.alias.as_deref() == Some(link.proto.as_str())
+        });
+        let brought = match imported {
+            Some(each) => self.brought(each, origin, depth.saturating_add(1)),
+            None => self.module(&link.proto).map_or_else(Vec::new, |target| {
+                self.exported(target, origin, depth.saturating_add(1))
+            }),
+        };
+        Self::only(brought, link.only.as_deref())
+    }
+
+    fn only(found: Vec<Visible>, only: Option<&str>) -> Vec<Visible> {
+        match only {
+            Some(name) if name != EVERY_NAME => {
+                found.into_iter().filter(|each| each.name == name).collect()
+            }
+            _ => found,
+        }
+    }
+
+    fn brought(&self, link: &Link, origin: &[u64], depth: usize) -> Vec<Visible> {
+        let Some(target) = self.module(&link.proto) else {
+            return Vec::new();
+        };
+        if depth > DEEPEST {
+            return Vec::new();
+        }
+        let mut deeper = origin.to_vec();
+        if link.kind == "instance" {
+            deeper.extend(link.id);
+        }
+        Self::only(self.exported(target, &deeper, depth), link.only.as_deref())
+    }
+
+    fn tested_by(owner: &Names, link: &Link, found: Vec<Visible>) -> Vec<Visible> {
+        let prefix = match (link.kind.as_str(), &link.alias) {
+            ("instance", alias) => format!(
+                "{}{QUALIFIED}{}{QUALIFIED}",
+                owner.name,
+                alias.as_deref().unwrap_or(&link.proto)
+            ),
+            (_, Some(alias)) => format!("{alias}{QUALIFIED}"),
+            (_, None) => String::new(),
+        };
+        found
+            .into_iter()
+            .map(|each| Visible {
+                tested: format!("{prefix}{}", each.tested),
+                ..each
+            })
+            .collect()
+    }
+
+    fn named_by(link: &Link, found: Vec<Visible>) -> Vec<Visible> {
+        let prefix = match (&link.alias, link.only.as_deref(), link.kind.as_str()) {
+            (Some(alias), _, _) => Some(alias.clone()),
+            (None, None, "import") => Some(link.proto.clone()),
+            _ => None,
+        };
+        match prefix {
+            Some(prefix) => found
+                .into_iter()
+                .map(|each| Visible {
+                    name: format!("{prefix}{QUALIFIED}{}", each.name),
+                    ..each
+                })
+                .collect(),
+            None => found,
+        }
+    }
+
+    pub(crate) fn visible(&self, main: &str) -> Vec<Visible> {
+        let mut kept: Vec<Visible> = Vec::new();
+        for each in self.reached(main) {
+            let segments = |name: &str| name.matches(QUALIFIED).count();
+            match kept
+                .iter_mut()
+                .find(|other| other.id == each.id && other.origin == each.origin)
+            {
+                Some(other) if segments(&each.name) < segments(&other.name) => *other = each,
+                Some(_) => {}
+                None => kept.push(each),
+            }
+        }
+        kept
+    }
+
+    fn reached(&self, main: &str) -> Vec<Visible> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let mut found = Self::own(module, &[]);
+        for link in &module.links {
+            let brought = if link.kind == "export" {
+                self.exported_by(module, link, &[], 0)
+            } else {
+                Self::named_by(link, self.brought(link, &[], 0))
+            };
+            found.extend(Self::tested_by(module, link, brought));
+        }
+        found
+    }
+
+    pub(crate) fn own_actions(&self, main: &str) -> Vec<&str> {
+        self.module(main).map_or_else(Vec::new, |module| {
+            let mut actions: Vec<(u64, &str)> = module
+                .declared
+                .iter()
+                .filter(|(_, id)| self.qualifier_of(*id) == Some("action"))
+                .map(|(name, id)| (*id, name.as_str()))
+                .collect();
+            actions.sort_unstable();
+            actions.into_iter().map(|(_, name)| name).collect()
+        })
+    }
+
+    pub(crate) fn kind_of(&self, id: u64) -> Option<&str> {
+        self.kinds.get(&id).map(String::as_str)
+    }
+
+    pub(crate) fn qualifier_of(&self, id: u64) -> Option<&str> {
+        self.qualifiers.get(&id).map(String::as_str)
+    }
+
+    pub(crate) fn takes_parameters(&self, id: u64) -> bool {
+        self.parameters.contains(&id)
+    }
+
+    pub(crate) fn doc_of(&self, id: u64) -> Option<&str> {
+        self.docs.get(&id).map(String::as_str)
     }
 
     pub(crate) fn imported_init_and_step(&self, main: &str) -> Vec<(String, String)> {
@@ -274,9 +498,145 @@ impl Places {
             .collect()
     }
 
+    fn of_file<'a>(&'a self, file: &Path) -> impl Iterator<Item = &'a Names> + 'a {
+        let wanted = std::fs::canonicalize(file).ok();
+        self.modules.iter().filter(move |module| {
+            module
+                .file
+                .as_ref()
+                .and_then(|index| self.files.get(index))
+                .is_some_and(|path| std::fs::canonicalize(path).ok() == wanted)
+        })
+    }
+
+    pub(crate) fn modules_in(&self, file: &Path) -> Vec<Module<'_>> {
+        self.of_file(file)
+            .map(|module| Module {
+                name: &module.name,
+                doc: module.doc.as_deref(),
+                constants: module.constants,
+                id: module.id,
+            })
+            .collect()
+    }
+
+    pub(crate) fn marks_in(&self, file: &Path) -> Vec<Marked<'_>> {
+        let mut found = Vec::new();
+        for module in self.of_file(file) {
+            let links = module.links.iter().filter_map(|link| {
+                Some((
+                    link.alias.clone().unwrap_or_else(|| link.proto.clone()),
+                    link.id?,
+                ))
+            });
+            let every: Vec<(String, u64)> = module.declared.iter().cloned().chain(links).collect();
+            for (name, id) in &every {
+                let Some(doc) = self.docs.get(id) else {
+                    continue;
+                };
+                found.push(Marked {
+                    name: name.clone(),
+                    doc,
+                    id: *id,
+                    spot: self.spot_of(*id),
+                });
+            }
+        }
+        found
+    }
+
+    pub(crate) fn spot_of(&self, id: u64) -> Option<(&str, u32, u32)> {
+        let (file, line, column) = self.at.get(&id)?;
+        Some((self.files.get(file)?.as_str(), *line, *column))
+    }
+
+    pub(crate) fn test_runs(&self, main: &str) -> Vec<String> {
+        self.visible(main)
+            .into_iter()
+            .filter(|each| self.qualifier_of(each.id) == Some(RUN))
+            .filter(|each| {
+                each.name
+                    .rsplit(QUALIFIED)
+                    .next()
+                    .is_some_and(|last| last.ends_with(TESTS_END_WITH))
+            })
+            .map(|each| each.name)
+            .collect()
+    }
+
+    pub(crate) fn imported(&self, main: &str) -> Vec<Imported<'_>> {
+        self.module(main).map_or_else(Vec::new, |module| {
+            module
+                .seen
+                .iter()
+                .map(|seen| Imported {
+                    proto: &seen.proto,
+                    prefix: &seen.prefix,
+                    written: seen.id.and_then(|id| {
+                        let (start, end) = self.spans.get(&id)?;
+                        let file = self.files.get(&self.at.get(&id)?.0)?;
+                        Some((file.as_str(), *start, *end))
+                    }),
+                })
+                .collect()
+        })
+    }
+
+    pub(crate) fn declares_any(&self, main: &str) -> bool {
+        self.module(main)
+            .is_some_and(|module| !module.declared.is_empty())
+    }
+
+    pub(crate) fn defined_in(&self, name: &str, main: &str) -> Option<(&str, &str)> {
+        let id = self.seen_definition(name, main)?;
+        self.modules.iter().find_map(|module| {
+            module
+                .declared
+                .iter()
+                .find(|(_, each)| *each == id)
+                .map(|(declared, _)| (module.name.as_str(), declared.as_str()))
+        })
+    }
+
+    fn seen_definition(&self, name: &str, main: &str) -> Option<u64> {
+        self.visible(main)
+            .into_iter()
+            .find(|each| each.name == name)
+            .map(|each| each.id)
+            .or_else(|| self.definition(name, main))
+    }
+
+    pub(crate) fn sees_a_test(&self, main: &str) -> bool {
+        !self.test_runs(main).is_empty()
+    }
+
     pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {
         self.module(main)
             .is_some_and(|module| module.has_an_instance)
+    }
+
+    /// Whether `main` imports a module whole by its own name, `import Spec.*`.
+    pub(crate) fn imports_whole(&self, main: &str) -> bool {
+        self.module(main).is_some_and(|module| {
+            module.links.iter().any(|link| {
+                link.kind == "import"
+                    && link.alias.is_none()
+                    && link.only.as_deref() == Some(EVERY_NAME)
+            })
+        })
+    }
+
+    /// Whether the check of `main` plays a run that a module it imports declares, which
+    /// `quint compile` drops: one whose name ends in `Test`, or one `runs` names.
+    pub(crate) fn plays_an_imported_run(&self, main: &str, runs: &Runs) -> bool {
+        let Some(module) = self.module(main) else {
+            return false;
+        };
+        self.visible(main).iter().any(|each| {
+            self.qualifier_of(each.id) == Some(RUN)
+                && !module.declared.iter().any(|(_, id)| *id == each.id)
+                && runs.plays(&each.name, None)
+        })
     }
 
     fn module(&self, name: &str) -> Option<&Names> {
@@ -313,15 +673,6 @@ impl Places {
         named
             .and_then(|module| in_module(module, name))
             .or_else(|| self.only_one(name))
-    }
-
-    pub(crate) fn qualifier(&self, name: &str, main: &str) -> Option<&str> {
-        let id = self.definition(name, main)?;
-        self.qualifiers.get(&id).map(String::as_str)
-    }
-
-    pub(crate) fn reaches(&self, name: &str, main: &str) -> bool {
-        self.definition(name, main).is_some()
     }
 
     fn place(&self, located: &Located, main: &str) -> Option<(&str, u32, u32)> {
@@ -415,6 +766,50 @@ mod tests {
             id,
             definition,
         )
+    }
+
+    fn shapes(name: &str) -> String {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tasks/quint/shapes/fixtures")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+    }
+
+    #[test]
+    fn a_module_sees_exactly_the_values_quint_compile_accepts_for_every_import_shape() {
+        let table: serde_json::Value =
+            serde_json::from_str(&shapes("accepted.json")).expect("the table is JSON");
+        let shapes_tried = table.as_object().expect("the table maps each shape");
+        assert_eq!(shapes_tried.len(), 17, "every shape is tried");
+        for (shape, quint) in shapes_tried {
+            let places = Places::from_quint(
+                &shapes(&format!("{shape}.parse.json")),
+                &shapes(&format!("{shape}.sourcemap.json")),
+            )
+            .expect("the parse and the map are read");
+            let mut seen: Vec<String> = places
+                .visible("U")
+                .into_iter()
+                .filter(|each| places.qualifier_of(each.id) == Some("val"))
+                .map(|each| each.name)
+                .collect();
+            seen.sort();
+            let accepted: Vec<String> = quint["accepted"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|name| name.as_str().map(str::to_owned))
+                .collect();
+            if quint["compiles"] == true {
+                assert_eq!(seen, accepted, "{shape}");
+            } else {
+                assert!(
+                    accepted.is_empty(),
+                    "{shape}: Quint compiles nothing, so its own error makes the check unreadable"
+                );
+            }
+        }
     }
 
     #[test]

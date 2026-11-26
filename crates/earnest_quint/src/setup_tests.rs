@@ -40,8 +40,8 @@ const BUILT: [Shape; 21] = [
     ),
     shape(("pure", "Four", "step"), &["inside", "notAll"], &[]),
     shape(
-        ("own", "Tight", "stepOrReset"),
-        &["withinCap", "neverFull", "belowHalf"],
+        ("own", "Tight", "step"),
+        &["V::withinCap", "neverFull", "belowHalf"],
         &[],
     ),
     shape(("shadow", "S", "step"), &["ok", "notAmberTwice"], &[]),
@@ -61,21 +61,15 @@ const BUILT: [Shape; 21] = [
     shape(("lamp", "Bright", "step"), &["levelOk"], &[]),
     shape(("lamp", "Blinding", "step"), &["levelOk"], &[]),
     shape(("clock", "Large", "step"), &["inv"], &[]),
-    Shape {
-        init: "B::init",
-        ..shape(
-            ("more", "Named", "B::step"),
-            &["B::ok", "B::below"],
-            &["B::grows"],
-        )
-    },
+    shape(
+        ("more", "Named", "step"),
+        &["B::ok", "B::below"],
+        &["B::grows"],
+    ),
     shape(("more", "Reexported", "step"), &["ok", "small"], &[]),
     shape(("more", "ByOwn", "step"), &["ok"], &[]),
     shape(("more", "ByName", "step"), &["ok"], &[]),
-    Shape {
-        init: "both",
-        ..shape(("more", "Two", "either"), &["ok", "fine"], &[])
-    },
+    shape(("more", "Two", "step"), &["V::ok", "V1::fine"], &[]),
     shape(("more", "Pair", "step"), &["ok", "apart"], &[]),
     shape(("compiled", "Renamed", "step"), &["ok"], &[]),
 ];
@@ -179,7 +173,11 @@ fn the_runs_a_check_plays_are_kept_from_the_spec_module_after_quints_declaration
         .map(|(name, _)| name)
         .filter(|name| name.ends_with("tickTwice") || name.ends_with("hearAny"))
         .collect();
-    assert_eq!(runs, ["Small::Clock::tickTwice", "Small::Clock::hearAny"]);
+    assert_eq!(
+        runs,
+        ["Small::Clock::tickTwice", "Small::Clock::hearAny"],
+        "the spec's runs the check plays, after Quint's declarations"
+    );
     let model =
         crate::read_located("ours", &ours, &named).unwrap_or_else(|_| panic!("the runs are read"));
     assert_eq!(

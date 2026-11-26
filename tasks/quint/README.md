@@ -4378,3 +4378,407 @@ of `first`, `imports` and `setups`, so:
 flattening error, so each property is named with it. That made 89 `quint verify` jobs and 26
 `quint test` jobs in all. Times: `first` 50 s, `imports` 137 s, `setups` 422 s, `confirm` 45 s.
 `words` is `same`: TLC gives 3 states and no violation, as the checker does.
+
+
+## Checks marked in the model (#72): how other checkers declare a check
+
+- Alloy: a check is a command in the model, `check Name for 4 expect 0`; `expect 1` says a counterexample (for `check`) or an instance (for `run`) must be found, and the Analyzer says "as expected" or "contrary to expectation" ([Practical Alloy](https://practicalalloy.github.io/chapters/structural-topics/topics/commands/index.html), [forum](https://alloytools.discourse.group/t/what-does-expect-1-mean/308)).
+- TLC: the module says nothing; a `.cfg` beside it names `INIT`, `NEXT` (or `SPECIFICATION`), `CONSTANT`s, `INVARIANT`s and `PROPERTY`s. No expected failure exists in TLC itself [from memory].
+- tlaplus/Examples: each folder's `manifest.json` lists models by `.cfg` with `"result": "success"`, `"safety failure"`, `"liveness failure"` or `"deadlock failure"` (read in `specifications/DieHard/manifest.json`): the expected failure lives beside the model, per check.
+- Apalache: `--init`, `--next`, `--cinit`, `--inv`, `--temporal` on the command line, or a TLC `.cfg` via `--config`; no expected violation. Its type annotations live in comments, `\* @type: Int;` (docs `running.md`, `howto-write-type-annotations.md`): a precedent for a marker in a comment.
+- So: Alloy alone puts the check and its expected failure in the model; `@check` / `@check broken` is Alloy's `expect 0` / `expect 1` per property, written Apalache's way. `@check reachable` is Alloy's `run … expect 1`. The proposed spelling stands.
+
+## Checks marked in the model (#72): report
+
+Quint 0.33.1 from npm in a scratch folder, Node 22, Java for `quint verify --backend tlc`.
+
+What was built:
+
+- **Marks** (`apps/earnest/src/marks.rs`): the first line of a definition's `///` doc comment,
+  as `quint parse` gives it in `"doc"`, is `@check`, `@check broken` or `@check reachable`; the
+  lines below are the rule's `says`. A first line that starts with `@check` and goes on with
+  another word (`@check reachble`, `@checked`) is `unreadable` at the mark's line (the
+  definition's line from the source map, less the doc's lines). A `//` comment is not read.
+- **Which modules** (`places.rs`, `checks_in`, `documented`, `sees_a_test`): a module of the
+  file (by the source map's file of the module) that declares no `const`, sees `init` and `step`
+  and sees a mark or a run ending in `Test`. A mark on a spec is seen through each import and
+  instance, named as the setup refers to it: `inRange` through `import Clock(Limit = 3).*`,
+  `C::inRange` through `import Clock(Limit = 5) as C` [ran]; `Lib::x` through a bare `import Lib`,
+  only `x` through `import Lib.x` [read in the parse JSON, not run]. The budget's stop condition
+  did not happen.
+- **Where marks apply** (`quint.rs`): a `.qnt` file in a folder with no `earnest.quint.json`,
+  and one named on the command line that no entry lists, is checked by its marks. A folder with a
+  checks file is checked by its entries, as before, with each listed module's marks added to its
+  entry. Its unlisted `.qnt` files are not looked at (the other reading broke the fixture
+  folders of #66 to #71, which hold unlisted files with `…Test` runs; left to the owner).
+- **`reachable`**: the rule is the `val`'s condition negated on the IR (`Op::Not`), an expected
+  counterexample, so it works in a setup built from the typecheck as in a compiled one.
+  `reached  P` prints the path; `never reached  P` fails; `unknown  P` when the search stopped,
+  as for `broken`. JSON: `"expected": "reached"`.
+- **Counts**: the text line of a model read from a `.qnt` file ends its fields with `N rules, M
+  runs` (whole ids, so a temporal property in parts counts once). Compiled `.json`, TypeScript
+  and Rust lines are unchanged.
+- **Names only** (`checks.rs`): an item of `invariants`, `temporal` or `expectCounterexample`
+  that is not a name, or an object `{ "name", "is" }`, is `unreadable`, with the definition to
+  write (`` `val LateBreak = Late implies Small` ``). The guard fixtures of #69 and the four
+  tests of expressions are gone. `earnest_quint` still reads an invariant that is an expression
+  in JSON the user compiled.
+- **Cache**: the parse entry is keyed by the build (from #71), and a model's cached result by
+  its marks and sentences as well as its JSON.
+
+Tests: `apps/earnest/tests/behavior/quint_marks.rs` on `tasks/quint/marked/`, whose
+`fixtures/` were recorded by running earnest with a wrapper around the real Quint 0.33.1 that
+saved each `parse`, `typecheck` and `compile` output (paths made relative).
+
+The real run, Quint 0.33.1, no `earnest.quint.json`, `--no-cache`:
+
+```text
+$ earnest verify specs
+pass        bank  4 states  0 ms  1 rule, 1 run
+pass        Small  4 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    end    time = 3
+pass        Large  6 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    4. step  time: 3 -> 4
+    5. step  time: 4 -> 5
+    end    time = 5
+3 models: 3 pass, 0 fail, 0 unfinished
+$ earnest verify failing
+fail        wrong  3 states  0 ms  2 rules, 0 runs
+  holds  small  a counterexample was expected
+  never reached  three
+1 model: 0 pass, 1 fail, 0 unfinished
+$ earnest verify typo
+unreadable  typo/typo.qnt  typo
+  typo/typo.qnt:6:7  `atStart`  the doc comment starts with `@check reachble`, which is not a mark the checker knows: ...
+$ earnest verify lost
+pass        lost  1 states  0 ms  1 rule, 0 runs
+$ earnest verify specs/lib.qnt
+unreadable  specs/lib.qnt
+  specs/lib.qnt:1:1  `lib.qnt`  no module of the Quint file is checked, and `earnest.quint.json` lists none: ...
+```
+
+`quint verify --backend tlc --main Small clock.qnt` agrees: `--invariant inRange` finds no
+error, `--invariant belowLimit` and `--invariant 'not(atTop)'` each a violation.
+
+Proof, on the tree merged with the integration head `6362d76` (#71):
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
+  warnings. `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2149 passed, 0 failed.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`, `every
+  model file: 392 runs, 0 differences`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, all in `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts`
+  and `clock.model.ts`, as on the integration head before this slice (#69's report).
+
+## No checks file (#72, second part): report
+
+The owner removed `earnest.quint.json`. Rewritten #72 (2026-11-26, about 10:57), built on the
+marks of the first part. Quint 0.33.1 from npm, Node 22, Java on PATH.
+
+What was built:
+
+- **Which module is a check** (`quint.rs`, `marked_checks`): only a module whose own doc
+  comment starts with `@check` (`"doc"` on the module in `quint parse`). Every `.qnt` file below
+  the folders searched, or named, is parsed once. A marked module that sees `init` and `step`
+  searches; one with no marked property it can search for, or no `init`/`step`, plays its runs
+  only. Its modules are taken in the order of the file.
+- **Runs**: a check plays every run it sees whose name ends in `Test`; `/// @check` on a run of
+  any name plays it too, `/// @check broken` says it must fail. With a marked run the check's
+  runs are `Runs::Named` of all of them in the file's order (`Places::runs_played`), else
+  `Runs::Tests`.
+- **The four unreadable cases**, each at the mark's line: an unknown word after `@check` (on a
+  module too), a marked module with a `const`, a marked module with nothing to judge, and a
+  marked definition or run no check sees (compared by module and name, across files, so a spec
+  marked in `doors.qnt` and seen by `setups.qnt` is not reported).
+- **A leftover `earnest.quint.json`** (`migrate.rs`): `unreadable` at that file, nothing checked
+  by it. For each entry the message gives the module mark with `file:line`, each property with
+  its mark and its definition's `file:line`, a note when a mark on the spec also counts in other
+  listed setups that did not list it, the runs to mark or rename, and for another `init`/`step`
+  or a `name` the module to add (`/// @check` + `import Spec(...) as V`, rebuilt from the
+  instance's own text in the source map's span, with `.*` turned into `as V`). A setup with
+  definitions of its own and a `.*` instance can't be imported under a name (Quint keeps a
+  second copy of its state: tried on `own.qnt` `Tight`), so for that shape the message lists the
+  lines to add to a copy instead. Multi-line messages keep their lines in the text output.
+- **`export`** of an instance is read as an import of it (`more.qnt` `Exported`).
+- **`confirm --quint`** (#73, merged at `6a4d280`): `QuintCheck` is filled for a marked check;
+  `@check reachable P` goes to Quint as `--invariants 'not(P)'`.
+
+Samples moved to marks, each re-recorded with the real Quint where the tests read its output
+(parse, typecheck, compile and, for `setups/` and `imports/`, the source maps):
+`first/`, `imports/`, `setups/`, `confirm/`, `marked/` (`listed/` gone; `runs/`, `rules/`,
+`old/` new), `models/` (`guard` gone, no test used it), and in `tasks/break_it/models/quint_second`
+`project/`, `random/` (and `generate.py`), `named_runs/` (`init`/`step` written in `Named`),
+`runs_not_played/`; `cached_runs/` went with its two tests.
+
+The real run of every folder below `tasks/quint` that holds `.qnt` files, with no checks file
+anywhere except `marked/old/`, compared model by model with the binary of `bf3f90f` on the same
+folders with their checks files (status, states, each old rule's verdict and path):
+
+| Folder | Result |
+|---|---|
+| `setups/` | every old model alike; `Single`: `run upTest` unreadable before, a `runsNotPlayed` note now; `S1`..`S17` (`many.qnt`) and `Single` are new checks, as the tests checked them |
+| `imports/` | every old model alike; `Good`, `Printing`, `fault` and the two false assumptions are new, as the tests checked them |
+| `first/` | every old model alike but `OnlyRuns`, `fail` -> `pass` (`thirdOverTest` renamed); 17 modules the tests checked are new checks |
+| `confirm/` | every old model alike; `setup` (`fixtures/skipped`) is new |
+| `marked/` | as in the first part, and `runs/`, `rules/`, `old/` as their tests say |
+| `models/`, `probe/` | no marked module, `0 models`, as before (they had no checks file) |
+| `break_it/.../project` | every old model alike |
+
+Ids that changed, with the reason:
+
+- `first/OnlyRuns.qnt`: `thirdOverTest` -> `thirdOver`, marked `@check broken`: a check plays
+  every `…Test` run, so a run that must break is renamed and marked.
+- `setups/more.qnt` `Exported` and `Plain`: `ok`, `below`, `grows` -> `okOne`, `belowOne`,
+  `growsOne`: `Exported`'s `export B.*` makes its own `init`/`step` clash, so its properties are
+  written as marked `val`s of other names, and `Plain` takes the same names so the test that sets
+  the two beside each other still compares them.
+- Rules added, none changing a model's status: `ByOwn`, `ByName` `+fullTest`; `Two` `+upTest`,
+  `+fullTest` (a `runs` list or `false` can't be said); `imports` `three` `+neverAllOpen`,
+  `named` `+counted`, `+neverAllOpen`, `Both` `+noDownAtTop` (a mark on a spec counts in every
+  check that sees it); `printing` `fault`'s first-action fault now names `P::seed`.
+- Kept by writing the module so: `setups` `Small`, `Dim`, `Tight`, `Named`, `Reexported`, `ByOwn`,
+  `ByName`, `Two`, `Pair`, `Plain`, and break_it `project` `three`..`huge` import the spec under a
+  name and mark their own `val p = V::p` (and `run`), so a property listed for one setup is not
+  judged in the others; paths and state counts stayed the same.
+
+Tests that went, with what replaced them:
+
+- `quint_checks`: the checks-file errors -> `a_checks_file_right_or_wrong_is_unreadable_at_itself`;
+  a list of runs, a listed run the module lacks, a check with no runs -> `a_marked_run_is_played_…`
+  and `quint_marks::a_marked_module_with_no_init_or_step_…`.
+- `quint_expected`: two named checks of one module -> `two_marked_modules_are_two_models…`; two
+  checks that compile alike, two checks without names, editing the runs alone, an expression
+  item: no such entry exists any more. "Editing the expectations compiles nothing" is now
+  `editing_a_mark_checks_again`, which compiles once: the mark is in the `.qnt` file.
+- `quint_actions::one_file_written_two_ways_with_one_main_is_unreadable`: no entries any more.
+- `break_it`: the two `cached_runs` tests (an entry or its runs changed) ->
+  `quint_marks::a_changed_mark_checks_again_and_changes_the_quint_entries`.
+
+The behavior tests' fake `quint` serves the parse recorded from Quint with the `doc` of each mark
+put in as Quint 0.33.1 gives it, and appends a `// marked:` line to the `.qnt` so the caches see
+the change; `quint_marks`, `quint_setups`, `quint_imports`, `quint_first` and `quint_confirm` read
+fixtures recorded from the marked files themselves.
+
+Proof, on the tree merged with `claude/lucid-brown-f5xvr8` (`6362d76`) and
+`claude/feedback-confirm-quint` (`6a4d280`):
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
+  warnings. `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2169 passed, 0 failed.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`,
+  `every model file: 392 runs, 0 differences`.
+
+## Names in a module's doc, any doc line, and what a check sees (#72, after the review): report
+
+The rule as the issue was rewritten after the review: a mark may stand on any line of a doc
+comment, one mark per definition's doc; a module's doc may name what it judges in that check
+only, `/// @check levelOk, darkWhenOff`, `/// @check broken neverFull`, `/// @check reachable
+atTop`. This replaces the alias vals (`val darkHere = darkWhenOff`): every sample that had them
+names the spec's own definitions again (`setups/`, `first/`, `imports/`,
+`break_it/models/quint_second/project`, `break_it/models/quint_third/project`).
+
+What a check sees is `Places::visible`: its own definitions and every `import`, `instance` and
+`export` link, followed to any depth (at most 32), deduplicated by declaration and instance chain,
+so `Exported` (`import Base(K = 1) as B` and `export B.*`) judges `ok` once.
+
+### The import shapes, tried against Quint 0.33.1 [ran]
+
+`tasks/quint/shapes/` holds one file per shape with a module `U`; `record.py` runs
+`quint compile --main U --init uInit --step uStep --invariant <name>` for every value under every
+prefix the file names and writes `fixtures/accepted.json`. The test
+`places::tests::a_module_sees_exactly_the_values_quint_compile_accepts_for_every_import_shape`
+compares the values of `visible("U")` with it:
+
+| shape | Quint accepts |
+|---|---|
+| `import Base.*` | `bOk`, `bTwo` |
+| `import Base as A` | `A::bOk`, `A::bTwo` |
+| `import Base` | `Base::bOk`, `Base::bTwo` |
+| `import Base.bOk` | `bOk` |
+| `import Far.* from "./far"` | `farOk` |
+| `import Far as F from "./far"` | `F::farOk` |
+| `import Param(N = 3).*` | `pOk` |
+| `import Param(N = 3) as P` | `P::pOk` |
+| an instance of an instance, `import Mid(M = 4) as Q` | `Q::mOk` |
+| `import Mid.*`, `Mid` imports `Base.*` without exporting | `midOwn` |
+| `export` through one module | `bOk`, `bTwo`, `midOwn` |
+| `export` through two modules | `bOk`, `bTwo`, `midOwn` |
+| `import Mid as M`, `Mid` exports | `M::bOk`, `M::bTwo`, `M::midOwn` |
+| `import Mid.bOk`, `Mid` exports | `bOk` |
+| an instance through `export` (one and two modules) | `pOk` |
+| an instance of an instance through `export`, `import Mid(M = 4).*` | nothing |
+
+All 16 shapes Quint compiles agree exactly. The last one Quint 0.33.1 does not compile at all
+(`Internal error while flattening [QNT404] Name 'U::Mid::N' not found`, also with no invariant).
+The checker leaves it to Quint: a check there is `unreadable` with Quint's first error line, at the
+`.qnt` file (it was placed at a line of Quint's own `cli.js` before; now only a `.qnt` location is
+taken from Quint's output). No shape was made `unreadable` by the checker itself.
+
+### Following the migration message [ran]
+
+Each folder as on `claude/lucid-brown-f5xvr8` (`7080544`) with its checks file, checked by that
+build, against the folder with the message followed, checked by this one, both with Quint 0.33.1
+(`compare.py`: status, states, each rule's verdict and path):
+
+- `setups/`: every check the same, apart from runs ending in `Test` now played: `ByOwn` and
+  `ByName` `+fullTest`, `Two` `+upTest, fullTest`. `Single` was `unreadable` (its entry named the
+  imported `upTest`, which a compiled check can't play) and now passes, playing what it can and
+  noting `runs not played: Single::Base::upTest`. The followed copies of `Tight` and `Two` replace
+  the originals under their own names.
+- `first/`, `imports/`, `confirm/`, `quint_second/project`: every check the same.
+- `quint_third/project`: `three` and `two` become `threeChecked` and `twoChecked` (copies the
+  message asks for, since `three` has a run of its own), with the same states, verdicts and
+  paths; `threeKnown` `+oneEachTest`.
+- The folders also hold modules that only the behavior tests used before, now marked checks:
+  `setups/many.qnt` (`S1`..`S17`), `first/` (`HelperRun`, `Helpers`, `OwnRuns`, `PlainAs`,
+  `PlainStar`, `PlainFrom`, `PlainNested`, `RunsOnly`, `RunsOnlyNamed`, the `Shapes` modules),
+  `imports/` (`Good`, `Printing`, and the unreadable `Direct`, `Bad`, `fault`).
+- `first/OnlyRuns` keeps a failing `thirdOverTest`: the check fails and prints its path.
+
+### `--model`, `--rule` and `confirm --quint` [ran]
+
+- `--model Dim --rule darkWhenOff setups`: `Dim` with the rule `darkWhenOff` alone.
+  `--model Two --rule fine`: `pass`, `fine` holds (the rule's id is the printed name; `V1::fine`
+  is refused as no rule of `Two`). `--model OnlyRuns --rule thirdOverTest first`: the run alone,
+  broken. `--rule GuardedBreak quint_third/project`: `threeChecked` and `threeKnown` pass, `twoGuard`
+  fails, as before.
+- `earnest confirm --quint` (Quint 0.33.1, Java): `marked/specs` `bank`, `Small`, `Large` `same`;
+  `marked/names` `Holds`, `Broken`, `Reached`, `Plain` `same`; `quint_second/project` all five
+  `same`; `confirm/` `lift`, `words` `same`, and `big`, `halves`, `ranges` `cannot` as that sample
+  is built to be.
+
+### Stand-ins
+
+Every fake `quint` of the behavior and break_it tests now serves a parse and a source map recorded
+from Quint 0.33.1 for the very text it is given, or fails: the `with_marks` and `with_specs`
+helpers that added modules and ids with no source-map entry are gone. The marked samples are in
+`tasks/quint/checks/` with their recorded parses.
+
+### Proof, on the tree merged with `claude/lucid-brown-f5xvr8` (`7080544`) [ran]
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked`: 2187 passed, 0 failed.
+- `just docs`: `Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`, `every
+  model file: 392 runs, 0 differences`.
+
+### One walk over the imports (after merging `1757e8f`) [ran]
+
+`Places::visible` and #78's runs walk are now one walk (`Places::reached`). Each definition it
+reaches carries both the name the check writes (`B::ok`) and the name `quint test` prints for it
+(an instance as `Owner::alias::`, an import under a name as `alias::`, an export as is). What a
+check judges keeps one entry per definition and instance chain; the runs `quint test --main`
+plays, for the note and for what a compiled module plays, keep each way the module reaches a run
+(`TwiceAs` plays `specTest` and `A::specTest`). Both tables hold on it: the 17 shapes against
+`quint compile`, and #78's against `quint test --main`, the follow-up's compiled `Exporter`
+(`export Spec.specTest`) among them, whose marked sample plays `specTest` alone and passes with
+Quint 0.33.1.
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`1757e8f`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2189 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences. The comparison of every folder with `1757e8f`'s build on its checks file gives the
+same differences as above and nothing else; `confirm --quint` gives the same lines as above.
+
+## The second review (#72): report [ran]
+
+The six tests of `quint_review.rs` from `claude/feedback-marked-checks-review-2` (`b3f42cc`) pass,
+by the decisions given:
+
+1. A name list goes on over the next doc line when its line ends with a comma (`Comma` judges
+   `inRange`, `small`, `tiny`); a doc line of a check made only of names it sees after a line with
+   no comma is `unreadable` at that line (`wrapped.qnt:17`, `Bare`).
+2. `///@check small` above a module: the source line is read, and every `///@` line among the `///`
+   lines above a module or a definition whose doc starts with `check` is `unreadable` at its own
+   line with the no-space message (`onename.qnt:8`).
+3. a. `Plain` (`import Counter.*` and a property) was compiled because a typecheck was asked only
+   for modules with an instance or of runs only, and the setup builder took a plain import's
+   variables only for a module of runs only and wanted an instance otherwise. Now a check that
+   plays a run declared in a module it imports (a run ending in `Test`, or a marked or named one)
+   is built from the typecheck, with plain imports and their variables, as a module of runs only
+   is; every other check is compiled as before.
+   b. A compiled check that sees a run it can't play and would pass is `unfinished`, `(runs not
+   played: …)` on its line, with the `note`, and exits 1; `confirm --quint` still compares it.
+   c. With Quint 0.33.1 over every `.qnt` under `tasks/quint` and `tasks/break_it/models` (148
+   models): 2 end `unfinished` by (b), `quint_third/one_name` `OneName` (`import Spec.specTest`
+   alone, not built) and `setups/compiled.qnt` `Single` (`import Limit.L`).
+4. A run marked in a module the check imports: played where the check is built (`importedrun`
+   `Plain` plays `skips`, broken as expected, and passes); where it is compiled, it is one of the
+   runs not played and the properties are still judged.
+5. A name a module's doc lists after two marks is `unreadable` (`twowords.qnt:9`). The check's doc
+   still wins over a mark on the definition, as `reference/quint.md` says.
+
+Every model of the 148 against `5ce68a6`, both with Quint 0.33.1: the changes are the review
+samples, `quint_second/runs_not_played` `Plays` (now built, plays `S::upTest` and `ownTest`, still
+`pass`), `OneName` and `Single` (`pass` -> `unfinished`); nothing else.
+`confirm --quint`: `importedtests` `Plain` `same` (fail), `importedrun` `Plain` `same` (pass),
+`Plays` `same` (pass).
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`844238e`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2196 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences.
+
+## The third review (#72): report [ran]
+
+The seven tests of `quint_review.rs` from `claude/feedback-marked-checks-review-3` (`35bb1cf`)
+pass, and so do four built-against-compiled tests, which run each set with the typecheck (built)
+and without it (compiled, from fixtures of `quint compile` 0.33.1) and compare states, every
+property's verdict and path:
+`a_spec_whose_state_holds_a_sum_type_…`, `a_spec_that_imports_its_types_from_another_file_…`,
+`a_spec_that_holds_an_assumption_…` (also `falseassume`, a false `assume`: `quint compile --main
+Setup` leaves out the `assume` of the module it imports and Quint's TLC run finds the
+counterexample, not the assumption; the built check leaves it out too) and
+`a_spec_that_imports_a_helper_under_a_name_…`.
+
+1. The builder takes a spec imported whole with types (inlined, of its own or from a types module
+   in another file), `assume`s (left out) and helpers imported under a name (`L::inc`, as `quint
+   compile` names it). None of the four shapes was left `unfinished`.
+2. A check that imports a module whole is built, so `twosetups` `Whole` is judged (`small` broken;
+   `confirm --quint` says `cannot`, as Quint's TLC stops on the compiled module). The refusal of a
+   compiled module that writes a variable twice names both causes: a module brought in under a
+   name beside `import Spec.*`, or through an `export`.
+3. `/// @check,` and `/// @check broken,` then a line of names are a list (`barecomma` `W3` passes).
+4. A mark whose comma is followed by a sentence is said to be so, at the mark's line.
+5. A doc ending with a blank `///` line no longer moves its mark one line down (`marked/blank`).
+6. The reason of an `unfinished` check names the declaration the checker does not build and its
+   line: `import Spec.specTest` at `one_name.qnt:10`, `import Limit.L` at `compiled.qnt:32`; the
+   note keeps copying runs as the last resort.
+
+The fourth pass's samples (`8fe5534`) read marks: the seeded setups and `named_helpers` with real
+typechecks and maps, and `quint_fourth/project` follows the migration message (`three` ->
+`threeChecked`, states and verdicts the same; `threePick` +`oneEachTest`).
+
+Every Quint model under `tasks/quint` and `tasks/break_it/models` (191) against `c891672`, with
+Quint 0.33.1: the four shapes and `falseassume` go from `unfinished` to judged with the same
+property verdicts and paths and the imported run played; `twosetups` `Whole` and `barecomma`
+`W3` are judged; `quint_fourth` `named_helpers` `small` is built (it was unreadable on Quint's
+compile); `marked/blank` is reported at line 7. Still `unfinished`: 2, `OneName` and `Single`,
+each with its cause. `confirm --quint`: `same` on `sumtype`, `typesmodule`, `specassume`,
+`spechelper`, `falseassume`, `barecomma`, `twosetups` `Named`; `cannot` on `Whole`.
+
+Proof on the tree merged with `claude/lucid-brown-f5xvr8` (`8fe5534`): `cargo fmt --check` exit 0;
+clippy `-D warnings` and `just lint-library` clean; `cargo test --locked` 2216 passed, 0 failed;
+`just docs` `Complete!`; `just same-answers` the three sweeps and `every model file: 392 runs`, 0
+differences.
+
+After merging `claude/lucid-brown-f5xvr8` at `4b9d3a0` (the fifth pass's first fix, in
+`eventually.rs`; its test reads compiled JSON, so nothing to move): `cargo fmt --check`, clippy,
+`just lint-library` clean; `cargo test --locked` 2217 passed, 0 failed; `just docs` `Complete!`;
+`just same-answers` 0 differences. The real-Quint runs above were made at `17b1c8a`, before it.

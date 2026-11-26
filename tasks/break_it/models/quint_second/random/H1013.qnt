@@ -48,13 +48,21 @@ module Spec1013 {
       last' = last,
     }
   action step = any { enqueue, process, toggle }
+  /// @check
   val inv0 = m.keys().fold(0, (acc, k) => acc + m.get(k)) <= (useOp(v => v + 1, n) + q.length())
+  /// @check
   val inv1 = m.keys().size() <= LIM
+  /// @check
   val inv2 = isInc(last)
+  /// @check
   temporal t0 = eventually((q.length() == pair._1 and pair._2 == "x"))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(pair._1 <= 1)
+  /// @check
   temporal t2 = weakFair(enqueue, vars) implies always(eventually(m.keys().size() <= n))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always((last == Clear and m.keys().contains("a")) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually((q.length() == pair._1 and pair._2 == "x")))
   run r0Test = init.then(toggle).expect(flag)
   run r1Test = init.then(toggle).then(step).then(step).expect(isInc(last))
@@ -62,6 +70,7 @@ module Spec1013 {
   run repsTest = init.then(3.reps(_ => step)).expect(m.keys().contains("a"))
 }
 
+/// @check
 module H1013 {
   import Spec1013(LIM = 3, KEYS = Set("a", "b"), START = (0, "y")).*
 }

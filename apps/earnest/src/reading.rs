@@ -15,7 +15,10 @@ pub(crate) struct Readable {
     pub(crate) model: Model,
     pub(crate) position: usize,
     pub(crate) expected: Vec<String>,
+    pub(crate) reachable: Vec<String>,
+    pub(crate) counted: bool,
     pub(crate) runs_not_played: Vec<String>,
+    pub(crate) not_built: Option<String>,
     pub(crate) quint: Option<QuintCheck>,
 }
 
@@ -182,7 +185,10 @@ fn understand(reading: Reading) -> Content {
                     model,
                     position,
                     expected: Vec::new(),
+                    reachable: Vec::new(),
+                    counted: false,
                     runs_not_played: Vec::new(),
+                    not_built: None,
                     quint: None,
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
@@ -190,7 +196,10 @@ fn understand(reading: Reading) -> Content {
                     model,
                     position,
                     expected: Vec::new(),
+                    reachable: Vec::new(),
+                    counted: false,
                     runs_not_played: Vec::new(),
+                    not_built: None,
                     quint: None,
                 }));
             }
@@ -217,7 +226,10 @@ fn quint(path: String, source: String) -> ModelFile {
                 model,
                 position: 0,
                 expected: Vec::new(),
+                reachable: Vec::new(),
+                counted: false,
                 runs_not_played: Vec::new(),
+                not_built: None,
                 quint: None,
             }]),
         ),

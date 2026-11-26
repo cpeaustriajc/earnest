@@ -17,4 +17,5 @@ module Spec {
   val notAll = visited.size() < Size
 }
 
+/// @check inside, notAll
 module Four { import Spec(Size = 4).* }

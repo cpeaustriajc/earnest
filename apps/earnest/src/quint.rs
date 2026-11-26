@@ -1,17 +1,19 @@
 use crate::cache::{ENGINE, fingerprint_of, folder_in, write_whole};
-use crate::checks::{
-    CHECKS_FILE, Check, EXPECT_COUNTEREXAMPLE, Written, example, is_a_name, read_entries,
-};
+use crate::checks::{CHECKS_FILE, Check};
 use crate::discovery::Listed;
+use crate::marks::how_to_mark;
+use crate::migrate::migration;
 use crate::places::{Places, place_all};
+use crate::plan::{Plan, Spot, planned};
 use crate::reading::{Content, Declared, ModelFile, Readable};
 use crate::run::whole_of;
 use crate::typecheck::typechecked;
 use crate::workers::run_each;
 use earnest_diagnostics::{Place, Problem};
+use earnest_ir::{Code, Expr, Op};
 use earnest_quint::{Located, Runs, Setup, Typechecked};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -30,9 +32,7 @@ const CACHE: &str = "quint";
 const HERE: &str = ".";
 const SKIPPED_FOLDERS: [&str; 4] = ["node_modules", "target", "dist", "build"];
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
-const TESTS_END_WITH: &str = "Test";
 const QUALIFIED: &str = "::";
-const PROPERTY_QUALIFIERS: [&str; 4] = ["val", "def", "pureval", "puredef"];
 const NOT_FOUND: &str = "`quint` was not found: install it with `npm install --save-dev \
                          @informalsystems/quint`, or set `EARNEST_QUINT`";
 
@@ -44,28 +44,29 @@ const PROGRAM_FILES: [&str; 3] = ["quint.cmd", "quint.exe", "quint"];
 const PROGRAM_FILES: [&str; 1] = [PROGRAM];
 
 #[derive(Debug)]
-struct Asked {
+struct Candidate {
     shown: PathBuf,
-    only: Option<BTreeSet<PathBuf>>,
-    named: Vec<PathBuf>,
+    real: PathBuf,
+    named: bool,
+    read: u64,
+    quint: Result<Quint, String>,
 }
 
 #[derive(Debug)]
 struct Job {
-    checks: String,
     shown: String,
     real: PathBuf,
     check: Check,
-    name: Option<String>,
     expected: Vec<String>,
-    written: Vec<Written>,
+    reachable: Vec<String>,
+    said: Vec<(String, String)>,
     read: u64,
     quint: Result<Quint, String>,
 }
 
 impl Job {
     fn model_name(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.check.main)
+        &self.check.main
     }
 }
 
@@ -90,13 +91,13 @@ pub(crate) struct QuintCheck {
 
 fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
     let check = &job.check;
-    let named = |text: &String| QuintProperty {
-        id: job
-            .written
-            .iter()
-            .find(|written| written.is == *text)
-            .map_or_else(|| text.clone(), |written| written.id.clone()),
-        text: text.clone(),
+    let named = |name: &String| QuintProperty {
+        id: name.clone(),
+        text: if job.reachable.contains(name) {
+            format!("not({name})")
+        } else {
+            name.clone()
+        },
     };
     QuintCheck {
         program: std::path::absolute(&quint.program).unwrap_or_else(|_| quint.program.clone()),
@@ -150,46 +151,49 @@ fn unreadable(path: &str, declared: Vec<Declared>, problems: Vec<Problem>) -> Mo
     }
 }
 
-fn not_listed(qnt: &Path, checks: &Path) -> ModelFile {
+fn not_a_model(qnt: &Path) -> ModelFile {
     let name = qnt.file_name().map_or_else(
         || shown_string(qnt),
         |name| name.to_string_lossy().into_owned(),
     );
-    let main = qnt.file_stem().map_or_else(
-        || "Main".to_owned(),
-        |stem| stem.to_string_lossy().into_owned(),
-    );
     problem_file(
         &shown_string(qnt),
         &format!("`{name}`"),
-        &format!(
-            "the Quint file is not listed in `{}`, so the checker does not know which module \
-             to check and what holds in it: list it there, for example:\n{}",
-            shown_string(checks),
-            example(&name, &main)
-        ),
+        &format!("no module of the Quint file is checked: {}", how_to_mark()),
     )
 }
 
-fn asked(listed: &[Listed]) -> BTreeMap<PathBuf, Asked> {
-    let mut asked: BTreeMap<PathBuf, Asked> = BTreeMap::new();
+fn found(listed: &[Listed]) -> (Vec<PathBuf>, Vec<Candidate>) {
+    let mut old: Vec<PathBuf> = Vec::new();
+    let mut seen_old: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut programs: HashMap<PathBuf, Result<Quint, String>> = HashMap::new();
+    let mut candidates: Vec<Candidate> = Vec::new();
     for each in listed {
-        let slot = asked.entry(real(&each.checks)).or_insert_with(|| Asked {
-            shown: each.checks.clone(),
-            only: Some(BTreeSet::new()),
-            named: Vec::new(),
-        });
-        match &each.only {
-            None => slot.only = None,
-            Some(qnt) => {
-                if let Some(only) = &mut slot.only {
-                    only.insert(real(qnt));
-                }
-                slot.named.push(qnt.clone());
-            }
+        if (each.only.is_none() || each.checks.is_file()) && seen_old.insert(real(&each.checks)) {
+            old.push(each.checks.clone());
         }
+        let Some(qnt) = &each.only else {
+            continue;
+        };
+        let real_file = real(qnt);
+        if let Some(kept) = candidates.iter_mut().find(|kept| kept.real == real_file) {
+            kept.named |= each.named;
+            continue;
+        }
+        let real_folder = real_file
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .to_path_buf();
+        candidates.push(Candidate {
+            read: tree_fingerprint(&real_folder),
+            quint: program_for(&mut programs, &real_folder),
+            shown: qnt.clone(),
+            real: real_file,
+            named: each.named,
+        });
     }
-    asked
+    candidates.sort_by(|first, second| first.shown.cmp(&second.shown));
+    (old, candidates)
 }
 
 fn is_skipped(name: &OsStr) -> bool {
@@ -415,6 +419,9 @@ fn quint_place(said: &str, job: &Job) -> (String, Place) {
         else {
             continue;
         };
+        if Path::new(file).extension().and_then(OsStr::to_str) != Some(QUINT_EXTENSION) {
+            continue;
+        }
         let (Ok(column), Ok(number)) = (column.parse::<u32>(), number.parse::<u32>()) else {
             continue;
         };
@@ -447,40 +454,6 @@ pub(crate) fn shown_in_folder(file: &Path, check: &Path, shown: &str) -> String 
 
 fn shown_in(file: &Path, job: &Job) -> String {
     shown_in_folder(file, &job.real, &job.shown)
-}
-
-fn written_place(said: &str, job: &Job) -> Option<(String, Place)> {
-    let written: Vec<&String> = job
-        .check
-        .invariants
-        .iter()
-        .filter(|item| !is_a_name(item))
-        .collect();
-    let named = said
-        .split_once("Name '")
-        .and_then(|(_, rest)| rest.split_once('\''))
-        .map(|(name, _)| name);
-    let item = named
-        .and_then(|name| written.iter().find(|item| item.contains(name)))
-        .or_else(|| written.first())?;
-    let text = fs::read_to_string(&job.checks).ok()?;
-    let at = text
-        .find(&format!("\"{item}\""))
-        .or_else(|| text.find(item.as_str()))?;
-    let before = text.get(..at)?;
-    let line = before.matches('\n').count().saturating_add(1);
-    let column = before
-        .rsplit('\n')
-        .next()
-        .map_or(0, |last| last.chars().count())
-        .saturating_add(1);
-    Some((
-        job.checks.clone(),
-        Place {
-            line: u32::try_from(line).unwrap_or(u32::MAX),
-            column: u32::try_from(column).unwrap_or(u32::MAX),
-        },
-    ))
 }
 
 fn compile(job: &Job) -> Result<String, Problem> {
@@ -527,11 +500,6 @@ fn compile(job: &Job) -> Result<String, Problem> {
     if !output.status.success() {
         let said = String::from_utf8_lossy(&output.stderr);
         let (file, place) = quint_place(&said, job);
-        let (file, place) = if file == job.shown && place == TOP_OF_FILE {
-            written_place(&said, job).unwrap_or((file, place))
-        } else {
-            (file, place)
-        };
         return Err(Problem::new(
             &file,
             place,
@@ -593,7 +561,6 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
     let mut first = None;
     for (init, step) in tried {
         let attempt = Job {
-            checks: job.checks.clone(),
             shown: job.shown.clone(),
             real: job.real.clone(),
             check: Check {
@@ -601,9 +568,9 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
                 step,
                 ..check.clone()
             },
-            name: job.name.clone(),
             expected: job.expected.clone(),
-            written: job.written.clone(),
+            reachable: job.reachable.clone(),
+            said: job.said.clone(),
             read: job.read,
             quint: job.quint.clone(),
         };
@@ -622,11 +589,68 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
     ))
 }
 
+fn compiled_runs(found: &Places, job: &Job, json: &str, unplayed: &mut Vec<String>) -> Runs {
+    let main = &job.check.main;
+    let held = found.runs_held(main, json);
+    let (kept, missing): (Vec<String>, Vec<String>) =
+        job.check.runs.listed().iter().cloned().partition(|name| {
+            held.iter()
+                .any(|each| each == name || each.ends_with(&format!("::{name}")))
+        });
+    for name in missing {
+        if !unplayed.contains(&name) {
+            unplayed.push(name);
+        }
+    }
+    match &job.check.runs {
+        Runs::Tests | Runs::TestsAnd(_) => match found.runs_played(main, json) {
+            Some(mut tests) => {
+                tests.extend(kept);
+                Runs::Named(tests)
+            }
+            None if kept.is_empty() => Runs::Tests,
+            None => Runs::TestsAnd(kept),
+        },
+        Runs::Named(_) => Runs::Named(kept),
+        other => other.clone(),
+    }
+}
+
+fn not_built(
+    job: &Job,
+    typechecked: Option<&Typechecked>,
+    found: Option<&Places>,
+) -> Option<String> {
+    let Some(typechecked) = typechecked else {
+        return Some("`quint typecheck` gave nothing to build the check from".to_owned());
+    };
+    let (id, written) = typechecked.not_built(&job.check.main)?;
+    let at =
+        found
+            .and_then(|found| found.spot_of(id))
+            .map_or_else(String::new, |(file, line, _)| {
+                format!(
+                    " at `{}:{}`",
+                    shown_in(Path::new(file), job),
+                    line.saturating_add(1)
+                )
+            });
+    Some(format!(
+        "the checker does not build `{written}`{at} from `quint typecheck`"
+    ))
+}
+
+fn builds(found: &Places, job: &Job) -> bool {
+    let main = &job.check.main;
+    found.may_be_a_setup(main)
+        || lacks_a_search(&job.check, Some(found))
+        || (job.check.invariants.is_empty() && job.check.temporal.is_empty())
+        || found.plays_an_imported_run(main, &job.check.runs)
+        || found.imports_whole(main)
+}
+
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
     let check = &job.check;
-    if !check.invariants.iter().all(|item| is_a_name(item)) {
-        return None;
-    }
     typechecked?.setup(&Setup::new(
         &check.main,
         (&check.init, &check.step),
@@ -658,8 +682,59 @@ fn places_key(engine: &str, quint: &Quint, source: &[u8]) -> String {
     )
 }
 
-fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
-    let source = fs::read(real_file).ok()?;
+fn parse_failed(shown: &str, real_file: &Path, said: &str) -> Problem {
+    let feature = "`quint parse`";
+    let first = serde_json::from_str::<serde_json::Value>(said)
+        .ok()
+        .and_then(|value| value.get("errors")?.as_array()?.first().cloned());
+    let Some(first) = first else {
+        return Problem::new(
+            shown,
+            TOP_OF_FILE,
+            feature,
+            "the Quint file can't be parsed",
+        );
+    };
+    let explanation = first
+        .get("explanation")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("the Quint file can't be parsed");
+    let at = first
+        .get("locs")
+        .and_then(|locs| locs.get(0))
+        .and_then(|loc| {
+            let start = loc.get("start")?;
+            let line = u32::try_from(start.get("line")?.as_u64()?).ok()?;
+            let column = u32::try_from(start.get("col")?.as_u64()?).ok()?;
+            let file = loc
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .map_or_else(
+                    || shown.to_owned(),
+                    |source| shown_in_folder(Path::new(source), real_file, shown),
+                );
+            Some((
+                file,
+                Place {
+                    line: line.saturating_add(1),
+                    column: column.saturating_add(1),
+                },
+            ))
+        });
+    let (file, place) = at.unwrap_or_else(|| (shown.to_owned(), TOP_OF_FILE));
+    Problem::new(&file, place, feature, explanation)
+}
+
+fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
+    let unread = |error: io::Error| {
+        Problem::new(
+            shown,
+            TOP_OF_FILE,
+            "`quint parse`",
+            &format!("the Quint file can't be read: {error}"),
+        )
+    };
+    let source = fs::read(real_file).map_err(unread)?;
     let key = places_key(ENGINE, quint, &source);
     let target = cache_path(&format!(
         "places-{:016x}.json",
@@ -669,9 +744,12 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
         && let Ok(places) = serde_json::from_str::<Places>(&text)
         && places.read == fingerprint_files(&places.files_read())
     {
-        return Some(places);
+        return Ok(places);
     }
-    let (out, map) = (scratch("parse").ok()?, scratch("map").ok()?);
+    let (out, map) = (
+        scratch("parse").map_err(unread)?,
+        scratch("map").map_err(unread)?,
+    );
     let ran = Command::new(&quint.program)
         .arg("parse")
         .arg(shown)
@@ -680,14 +758,23 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
         .arg("--source-map")
         .arg(&map)
         .output();
-    let read = || -> Option<Places> {
-        if !ran.as_ref().ok()?.status.success() {
-            return None;
+    let written = fs::read_to_string(&out).unwrap_or_default();
+    let read = || -> Result<Places, Problem> {
+        let output = ran.as_ref().map_err(|error| {
+            Problem::new(
+                shown,
+                TOP_OF_FILE,
+                "`quint`",
+                &format!("`{}` did not start: {error}", shown_string(&quint.program)),
+            )
+        })?;
+        if !output.status.success() {
+            return Err(parse_failed(shown, real_file, &written));
         }
-        Places::from_quint(
-            &fs::read_to_string(&out).ok()?,
-            &fs::read_to_string(&map).ok()?,
-        )
+        fs::read_to_string(&map)
+            .ok()
+            .and_then(|map| Places::from_quint(&written, &map))
+            .ok_or_else(|| parse_failed(shown, real_file, &written))
     };
     let places = read();
     fs::remove_file(&out).unwrap_or_default();
@@ -697,75 +784,7 @@ fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Option<Places> {
     if let Ok(text) = serde_json::to_string(&places) {
         store(&target, &format!("{key}\n{text}"));
     }
-    Some(places)
-}
-
-fn refused(job: &Job, name: &str, message: &str) -> Problem {
-    Problem::new(
-        &job.shown,
-        TOP_OF_FILE,
-        &format!("`{name}`"),
-        &format!(
-            "`{EXPECT_COUNTEREXAMPLE}` of the check `{}` names `{name}`, {message}",
-            job.model_name()
-        ),
-    )
-}
-
-fn widened(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
-    for expected in job.expected.clone() {
-        let name = job
-            .written
-            .iter()
-            .find(|written| written.id == expected)
-            .map_or(expected, |written| written.is.clone());
-        let check = &job.check;
-        let listed_run = matches!(&check.runs, Runs::Named(names) if names.contains(&name));
-        if check.invariants.contains(&name) || check.temporal.contains(&name) || listed_run {
-            continue;
-        }
-        if !is_a_name(&name) {
-            job.check.invariants.push(name);
-            continue;
-        }
-        let qualifier = places.map_or(PROPERTY_QUALIFIERS[0], |found| {
-            found.qualifier(&name, &check.main).unwrap_or_else(|| {
-                if found.reaches(&name, &check.main) {
-                    ""
-                } else {
-                    PROPERTY_QUALIFIERS[0]
-                }
-            })
-        });
-        let check = &mut job.check;
-        match qualifier {
-            kind if PROPERTY_QUALIFIERS.contains(&kind) => check.invariants.push(name),
-            "temporal" => check.temporal.push(name),
-            "run" => match &mut check.runs {
-                Runs::Named(names) => names.push(name),
-                Runs::Tests if name.ends_with(TESTS_END_WITH) => {}
-                Runs::Tests => {
-                    return Err(refused(
-                        job,
-                        &name,
-                        &format!(
-                            "a run that `\"runs\": true` does not play, since its name does not \
-                             end in `{TESTS_END_WITH}`: list the runs to play by name in `runs`"
-                        ),
-                    ));
-                }
-                _ => check.runs = Runs::Named(vec![name]),
-            },
-            _ => {
-                return Err(refused(
-                    job,
-                    &name,
-                    "which is not an invariant, a temporal property or a run",
-                ));
-            }
-        }
-    }
-    Ok(())
+    Ok(places)
 }
 
 pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
@@ -774,27 +793,36 @@ pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
     first.ends_with(&second) || second.ends_with(&first)
 }
 
-fn expected_ids(job: &Job, model: &earnest_ir::Model) -> Result<Vec<String>, Problem> {
+fn whole_ids(model: &earnest_ir::Model) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     for id in model.rule_ids().map(whole_of) {
         if !ids.iter().any(|kept| kept == id) {
             ids.push(id.to_owned());
         }
     }
+    ids
+}
+
+fn id_of<'a>(ids: &'a [String], name: &str) -> Option<&'a String> {
+    let exact = ids.iter().find(|id| *id == name);
+    let mut alike = ids.iter().filter(|id| segments_end_alike(id, name));
+    exact.or_else(|| {
+        let first = alike.next()?;
+        alike.next().is_none().then_some(first)
+    })
+}
+
+fn expected_ids(job: &Job, model: &earnest_ir::Model) -> Result<Vec<String>, Problem> {
+    let ids = whole_ids(model);
     let mut expected: Vec<String> = Vec::with_capacity(job.expected.len());
     for name in &job.expected {
-        let exact = ids.iter().find(|id| *id == name);
-        let mut alike = ids.iter().filter(|id| segments_end_alike(id, name));
-        let found = exact.or_else(|| {
-            let first = alike.next()?;
-            alike.next().is_none().then_some(first)
-        });
-        let Some(found) = found else {
-            return Err(refused(
-                job,
-                name,
+        let Some(found) = id_of(&ids, name) else {
+            return Err(Problem::new(
+                &job.shown,
+                TOP_OF_FILE,
+                &format!("`{name}`"),
                 &format!(
-                    "and the module `{}` has no property of that name",
+                    "the module `{}` has no property `{name}` to judge",
                     job.check.main
                 ),
             ));
@@ -819,95 +847,118 @@ fn declared(job: &Job) -> Declared {
     }
 }
 
-fn jobs_of(asked: BTreeMap<PathBuf, Asked>, files: &mut Vec<ModelFile>) -> Vec<Job> {
-    let mut programs: HashMap<PathBuf, Result<Quint, String>> = HashMap::new();
+fn program_for(
+    programs: &mut HashMap<PathBuf, Result<Quint, String>>,
+    folder: &Path,
+) -> Result<Quint, String> {
+    programs
+        .entry(folder.to_path_buf())
+        .or_insert_with(|| {
+            let program = find_program(folder)?;
+            let version = version_of(&program)?;
+            Ok(Quint { program, version })
+        })
+        .clone()
+}
+
+fn job_of(candidate: &Candidate, plan: Plan) -> Job {
+    Job {
+        shown: shown_string(&candidate.shown),
+        real: candidate.real.clone(),
+        check: Check {
+            file: candidate
+                .shown
+                .file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
+            main: plan.main,
+            init: "init".to_owned(),
+            step: "step".to_owned(),
+            invariants: plan.invariants,
+            temporal: plan.temporal,
+            runs: plan.runs,
+        },
+        expected: plan.expected,
+        reachable: plan.reachable,
+        said: plan.said,
+        read: candidate.read,
+        quint: candidate.quint.clone(),
+    }
+}
+
+fn unreadable_of(shown: &str, module: Option<String>, problems: Vec<Problem>) -> ModelFile {
+    let declared = module.map_or_else(Vec::new, |name| {
+        vec![Declared {
+            name,
+            rules: Vec::new(),
+        }]
+    });
+    unreadable(shown, declared, problems)
+}
+
+fn marked_checks(
+    candidates: &[Candidate],
+    read: &HashMap<PathBuf, Result<Places, Problem>>,
+    files: &mut Vec<ModelFile>,
+) -> Vec<Job> {
     let mut jobs = Vec::new();
-    for (real_checks, asked) in asked {
-        let shown_checks = shown_string(&asked.shown);
-        let text = match fs::read_to_string(&asked.shown) {
-            Ok(text) => text,
-            Err(error) if error.kind() == io::ErrorKind::NotFound && asked.only.is_some() => {
-                files.extend(asked.named.iter().map(|qnt| not_listed(qnt, &asked.shown)));
+    let mut seen: BTreeSet<Spot> = BTreeSet::new();
+    let mut marked: Vec<(String, Spot, Problem)> = Vec::new();
+    for candidate in candidates {
+        let shown = shown_string(&candidate.shown);
+        let places = match read.get(&candidate.real) {
+            Some(Ok(places)) => places,
+            Some(Err(problem)) => {
+                files.push(unreadable(&shown, Vec::new(), vec![problem.clone()]));
                 continue;
             }
-            Err(error) => {
-                files.push(problem_file(
-                    &shown_checks,
-                    &format!("`{CHECKS_FILE}`"),
-                    &format!("the list of Quint checks can't be opened: {error}"),
-                ));
-                continue;
-            }
+            None => continue,
         };
-        let checks = match read_entries(&text) {
-            Ok(checks) => checks,
-            Err(wrong) => {
-                files.push(unreadable(
-                    &shown_checks,
-                    Vec::new(),
-                    vec![Problem::new(
-                        &shown_checks,
-                        wrong.place,
-                        &wrong.feature,
-                        &wrong.message,
-                    )],
-                ));
-                continue;
-            }
-        };
-        let folder = asked
-            .shown
-            .parent()
-            .unwrap_or_else(|| Path::new(""))
-            .to_path_buf();
-        let real_folder = real_checks
-            .parent()
-            .unwrap_or_else(|| Path::new(""))
-            .to_path_buf();
-        let tree = tree_fingerprint(&real_folder);
-        let mut matched: BTreeSet<PathBuf> = BTreeSet::new();
-        for entry in checks {
-            let check = entry.check;
-            let shown = folder.join(&check.file);
-            let real_file = real(&shown);
-            if let Some(only) = &asked.only {
-                if !only.contains(&real_file) {
-                    continue;
-                }
-                matched.insert(real_file.clone());
-            }
-            let quint = programs
-                .entry(real_folder.clone())
-                .or_insert_with(|| {
-                    let program = find_program(&real_folder)?;
-                    let version = version_of(&program)?;
-                    Ok(Quint { program, version })
-                })
-                .clone();
-            jobs.push(Job {
-                checks: shown_checks.clone(),
-                shown: shown_string(&shown),
-                real: real_file,
-                check,
-                name: entry.name,
-                expected: entry.expected,
-                written: entry.written,
-                read: tree,
-                quint,
-            });
-        }
-        files.extend(
-            asked
-                .named
-                .iter()
-                .filter(|qnt| !matched.contains(&real(qnt)))
-                .map(|qnt| not_listed(qnt, &asked.shown)),
+        let found = planned(places, &candidate.real, &shown);
+        seen.extend(found.seen);
+        marked.extend(
+            found
+                .marked
+                .into_iter()
+                .map(|(spot, problem)| (shown.clone(), spot, problem)),
         );
+        let mut by_module: Vec<(Option<String>, Vec<Problem>)> = Vec::new();
+        for (module, problem) in found.problems {
+            match by_module.iter_mut().find(|(each, _)| *each == module) {
+                Some((_, problems)) => problems.push(problem),
+                None => by_module.push((module, vec![problem])),
+            }
+        }
+        let checks = found.plans.len();
+        let refused = by_module
+            .iter()
+            .filter(|(module, _)| module.is_some())
+            .count();
+        for (module, mut problems) in by_module {
+            problems.sort_by_key(Problem::place);
+            files.push(unreadable_of(&shown, module, problems));
+        }
+        jobs.extend(found.plans.into_iter().map(|plan| job_of(candidate, plan)));
+        if checks == 0 && refused == 0 && candidate.named {
+            files.push(not_a_model(&candidate.shown));
+        }
+    }
+    let unseen: Vec<(String, Problem)> = marked
+        .into_iter()
+        .filter(|(_, spot, _)| !seen.contains(spot))
+        .map(|(shown, _, problem)| (shown, problem))
+        .collect();
+    for (shown, problem) in unseen {
+        files.push(unreadable(&shown, Vec::new(), vec![problem]));
     }
     jobs
 }
 
-type Compiled = (String, earnest_ir::Model, Vec<String>);
+struct Compiled {
+    json: String,
+    model: earnest_ir::Model,
+    expected: Vec<String>,
+    reachable: Vec<String>,
+}
 
 fn compiled_once(
     checks: &[Job],
@@ -953,49 +1004,14 @@ fn runs_not_played(
         .iter()
         .zip(compiled)
         .map(|(job, compiled)| match (compiled, places.get(&job.real)) {
-            (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
+            (Ok((json, false)), Some(found))
+                if matches!(job.check.runs, Runs::Tests | Runs::TestsAnd(_)) =>
+            {
                 found.runs_not_played(&job.check.main, json)
             }
             _ => Vec::new(),
         })
         .collect()
-}
-
-fn named_as_written(job: &Job, model: &mut earnest_ir::Model) -> Result<(), Vec<Located>> {
-    for (item, rule) in job.check.invariants.iter().zip(model.rules.iter_mut()) {
-        let written = job.written.iter().find(|written| written.is == *item);
-        let Some(id) = written
-            .map(|written| written.id.clone())
-            .or_else(|| (!is_a_name(item)).then(|| item.clone()))
-        else {
-            continue;
-        };
-        rule.says = format!("The Quint invariant `{id}` holds");
-        item.clone_into(&mut rule.text);
-        rule.id = id;
-    }
-    let ids: Vec<&str> = model.rule_ids().collect();
-    match ids.iter().enumerate().find(|(position, id)| {
-        ids.iter()
-            .skip(position.saturating_add(1))
-            .any(|other| other == *id)
-    }) {
-        Some((_, id)) => Err(vec![Located::new(
-            Problem::new(
-                &job.shown,
-                TOP_OF_FILE,
-                &format!("`{id}`"),
-                &format!(
-                    "two properties of the check `{}` are named `{id}`: give the invariant \
-                     written as an expression its own `name`",
-                    job.model_name()
-                ),
-            ),
-            None,
-            None,
-        )]),
-        None => Ok(()),
-    }
 }
 
 fn read_check(
@@ -1011,10 +1027,44 @@ fn read_check(
     };
     let mut model = model?;
     job.model_name().clone_into(&mut model.name);
-    named_as_written(job, &mut model)?;
     let expected =
         expected_ids(job, &model).map_err(|problem| vec![Located::new(problem, None, None)])?;
-    Ok((json, model, expected))
+    let reachable = as_marked(job, &mut model);
+    Ok(Compiled {
+        json,
+        model,
+        expected,
+        reachable,
+    })
+}
+
+fn as_marked(job: &Job, model: &mut earnest_ir::Model) -> Vec<String> {
+    let ids = whole_ids(model);
+    let reachable: Vec<String> = job
+        .reachable
+        .iter()
+        .filter_map(|name| id_of(&ids, name).cloned())
+        .collect();
+    let said: Vec<(&String, &String)> = job
+        .said
+        .iter()
+        .filter_map(|(name, says)| Some((id_of(&ids, name)?, says)))
+        .collect();
+    for rule in &mut model.rules {
+        let id = whole_of(&rule.id);
+        if reachable.iter().any(|each| each == id) {
+            rule.holds = Code::new(Expr::Apply(Op::Not, vec![rule.holds.expr().clone()]));
+        }
+        if let Some((_, says)) = said.iter().find(|(each, _)| *each == id) {
+            rule.says.clone_from(says);
+        }
+    }
+    for rule in &mut model.runs.eventually {
+        if let Some((_, says)) = said.iter().find(|(each, _)| *each == whole_of(&rule.id)) {
+            rule.says.clone_from(says);
+        }
+    }
+    reachable
 }
 
 fn compiled_all(
@@ -1029,7 +1079,14 @@ fn compiled_all(
         .collect();
     let built = run_each(&paired, jobs, |(job, refusal), _| match refusal {
         Some(problem) => (Some(Err((*problem).clone())), false),
-        None => match filled(job, typechecked.get(&job.real)) {
+        None => match filled(
+            job,
+            typechecked.get(&job.real).filter(|_| {
+                places
+                    .get(&job.real)
+                    .is_some_and(|found| builds(found, job))
+            }),
+        ) {
             Some(json) => (Some(Ok(json)), true),
             None => (
                 lacks_a_search(&job.check, places.get(&job.real))
@@ -1046,38 +1103,73 @@ fn compiled_all(
         .collect()
 }
 
-pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
-    let mut files = Vec::new();
-    let mut checks = jobs_of(asked(listed), &mut files);
+fn parsed_all(candidates: &[Candidate], jobs: usize) -> HashMap<PathBuf, Result<Places, Problem>> {
     let mut to_parse: Vec<(PathBuf, String, Quint)> = Vec::new();
-    for job in &checks {
-        if let Ok(quint) = &job.quint
-            && !to_parse.iter().any(|(file, ..)| *file == job.real)
+    for each in candidates {
+        if let Ok(quint) = &each.quint
+            && !to_parse.iter().any(|(file, ..)| *file == each.real)
         {
-            to_parse.push((job.real.clone(), job.shown.clone(), quint.clone()));
+            to_parse.push((each.real.clone(), shown_string(&each.shown), quint.clone()));
         }
     }
     let maps = run_each(&to_parse, jobs, |(file, shown, quint), _| {
         parsed(file, shown, quint)
     });
-    let places: HashMap<PathBuf, Places> = to_parse
+    to_parse
         .into_iter()
         .zip(maps)
-        .filter_map(|((file, ..), places)| Some((file, places?)))
+        .map(|((file, ..), places)| (file, places))
+        .collect()
+}
+
+fn found_checks(
+    candidates: &[Candidate],
+    jobs: usize,
+    files: &mut Vec<ModelFile>,
+) -> (Vec<Job>, HashMap<PathBuf, Places>) {
+    let mut checks: Vec<Job> = Vec::new();
+    for candidate in candidates {
+        if let Err(message) = &candidate.quint {
+            files.push(problem_file(
+                &shown_string(&candidate.shown),
+                "`quint`",
+                message,
+            ));
+        }
+    }
+    let read = parsed_all(candidates, jobs);
+    checks.extend(marked_checks(candidates, &read, files));
+    let places = read
+        .into_iter()
+        .filter_map(|(file, places)| Some((file, places.ok()?)))
         .collect();
+    (checks, places)
+}
+
+pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
+    let mut files = Vec::new();
+    let (old, candidates) = found(listed);
+    let (mut checks, places) = found_checks(&candidates, jobs, &mut files);
+    files.extend(old.iter().map(|checks_file| {
+        problem_file(
+            &shown_string(checks_file),
+            &format!("`{CHECKS_FILE}`"),
+            &migration(checks_file, &places),
+        )
+    }));
     let mut refusals: Vec<Option<Problem>> = Vec::with_capacity(checks.len());
     for job in &mut checks {
         if let Some(found) = places.get(&job.real) {
             job.read = found.read;
         }
-        refusals.push(widened(job, places.get(&job.real)).err());
+        refusals.push(None);
     }
     let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
     for job in &checks {
         if let Ok(quint) = &job.quint
-            && places.get(&job.real).is_some_and(|found| {
-                found.may_be_a_setup(&job.check.main) || lacks_a_search(&job.check, Some(found))
-            })
+            && places
+                .get(&job.real)
+                .is_some_and(|found| builds(found, job))
             && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
         {
             to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
@@ -1092,26 +1184,32 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .filter_map(|((file, ..), read)| Some((file, read?)))
         .collect();
     let compiled = compiled_all(&checks, &refusals, (&typechecked, &places), jobs);
-    let not_played = runs_not_played(&checks, &compiled, &places);
+    let mut not_played = runs_not_played(&checks, &compiled, &places);
     let read: Vec<Result<Compiled, Vec<Located>>> = checks
         .iter()
         .zip(compiled)
-        .map(|(job, compiled)| {
-            let played = match (&compiled, places.get(&job.real)) {
-                (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
-                    found.runs_played(&job.check.main, json).map(Runs::Named)
-                }
-                _ => None,
+        .zip(not_played.iter_mut())
+        .map(|((job, compiled), unplayed)| {
+            let runs = match (&compiled, places.get(&job.real)) {
+                (Ok((json, false)), Some(found)) => compiled_runs(found, job, json, unplayed),
+                _ => job.check.runs.clone(),
             };
-            let runs = played.as_ref().unwrap_or(&job.check.runs);
-            read_check(job, compiled.map(|(json, _)| json), runs)
+            read_check(job, compiled.map(|(json, _)| json), &runs)
         })
         .collect();
     for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
         files.push(match read {
-            Ok((json, model, expected)) => ModelFile {
+            Ok(Compiled {
+                json,
+                model,
+                expected,
+                reachable,
+            }) => ModelFile {
                 path: job.shown.clone(),
-                source: format!("{json}\n{:?}", job.check),
+                source: format!(
+                    "{json}\n{:?}\n{:?}\n{:?}",
+                    job.check, job.reachable, job.said
+                ),
                 declared: vec![Declared {
                     name: model.name.clone(),
                     rules: model.rule_ids().map(str::to_owned).collect(),
@@ -1121,6 +1219,11 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     model,
                     position: 0,
                     expected,
+                    reachable,
+                    counted: true,
+                    not_built: (!runs_not_played.is_empty())
+                        .then(|| not_built(job, typechecked.get(&job.real), places.get(&job.real)))
+                        .flatten(),
                     runs_not_played,
                     quint: job.quint.as_ref().ok().map(|quint| as_asked(job, quint)),
                 }]),
@@ -1136,7 +1239,38 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             }
         });
     }
-    files
+    one_per_file(files)
+}
+
+fn one_per_file(files: Vec<ModelFile>) -> Vec<ModelFile> {
+    let mut kept: Vec<ModelFile> = Vec::with_capacity(files.len());
+    for file in files {
+        let alone = file.declared.is_empty();
+        let Content::Unreadable(problems) = file.content else {
+            kept.push(file);
+            continue;
+        };
+        let earlier = kept.iter_mut().find(|other| {
+            alone
+                && other.path == file.path
+                && other.declared.is_empty()
+                && matches!(other.content, Content::Unreadable(_))
+        });
+        match earlier {
+            Some(ModelFile {
+                content: Content::Unreadable(found),
+                ..
+            }) => {
+                found.extend(problems);
+                found.sort_by_key(Problem::place);
+            }
+            _ => kept.push(ModelFile {
+                content: Content::Unreadable(problems),
+                ..file
+            }),
+        }
+    }
+    kept
 }
 
 #[cfg(test)]

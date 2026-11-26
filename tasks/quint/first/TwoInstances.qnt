@@ -5,6 +5,7 @@ module Counter {
   action step = all { n < START + 3, n' = n + 1 }
 }
 
+/// @check
 module TwoInstances {
   import Counter(START = 0) as Fixed from "./TwoInstances"
   import Counter(START = 5) as Before from "./TwoInstances"

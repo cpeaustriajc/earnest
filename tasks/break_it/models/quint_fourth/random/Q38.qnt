@@ -55,12 +55,15 @@ module Q38spec {
   run r2Test = startWith(0).then(step).expect(any { flag, got.forall(p => p._1 == 1) })
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(BUYERS.fold(0, (s, b) => s + cnt.get(b)) <= 2) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q38A {
   import Q38spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q38B {
   import Q38spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q38C {
   import Q38spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 2).*
 }

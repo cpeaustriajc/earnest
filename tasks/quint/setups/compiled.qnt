@@ -16,15 +16,18 @@ module Mid {
   val ok = B::ok
 }
 
+/// @check ok
 module Nested { import Mid(J = 2).* }
 
 module Limit { pure val L = 2 }
 
+/// @check ok
 module Renamed {
   import Limit as Li
   import Base(K = Li::L).*
 }
 
+/// @check ok
 module Single {
   import Limit.L
   import Base(K = L).*

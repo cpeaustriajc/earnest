@@ -1,6 +1,6 @@
 use crate::reading::Readable;
 use crate::workers::run_each;
-use earnest_chart::{chart_outline, chart_with_limit, detail_lines_in, one_line};
+use earnest_chart::{chart_outline, chart_with_limit, detail_lines_in, one_line, path_lines_in};
 use earnest_check::{EVERY_EXPECTED_FOUND, Limits, Outcome, Status as Judged, Verdict, explore};
 use earnest_ir::Model;
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,8 @@ use serde_json::Value as Json;
 use std::num::NonZeroUsize;
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
+
+const NESTED: &str = "  ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Bounds {
@@ -408,16 +410,37 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             }),
             file: model.file.clone(),
             line: model.line,
-            status: searched.status,
+            status: if searched.status == Status::Pass && !readable.runs_not_played.is_empty() {
+                Status::Unfinished
+            } else {
+                searched.status
+            },
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched.reason,
+            reason: searched
+                .reason
+                .filter(|reason| {
+                    readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND
+                })
+                .or_else(|| {
+                    (!readable.runs_not_played.is_empty()).then(|| {
+                        let reason = not_played_reason(&readable.runs_not_played);
+                        match &readable.not_built {
+                            Some(cause) => format!("{reason}: {cause}"),
+                            None => reason,
+                        }
+                    })
+                }),
             rules: searched.rules,
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
         },
-        detail: detail_of(&ran.outcome, &readable.expected, model),
+        detail: detail_of(
+            &ran.outcome,
+            (&readable.expected, &readable.reachable),
+            model,
+        ),
         position: readable.position,
     })
 }
@@ -426,19 +449,48 @@ pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool
     expected.iter().any(|name| name == whole_of(&rule.id))
 }
 
-fn detail_of(outcome: &Outcome, expected: &[String], model: &Model) -> Vec<String> {
+fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
+    let mut lines = vec![format!("reached  {}", one_line(name))];
+    let path = outcome
+        .rules
+        .iter()
+        .filter(|rule| base_id(rule) == name)
+        .find_map(|rule| rule.path.as_ref());
+    if let Some(path) = path {
+        lines.extend(
+            path_lines_in(path, model.symbols.notation())
+                .into_iter()
+                .map(|line| format!("{NESTED}{line}")),
+        );
+    }
+    lines
+}
+
+fn detail_of(
+    outcome: &Outcome,
+    (expected, reachable): (&[String], &[String]),
+    model: &Model,
+) -> Vec<String> {
     let notation = model.symbols.notation();
     if expected.is_empty() {
         return detail_lines_in(outcome, notation);
     }
     let mut lines: Vec<String> = Vec::new();
     for name in expected {
+        let is_reachable = reachable.contains(name);
         match group_verdict(name, outcome) {
+            Some(Verdict::Broken) if is_reachable => {
+                lines.extend(reached_lines(name, outcome, model));
+            }
             Some(Verdict::Broken) => lines.push(format!("broken  {}  (expected)", one_line(name))),
+            Some(Verdict::Holds) if is_reachable => {
+                lines.push(format!("never reached  {}", one_line(name)));
+            }
             Some(Verdict::Holds) => lines.push(format!(
                 "holds  {}  a counterexample was expected",
                 one_line(name)
             )),
+            Some(Verdict::Unknown) => lines.push(format!("unknown  {}", one_line(name))),
             _ => {}
         }
     }
@@ -450,6 +502,14 @@ fn detail_of(outcome: &Outcome, expected: &[String], model: &Model) -> Vec<Strin
     }
     lines.extend(detail_lines_in(&rest, notation));
     lines
+}
+
+pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
+    !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
+}
+
+pub(crate) fn not_played_reason(runs: &[String]) -> String {
+    format!("runs not played: {}", runs.join(", "))
 }
 
 #[cfg(test)]

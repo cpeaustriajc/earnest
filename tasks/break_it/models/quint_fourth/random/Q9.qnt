@@ -55,12 +55,15 @@ module Q9spec {
   run r2Test = startWith(0).then(1.reps(_ => step)).then(1.reps(_ => step)).then(step).expect(2 <= bumpTo(cnt.get(1), LIMIT))
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(flag) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q9A {
   import Q9spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q9B {
   import Q9spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 2).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q9C {
   import Q9spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 2).*
 }

@@ -53,12 +53,15 @@ module Q26spec {
   run r2Test = init.then(1.reps(_ => step)).then(buyAndReact(1)).expect(ITEMS.exists(i => (1, i).in(got)))
   run pickTest = { nondet k = Set(0, 1).oneOf() startWith(k).then(step).expect(isBuy(ev)) }
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q26A {
   import Q26spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(1, 2), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q26B {
   import Q26spec(BUYERS = Set(1), ITEMS = Set("a", "b c"), WATCH = Set(1), CAP = 1).*
 }
+/// @check inv0, inv1, inv2, t0, t1, t2, t3, t4, t5
 module Q26C {
   import Q26spec(BUYERS = Set(1, 2), ITEMS = Set("a"), WATCH = Set(), CAP = 1).*
 }

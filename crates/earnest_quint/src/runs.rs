@@ -625,35 +625,35 @@ fn chosen<'a>(
             Declaration::Def(def) if def.qualifier == "run" => Some(def),
             _ => None,
         });
-    match runs {
-        Runs::None => Ok(Vec::new()),
-        Runs::Tests => {
-            let mut tests: Vec<&Def> = every
-                .filter(|def| def.name.ends_with(TESTS_END_WITH))
-                .collect();
-            tests.sort_by_key(|def| def.id);
-            Ok(tests)
+    let all: Vec<&Def> = every.collect();
+    let short = Short::of(all.iter().map(|def| def.name.as_str()));
+    let by_ending = matches!(runs, Runs::Tests | Runs::TestsAnd(_));
+    let mut found: Vec<&Def> = all
+        .iter()
+        .filter(|def| by_ending && def.name.ends_with(TESTS_END_WITH))
+        .copied()
+        .collect();
+    found.sort_by_key(|def| def.id);
+    let mut missing = Vec::new();
+    for name in runs.listed() {
+        let named = all.iter().find(|def| {
+            def.name == *name
+                || short.name(&def.name) == *name
+                || def.name.ends_with(&format!("::{name}"))
+        });
+        match named {
+            Some(def) if !found.iter().any(|kept| kept.id == def.id) => found.push(*def),
+            Some(_) => {}
+            None => missing.push(not_found(name, imported)),
         }
-        Runs::Named(names) => {
-            let all: Vec<&Def> = every.collect();
-            let short = Short::of(all.iter().map(|def| def.name.as_str()));
-            let mut found = Vec::with_capacity(names.len());
-            let mut missing = Vec::new();
-            for name in names {
-                match all
-                    .iter()
-                    .find(|def| def.name == *name || short.name(&def.name) == *name)
-                {
-                    Some(def) => found.push(*def),
-                    None => missing.push(not_found(name, imported)),
-                }
-            }
-            if missing.is_empty() {
-                Ok(found)
-            } else {
-                Err(missing)
-            }
-        }
+    }
+    if let Runs::TestsAnd(_) = runs {
+        found.sort_by_key(|def| def.id);
+    }
+    if missing.is_empty() {
+        Ok(found)
+    } else {
+        Err(missing)
     }
 }
 

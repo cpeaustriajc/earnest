@@ -12,11 +12,14 @@ module Spec {
   val withinCap = load <= Cap
 }
 
+/// @check V::withinCap, neverFull, belowHalf
 module Tight {
-  import Spec(Cap = 2).*
-  val neverFull = load < Cap
-  pure val Half = Cap / 2
-  val belowHalf = load <= Half
-  action reset = load' = 0
-  action stepOrReset = any { step, reset }
+  import Spec(Cap = 2) as V
+  val neverFull = V::load < V::Cap
+  pure val Half = V::Cap / 2
+  val belowHalf = V::load <= Half
+  action reset = V::load' = 0
+  action stepOrReset = any { V::step, reset }
+  action init = V::init
+  action step = stepOrReset
 }

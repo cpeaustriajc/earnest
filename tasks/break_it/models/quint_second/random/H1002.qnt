@@ -51,13 +51,21 @@ module Spec1002 {
     }
   }
   action step = any { enqueue, process, lower }
+  /// @check
   val inv0 = (flag implies q.select(c => isInc(c)).length() <= 0)
+  /// @check
   val inv1 = (pair._2 == "x" and (q.length() == m.keys().size() implies isInc(last)))
+  /// @check
   val inv2 = (if (KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 2)) useOp(v => v + 1, n) else pair._1) <= 0
+  /// @check
   temporal t0 = eventually(pair._1 <= n)
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually((LIM == 2 and last == Clear))
+  /// @check
   temporal t2 = weakFair(lower, vars) implies always(eventually(m.keys().size() <= n))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(not(m.keys().contains("a")) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(pair._1 <= n))
   run r0Test = init.then(enqueue).expect(pair._1 <= m.keys().size())
   run r1Test = init.then(lower).then(enqueue).expect(flag)
@@ -65,6 +73,7 @@ module Spec1002 {
   run repsTest = init.then(1.reps(_ => step)).expect(KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 2))
 }
 
+/// @check
 module H1002 {
   import Spec1002(LIM = 3, KEYS = Set("a"), START = (2, "y")).*
 }

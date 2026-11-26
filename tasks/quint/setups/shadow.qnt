@@ -22,4 +22,5 @@ module Spec {
   val notAmberTwice = not(f and l == Amber)
 }
 
+/// @check ok, notAmberTwice
 module S { import Spec(N = 3).* }

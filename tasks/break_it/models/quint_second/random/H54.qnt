@@ -59,13 +59,21 @@ module Spec54 {
       last' = last,
     }
   action step = any { enqueue, process, drop, toggle }
+  /// @check
   val inv0 = (if (m.keys().contains("b")) m.keys().size() else q.length()) <= (if (n == useOp(v => v + 1, n)) q.length() else q.length())
+  /// @check
   val inv1 = KEYS.forall(k => m.keys().contains(k) implies m.get(k) <= 0)
+  /// @check
   val inv2 = q.select(c => isInc(c)).length() <= 2
+  /// @check
   temporal t0 = eventually(m.keys().contains("b"))
+  /// @check
   temporal t1 = weakFair(step, vars) implies eventually(flag)
+  /// @check
   temporal t2 = weakFair(step, vars) implies always(eventually(last == Clear))
+  /// @check
   temporal t3 = weakFair(step, vars) implies always(not(flag) implies eventually(q.length() == 0))
+  /// @check
   temporal t4 = not(eventually(m.keys().contains("b")))
   run r0Test = init.then(process).expect(q.select(c => isInc(c)).length() <= 0)
   run r1Test = init.then(toggle).then(step).expect(flag)
@@ -73,6 +81,7 @@ module Spec54 {
   run repsTest = init.then(2.reps(_ => step)).expect(isInc(last))
 }
 
+/// @check
 module H54 {
   import Spec54(LIM = 2, KEYS = Set("a", "b"), START = (0, "y")).*
 }

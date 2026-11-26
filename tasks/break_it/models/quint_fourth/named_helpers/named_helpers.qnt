@@ -15,6 +15,7 @@ module spec {
   val inRange = x <= N
   run upTest = init.then(step).expect(x == 1)
 }
+/// @check inRange
 module small {
   import spec(N = 2).*
 }

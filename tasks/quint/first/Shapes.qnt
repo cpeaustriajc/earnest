@@ -5,31 +5,37 @@ module Local {
   action step = k' = k + 1
 }
 
+/// @check
 module StarImport {
   import Local.*
   run starTest = init.then(step).expect(k == 1)
 }
 
+/// @check
 module AsImport {
   import Local as L
   run asTest = L::init.then(L::step).expect(L::k == 1)
 }
 
+/// @check
 module StarInstance {
   import Param(START = 2).* from "./Spec"
   run starInstanceTest = init.then(step).expect(m == 3)
 }
 
+/// @check
 module AsInstance {
   import Param(START = 4) as P from "./Spec"
   run asInstanceTest = P::InitOn(1).then(P::step).expect(P::m == 2)
 }
 
+/// @check
 module FromFile {
   import Plain as F from "./Spec"
   run fromFileTest = F::init.then(F::step).expect(F::n == 1)
 }
 
+/// @check
 module Several {
   import Plain as F from "./Spec"
   import Param(START = 0) as A from "./Spec"
@@ -39,6 +45,7 @@ module Several {
   run fTest = F::init.then(F::step).expect(F::n == 1)
 }
 
+/// @check
 module OwnVariables {
   import Param(START = 0) as A from "./Spec"
   var seen: bool
@@ -48,6 +55,7 @@ module OwnVariables {
   run onlyOwnTest = all { seen' = true }.then(all { seen' = not(seen) }).expect(not(seen))
 }
 
+/// @check
 module Mixed {
   import Local.*
   import Plain as F from "./Spec"

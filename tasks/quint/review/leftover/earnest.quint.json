@@ -1,0 +1,1 @@
+{ "checks": [ {"file": "own.qnt", "main": "Tight", "step": "stepOrReset", "invariants": ["withinCap", "neverFull", "belowHalf"]} ] }
