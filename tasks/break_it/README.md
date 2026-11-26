@@ -1113,6 +1113,26 @@ of the helper is ever seen; a plain rule's helpers are compared by evaluating th
   ``no model has a rule `last` ``; `--model` has the documented exception for a removed model,
   `--rule` has none written.
 
+### Settled after the pass
+
+All four tests pass. Two condition texts are one part under `--base` when they differ only in
+white space that joins no two words: `same_condition_text` in `crates/earnest_ast/src/lib.rs`
+keeps a space only between two word letters (letters, digits, `_`, `$`) and keeps quoted text
+whole, and every comparison of `--base` asks it; `condition_text`, and so every printed text,
+is unchanged (tests in `crates/earnest_ast/tests/tree.rs`). `--rule <id> --base` compares each
+model where some run lists the id, so the witness `last` of the setup `half` is listed; and a
+rule, rule about runs or witness that only the base has is listed `removed`, as `--model` does
+for a removed model, with exit 2 only when neither side has the id (unit test in
+`apps/earnest/src/select.rs`, tests `a_rule_named_by_rule_that_is_only_at_the_base_is_listed_removed`
+and `..._neither_here_nor_at_the_base_exits_2` in `apps/earnest/tests/behavior/runs_setups.rs`,
+the first failing before the fix). A Rust `after = name` has the text `name: <body of the
+helper>` (`paid: self.coins >= 2`), so an edit of the helper is `changed` and the report shows
+the condition (test in `crates/earnest_rs/tests/read/runs.rs`). Other helpers and constants
+that a rule about runs, a witness or a setup uses are still not compared, which `output.md`
+now says. The legal Rust files of the minor finding stay refused; `rust.md` says that a setup's
+values are written out or named constants, and that a witness condition after a chain reads the
+bound state only.
+
 ### Attacked and found correct
 
 - TLC as the oracle (`earnest confirm --tlc`): 220 generated TypeScript models with two fields,
