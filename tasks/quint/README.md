@@ -4294,3 +4294,14 @@ unreadable  specs/lib.qnt
 `quint verify --backend tlc --main Small clock.qnt` agrees: `--invariant inRange` finds no
 error, `--invariant belowLimit` and `--invariant 'not(atTop)'` each a violation.
 
+Proof, on the tree merged with the integration head `6362d76` (#71):
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no
+  warnings. `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2149 passed, 0 failed.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`, `every
+  model file: 392 runs, 0 differences`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, all in `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts`
+  and `clock.model.ts`, as on the integration head before this slice (#69's report).
