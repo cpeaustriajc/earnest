@@ -1825,3 +1825,237 @@ all from 16 files under `tasks/conformance/runs/` and `tasks/conformance/setups/
 are met with no record changed; `cargo test --locked -p earnest_break_it --features tlc --test
 tlc` passes its 12 tests with `tla2tools.jar` (with the TLC inside Apalache's jar, three
 `confirm --tlc` tests fail on the integration branch's own head as well).
+
+## Second Quint pass
+
+An adversarial pass over what was merged after the first one (setups built from one `quint
+typecheck`, `oneOf` over sets from the state, the #63 fixes, Reads 1 (#64) and Reads 2 (#65)),
+made on commit 7f18149 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_second.rs` and its files in `models/quint_second/`: each `.qnt` beside the
+JSON `quint compile --target json` (or `quint typecheck`) wrote for it, to a file, so the tests
+need no Node. Each of the six tests fails today. The oracles: `quint verify --backend tlc`
+(Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties,
+`quint test --backend typescript` for runs, and `quint run --backend typescript` and `--backend
+rust` (which could be fetched this time) for single values. `tla2tools.jar` is the one the
+`v1.8.0` release link serves today (`TLC2 Version 2026.11.26.020825 (rev: 1138302)`). Only cases
+where earnest matches neither backend, or contradicts its own docs, are findings.
+
+### A lambda or a `match` inside a temporal property is a fault
+
+`models/quint_second/temporal_lambda.qnt`: `s` goes from `Set()` to `Set(5)` (2 states), and
+`temporal small = always(s.forall(e => e < 9))`. `quint verify --backend tlc --temporal small`
+prints `[ok] No violation found`. Earnest: `fail`, ``fault  the rule `small` uses a value of the
+wrong kind in this state`` after the one step, and `small` is `unknown`; the same condition as an
+invariant holds. Any temporal property is hit the first time a lambda in it is applied: `always`,
+`eventually`, `always(eventually(...))`, leads-to, with or without fairness, a lambda written in
+the property or in a `val` or `def` it uses (`temporal t = always(allSmall)`), and a `match`
+(`pure def isInc(c) = match c { ... }` in a property). It is the most likely of these findings to
+meet a project: `always(eventually(NODES.forall(n => peers.get(n).status == "idle")))` in the
+project model below faults the same way, and the random comparison met it in most seeds. Cause:
+`temporal()` in `crates/earnest_quint/src/temporal.rs` builds each `Rule` and `Eventually` with
+`slots: 0`, where `invariants` in `model.rs` gives `reader.slots`, so what a lambda or a `match`
+binds has no slot in the frame. Right result: `small` holds. Test:
+`a_lambda_inside_a_temporal_property_is_judged_as_tlc_judges_it`.
+
+### A `nondet` inside a branch of a `match` of actions picks where the branch does not match
+
+`models/quint_second/match_nondet.qnt`: `type T = A(int) | B(Set[int])`, `t` starts as `A(1)`,
+and `step = match t { | A(n) => all { x' = n, t' = B(Set(2, 3)) } | B(s) => all { nondet w =
+s.oneOf() all { x' = w, t' = t } } }`. `quint verify --backend tlc --invariant small` finds 4
+distinct states and `[ok]`; `quint run --backend typescript --invariant small` finds no
+violation. Earnest: `fail`, ``fault  the condition of the action `step#2` uses a value of the
+wrong kind in this state`` in the start state, and `small` is `unknown`. In a larger model with
+`quint test` passing, every run through such an action broke with ``step 1: the set the action
+`exec#3` picks from uses a value of the wrong kind here``. In `t = A(1)` the `B` branch binds `s` to `A`'s value `1` and works out `1.oneOf()`. A
+guard inside the branch (`s.size() > 0`) is fine; only a `nondet` is hit. Cause: `cases` in
+`crates/earnest_quint/src/reader.rs` puts `tag == "B"` first among the path's guards, but the
+branch's `nondet` is a pick of the path, whose set the search works out before it tests any
+guard. Right result: `pass`, 4 states, `small` holds. Test:
+`a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`.
+
+### `fold` over tuples of ten or more items takes an order neither backend takes
+
+`models/quint_second/fold_tuple10.qnt`: `Wide = Set((0, 0, 0, 0, 0, 0, 0, 0, 0, 1), (0, 1, 0,
+0, 0, 0, 0, 0, 0, 0))`, and the invariant `lastFirst` is `Wide.fold(List(), (l, t) =>
+l.append(t))[0] == (0, 0, 0, 0, 0, 0, 0, 0, 0, 1)`. `quint verify --backend tlc --invariant
+lastFirst` prints `[ok] No violation found`; so does `quint run --backend typescript` (the REPL
+prints the other order for the same fold, `[(0, 1, …), (0, …, 1)]`, so the evaluator's order is
+not the written one either). Earnest: `lastFirst` broken in the start state. The docs say "A
+tuple of ten or more items compares its tenth item before its second". Apalache writes a Quint
+tuple as a TLA+ tuple, a function on `1..n`, and TLC compares it item by item from the first:
+folding five 11-item tuples into a list, TLC's state prints `<<0, …, 0, 1>>, <<0, …, 1, 0>>,
+<<0, 0, 1, …>>, <<0, 1, …>>, <<1, …>>`, where earnest prints `(0, 0, 1, …), (0, 1, …), (0, …,
+0, 1), (0, …, 1, 0), (1, …)`: it compares the fields `_1, _10, _11, _2, …` by name. `earnest
+confirm --tlc` can't see it: the export writes the same order (`pick.v_1 < other.v_1 \/ … v_10
+… v_2`), and on a copy of the module whose invariant reads a variable (`n == 0 implies …`) it
+says `same` while Quint's TLC run holds. Cause: the tuple case of the order behind
+`Op::InTlcOrder` (`crates/earnest_ir`). Right result: `lastFirst` holds. Test:
+`a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`.
+
+### The runs of a spec imported only under a name are dropped
+
+`models/quint_second/named_runs/named_runs.qnt`: `module Named { import Spec(K = 3) as C }`, the
+spec has `run upTest = init.then(step).expect(v == 1)`, and the check is `{ "main": "Named",
+"init": "C::init", "step": "C::step", "runs": true }`. `quint test --main Named` prints `ok
+Named::C::upTest passed 1 test(s)`. Earnest: `pass  Named  4 states` with no run listed. With
+`"runs": ["C::upTest"]` it is `unreadable`, ``the check names this run, and the compiled module
+has no run of this name``; with `["upTest"]`, ``... plays them only for a setup it builds itself
+from one `import Spec(...).*` ``. The docs list "An instance under a name" among the setups
+earnest builds and say a check's `runs` list may name `C::tickTwice`. The same check beside a
+second check of the same file whose module imports `.*` plays both runs (`tasks/quint/setups`,
+whose `Named` passes its behaviour test that way). Cause: `apps/earnest/src/quint.rs` typechecks
+a file only when `Places::may_be_a_setup` (`apps/earnest/src/places.rs`) is true for one of its
+checks, which asks for `imports_all_of_an_instance`. A file whose setups are all `as C` is
+compiled check by check, and `quint compile` drops the spec's runs, without a word. Every `as C`
+seed of the random comparison lost its four runs this way. Right result: `upTest` listed and
+holding. The test plays it with a fake `quint` that hands back the recorded `typecheck.json` and
+`Named.json`. Test: `the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them`.
+
+### `confirm --tlc` reads a broken temporal property as `unknown`
+
+`models/quint_second/confirm/broken_eventually.qnt`: `done` goes from `false` to `true`, and
+`temporal finish = eventually(done)` with no fairness: earnest says broken (the run may stutter
+at `done = false`), and so does Quint's TLC run (`[violation] Found an issue`). `earnest confirm
+--tlc tla2tools.jar broken_eventually.json` prints `differs`, ``rule finish: the checker says
+broken, TLC says unknown (Temporal property Eventually_finish was violated.)``. TLC printed the
+violation; `confirm.rs` reads a rule about runs as broken only on the exact line
+`Temporal properties were violated.` (`PROPERTY_BROKEN`). TLC's `tlc2/output/MP.class` has
+three forms: with one property name it writes `Temporal property %1% was violated.`, with
+several `Temporal properties A, B were violated.`, with none the old `Temporal properties were
+violated.`. Both jars here (the `v1.8.0` release's `tla2tools.jar` and the TLC inside Apalache
+0.62.4's jar) name the property. So it is earnest's comparison, not the export and not TLC's
+reading. This is the `differs` the #65 builder saw, and the cause of the #63 builder's three
+failing tests: `cargo test --locked -p earnest_break_it --features tlc --test tlc` here fails
+`runs::tlc_confirms_every_model_and_setup_of_the_runs_and_setups_conformance_models`,
+`runs::tlc_judges_every_rule_about_runs_of_small_generated_models_as_earnest_does` and
+`stutters::tlc_judges_every_quint_temporal_property_with_its_own_fairness_as_earnest_does` with
+the standalone jar too (9 passed, 3 failed, each on `TLC says unknown (Temporal property
+Eventually_p0 was violated.)`). It is the TLC version, not Apalache's jar, a flag or the
+manifest: the standalone jar those tests passed with was an older TLC (downloading an older
+release to show it was refused by this session's permission rules). A project that only has
+Quint's Apalache can use `confirm --tlc` for state counts, invariants and temporal properties
+that hold, but every broken rule about runs reads `differs`. The test gives `confirm` a fake
+`java` that prints TLC's recorded output. Right result: `same`. Test:
+`confirm_reads_a_temporal_property_that_tlc_names_as_violated_as_broken`.
+
+### `confirm --tlc` reads an invariant that reads no variable as `unknown`
+
+`models/quint_second/confirm/constant_false.qnt`: `val never = Set(1, 2).size() == 3`. Earnest
+says broken in the start state. TLC judges a formula that reads no variable before the search
+and prints `Error: The invariant of Rule_never is equal to FALSE`, not `Invariant Rule_never is
+violated`; `read_tlc` keeps it as an error, and `confirm` prints `differs`, ``the checker says
+broken, TLC says unknown (The invariant of Rule_never is equal to FALSE)``. Quint's own TLC run
+stops on the same module (`[failure] TLC encountered an error`). In a setup, every constant is
+replaced by its value, so an invariant over constants only (`val sane = N > 0`, when false)
+meets this. `fold_tuple10` meets it too. Right result: `same`. Test:
+`confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken`.
+
+### Legal Quint that earnest still refuses
+
+Constructs `quint typecheck` accepts, beyond the first pass's table and the docs' list of what is
+still refused. Marked *likely* where a project with constants, setups, sum types and liveness is
+likely to write it; *unclear* where the message does not say what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| `temporal served = weakFair(step, vars) implies NODES.forall(n => always(P(n) implies eventually(Q(n))))` (*likely*) | `` `always` ``: a temporal operator under `forall` is not read, in the definition `setups::Two::served`. Clear, but the definition is named by Quint's long name. Writing the `forall` inside (`always(eventually(NODES.forall(n => …)))`) is read, and then faults (the first finding) |
+| `assume Positive = N > 0` in a module checked as it is (*likely*, *unclear*) | `a declaration`: a declaration the reader does not know, such as an import or an instance, at 1:1: it names neither `assume` nor its line. In a spec used through a setup the `assume` is dropped without a word, `N = 0` included; Quint's TLC run drops it too (`[ok]` for `Bad` with `N = 0`), so it is not a finding |
+| a spec that imports a types module (`import types.* from "./types"`) (*likely*) | not refused: each setup of it is compiled, one Node start for each check, and the spec's runs are not played (the docs say so). The runs written in the setup module itself are played |
+| `weakFair(R::step, (P::v, R::v))` with two instances `P`, `R` | refused as the docs say, with Quint's long names in the message: ``where `Both::R::step` alone does not give `Both::P::v'` `` |
+
+### Attacked and found correct
+
+- Setups (`import Spec(…).*`, `as C`, two instances of one spec, a setup with its own `var`, a
+  spec that imports a types module), 13 checks with 3 to 177 048 states: a constant given by
+  the setup's own name where the spec has a constant of that name (`import Spec(A = 1, B = A)
+  as C` with the setup's `pure val A = 7`: `B` is 7), by an expression over an imported module
+  (`S = Set(L, L + 1)` with the spec's own `L = 100`), by a lambda (`S = Set(0).map(x => x +
+  Two)`) and by `getOnlyElement` of a map, a `nondet` of the spec that shadows a constant or the
+  name an override reads (`nondet Two` beside `K = Two`), a parameter and a lambda parameter
+  named like a constant, the setup's own `val`, `def` and `pure val` with the spec's names
+  under `as C`, constants of type variant, tuple, `int -> { id: int, msgs: List[Msg] }`, set
+  and text, `init` and `step` given as `C::init`, `C::step`, fairness over `(P::v, R::v)`. Every
+  state count, invariant and temporal verdict as `quint verify --backend tlc`, every run as
+  `quint test`, and every built check equal to the same check read from `quint compile --main`
+  (states and verdicts).
+- `oneOf` over sets from the state, 160 states: a set of records filtered through a map, a range
+  up to a value of a map picked by an earlier `nondet`, a set of tuples, `exclude(Set(o1))` in
+  `init`, an empty set, fairness of the action that picks: 4 invariants, 4 temporal properties
+  and 4 runs (one `fail()`) as TLC and `quint test`.
+- Folds and ranges: sets of maps of sets, of records, of variants, of mapped sets, of sets of
+  tuples with texts and a set picked by `nondet` and mapped to ranges, folded into lists, each
+  in TLC's order but the tuples of ten or more items; `0.to(999999)` and `range(0, 1000000)`
+  (exactly 1 000 000), negative ends, `in` a backwards range, `subseteq` of an empty range, `in`
+  `-10^9..10^9`, `setToMap` with each key once and of the empty set: 10 invariants as TLC.
+  `1.to(1000000).fold(0, …)` holds in earnest, and TLC ran out of memory on it.
+- Fairness of an action that assigns every variable only on some paths can't be written: Quint's
+  effect checker refuses `if`, `match` and `any` whose branches assign different variables
+  (`QNT000 Expected [x,y] and [x] to be the same`).
+- Operators as arguments, 9 states, 17 invariants: a lambda that reads a `nondet` and a state
+  variable, a parameter named like a variable (`shadow(x, x => x + 1)`), two levels with
+  reordered parameters (`app2`, `flip`, `compose`, `outer`), an operator handed to `map`,
+  `filter` and `fold`, `Bool`, `Nat` and `Int` in every position the docs list,
+  `getOnlyElement`, `fieldNames`, `foldr` on `[]`. As TLC (with `foldr`, `getOnlyElement` and an
+  operator handed straight to a builtin wrapped in lambdas, which Apalache refuses otherwise) and
+  as `quint run --backend typescript` and `--backend rust` on the direct forms.
+- A definition reached only through a setup's constant, a temporal property, a run, `init` or
+  fairness: a `chooseSome` in it is refused in each, naming the definition.
+- `match` of actions nested, with `_`, inside `any` and `all`, a branch value read in a guard;
+  `assert` true in a step and at the start of a run step; `weakFair(step, vars2)` with `val vars2
+  = vars`; `not(eventually(P))`, and `not(always(P))` with and without fairness: 15 states, 3
+  invariants, 4 temporal properties, 4 runs as TLC and `quint test`, once each `nondet` is out of
+  the `match`.
+- Printing: nested tuples, `()`, a variant inside a variant, a map with tuple keys and variant
+  values, a set of tuples, records named `{ tag, value }` and `{ _1 }`, in text, JSON, chart and
+  `earnest report`, as the docs' table says; `confirm --tlc` says `same` for both modules.
+- Paths: every broken invariant's path has as many steps as TLC's breadth-first counterexample
+  (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 43).
+- The cache and `--rule`: 68 rules in 7 folders, a second cached run and `--rule` for each rule
+  give the verdict and the path length of a full `--no-cache` run.
+
+### A model written as a project writes one
+
+`models/quint_second/project/`: `types.qnt` (a node name, `Msg = Request(Node) | Grant(Node) |
+Release(Node)`, `Holder = Nobody | Held(Node)`, a record `Peer`), `lock.qnt` (a lock server:
+constants `NODES`, `MAX_SENT`, `CAPACITY`; `peers: Node -> Peer`, the network as a
+`List[Msg]` queue, a waiting list, the holder, a count; `request` and `release` pick a node
+from a set worked out from the state, `deliver` is a `match` on the queue's head; five
+invariants and four temporal properties under `weakFair(step, vars)`) and `setups.qnt` (five
+setups: `as Two` with its own `init`, `step`, invariants and two runs, and four `.*` setups, one
+with its own run and one with a constant given by a `pure val`), checked from one
+`earnest.quint.json`. States: 179, 2 412, 1 752, 33 765 and 177 048. Every state count, every
+invariant (one broken, after 9 steps in both), every temporal property and the three runs are as
+`quint verify --backend tlc` and `quint test`, but `everyoneIdle` (`always(eventually(NODES.forall(n
+=> peers.get(n).status == "idle")))`), which faults as the first finding says. Timing on 4 cores,
+with the random comparison running beside it: `earnest verify` of all five, first run (three
+Node starts) 7.8 s, a second run with nothing changed 0.07 s; `huge` alone, 177 048 states, 1.2
+s of search in 9.9 s; `quint verify --backend tlc --main huge` 10.1 s for the four invariants and
+22.7 s for three temporal properties.
+
+### Usability notes
+
+- Messages name a setup's definitions by Quint's long names, where the docs say names print
+  short: ``in the definition `setups::Two::served` ``, ``which `ViaConst::Spec::ok` reaches through
+  `ViaConst::Spec::K` ``, ``where `Both::R::step` alone does not give `Both::P::v'` ``.
+- The branches of a `match` action are numbered in a path (`deliver#2`, `deliver#3`): the
+  reader has to count the branches to know that `#2` is `Grant`.
+- A `nondet` that shadows a constant prints as Quint renamed it: `1. step  A_51 = 3`.
+- A step of a map of records prints the whole map before and after (steps of the project
+  model are up to 404 characters on one line).
+- In JSON a record `{ tag: "A", value: 1 }` and the variant `A(1)` are both `{"tag": "A",
+  "value": 1}`, as in ITF; only the text says which.
+- Variant tags in a `fold` take TLC's first-met order there (`Set(Alpha(1), Zed(1), Zed(0))`
+  folds `Zed(0), Zed(1), Alpha(1)` in TLC and `Alpha(1), Zed(0), Zed(1)` in earnest). The docs
+  say so of texts and field names, not of tags.
+- `earnest replay` does not exist: the CLI has `verify`, `chart`, `report`, `tla` and `confirm`,
+  and replay is the TypeScript library's, so a printed Quint path can't be replayed.
+- Several `quint verify --backend tlc` started together fail on the Apalache server's port
+  (`Failed to bind to address 0.0.0.0:8822`); `--server-endpoint localhost:PORT` per process
+  avoids it. This is Quint's, not earnest's, but it costs a comparison script an evening.
+
+### Not covered
+
+Windows. Apalache's own checking. An older `tla2tools.jar` (the download was refused), so the
+plural TLC message is read from `MP.class`, not seen. `earnest replay` on a Quint path (no such
+command). Cases where only one Quint backend was asked: the TypeScript REPL's order for a fold
+over tuples disagrees with `quint run`, and was not followed further.
