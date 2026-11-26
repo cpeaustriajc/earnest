@@ -23,6 +23,15 @@ See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-c
 
 See [What is read today](/reference/quint/#what-is-read-today) and [What earnest runs](/reference/quint/#what-earnest-runs).
 
+## November 2026: Quint fairness over any shape of the variables, and properties that are an `and`
+
+Five setups of a real project wrote fairness and temporal properties in forms earnest refused. See [What is read today](/reference/quint/#what-is-read-today).
+
+- **Fairness over a shape of the variables:** `weakFair(A, Set(st))`, a record, a list or a nested tuple of every variable is read. `x + y`, `Set(x, y)` and `x.size()` are refused with the expression.
+- **A property that is an `and`:** each part is checked on its own as `P`, `P#2`, …, with the fairness of its own `implies`. A part with no temporal operator is judged in the start states, as Quint's backends judge it. `--rule P` checks every part of `P`.
+- **`forall` over a set that does not change:** at the top of a property, of a part, or of its fairness, it is the `and` over the set's items.
+- **`earnest confirm --tlc`:** a broken temporal property is read from `tla2tools.jar` 1.8, which writes ``Temporal property `name` was violated.``, where it was `unknown` and the check said `differs`.
+
 ## November 2026: `earnest --version` names the build
 
 `earnest --version` prints the commit and a fingerprint of the sources after the version, as in `earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)`, so a hook can tell two builds of one version apart. See [Which build is this](/reference/cli/#which-build-is-this).
