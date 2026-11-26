@@ -4582,3 +4582,98 @@ Proof, on the tree merged with `claude/lucid-brown-f5xvr8` (`6362d76`) and
 - `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
 - `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`,
   `every model file: 392 runs, 0 differences`.
+
+## Names in a module's doc, any doc line, and what a check sees (#72, after the review): report
+
+The rule as the issue was rewritten after the review: a mark may stand on any line of a doc
+comment, one mark per definition's doc; a module's doc may name what it judges in that check
+only, `/// @check levelOk, darkWhenOff`, `/// @check broken neverFull`, `/// @check reachable
+atTop`. This replaces the alias vals (`val darkHere = darkWhenOff`): every sample that had them
+names the spec's own definitions again (`setups/`, `first/`, `imports/`,
+`break_it/models/quint_second/project`, `break_it/models/quint_third/project`).
+
+What a check sees is `Places::visible`: its own definitions and every `import`, `instance` and
+`export` link, followed to any depth (at most 32), deduplicated by declaration and instance chain,
+so `Exported` (`import Base(K = 1) as B` and `export B.*`) judges `ok` once.
+
+### The import shapes, tried against Quint 0.33.1 [ran]
+
+`tasks/quint/shapes/` holds one file per shape with a module `U`; `record.py` runs
+`quint compile --main U --init uInit --step uStep --invariant <name>` for every value under every
+prefix the file names and writes `fixtures/accepted.json`. The test
+`places::tests::a_module_sees_exactly_the_values_quint_compile_accepts_for_every_import_shape`
+compares the values of `visible("U")` with it:
+
+| shape | Quint accepts |
+|---|---|
+| `import Base.*` | `bOk`, `bTwo` |
+| `import Base as A` | `A::bOk`, `A::bTwo` |
+| `import Base` | `Base::bOk`, `Base::bTwo` |
+| `import Base.bOk` | `bOk` |
+| `import Far.* from "./far"` | `farOk` |
+| `import Far as F from "./far"` | `F::farOk` |
+| `import Param(N = 3).*` | `pOk` |
+| `import Param(N = 3) as P` | `P::pOk` |
+| an instance of an instance, `import Mid(M = 4) as Q` | `Q::mOk` |
+| `import Mid.*`, `Mid` imports `Base.*` without exporting | `midOwn` |
+| `export` through one module | `bOk`, `bTwo`, `midOwn` |
+| `export` through two modules | `bOk`, `bTwo`, `midOwn` |
+| `import Mid as M`, `Mid` exports | `M::bOk`, `M::bTwo`, `M::midOwn` |
+| `import Mid.bOk`, `Mid` exports | `bOk` |
+| an instance through `export` (one and two modules) | `pOk` |
+| an instance of an instance through `export`, `import Mid(M = 4).*` | nothing |
+
+All 16 shapes Quint compiles agree exactly. The last one Quint 0.33.1 does not compile at all
+(`Internal error while flattening [QNT404] Name 'U::Mid::N' not found`, also with no invariant).
+The checker leaves it to Quint: a check there is `unreadable` with Quint's first error line, at the
+`.qnt` file (it was placed at a line of Quint's own `cli.js` before; now only a `.qnt` location is
+taken from Quint's output). No shape was made `unreadable` by the checker itself.
+
+### Following the migration message [ran]
+
+Each folder as on `claude/lucid-brown-f5xvr8` (`7080544`) with its checks file, checked by that
+build, against the folder with the message followed, checked by this one, both with Quint 0.33.1
+(`compare.py`: status, states, each rule's verdict and path):
+
+- `setups/`: every check the same, apart from runs ending in `Test` now played: `ByOwn` and
+  `ByName` `+fullTest`, `Two` `+upTest, fullTest`. `Single` was `unreadable` (its entry named the
+  imported `upTest`, which a compiled check can't play) and now passes, playing what it can and
+  noting `runs not played: Single::Base::upTest`. The followed copies of `Tight` and `Two` replace
+  the originals under their own names.
+- `first/`, `imports/`, `confirm/`, `quint_second/project`: every check the same.
+- `quint_third/project`: `three` and `two` become `threeChecked` and `twoChecked` (copies the
+  message asks for, since `three` has a run of its own), with the same states, verdicts and
+  paths; `threeKnown` `+oneEachTest`.
+- The folders also hold modules that only the behavior tests used before, now marked checks:
+  `setups/many.qnt` (`S1`..`S17`), `first/` (`HelperRun`, `Helpers`, `OwnRuns`, `PlainAs`,
+  `PlainStar`, `PlainFrom`, `PlainNested`, `RunsOnly`, `RunsOnlyNamed`, the `Shapes` modules),
+  `imports/` (`Good`, `Printing`, and the unreadable `Direct`, `Bad`, `fault`).
+- `first/OnlyRuns` keeps a failing `thirdOverTest`: the check fails and prints its path.
+
+### `--model`, `--rule` and `confirm --quint` [ran]
+
+- `--model Dim --rule darkWhenOff setups`: `Dim` with the rule `darkWhenOff` alone.
+  `--model Two --rule fine`: `pass`, `fine` holds (the rule's id is the printed name; `V1::fine`
+  is refused as no rule of `Two`). `--model OnlyRuns --rule thirdOverTest first`: the run alone,
+  broken. `--rule GuardedBreak quint_third/project`: `threeChecked` and `threeKnown` pass, `twoGuard`
+  fails, as before.
+- `earnest confirm --quint` (Quint 0.33.1, Java): `marked/specs` `bank`, `Small`, `Large` `same`;
+  `marked/names` `Holds`, `Broken`, `Reached`, `Plain` `same`; `quint_second/project` all five
+  `same`; `confirm/` `lift`, `words` `same`, and `big`, `halves`, `ranges` `cannot` as that sample
+  is built to be.
+
+### Stand-ins
+
+Every fake `quint` of the behavior and break_it tests now serves a parse and a source map recorded
+from Quint 0.33.1 for the very text it is given, or fails: the `with_marks` and `with_specs`
+helpers that added modules and ids with no source-map entry are gone. The marked samples are in
+`tasks/quint/checks/` with their recorded parses.
+
+### Proof, on the tree merged with `claude/lucid-brown-f5xvr8` (`7080544`) [ran]
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked`: 2187 passed, 0 failed.
+- `just docs`: `Complete!`.
+- `just same-answers origin/claude/lucid-brown-f5xvr8`: the three sweeps `0 differences`, `every
+  model file: 392 runs, 0 differences`.
