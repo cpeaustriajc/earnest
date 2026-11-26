@@ -267,9 +267,12 @@ rule changes since origin/main
   | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
   | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
   | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
-  | `marks` | `its marks are unreadable at <base>` | a mark of the file that belongs to no one check is unreadable at the base |
+  | `marks` | `its marks are unreadable at <base>: <line>:<column> <problem>` | a mark is unreadable at the base, as `earnest verify` would report it there |
 
-- A check whose own marks are unreadable at the base is `not compared` alone, named after the file (`  not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD`, `"model": "Bad"` in JSON), and the other checks of the file are compared.
+- The base is judged as `earnest verify` would judge it: every check it would judge there is compared, and only what it would not is `not compared`.
+  - A check whose own marks are unreadable at the base, which `earnest verify` would not judge there, is `not compared` alone, after the file: `` not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD: 10:1 the doc comment of `Bad` names `nosuch`, which the module does not see ``, and `"model": "Bad"` in JSON.
+  - An unreadable mark that belongs to no check, such as `/// @View state` above a `val`, leaves every check of the file compared, and the file is `not compared` for that mark alone: `` not compared  m.qnt  its marks are unreadable at HEAD: 18:1 the doc comment holds `@View state`, which is not a mark ``.
+  - The line gives the first problem, by its place in the base's file, cut at the message's first colon, and `, and 2 more` when there are others. JSON gives it whole in `problem`: `{ "file": "m.qnt", "line": 18, "column": 1, "message": "...", "more": 0 }`.
 - A file reached under two spellings, as `earnest verify --base HEAD specs ./specs`, is compared once, by its real path, and so is a `.qnt` file reached through a link: git's link at the base is not read.
 - `--model` and `--rule` narrow the checks as they narrow native models: `--rule belowSix` lists every change of each check that judges `belowSix`, at the working tree or at the base.
 
