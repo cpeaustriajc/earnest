@@ -1,4 +1,5 @@
 use crate::explore::{Note, Search};
+use crate::premise::{Premise, Premises};
 use earnest_ir::{Frame, Label, Piece};
 use earnest_value::Value;
 use hashbrown::hash_table::{Entry, HashTable};
@@ -25,6 +26,9 @@ pub struct Node {
     pub outside: Vec<String>,
     /// How many states it stands for.
     pub states: usize,
+    /// The positions in [`Graph::premises`] of the premises that hold in one of its states,
+    /// each once, from low to high. Empty when the model has no premise.
+    pub premises: Vec<usize>,
 }
 
 /// One arrow of a chart: every action that leads from a state of one node to a state of
@@ -54,6 +58,11 @@ pub struct Graph {
     pub nodes: Vec<Node>,
     /// The arrows, in the order their first action was taken.
     pub edges: Vec<Edge>,
+    /// The premises of the rules that were checked, in the order of their rules: the always
+    /// rules, then the eventually rules, each in the order the model declares them. A chart
+    /// routes its arrows to the first box where each holds, after the broken ones. Empty when
+    /// no rule has a premise; [`Node::premises`] says where each holds.
+    pub premises: Vec<Premise>,
 }
 
 fn add_once(names: &mut Vec<String>, name: &str) {
@@ -149,9 +158,11 @@ impl Search<'_> {
 
     pub(crate) fn graph(&self) -> Graph {
         let view = &self.model.view;
+        let premises = Premises::of(self.model, self.limits.only_rule.as_deref());
         let mut graph = Graph {
             title: view.title.clone(),
             colors: view.colors.clone(),
+            premises: premises.list.clone(),
             ..Graph::default()
         };
         let mut places: HashTable<usize> = HashTable::new();
@@ -196,6 +207,13 @@ impl Search<'_> {
             node_of.push(position);
             if let Some(node) = graph.nodes.get_mut(position) {
                 self.mark_node(node, id);
+                if !premises.is_empty() {
+                    for premise in premises.holding(state) {
+                        if let Err(place) = node.premises.binary_search(&premise) {
+                            node.premises.insert(place, premise);
+                        }
+                    }
+                }
             }
         }
         let mut edge_at: HashTable<usize> = HashTable::new();
