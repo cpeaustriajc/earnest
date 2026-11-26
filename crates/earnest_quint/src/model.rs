@@ -1,11 +1,14 @@
 use crate::Runs as Chosen;
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
+use crate::names::Short;
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
 use crate::runs::scripts;
 use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
-use earnest_ir::{Action, Code, End, Eventually, Expr, Field, Input, Model, Rule, Runs, View};
+use earnest_ir::{
+    Action, Code, End, Eventually, Expr, Field, Input, Model, Rule, Runs, Script, View,
+};
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::HashMap;
 
@@ -250,6 +253,38 @@ fn parts<'a>(
     Ok((starts, actions, rules, read.eventually))
 }
 
+fn shorten(
+    actions: &mut [Action],
+    rules: &mut [Rule],
+    eventually: &mut [Eventually],
+    scripts: &mut [Script],
+) {
+    let played = scripts.iter().flat_map(|script| &script.actions);
+    let short_actions = Short::of_ids(actions.iter().chain(played).map(|each| each.id.as_str()));
+    for action in actions.iter_mut() {
+        short_actions.rename_action(action);
+    }
+    for action in scripts.iter_mut().flat_map(|script| &mut script.actions) {
+        short_actions.rename_action(action);
+    }
+    let short_rules = Short::of_ids(
+        rules
+            .iter()
+            .map(|each| each.id.as_str())
+            .chain(eventually.iter().map(|each| each.id.as_str()))
+            .chain(scripts.iter().map(|each| each.id.as_str())),
+    );
+    for rule in rules {
+        short_rules.rename_rule(rule);
+    }
+    for rule in eventually {
+        short_rules.rename_eventually(rule);
+    }
+    for script in scripts {
+        short_rules.rename_script(script);
+    }
+}
+
 pub(crate) fn model(path: &str, compiled: &Compiled, runs: &Chosen) -> Result<Model, Vec<Refusal>> {
     let met = built(path, compiled, Symbols::default(), runs)?;
     built(path, compiled, met.symbols.alphabetical(), runs)
@@ -287,7 +322,11 @@ fn built(
         })
         .collect();
     let variables = variables(&module.declarations);
-    let names: Vec<String> = variables.iter().map(|each| each.name.to_owned()).collect();
+    let short_fields = Short::of(variables.iter().map(|each| each.name));
+    let names: Vec<String> = variables
+        .iter()
+        .map(|each| short_fields.name(each.name))
+        .collect();
     let positions = variables
         .iter()
         .enumerate()
@@ -301,15 +340,17 @@ fn built(
         }));
     };
     let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
-    let (starts, actions, rules, eventually) =
+    let (starts, mut actions, mut rules, mut eventually) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
-    let scripts = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    let mut scripts = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
+    shorten(&mut actions, &mut rules, &mut eventually, &mut scripts);
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
+        .zip(&names)
         .enumerate()
-        .map(|(position, variable)| {
+        .map(|(position, (variable, name))| {
             let mut values: Vec<Value> = starts
                 .iter()
                 .filter_map(|state| state.get(position).cloned())
@@ -317,8 +358,8 @@ fn built(
             values.sort();
             values.dedup();
             Field {
-                name: variable.name.to_owned(),
-                sym: symbols.intern(variable.name),
+                name: name.clone(),
+                sym: symbols.intern(name),
                 domain: variable.domain,
                 starts: values,
             }

@@ -56,7 +56,7 @@ fn a_run_with_no_fairness_may_stop_in_its_start_state() {
     let run = verify(&sandbox, &[]);
     run.exits(1);
     let detail = run.detail("SmallBits");
-    let path = path_under(&detail, &["broken", "SmallBits::ClockBits::allHeard"]);
+    let path = path_under(&detail, &["broken", "allHeard"]);
     assert!(path.actions().is_empty(), "the run stops at once\n{run}");
     assert!(
         detail.iter().any(|line| line.contains(STOPS)),
