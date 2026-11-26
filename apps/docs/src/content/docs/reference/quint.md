@@ -7,7 +7,7 @@ description: Mark the modules and properties of a Quint model with /// @check, c
 
 ## Checks marked in the model
 
-Mark a module with a doc comment that starts with `@check` to make it a check, and mark its properties the same way. The lines below a mark describe the check or are the rule's sentence:
+Mark a module with a `/// @check` doc comment to make it a check, and mark its properties the same way. The other lines of a doc comment describe the check or are the rule's sentence, above or below the mark:
 
 ```quint title="specs/clock.qnt"
 module Clock {
@@ -27,16 +27,18 @@ module Clock {
   /// @check
   /// The time is in range in every state of every run.
   temporal alwaysInRange = always(inRange)
+  val belowSix = time < 6
   run tickTest = init.then(step).expect(time == 1)
+  run tickTwice = init.then(step).then(step).expect(time == 2)
 }
 
-/// @check
 /// The clock that counts to three.
+/// @check
 module Small {
   import Clock(Limit = 3).*
 }
 
-/// @check
+/// @check C::belowSix, C::tickTwice
 module Large {
   import Clock(Limit = 5) as C
   action init = C::init
@@ -55,7 +57,7 @@ pass        Small  4 states  0 ms  4 rules, 1 run
     2. step  time: 1 -> 2
     3. step  time: 2 -> 3
     end    time = 3
-pass        Large  6 states  0 ms  4 rules, 1 run
+pass        Large  6 states  0 ms  5 rules, 2 runs
   broken  belowLimit  (expected)
   reached  atTop
     start  time = 0
@@ -71,39 +73,50 @@ pass        Large  6 states  0 ms  4 rules, 1 run
 | Mark | On | Means |
 |---|---|---|
 | `/// @check` | a `module` | the module is a check, named by the module's name |
-| `/// @check` | a `val` or `def` of type `bool`, or a `temporal` definition | the property must hold |
+| `/// @check a, b` | a `module` | the module is a check, and it also judges `a` and `b`, which it sees, as if they were marked `/// @check`. Only this check judges them |
+| `/// @check broken a, b` | a `module` | the same, with `a` and `b` expected to break |
+| `/// @check reachable a` | a `module` | the same, with a state expected to make the value `a` true |
+| `/// @check` | a `val` or `def` of type `bool` with no parameters, or a `temporal` definition | the property must hold, in every check that sees it |
 | `/// @check broken` | the same | the property must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
 | `/// @check reachable` | a `val` or `def` of type `bool` | a reachable state must make it true. The result prints `reached  atTop` and the path to that state |
 | `/// @check` | a `run` | the run is played, whatever its name |
 | `/// @check broken` | a `run` | the run must fail |
 
-- Only a module whose own doc comment starts with `@check` is checked. A module with no mark is not judged, whatever runs it holds, so a spec, a helper or a sample is left alone. `Clock` is not marked; it also sets no `Limit`.
-- A check judges every marked property it sees: its own, and those of the modules it imports or instantiates. `inRange` counts in `Small`, and as `C::inRange` in `Large`. A property judged in one setup and not in another is marked in that setup: `/// @check val darkHere = darkWhenOff`, not on the spec.
-- A check plays every run it sees whose name ends in `Test`, as `quint test --main` plays them, and every marked run. The runs of a module it imports are played as described in [Runs](#runs).
-- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. One with no marked property, or with no `init` or `step`, plays its runs and searches nothing: a check of runs only, whose line has `0 states`.
-- The result line of each `.qnt` model counts its rules and its runs, `4 rules, 1 run`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
+- Only a module whose own doc comment holds a mark is checked. A module with no mark is not judged, whatever runs it holds, so a spec, a helper or a sample is left alone. `Clock` is not marked; it also sets no `Limit`.
+- A check judges every marked property it sees: its own, and those of the modules it imports, instantiates or that are exported to it, as `quint compile --main` resolves them. `inRange` counts in `Small`, and as `C::inRange` in `Large`.
+- A property judged in one check and not in another is named in that check's doc comment, as `C::belowSix` in `Large`, and left unmarked in the spec. A name is written as the module sees it: `C::belowSix` under `import Clock(...) as C`, `belowSix` under `import Clock(...).*`.
+- A check plays every run it sees whose name ends in `Test`, as `quint test --main` plays them, and every marked or named run. The runs of a module it imports are played as described in [Runs](#runs).
+- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has `0 states`.
+- A mark may stand on any line of a doc comment, and a definition's doc comment holds one mark.
+- The result line of each `.qnt` model counts its rules and its runs, `5 rules, 2 runs`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
 - Each of these is `unreadable`, at the line of the mark:
-  - `@check` followed by a word earnest does not know, such as `@check reachble`, on a module or a definition, and a mark on a definition it does not fit, such as `@check reachable` on an `action`;
+  - `@check` followed by a word earnest does not know, such as `@check reachble`;
+  - `///@check` with no space after the slashes, which `quint parse` hands over as `check`;
+  - a second mark in one doc comment;
+  - names after a mark on a definition: names go in a module's doc comment;
+  - a mark on something no check judges: an `action`, a `var`, a `const`, an `import` or `instance`, a `type`, or a definition with parameters;
+  - `@check reachable` on anything but a `val` or `def` value;
+  - a name in a module's doc comment that the module does not see;
   - a marked module that leaves a constant unset: mark a module that sets it, as `module Small { import Clock(Limit = 3).* }`;
-  - a marked module with nothing to judge: no marked property it can search for and no run to play;
+  - a marked module with a property to judge and no `init` or `step` by those names: the message shows the `action init = ...` or `action step = ...` to write;
+  - a marked module with nothing to judge: no property and no run to play;
   - a marked definition or run that no check sees, such as a mark on a spec whose setups are not marked.
 - A `reachable` mark that no reachable state meets prints `never reached  atTop` and fails the check. A search stopped by `--max-states` or `--time-limit` before it is judged prints `unknown  atTop`, and the model is `unfinished`, as for `broken`.
 - In the JSON a `reachable` rule keeps its verdict, `broken` when the state was reached, and adds `"expected": "reached"`.
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from what `quint parse` gives, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
+- When `quint compile` itself fails on a check's module, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
 
 ### What a checks file said
 
 A check that needs another `init` or `step`, or a second check of one module with other properties, is a module of its own that imports the spec under a name:
 
 ```quint title="specs/vault.qnt"
-/// @check
+/// @check broken V::nonNegative
 module vaultForever {
   import vault as V
   action init = V::init
   action step = V::stepForever
-  /// @check broken
-  val nonNegative = V::nonNegative
 }
 ```
 
@@ -111,22 +124,24 @@ module vaultForever {
 
 ## A checks file left over
 
-Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the module to mark, each property with its mark and its `file:line`, a note when a mark on a spec would also count in setups whose entries did not list it, and for an entry with another `init` or `step`, or a `name`, the module to add. In the text output the module to add keeps its lines, so it can be copied:
+Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the marks above the module, with its `file:line`, the names each judges, a `val` for each property the entry wrote as an expression, the module to add for an entry with another `init` or `step` or a `name`, and the runs ending in `Test` that are played from now on although the entry left them out. In the text output the lines to write keep their own lines, so they can be copied:
 
 ```text
-unreadable  specs/earnest.quint.json
-  specs/earnest.quint.json:1:1  `earnest.quint.json`  earnest no longer reads `earnest.quint.json`: ...
-      1. `clock.qnt`, module `Small`: write `/// @check` above `module Small`, `clock.qnt:14`; write `/// @check` above `inRange` of the module `Clock`, `clock.qnt:7`
+unreadable  old/earnest.quint.json
+  old/earnest.quint.json:1:1  `earnest.quint.json`  earnest no longer reads `earnest.quint.json`: ...
+      1. `clock.qnt`, the check of `Small`: write these lines above `module Small` (`clock.qnt:14`):
+            /// @check inRange, alwaysInRange
       2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to `clock.qnt`, and mark nothing in `Small` for it:
-      /// @check
-      module SmallBroken {
-        import Clock(Limit = 3) as V
-        action init = V::init
-        action step = V::step
-        /// @check broken
-        val belowLimit = V::belowLimit
-      }
+            /// @check broken V::belowLimit
+            module SmallBroken {
+              import Clock(Limit = 3) as V
+              action init = V::init
+              action step = V::step
+            }
+            the runs of the entry can't be kept as they are: a check plays every run it sees whose name ends in `Test`, so `tickTest` is played from now on, which the entry left out
 ```
+
+An entry that wrote a property as an expression, such as `"invariants": [{ "name": "nonNegative", "is": "n >= 0" }]`, is given the `val` to add with its mark: `/// @check nonNegative` above the module and `val nonNegative = n >= 0` inside it. An expression with no `name` gets the name `property`, then `property2`.
 
 A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste.
 
@@ -373,7 +388,7 @@ Quint's TLC run and its TypeScript evaluator give different answers to a few exp
 
 ## Runs
 
-A check plays the `run` definitions it sees whose name ends in `Test`, as `quint test` picks them, and every run marked `/// @check` or `/// @check broken`, in the order of the file. A compiled `.json` named on the command line plays the runs whose name ends in `Test`.
+A check plays the `run` definitions it sees whose name ends in `Test`, as `quint test` picks them, and every run marked `/// @check` or `/// @check broken` or named in the check's doc comment, in the order of the file. A compiled `.json` named on the command line plays the runs whose name ends in `Test`.
 
 Each run is listed after the invariants and temporal properties, with `"kind": "witness"`, the run's name as its id, and the sentence ``The Quint run `name` passes``. A broken run shows the path it broke on and a `why` line:
 
@@ -432,7 +447,7 @@ The runs of the spec module are played in a setup that earnest builds from `quin
 
 With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3) as R`, the run `P::upTest` starts with `P::init` and is played over `P::v` alone, as `quint test --main Pair` plays it.
 
-A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A marked run that only an imported module has makes such a check `unreadable`, and the problem says why. Otherwise the check plays the runs the compiled module holds and says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as `quint test` names them: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note.
+A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A marked or named run that only an imported module has makes such a check `unreadable`, and the problem says why. Otherwise the check plays the runs the compiled module holds and says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as `quint test` names them: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note.
 
 ```text
 pass        Plays  0 states  0 ms  0 rules, 1 run
@@ -515,7 +530,7 @@ quint verify /work/specs/clock.qnt --main Small --backend tlc --init init --step
 
 That job gives TLC's state count and, when it finds no violation, the verdict of every property. TLC stops at the first violation and does not say which property broke, so when the job finds one, or stops with an error, each property gets a job of its own, and the line names the property Quint refused. A property marked `broken` gets its own job from the start. When no job finishes without a violation, one more job with no property gives the count. A check whose properties all hold costs one job, and each job starts Java, about 7 seconds.
 
-For each check that plays runs, earnest starts one `quint test --backend typescript --main Small`, with `--match 'Test$'` when the check plays only the runs whose name ends in `Test`, or a `--match` of the runs it plays when one of them is marked. Each run's verdict is compared: `ok` is `holds`, `failed` is `broken`. A run that `quint test` plays and the checker does not differs. A run the checker lists as [not played](#runs) is never `same`: it differs when `quint test` breaks it, since the check then passes a run Quint breaks, and is `cannot` when `quint test` passes it. The names are compared whole, `setup::spec::upTest` against `setup::spec::upTest`.
+For each check that plays runs, earnest starts one `quint test --backend typescript --main Small`, with `--match 'Test$'` when the check plays only the runs whose name ends in `Test`, or a `--match` of the runs it plays when one of them is marked or named. Each run's verdict is compared: `ok` is `holds`, `failed` is `broken`. A run that `quint test` plays and the checker does not differs. A run the checker lists as [not played](#runs) is never `same`: it differs when `quint test` breaks it, since the check then passes a run Quint breaks, and is `cannot` when `quint test` passes it. The names are compared whole, `setup::spec::upTest` against `setup::spec::upTest`.
 
 ### When it prints `cannot`
 

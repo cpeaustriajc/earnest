@@ -201,10 +201,11 @@ pub(crate) fn not_seen(name: &str) -> String {
 
 pub(crate) fn how_to_mark() -> String {
     format!(
-        "a module is checked when its doc comment starts with `{MARK}`: write `/// {MARK}` on the \
-         line above `module Name {{`, and mark each property it judges the same way, `/// {MARK}` \
-         on the line above its `val` or `temporal` definition. A module that sees `init` and \
-         `step` searches; every run it sees whose name ends in `Test` is played"
+        "a module is checked when its doc comment holds the mark `/// {MARK}`: write it on the \
+         line above `module Name {{`, and mark each property it judges the same way, on the line \
+         above its `val` or `temporal` definition, or name the properties after the module's \
+         mark, `/// {MARK} inRange, alwaysInRange`. A module that sees `init` and `step` \
+         searches; every run it sees whose name ends in `Test` is played"
     )
 }
 
