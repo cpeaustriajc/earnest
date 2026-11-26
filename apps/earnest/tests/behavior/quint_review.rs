@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 12] = [
+const SETS: [&str; 20] = [
     "samename",
     "exported",
     "nospace",
@@ -68,6 +68,14 @@ const SETS: [&str; 12] = [
     "onename",
     "importedtests",
     "importedrun",
+    "specassume",
+    "spechelper",
+    "twosetups",
+    "commasentence",
+    "sumtype",
+    "typesmodule",
+    "barecomma",
+    "falseassume",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -110,6 +118,25 @@ impl Quint {
         }
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
+    }
+
+    fn without_typecheck(&self, set: &str) {
+        fs::remove_dir_all(
+            self.sandbox
+                .path()
+                .join("fake/fixtures/typechecked")
+                .join(set),
+        )
+        .expect("the typecheck of the set goes");
+    }
+
+    fn compiles(&self) -> Vec<String> {
+        self.sandbox
+            .read("fake/calls")
+            .lines()
+            .filter(|call| call.starts_with("compile"))
+            .map(str::to_owned)
+            .collect()
     }
 
     fn report(&self, set: &str) -> Value {
@@ -352,4 +379,148 @@ fn a_run_marked_in_an_imported_module_is_judged_or_said_how_to_judge_it() {
              what to write: {message}"
         );
     }
+}
+
+fn played_and_broken(report: &Value, main: &str, run: &str) {
+    let found = model(report, main);
+    assert_eq!(
+        found["status"], "fail",
+        "`quint test --main {main} --backend typescript` fails `{run}`: {found}"
+    );
+    assert!(
+        verdicts(found)
+            .iter()
+            .any(|(id, verdict)| id.ends_with(run) && verdict == "broken"),
+        "{found}"
+    );
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_holds_an_assumption_is_played_in_the_check_that_imports_it() {
+    let report = Quint::new().report("specassume");
+    played_and_broken(&report, "Setup", "upTest");
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_imports_a_helper_under_a_name_is_played_in_the_check_that_imports_it()
+ {
+    let report = Quint::new().report("spechelper");
+    played_and_broken(&report, "Setup", "upTest");
+}
+
+#[test]
+fn a_check_that_imports_a_spec_whole_is_judged_when_another_check_of_the_file_imports_it_under_a_name()
+ {
+    let report = Quint::new().report("twosetups");
+    let whole = find_model(&report, "Whole").unwrap_or_else(|| {
+        panic!(
+            "`Whole` is `import Spec.*` beside `Named`'s `import Spec as S`, no module exports \
+             anything, and the message blames an export; earnest builds `Whole` once `Spec` has \
+             a run ending in `Test`: {report}"
+        )
+    });
+    assert!(
+        verdicts(whole).contains(&("small".to_owned(), "broken".to_owned())),
+        "{whole}"
+    );
+}
+
+#[test]
+fn a_name_list_whose_comma_is_followed_by_a_sentence_is_not_called_an_unknown_mark() {
+    let report = Quint::new().report("commasentence");
+    for (file, feature, message) in unreadable(&report) {
+        assert!(
+            !message.contains("not a mark the checker knows"),
+            "{file} {feature}: `/// @check broken small,` then `/// which the third step \
+             breaks.` uses a known word; the message sends the author to the three words and \
+             not to the trailing comma: {message}"
+        );
+    }
+}
+
+#[test]
+fn a_failing_run_of_a_spec_whose_state_holds_a_sum_type_is_played_in_the_check_that_imports_it() {
+    let report = Quint::new().report("sumtype");
+    played_and_broken(&report, "Setup", "twiceTest");
+}
+
+#[test]
+fn a_failing_run_of_a_spec_that_imports_its_types_from_a_types_file_is_played_in_the_setup_file() {
+    let report = Quint::new().report("typesmodule");
+    played_and_broken(&report, "Setup", "twiceTest");
+}
+
+#[test]
+fn a_bare_mark_followed_by_a_comma_as_the_unreadable_names_line_asks_is_read_on() {
+    let report = Quint::new().report("barecomma");
+    let judged = find_model(&report, "W3").map_or_else(Vec::new, verdicts);
+    assert!(
+        judged.iter().any(|(id, _)| id == "ok"),
+        "`/// @check` then `/// ok` is unreadable with `end the line of the mark with a comma`; \
+         doing so, `/// @check,` then `/// ok`, is called `not a mark the checker knows` and no \
+         module is checked: {report}"
+    );
+}
+
+fn built_and_compiled(set: &str, main: &str) {
+    let built = Quint::new();
+    let ours = built.report(set);
+    assert!(
+        !built
+            .compiles()
+            .iter()
+            .any(|call| call.contains(&format!("--main {main} "))),
+        "{set}: `{main}` is built from the typecheck: {:?}",
+        built.compiles()
+    );
+    let compiled = Quint::new();
+    compiled.without_typecheck(set);
+    let theirs = compiled.report(set);
+    let (ours, theirs) = (model(&ours, main), model(&theirs, main));
+    assert_eq!(
+        ours["states"], theirs["states"],
+        "{set}: states\n{ours}\n{theirs}"
+    );
+    let searched = |found: &Value| -> Vec<Value> {
+        found["rules"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| rule["kind"] != "witness")
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        searched(ours),
+        searched(theirs),
+        "{set}: each property, its verdict and its path, as `quint compile` gives them"
+    );
+    assert!(
+        ours["runsNotPlayed"].is_null()
+            && ours["rules"]
+                .as_array()
+                .is_some_and(|rules| rules.iter().any(|rule| rule["kind"] == "witness")),
+        "{set}: the built check plays the runs of the spec it imports: {ours}"
+    );
+}
+
+#[test]
+fn a_spec_whose_state_holds_a_sum_type_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("sumtype", "Setup");
+}
+
+#[test]
+fn a_spec_that_imports_its_types_from_another_file_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("typesmodule", "Setup");
+}
+
+#[test]
+fn a_spec_that_holds_an_assumption_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("specassume", "Setup");
+    built_and_compiled("falseassume", "Setup");
+}
+
+#[test]
+fn a_spec_that_imports_a_helper_under_a_name_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("spechelper", "Setup");
 }

@@ -168,8 +168,11 @@ fn the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tu
     let module = fs::read_to_string(sandbox.path().join("exported/buyers.tla"))
         .unwrap_or_else(|error| panic!("the module is written: {error}\n{run}"));
     assert!(
-        module.contains("Fair_reachDeadline_1 ==\n    \\E buyer \\in {\"ann\"} :"),
-        "the action given `ann` picks `ann` alone\n{module}"
+        module.contains(
+            "Fair_reachDeadline_1_way_1 ==\n    IF InRange\n    THEN /\\ lastBuyer' = \"ann\""
+        ) && module.contains("Fair_reachDeadline_1 ==\n    Fair_reachDeadline_1_way_1\n"),
+        "the fairness is of `reachDeadline(\"ann\")` alone, its definition given `ann`, with the \
+         variables it does not assign left to the rest of the step\n{module}"
     );
     assert!(
         module.contains(

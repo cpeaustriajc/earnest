@@ -425,6 +425,12 @@ fn quint_place(said: &str, job: &Job) -> (String, Place) {
         let (Ok(column), Ok(number)) = (column.parse::<u32>(), number.parse::<u32>()) else {
             continue;
         };
+        if !Path::new(file)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("qnt"))
+        {
+            continue;
+        }
         return (
             shown_in(Path::new(file), job),
             Place {
@@ -610,12 +616,37 @@ fn compiled_runs(found: &Places, job: &Job, json: &str, unplayed: &mut Vec<Strin
     }
 }
 
+fn not_built(
+    job: &Job,
+    typechecked: Option<&Typechecked>,
+    found: Option<&Places>,
+) -> Option<String> {
+    let Some(typechecked) = typechecked else {
+        return Some("`quint typecheck` gave nothing to build the check from".to_owned());
+    };
+    let (id, written) = typechecked.not_built(&job.check.main)?;
+    let at =
+        found
+            .and_then(|found| found.spot_of(id))
+            .map_or_else(String::new, |(file, line, _)| {
+                format!(
+                    " at `{}:{}`",
+                    shown_in(Path::new(file), job),
+                    line.saturating_add(1)
+                )
+            });
+    Some(format!(
+        "the checker does not build `{written}`{at} from `quint typecheck`"
+    ))
+}
+
 fn builds(found: &Places, job: &Job) -> bool {
     let main = &job.check.main;
     found.may_be_a_setup(main)
         || lacks_a_search(&job.check, Some(found))
         || (job.check.invariants.is_empty() && job.check.temporal.is_empty())
         || found.plays_an_imported_run(main, &job.check.runs)
+        || found.imports_whole(main)
 }
 
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
@@ -1190,6 +1221,9 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     expected,
                     reachable,
                     counted: true,
+                    not_built: (!runs_not_played.is_empty())
+                        .then(|| not_built(job, typechecked.get(&job.real), places.get(&job.real)))
+                        .flatten(),
                     runs_not_played,
                     quint: job.quint.as_ref().ok().map(|quint| as_asked(job, quint)),
                 }]),
