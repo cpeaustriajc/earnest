@@ -1829,16 +1829,17 @@ tlc` passes its 12 tests with `tla2tools.jar` (with the TLC inside Apalache's ja
 ## Second Quint pass
 
 An adversarial pass over what was merged after the first one (setups built from one `quint
-typecheck`, `oneOf` over sets from the state, the #63 fixes, Reads 1 (#64) and Reads 2 (#65)),
-made on commit 7f18149 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+typecheck`, `oneOf` over sets from the state, the #63 fixes, Reads 1 (#64) and Reads 2 (#65)), made
+on commit 7f18149 of the integration branch with Quint 0.33.1 from npm. Its tests are in
 `tests/break_it/quint_second.rs` and its files in `models/quint_second/`: each `.qnt` beside the
-JSON `quint compile --target json` (or `quint typecheck`) wrote for it, to a file, so the tests
-need no Node. Each of the seven tests there, and one more under `tests/tlc/`, fails today. The oracles: `quint verify --backend tlc`
-(Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties,
-`quint test --backend typescript` for runs, and `quint run --backend typescript` and `--backend
-rust` (which could be fetched this time) for single values. `tla2tools.jar` is the one the
-`v1.8.0` release link serves today (`TLC2 Version 2026.11.26.020825 (rev: 1138302)`). Only cases
-where earnest matches neither backend, or contradicts its own docs, are findings.
+JSON `quint compile --target json` (or `quint typecheck`) wrote for it, to a file, so the tests need
+no Node. Each of the seven tests there, and one more under `tests/tlc/`, fails today. The oracles:
+`quint verify --backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants
+and temporal properties, `quint test --backend typescript` for runs, and `quint run --backend
+typescript` and `--backend rust` (which could be fetched this time) for single values.
+`tla2tools.jar` is the one the `v1.8.0` release link serves today (`TLC2 Version 2026.11.26.020825
+(rev: 1138302)`). Only cases where earnest matches neither backend, or contradicts its own docs, are
+findings.
 
 ### A lambda or a `match` inside a temporal property is a fault
 
@@ -1851,7 +1852,8 @@ invariant holds. Any temporal property is hit the first time a lambda in it is a
 the property or in a `val` or `def` it uses (`temporal t = always(allSmall)`), and a `match`
 (`pure def isInc(c) = match c { ... }` in a property). It is the most likely of these findings to
 meet a project: `always(eventually(NODES.forall(n => peers.get(n).status == "idle")))` in the
-project model below faults the same way, and the random comparison met it in most seeds. Cause:
+project model below faults the same way, and the random comparison met it in 72 of its 84
+default seeds. Cause:
 `temporal()` in `crates/earnest_quint/src/temporal.rs` builds each `Rule` and `Eventually` with
 `slots: 0`, where `invariants` in `model.rs` gives `reader.slots`, so what a lambda or a `match`
 binds has no slot in the frame. Right result: `small` holds. Test:
@@ -1958,41 +1960,39 @@ meets this. `fold_tuple10` meets it too. Right result: `same`. Test:
 
 ### `confirm --tlc` can't compare variants whose values have different types
 
-`models/quint_second/confirm/variant_compare.qnt`: `type Holder = Nobody | Held(str)`, `holder`
-goes from `Nobody` to `Held("a")` while a map gets a key (`m' = m.put(1, 1)`), and the invariant
-`known` is `holder == Nobody or holder == Held("a")`. Earnest and `quint verify --backend tlc`
-say it holds in both states. `earnest confirm --tlc` prints `differs`, ``rule known: the checker
-says holds, TLC says unknown (Evaluating invariant Rule_known failed.)``: TLC stops with
-`Attempted to check equality of string "a" with non-string: <<>>`. The export writes a variant as
-the record `[tag |-> "Held", value |-> "a"]`, and `Nobody` as `[tag |-> "Nobody", value |->
-<<>>]`. TLC compares a record's fields in the order it first met their names, and the export's
-helper `MapSet(map, key, value)`, written whenever the model updates a map, makes it meet `value`
-before `tag`, so TLC compares `"a"` with `<<>>` before it sees that the tags differ. Without the
-map the same module is `same`. Apalache writes a variant as a record with one field named by the
-tag (`[Held |-> "a"]`, as TLC's state prints show in Quint's own runs), which TLC compares
-without error. The project model meets it on its state count and every rule (`holder ==
-Held(n)`, `net` of three kinds of message). Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the
-`tlc` feature, as the first pass's TLC tests are: `cargo test --locked -p earnest_break_it
---features tlc --test tlc quint_second`. Test:
-`tlc_compares_variants_whose_values_have_different_types_in_the_export`.
+`models/quint_second/confirm/variant_compare.qnt`: `type Holder = Nobody | Held(str)`, `holder` goes
+from `Nobody` to `Held("a")` while a map gets a key (`m' = m.put(1, 1)`), and the invariant `known`
+is `holder == Nobody or holder == Held("a")`. Earnest and `quint verify --backend tlc` say it holds
+in both states. `earnest confirm --tlc` prints `differs`, ``rule known: the checker says holds, TLC
+says unknown (Evaluating invariant Rule_known failed.)``: TLC stops with `Attempted to check
+equality of string "a" with non-string: <<>>`. The export writes a variant as the record `[tag |->
+"Held", value |-> "a"]`, and `Nobody` as `[tag |-> "Nobody", value |-> <<>>]`. TLC compares a
+record's fields in the order it first met their names, and the export's helper `MapSet(map, key,
+value)`, written whenever the model updates a map, makes it meet `value` before `tag`, so TLC
+compares `"a"` with `<<>>` before it sees that the tags differ. Without the map the same module is
+`same`. Apalache writes a variant as a record with one field named by the tag (`[Held |-> "a"]`, as
+TLC's state prints show in Quint's own runs), which TLC compares without error. The project model
+meets it on its state count and every rule (`holder == Held(n)`, `net` of three kinds of message).
+Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the `tlc` feature, as the
+first pass's TLC tests are: `cargo test --locked -p earnest_break_it --features tlc --test tlc
+quint_second`. Test: `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
 
 ### A cached result is served after the check's `runs` changed
 
-`models/quint_second/cached_runs/cached_runs.qnt`: `run upTest = init.then(step).expect(v == 1)`
-and `run downTest = init.then(step).expect(v == 0)`; `quint test` passes `upTest` and fails
-`downTest`. Check it with `"runs": ["upTest"]` (`pass`), then change the entry to `"runs":
-["downTest"]` and run `earnest verify` again: it prints `pass  cached_runs  3 states  0 ms  (cached)`,
-the first run's result with `upTest` holding, where `earnest verify --no-cache` prints `fail` with
-`downTest` broken. The same from `true` to a list, from a list to none, and on a built setup
-(the project model's `setups` kept `releaseTest` after its `runs` became `["grantTest"]`). The
-docs say a compiled module is reused while the check's `runs` are the same, and that the result
-cache serves "a check whose compiled JSON is unchanged". Cause: the result cache's key holds the
-compiled (or built) JSON as `source` (`apps/earnest/src/quint.rs`), and `quint compile` takes no
-runs, so the JSON is the same; `key_of` puts `runs` in the compile cache's key only. The runs are
-chosen later, in `read_located(…, &job.check.runs)`. Right result: the second run plays
-`downTest` and fails, as a full run does. The test plays it with a fake `quint` that hands back
-the recorded `parse.json` and `cached_runs.json`. Test:
-`a_cached_result_is_not_served_for_a_check_whose_runs_changed`.
+`models/quint_second/cached_runs/cached_runs.qnt`: `run upTest = init.then(step).expect(v == 1)` and
+`run downTest = init.then(step).expect(v == 0)`; `quint test` passes `upTest` and fails `downTest`.
+Check it with `"runs": ["upTest"]` (`pass`), then change the entry to `"runs": ["downTest"]` and run
+`earnest verify` again: it prints `pass  cached_runs  3 states  0 ms  (cached)`, the first run's
+result with `upTest` holding, where `earnest verify --no-cache` prints `fail` with `downTest`
+broken. The same from `true` to a list, from a list to none, and on a built setup (the project
+model's `setups` kept `releaseTest` after its `runs` became `["grantTest"]`). The docs say a
+compiled module is reused while the check's `runs` are the same, and that the result cache serves "a
+check whose compiled JSON is unchanged". Cause: the result cache's key holds the compiled (or built)
+JSON as `source` (`apps/earnest/src/quint.rs`), and `quint compile` takes no runs, so the JSON is
+the same; `key_of` puts `runs` in the compile cache's key only. The runs are chosen later, in
+`read_located(…, &job.check.runs)`. Right result: the second run plays `downTest` and fails, as a
+full run does. The test plays it with a fake `quint` that hands back the recorded `parse.json` and
+`cached_runs.json`. Test: `a_cached_result_is_not_served_for_a_check_whose_runs_changed`.
 
 ### Legal Quint that earnest still refuses
 
@@ -2055,9 +2055,9 @@ likely to write it; *unclear* where the message does not say what to write inste
   `earnest report`, as the docs' table says; `confirm --tlc` says `same` for both modules.
 - Paths: every broken invariant's path has as many steps as TLC's breadth-first counterexample
   (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 44).
-  The one mismatch, seed 67's `inv2` (2 steps in earnest, 3 in the batch), came from TLC running
-  with four workers, whose counterexample need not be the shortest: run again, TLC's trace has
-  the same 2 steps.
+  The four mismatches (seeds 5, 67 and 72: 2 steps in earnest, 3 in the batch) came from TLC
+  running with four workers, whose counterexample need not be the shortest: run again, TLC's
+  trace has the same 2 steps each time.
 - `confirm --tlc` says `same` on 11 of the samples above (`ByOuter`, `Whole`, `Setup2`, `op`,
   `OverName`, `Both`, `Dot`, `Cap`, `CapLambda`, and the printing samples `pr` and `tagrec`);
   where it says
@@ -2069,31 +2069,40 @@ likely to write it; *unclear* where the message does not say what to write inste
 ### A seeded random comparison
 
 `models/quint_second/random/generate.py SEED [plain]` prints a spec module `SpecSEED` and a setup
-`HSEED`, either `import SpecSEED(…).*` or `import SpecSEED(LIM = Lim, …) as C` with the setup's
-own `pure val Lim`. The spec has three constants (`LIM: int`, `KEYS: Set[str]`, `START: (int,
-str)`), a sum type `Cmd = Inc(int) | Put((str, int)) | Clear`, six variables (a map, a queue of
-`Cmd`, a variant, a tuple, a boolean picked in `init` with `Bool.oneOf()`), two operators that
-take operators (`useOp(f, v)`, `both(g, a, b)` with its parameters reversed), two `match`
-helpers, and three to five actions: `enqueue` (`oneOf` a written set of variants), `process` (a
-`match` on the queue's head), `spend` (`oneOf` the keys of the map with a positive value, then
-`1.to(m.get(nk))`), `lower` (`0.to(n)`), `toggle`, `drop` (`oneOf` the queue's indices). Three
-random invariants, five temporal properties (`eventually`, fairness of the step and of one random
-action, `always(eventually)`, leads-to, `not(eventually)`) and four runs (`then`, `reps`,
-`expect`, `fail()`). With `plain`, the temporal properties use no lambda and no `match`, so the
-first finding does not hide the rest. Each seed was compared with `quint verify --backend tlc`
-(one run for the state count, one for each property; earnest's path of a broken invariant
-against the length of TLC's counterexample from seed 44 on and in the `plain` seeds), with `quint test --main HSEED` for the
-runs, and with earnest reading the same check from `quint compile --main HSEED`.
+`HSEED`, either `import SpecSEED(…).*` or `import SpecSEED(LIM = Lim, …) as C` with the setup's own
+`pure val Lim`. The spec has three constants (`LIM: int`, `KEYS: Set[str]`, `START: (int, str)`), a
+sum type `Cmd = Inc(int) | Put((str, int)) | Clear`, six variables (a map, a queue of `Cmd`, a
+variant, a tuple, a boolean picked in `init` with `Bool.oneOf()`), two operators that take operators
+(`useOp(f, v)`, `both(g, a, b)` with its parameters reversed), two `match` helpers, and three to
+five actions: `enqueue` (`oneOf` a written set of variants), `process` (a `match` on the queue's
+head), `spend` (`oneOf` the keys of the map with a positive value, then `1.to(m.get(nk))`), `lower`
+(`0.to(n)`), `toggle`, `drop` (`oneOf` the queue's indices). Three random invariants, five temporal
+properties (`eventually`, fairness of the step and of one random action, `always(eventually)`,
+leads-to, `not(eventually)`) and four runs (`then`, `reps`, `expect`, `fail()`). With `plain`, the
+temporal properties use no lambda and no `match`, so the first finding does not hide the rest. Each
+seed was compared with `quint verify --backend tlc` (one run for the state count, one for each
+property; earnest's path of a broken invariant against the length of TLC's counterexample from seed
+44 on and in the `plain` seeds), with `quint test --main HSEED` for the runs, and with earnest
+reading the same check from `quint compile --main HSEED`.
 
-SEED_RESULTS
+Seeds 1 to 84 and, with `plain`, 1001 to 1030 were compared: 114 setups (57 of them `as C`) of
+14 to 4 238 states, 1 368 answers (8 properties and 4 runs each). Every state count is TLC's,
+every built setup reads as its `quint compile` does, and 1 002 answers agree. The others are the
+findings above: 138 temporal properties in 72 of the 84 default seeds are `unknown` where TLC
+answers (the first finding: a lambda or a `match` in the property, or the fault it raises cutting
+the search short), none in the `plain` seeds; the 4 runs of each of the 57 `as C` seeds are not
+played (the fourth finding, 228 runs). Four broken invariants (seeds 5, 67 and 72) had a path one
+step shorter than the batch's TLC counterexample; run again, TLC's trace has earnest's length
+each time (see the paths bullet above). Nothing else differed. Seeds 17 to 22 and 32 to 35 were
+run again after their first TLC runs clashed on the Apalache server's port.
 
-Ten that agree on everything are committed: seeds 14, 25, 37, 45, 54 and 63, and 1002, 1006,
-1010 and 1013 made with `plain`, all `.*` setups of 98 to 1 560 states, each `.qnt` beside the
-`quint typecheck` output earnest builds it from, and `expected.json`, Quint's answers (80
-verdicts, 40 runs). `every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test`
-plays them through a fake `quint` that hands back the recorded typecheck, so the setup is built
-by earnest, and passes today. To make another: `python3 generate.py SEED [plain] > HSEED.qnt`
-and `quint typecheck HSEED.qnt --out HSEED.typecheck.json`.
+Ten that agree on everything are committed: seeds 14, 25, 37, 45, 54 and 63, and 1002, 1006, 1010
+and 1013 made with `plain`, all `.*` setups of 98 to 1 560 states, each `.qnt` beside the `quint
+typecheck` output earnest builds it from, and `expected.json`, Quint's answers (80 verdicts, 40
+runs). `every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test` plays them
+through a fake `quint` that hands back the recorded typecheck, so the setup is built by earnest, and
+passes today. To make another: `python3 generate.py SEED [plain] > HSEED.qnt` and `quint typecheck
+HSEED.qnt --out HSEED.typecheck.json`.
 
 ### A model written as a project writes one
 
