@@ -9,8 +9,8 @@ use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, FairStep, Field, Input, Model, Pick, Rule, Runs, Script,
-    View,
+    Action, Code, End, Eventually, Expr, FairStep, Field, Frame, Input, Model, Pick, Rule, Runs,
+    Script, View, eval,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::{HashMap, HashSet};
@@ -508,6 +508,45 @@ fn search_of<'a>(
     }
 }
 
+fn assumed<'a>(reader: &mut Reader<'a>, declarations: &'a [Declaration]) -> Read<()> {
+    for declaration in declarations {
+        let Declaration::Assume { name, assumption } = declaration else {
+            continue;
+        };
+        name.clone_into(&mut reader.within);
+        let code = reader.pure(assumption)?;
+        let short = name.rsplit("::").next().unwrap_or(name);
+        let feature = format!("`assume {short}`");
+        let mut frame = Frame::new(&[], reader.slots);
+        match eval(&code, &mut frame) {
+            Ok(Value::Bool(true)) => {}
+            Ok(_) => {
+                return Err(refusal(
+                    &feature,
+                    &format!(
+                        "the assumption `{short}` is false, so no state is checked. Quint's TLC run \
+                         (`quint verify --backend tlc`) stops on a false assumption of the \
+                         module it checks; `quint test` and `quint run` do not check it. Make \
+                         it true, in a setup by giving the constants other values"
+                    ),
+                )
+                .within(name));
+            }
+            Err(fault) => {
+                return Err(refusal(
+                    &feature,
+                    &format!(
+                        "the assumption `{short}` has no value: {}",
+                        fault.describe()
+                    ),
+                )
+                .within(name));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn built(
     path: &str,
     compiled: &Compiled,
@@ -549,6 +588,7 @@ fn built(
         .collect();
     let search = search_of(&defs, (runs, wanted))?;
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
+    assumed(&mut reader, &module.declarations).map_err(|refusal| vec![refusal])?;
     let read = match search {
         Some(search) => parts(&mut reader, &compiled.table, &defs, search, &names),
         None => Ok(Default::default()),

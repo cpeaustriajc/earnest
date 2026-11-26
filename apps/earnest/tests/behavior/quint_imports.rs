@@ -321,3 +321,61 @@ fn the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_
          stays short\n{report}"
     );
 }
+
+#[test]
+fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
+    let quint = Quint::new(
+        r#"{ "checks": [
+          { "file": "assume.qnt", "main": "Direct", "invariants": ["ok"] },
+          { "file": "assume.qnt", "main": "Bad", "invariants": ["ok"], "runs": true },
+          { "file": "assume.qnt", "main": "Good", "invariants": ["ok"], "runs": true }
+        ] }"#,
+    );
+    quint
+        .sandbox
+        .write("specs/assume.qnt", &imports("assume.qnt"));
+    quint.sandbox.write(
+        "fake/typechecked/assume.json",
+        &imports("fixtures/assume.typecheck.json"),
+    );
+    quint.sandbox.write(
+        "fake/compiled/Direct.json",
+        &imports("fixtures/assume.Direct.json"),
+    );
+    let report = quint.verify();
+    assert_eq!(
+        quint.compiled_mains(),
+        ["Direct".to_owned()].into_iter().collect::<BTreeSet<_>>(),
+        "a module with no instance is compiled, the setups are built\n{report}"
+    );
+    let unreadable: Vec<(String, String)> = report["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|problem| {
+            (
+                problem["feature"].as_str().unwrap_or_default().to_owned(),
+                problem["message"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(unreadable.len(), 2, "`Direct` and `Bad`\n{report}");
+    for (feature, message) in &unreadable {
+        assert_eq!(feature, "`assume Positive`", "{report}");
+        assert!(
+            message.starts_with("the assumption `Positive` is false, so no state is checked"),
+            "{message}"
+        );
+    }
+    let good = model(&report, "Good");
+    assert_eq!(good["status"], "pass", "{report}");
+    assert_eq!(
+        good["states"], 3,
+        "as `quint verify --backend tlc --main Good`\n{report}"
+    );
+    assert_eq!(
+        verdicts(&report, "Good"),
+        pairs(&[("upTest", "holds")]),
+        "{report}"
+    );
+}
