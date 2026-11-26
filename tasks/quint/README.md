@@ -18,6 +18,8 @@ Files beside this one:
 - `probe/`: one-question models (`dead`, `emptystep`, `partial`, `frame`, `twice`, `initnd`,
   `misc`, `div`, `div2`, `fair2`).
 - `timing/many.qnt`: `Clock` plus 17 setup modules `S1`..`S17`, used for the timing runs.
+- `setups/`: slice 4's shapes of setup modules, with their typecheck and compile JSON in
+  `setups/fixtures/`, and `many.qnt` (17 setups of `Lamp`).
 
 ## Decisions since the spike
 
@@ -2356,3 +2358,166 @@ runs in. Verified against Quint 0.33.1:
   one-line example in the text output).
 - Next: slices 2, 5 and 6 merge onto this; when slice 6 reads runs it gets `Runs` through
   `read_located`, and needs the spec module's runs as said under "Runs".
+
+## Slice 4: what is checked
+
+Three parts (issue #61): short names; every setup of a file from one Quint call (section 6,
+option A); and the spec module's runs played in a setup. Quint 0.33.1 from npm in a scratch
+folder outside the repository, Node 22, 4 cores.
+
+### How `quint compile` flattens a setup [read: `cliCommands.js` `compile`, `flattening/*.js`, `names/unshadower.js`, `ir/namespacer.js`; ran]
+
+For `module Small { import Clock(MaxTime = 3, ...).* }`, `compile` does, in this order:
+
+1. **Unshadow** every module: a lambda parameter becomes `<name>_<lambda id>` (always); a `let`
+   name becomes `<name>_<let id>` only when the table entry of its definition has
+   `shadowing: true` (so `nondet x` beside a `var x` is `x_72`).
+2. **Inline type aliases** (`var f: Flag` with `type Flag = bool` becomes `bool`).
+3. **Instance flattening**: a new module `Small::Clock` holds, first, a `pureval` per override
+   (`Small::Clock::MaxTime`, its body the override expression), then every non-`const`
+   declaration of `Clock` with **every non-builtin name prefixed** `Small::Clock::` (definition
+   names, `let` names, lambda parameters, names and operator names), with fresh ids. In `Small`
+   itself, a name that comes from the instance becomes `Small::Clock::<name>`.
+4. **Flattening** of `Small`: its declarations are walked in order (its own, then the `q::*`
+   that `compile` appended: `q::init = <init>`, `q::step = <step>`, `q::inv = and(<invariants>)`,
+   `q::temporalProps = and(<temporal>)`). Every name met that is a top-level definition is
+   walked first and then added, if not added yet: a **depth-first post-order** from those roots.
+   Only what is reached is kept, which is why the spec's runs are dropped.
+
+`quint typecheck --out` writes the modules after step 0 (parsed, resolved, unflattened), with
+the table (`shadowing` included), and **no source map and no list of files**: the slice-7
+`quint parse` stays, for the files read (the cache key) and the places.
+
+Earnest's `earnest_quint::Typechecked::setup` (`crates/earnest_quint/src/setup.rs`) does steps
+1 to 4 on the typecheck output, keeping Quint's own ids (so a refusal inside the spec is placed
+at its own expression through the source map), and makes the table say `def` where it said
+`const`. It builds a setup only when it is sure:
+
+| Built from the typecheck | Compiled with `quint compile --main` |
+|---|---|
+| the main module has one `import Spec(...).*` and otherwise only `def`s | `import Spec(...) as C` (sample `Large`, `Aliased`) |
+| `Spec` has only `const`, `var`, `def`, `type` | `Spec` imports, instantiates or exports (`Nested`: an instance of an instance) |
+| every `const` of `Spec` overridden once, by an expression whose every node is a builtin (no id in the table) | a constant given a definition's value (`ByName`: `import Limit.*` then `K = L`) |
+| `init`, `step` name one `action` of the setup or of `Spec`; each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | `export` (`Exported`), several imports, a name that is missing, qualified, of another kind or defined in both (Quint gives the error) |
+| the typecheck succeeded | a typecheck that failed, or a type alias that does not resolve |
+
+### Equality with Quint's own flattening
+
+`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 18 checks, and in `fixtures/` the
+typecheck output of each file and the compile output of each check, written with
+
+```sh
+quint typecheck <file>.qnt --out fixtures/<file>.typecheck.json
+quint compile --target json --main <Main> --init <init> --step <step> [--invariant a,b] [--temporal p,q] <file>.qnt > fixtures/<file>.<Main>.json
+```
+
+| File | Check | What it holds |
+|---|---|---|
+| `ints.qnt` | `Low`, `High` | an int constant in `init`, in a `nondet` set (`1.to(Max)`), in an invariant and in a temporal property with `weakFair`; two setups of one spec |
+| `kinds.qnt` | `Setup` | constants of type bool, text, set, record, tuple, map and list |
+| `pure.qnt` | `Four` | `pure val`, `pure def`, `val` and `def` with a parameter, depending on a constant |
+| `own.qnt` | `Tight` | the setup's own invariants, `pure val` and actions over the spec's, its own `step` |
+| `shadow.qnt` | `S` | a `nondet x` shadowing `var x`, an action with a parameter, a bool alias, a sum type and `match` |
+| `runs.qnt` | `Three`, `One` | a constant in a run (`Steps.reps`), runs in the spec, a run of the setup's own |
+| `clock.qnt` | `Small` | the spike's sample: a set-of-text constant, four temporal properties, runs |
+| `clockbits.qnt` | `SmallBits` | temporal properties with fair parts |
+| `lamp.qnt` | `Dim`, `Bright`, `Blinding` | slice 7's sample, three setups of one spec |
+| `compiled.qnt` | `Nested`, `Aliased`, `ByName`, `Exported` | shapes that are compiled |
+| `clock.qnt` | `Large` | `import ... as C`, compiled |
+
+Tests (no Node: fixtures and a fake `quint`):
+
+- `crates/earnest_quint/src/setup_tests.rs`: for the 13 checks built, the declarations built
+  (name and kind, in order) equal those of Quint's compile; read by the reader, fields, actions,
+  rule ids and start states are equal; the other shapes and wrong names give `None`.
+- `apps/earnest/tests/behavior/quint_setups.rs`
+  `every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens`: earnest runs
+  the 18 checks twice, built (only the 5 others compiled) and all compiled (the typecheck taken
+  away), and for the 17 readable checks the status, state count, reason and every rule (id,
+  sentence, verdict, path with its inputs) are equal. Reversing the declarations built makes it
+  fail.
+
+Before the test, `cmp.py` (scratch, not committed) compared the built and the compiled modules
+with ids stripped: for all 13, the same declarations in the same order and the same bodies,
+the only difference being the spec's runs, kept on purpose.
+
+### Node starts
+
+Fake `quint` (`quint_setups.rs`): a file of 17 setups and 17 checks makes `--version`, `parse`,
+`typecheck`, in this order, and no compile; a second run makes none
+(`seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never`). `Small` beside
+`Large` makes one typecheck and one compile, of `Large`; a second run, none
+(`a_setup_of_another_shape_is_compiled_and_a_second_run_compiles_nothing`). A typecheck that
+fails gives a compile per check (`a_failed_typecheck_falls_back_to_compiling_each_setup`).
+
+### Runs of the spec module, against `quint test`
+
+The default (Rust) backend can't be downloaded here (`Failed to fetch from GitHub: Forbidden`),
+so `--backend typescript`:
+
+```text
+$ quint test --main Three --backend typescript --match 'Test$' runs.qnt
+  Three
+    ok Three::Spec::twoTest passed 1 test(s)
+    ok Three::Spec::allTest passed 1 test(s)
+    1) Three::Spec::overTest failed after 1 test(s)
+    ok ownTest passed 1 test(s)
+  1) Three::Spec::overTest:
+       Error [QNT513]: Reps loop could not continue after iteration #4 evaluated to false
+$ quint test --main One --backend typescript --match 'Test$' runs.qnt
+  One
+    1) One::Spec::twoTest failed after 1 test(s)
+    ok One::Spec::allTest passed 1 test(s)
+    2) One::Spec::overTest failed after 1 test(s)
+  1) One::Spec::twoTest:
+       Error [QNT508]: Cannot continue to "expect"
+  2) One::Spec::overTest:
+       Error [QNT513]: Reps loop could not continue after iteration #2 evaluated to false
+$ quint test --main Small --backend typescript --match 'tickTwice|tickMany|overTick|hearAny' clock.qnt
+  Small
+    ok Small::Clock::tickTwice passed 1 test(s)
+    ok Small::Clock::tickMany passed 1 test(s)
+    1) Small::Clock::overTick failed after 1 test(s)
+    ok Small::Clock::hearAny passed 10000 test(s)
+```
+
+earnest, with `runs: true` for `Three`, the list for `One` and `Small`:
+
+```text
+fail        Three  4 states  0 ms
+  broken  overTest  "The Quint run `overTest` passes"
+    start  t = 0
+    1. tick  t: 0 -> 1
+    2. tick  t: 1 -> 2
+    3. tick  t: 2 -> 3
+    end    t = 3
+    why    step 4, `tick`, can't happen here
+fail        One  2 states  0 ms
+  broken  twoTest  "The Quint run `twoTest` passes"
+    ...    why    step 2, `tick`, can't happen here
+  broken  overTest  "The Quint run `overTest` passes"
+    ...    why    step 2, `tick`, can't happen here
+fail        Small  16 states  0 ms
+  broken  allHeard  ...
+  broken  overTick  "The Quint run `overTick` passes"
+    ...    why    step 4, `tick`, can't happen here
+```
+
+Every other run holds, as in Quint: 11 of 11 verdicts agree (test
+`the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck`). The compiled
+`ByName` with `runs: ["upTest"]` is `unreadable`: ``compiled.qnt:8:7  `run upTest`  the check
+names this run, which is written in a module this one imports: `quint compile` drops the runs
+of imported modules, so the checker plays them only for a setup it builds itself from one
+`import Spec(...).*` ``.
+
+### Timing: the 17 setups of `many.qnt`
+
+`tasks/quint/setups/many.qnt`: slice 7's `Lamp` and `S1`..`S17` (`import Lamp(Max = i).*`), one
+check each with `darkWhenOff`. Release builds, real Quint through a wrapper that logs each call,
+4 cores; before is the integration head `e66f839`:
+
+| Run | Before (load 3.1 to 4.6) | After (load 3.8 to 4.0) |
+|---|---|---|
+| nothing cached, all cores | 5.13, 5.10, 4.94 s, 19 Quint starts | 0.97, 1.00, 1.13 s, 3 starts |
+| nothing cached, `--jobs 1` | 9.67 s | 1.21 s |
+| the second run, nothing changed | 0.069 s, no start | 0.011 s, no start |
