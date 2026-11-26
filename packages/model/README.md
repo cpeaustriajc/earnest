@@ -60,6 +60,13 @@ export type State = m.Infer<typeof Turnstile>;
 - `m.action`, `m.rule`, `m.end` and `m.view` take the model as their first argument. A rule or an
   end then has its sentence and a condition. An action has its sentence and an object with
   `input`, `when` and `changes`. A view has an object.
+- `m.witness(Model, sentence, { steps, expect })` declares a path the model must be able to take
+  from every start state, and a condition on the state it ends in. Each step is an action of the
+  model declared before the witness; an action with inputs is written
+  `m.step(action, { name: value })`. A bare action that takes inputs in `steps`, and `m.step` with
+  an input the action does not declare, are compile errors, and `m.witness` throws on a step that
+  is not an action declared on the model before it or on an input the action does not declare.
+  See [witnesses](https://earnest.cpeaustriajc.dev/reference/typescript/#witnesses).
 - Declarations are plain values. `.optional()` and `.initial(value)` give back a new declaration,
   so one `const Press = m.enum([...])` can be a field in two models and an input of an action.
 - State is read-only, and every operation on a set, map, sequence, queue, lock, timer, request or
@@ -103,7 +110,11 @@ verify` does ("reads a value that is null"), where JavaScript would go on with `
 a number read from an optional goes through it. `m.setOf(a, b)`, `m.seqOf(a, b)` and `m.mapOf([k, v])` write collection values; a queue's
 `.initial` takes `m.seqOf(...)`. `m.forall(T, f)` and `m.exists(T, f)` range over a declaration
 or a collection. Every declaration has `values()`, which lists what it declares in the order the
-checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`.
+checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`. Its `libraryKind` is
+`null` when every value is plain JavaScript (booleans, numbers, texts, `null` and records of
+those), and otherwise names the part that holds this library's objects, such as `"set"`.
+`combinationsOf(fields)` lists every row of one value per field, in the order `explore` tries an
+action's inputs: the first field varies fastest.
 
 ## Running a model in Node
 
@@ -122,7 +133,13 @@ shortest path to a state that breaks it. A rule is `unknown` when it was not see
 the search is unfinished or the rule could not be evaluated in a state. `findings` has at most
 one of each kind. `reason` is `null`, or why the search is unfinished.
 
-- The id of an action, a rule or an end is the name it is exported under, and a running program
+Witnesses come after the rules in `rules`, each with `kind: "witness"`, as `earnest verify --json`
+lists them. A witness is played from every start state in order; when one breaks it, its `path`
+is what was played until it broke, from that start, and its `reason` says why, in the words of
+the checker's `why` line. It is `unknown` only when there are more start states than
+`maxStates` and none of the ones played broke it. A rule has no `kind` and no `reason`.
+
+- The id of an action, a rule, an end or a witness is the name it is exported under, and a running program
   can't see that name, so pass the model file's exports as `exports`. A part that is not among
   them has its sentence as its id.
 - `maxStates` stops the search before it holds more distinct states than that; the default is
@@ -145,6 +162,53 @@ that names the step when the path does not begin at a start state, a step names 
 input is missing or undeclared, the action's `when` is false, the action can't be evaluated, or
 the state after the action differs from the step's `state`. Without `exports` a step is matched
 by its `label`, the action's sentence.
+
+## Searching states that are not a model
+
+`search` runs the same breadth-first search as `explore` on states the library knows nothing
+about, such as plain objects. Give it the start states, a `key` that names a state, and `moves`,
+which lists `{ move, next }` from a state:
+
+```ts
+import { search } from "@earnestjs/model";
+
+const found = search({
+  starts: [{ gate: "Locked", paid: false }],
+  key: (s) => `${s.gate};${s.paid}`,
+  moves: (s) =>
+    s.gate === "Locked"
+      ? [
+          ...(s.paid ? [] : [{ move: "pay", next: { ...s, paid: true } }]),
+          { move: "push", next: { ...s, gate: "Open" } },
+        ]
+      : [{ move: "enter", next: { gate: "Locked", paid: false } }],
+  rules: [
+    {
+      id: "locked",
+      says: "The gate stays locked until the visitor pays",
+      holds: (s) => s.gate === "Locked" || s.paid,
+    },
+  ],
+});
+```
+
+It counts 4 states and fails: `locked` is `broken` after one `push`. The result has the words of
+`explore` (`status`, `states`, `rules`, `findings`, `reason`), but each path is a trail of the
+caller's own values, `{ start, steps: [{ move, state }] }`.
+
+- States are judged in the order they are reached: start states in the order given, then the
+  moves of each state in the order `moves` lists them. States with the same `key` are one state.
+- `rules` are judged in every counted state that is not out of range, also the states the state
+  limit kept the search from going on from. `maxStates` works as in `explore`.
+- A state with no move is `stuck` unless `isEnd` gives `true` for it. `isEnd` is asked only of
+  a state with no move.
+- When `outside` gives a message for a state, the state is out of range: it is counted, is not
+  checked against the rules and is not searched from. The first one is an `out-of-range` finding
+  with that message, and a rule not seen broken is `unknown`.
+- `reached()` gives the shortest trail to every counted state, in the order the search reached
+  them. Each trail is built as it is asked for.
+- There are no faults: an error thrown by `key`, `moves`, a rule, `isEnd` or `outside` is thrown
+  by `search`.
 
 ## Where Node and the checker differ
 

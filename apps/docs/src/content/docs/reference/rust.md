@@ -371,6 +371,59 @@ assert!(!states[2].bills());
 - `Step::input` is formatted via `earnest::model::Report` (implemented by `#[derive(Domain)]` and built-ins). Compare resulting states with `assert_eq!` or rule methods (`state.stays_locked()`).
 - If a step cannot execute, `replay` returns a `Mismatch` naming the step index and the enabled steps at that state.
 
+## Searching states in a test
+
+`explore::<Model>(max_states)` runs the search of `earnest verify` inside a test. It visits start states in `Model::starts()` order and steps in `state.steps()` order, so its paths are the ones the report gives. It returns an `Exploration`:
+
+```rust
+use earnest::model::{DEFAULT_MAX_STATES, Status, explore};
+
+let found = explore::<Turnstile>(DEFAULT_MAX_STATES);
+assert_eq!(found.status, Status::Pass);
+assert_eq!(found.states, 5);
+assert!(found.stuck.is_none());
+```
+
+On the `Turnstile` above, the search reaches 5 states and passes. With `explore::<Turnstile>(3)` the state limit stops it: `status` is `Unfinished` and `reason` is `Some("state limit of 3")`.
+
+| Field | Meaning |
+|---|---|
+| `status` | `Pass`, `Fail` or `Unfinished`, as `earnest verify` reports them |
+| `states` | The count of distinct states reached, start states included |
+| `rules` | One `RuleResult` per rule, in the order given: its `id`, `says` and `verdict`. A `Verdict` is `Holds`, `Broken` with the shortest `Path`, or `Unknown` when the state limit stopped the search before it saw a break |
+| `stuck` | `None`, or the shortest `Path` to the first stuck state found, breadth first |
+| `reason` | `None`, or why an unfinished search stopped, such as `state limit of 3` |
+| `reached()` | Every state reached, once each, in the order the search reached them |
+| `path_to(&state)` | A shortest path to a state reached, or `None` |
+
+- A `Path` is a `start` state and `steps`, each a move with the state after it. From `explore` each move is a `Move`, so `replay(&path.start, &moves)` walks the path again.
+- `DEFAULT_MAX_STATES` is 5,000,000, the limit of `earnest verify`. The search stops before it holds more states than `max_states`, and a state it counted but did not search from still has its rules judged.
+- An end is asked only in a state where no action can happen.
+- `explore` does not detect a field that leaves its `#[range]` or `#[one_of]`. It searches on from such a state, where `earnest verify` reports it as out of range. A model with such a state can pass in `explore` and fail `earnest verify`.
+- A panic in an action, a rule or an end is not caught.
+
+`search(starts, moves, &rules, end, max_states)` runs the same search over states that are not models. A state needs only `Clone`, `Eq` and `Hash`. `moves` gives each move that can happen in a state with the state after it, in the order to try; a state with no move is stuck unless `end` is `true` there. Each rule is a `Rule::new(id, says, holds)`:
+
+```rust
+use earnest::model::{DEFAULT_MAX_STATES, Rule, Status, Verdict, search};
+
+let found = search(
+    [0_u8],
+    |n: &u8| if *n < 3 { vec![("add", n + 1)] } else { vec![] },
+    &[Rule::new("below_three", "The count stays below 3", |n: &u8| *n < 3)],
+    |n| *n == 3,
+    DEFAULT_MAX_STATES,
+);
+assert_eq!(found.status, Status::Fail);
+assert_eq!(found.states, 4);
+let Verdict::Broken(path) = &found.rules[0].verdict else {
+    panic!("the count reaches 3");
+};
+assert_eq!(path.steps.len(), 3);
+```
+
+The search counts 4 states, and `below_three` breaks after three `add` moves. The count 3 is an end, so no state is stuck. The [smlang integration](/integrations/smlang/) builds on `search`.
+
 ## Keeping models fast and clippy-clean
 
 ### What a model costs

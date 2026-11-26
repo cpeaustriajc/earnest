@@ -88,6 +88,8 @@ fail        Turnstile  8 states  0 ms
 
 The same model in Rust is in [Write a model in Rust](https://earnest.cpeaustriajc.dev/tutorials/rust-model/). The [CLI reference](https://earnest.cpeaustriajc.dev/reference/cli/) covers `earnest chart`, `earnest report` for pull requests, `earnest tla` and `earnest confirm`.
 
+Earnest also runs under the tests of a state machine library, with no model file: [smlang](https://earnest.cpeaustriajc.dev/integrations/smlang/) for Rust and [XState](https://earnest.cpeaustriajc.dev/integrations/xstate/) for TypeScript.
+
 ## Requirements and security
 
 - **Platforms:** macOS (Apple silicon, Intel), Linux x64 and ARM64 with glibc 2.39 or newer, and Windows x64. Linux with musl builds from source.

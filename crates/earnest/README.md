@@ -14,7 +14,10 @@ assert!(!pushed.locked());
 
 `Turnstile::starts()` lists every start state, an action method takes one step or gives `None`,
 and a rule method judges one state. `replay` does the same for a whole path, and compares nothing:
-the test compares the states it gives back with the `state` of each step in the report.
+the test compares the states it gives back with the `state` of each step in the report. `explore`
+searches every state inside the test, in the order `earnest verify` uses. While every state stays in
+range it gives the same counts, rule verdicts, stuck state and paths; it does not look for a state
+out of range, and searches on from one.
 
 `#[one_of(a, b)]` on a field, on an action's parameter or on a field of a `Domain` record lists the
 values of an integer or of a `&'static str`, in that order, as `m.oneOf([a, b])` does in
@@ -32,6 +35,8 @@ TypeScript. A model needs no `pub` and no documentation: `#[derive(Model)]` uses
 | `view` | The attribute for a second `impl` block: `#[view(title = "...", step(action = "..."), colors(broken = "#c62828"))]` with a `#[state]` and a `#[group]` method, each `fn(&self) -> String`. It is the Rust form of the TypeScript `m.view`, and `earnest chart` and `earnest report` draw the labels it gives |
 | `View` | `state.state_label()`, `state.group_label()`, `Type::title()`, `Type::step_labels()` and `Type::colors()`: what the `#[view]` block says, as the chart shows it |
 | `replay(&start, &path)`, `Move` | Walks a path from `earnest verify --json` one step at a time and gives back every state, the start first. A `Move::new("deliver").with("letter", "Bill")` is one step: the action's id and each input as the report prints it. A step that can't happen is a `Mismatch` with its number and the steps that can |
+| `explore::<Type>(max_states)` | Searches every state the model can reach, breadth first, and gives an `Exploration`: its `status` (`Pass`, `Fail` or `Unfinished`), the count of `states`, each rule's `Verdict` (`Holds`, `Broken` with the shortest `Path`, or `Unknown`), the first `stuck` state, and the `reason` an unfinished search stopped (`state limit of 3`). `DEFAULT_MAX_STATES` is the limit of `earnest verify`, 5,000,000. Each step of a path is a `Move`, so `replay` walks it again |
+| `search(starts, moves, &rules, end, max_states)`, `Rule` | The same search over states it can't look inside: the start states, a function that gives each move with the state after it, each `Rule::new(id, says, holds)` and the end test. `exploration.path_to(&state)` gives the shortest path to any state it reached |
 | `require!` | `require!(condition);` in an action: the action returns `None` when the condition is false |
 | `Set<T>`, `Map<K, V>`, `Seq<T, MAX>`, `Queue<T, CAPACITY>` | The collections, written with `Set::of([a, b])`, `Seq::of([a, b])` and `Map::of([(k, v)])` |
 | `Lock`, `Lock<Owner>`, `Timer`, `Request`, `Retry<MAX>` | The parts |

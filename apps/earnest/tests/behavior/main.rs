@@ -11,6 +11,7 @@ mod limits;
 mod offline;
 mod replay;
 mod results;
+mod runs;
 mod runs_rust;
 mod select;
 mod support;

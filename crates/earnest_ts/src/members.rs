@@ -923,4 +923,239 @@ mod tests {
             "no parts"
         );
     }
+
+    const ACTIONS: &str = "export const bump = m.action(M, \"bump\", \
+        { when: (s) => s.n < 3, changes: (s) => ({ n: s.n + 1 }) });\n\
+        export const press = m.action(M, \"press\", \
+        { input: { by: Press, times: m.int(1, 2) }, changes: (_, { by }) => ({ last: by }) });\n";
+
+    fn witness(rest: &str) -> earnest_ast::WitnessDraft {
+        let found = draft(&format!("{ACTIONS}{rest}"));
+        found
+            .runs
+            .witnesses
+            .into_iter()
+            .next()
+            .expect("one witness")
+    }
+
+    fn refused(rest: &str) -> Vec<(u32, u32, String)> {
+        read("m.model.ts", &format!("{HEAD}{ACTIONS}{rest}"))
+            .problems
+            .into_iter()
+            .map(|problem| (problem.line, problem.column, problem.feature))
+            .collect()
+    }
+
+    fn one_refusal(rest: &str, column: u32, feature: &str) {
+        assert_eq!(
+            refused(rest),
+            [(6, column, feature.to_owned())],
+            "the line, column and feature of the one problem in: {rest}"
+        );
+    }
+
+    #[test]
+    fn a_witness_with_its_steps_and_what_it_expects() {
+        let found = witness(
+            "export const climbs = m.witness(M, \"Bump, press, bump\", \
+             { steps: [bump, m.step(press, { times: 2, by: \"mouse\" }), (bump)], \
+             expect: (state) => state.n === 2 });\n",
+        );
+        assert_eq!(found.id, "climbs", "the exported name");
+        assert_eq!(found.says, "Bump, press, bump", "the sentence");
+        assert_eq!(found.place, Place { line: 6, column: 1 }, "the `export`");
+        assert_eq!(found.setup, None, "the model's own start states");
+        let steps: Vec<String> = found
+            .steps
+            .iter()
+            .map(|step| {
+                let inputs: Vec<String> = step
+                    .inputs
+                    .iter()
+                    .map(|(name, value)| format!("{name} = {}", show(value)))
+                    .collect();
+                format!(
+                    "{} at {}:{} [{}]",
+                    step.action,
+                    step.place.line,
+                    step.place.column,
+                    inputs.join(", ")
+                )
+            })
+            .collect();
+        assert_eq!(
+            steps,
+            [
+                "bump at 6:67 []",
+                "press at 6:73 [times = 2, by = \"mouse\"]",
+                "bump at 6:116 []",
+            ],
+            "each step's action, place and inputs in the order written"
+        );
+        assert_eq!(
+            found.state_name.as_deref(),
+            Some("state"),
+            "the state's name"
+        );
+        assert_eq!(show(&found.expect), "(=== state.n 2)", "the condition");
+    }
+
+    #[test]
+    fn a_witness_may_take_no_steps() {
+        let found = witness(
+            "export const starts = m.witness(M, \"It starts\", { steps: [], expect: () => true });\n",
+        );
+        assert_eq!(found.steps, [], "no steps");
+        assert_eq!(found.state_name, None, "the condition reads no state");
+        assert_eq!(show(&found.expect), "true", "the condition");
+    }
+
+    #[test]
+    fn the_witnesses_of_a_model_are_kept_in_file_order_after_its_rules() {
+        let found = draft(&format!(
+            "{ACTIONS}export const second = m.witness(M, \"b\", {{ steps: [bump], expect: (s) => s.n === 1 }});\n\
+             export const first = m.witness(M, \"a\", {{ steps: [], expect: (s) => s.n === 0 }});\n\
+             export const low = m.rule(M, \"low\", (s) => s.n < 4);\n"
+        ));
+        let witnesses: Vec<&str> = found
+            .runs
+            .witnesses
+            .iter()
+            .map(|witness| witness.id.as_str())
+            .collect();
+        assert_eq!(witnesses, ["second", "first"], "the order in the file");
+        let ids: Vec<&str> = found.rule_ids().collect();
+        assert_eq!(
+            ids,
+            ["low", "second", "first"],
+            "the rules come before the witnesses"
+        );
+    }
+
+    #[test]
+    fn a_step_that_is_not_an_action_of_the_model_above_is_refused() {
+        let witness = |steps: &str| {
+            format!(
+                "export const w = m.witness(M, \"w\", {{ steps: [{steps}], expect: (s) => s.n === 0 }});\n"
+            )
+        };
+        one_refusal(&witness("later"), 46, "`later`");
+        one_refusal(&witness("1"), 46, "`1`");
+        one_refusal(&witness("bump, ...more"), 52, "`...more`");
+        one_refusal(&witness("m.step(bump)"), 46, "`m.step(bump)`");
+        one_refusal(&witness("m.step(later, {})"), 46, "`m.step(later, {})`");
+        one_refusal(
+            &witness("m.action(bump, { by: \"key\" })"),
+            46,
+            "`m.action(bump, { by: \"key\" })`",
+        );
+        one_refusal(
+            &witness("bump.step(press, {})"),
+            46,
+            "`bump.step(press, {})`",
+        );
+        one_refusal(&witness("m.step(press, given)"), 60, "`given`");
+    }
+
+    #[test]
+    fn a_hole_in_the_steps_is_refused() {
+        let found = refused(
+            "export const w = m.witness(M, \"w\", { steps: [bump, , bump], expect: (s) => s.n === 2 });\n",
+        );
+        assert_eq!(found.len(), 1, "one problem: {found:?}");
+        let (line, _, _) = found.first().expect("one problem");
+        assert_eq!(*line, 6, "the line of the witness");
+    }
+
+    #[test]
+    fn a_rule_an_end_or_an_action_declared_below_is_not_a_step() {
+        let source = format!(
+            "{ACTIONS}export const low = m.rule(M, \"low\", (s) => s.n < 4);\n\
+             export const full = m.end(M, \"full\", (s) => s.n === 3);\n\
+             export const w = m.witness(M, \"w\", {{ steps: [low, full, later], expect: (s) => s.n === 0 }});\n\
+             export const later = m.action(M, \"later\", {{ changes: () => ({{ n: 0 }}) }});\n"
+        );
+        let found: Vec<(u32, String)> = read("m.model.ts", &format!("{HEAD}{source}"))
+            .problems
+            .into_iter()
+            .map(|problem| (problem.line, problem.feature))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (8, "`low`".to_owned()),
+                (8, "`full`".to_owned()),
+                (8, "`later`".to_owned())
+            ],
+            "each step that is not an action declared above"
+        );
+    }
+
+    #[test]
+    fn an_action_of_another_model_is_not_a_step() {
+        let source = format!(
+            "{HEAD}export const N = m.model(\"N\", {{ on: m.boolean() }});\n\
+             export const flip = m.action(N, \"flip\", {{ changes: (s) => ({{ on: !s.on }}) }});\n\
+             export const w = m.witness(M, \"w\", {{ steps: [flip], expect: (s) => s.n === 0 }});\n"
+        );
+        let found: Vec<(u32, u32, String)> = read("m.model.ts", &source)
+            .problems
+            .into_iter()
+            .map(|problem| (problem.line, problem.column, problem.feature))
+            .collect();
+        assert_eq!(
+            found,
+            [(6, 46, "`flip`".to_owned())],
+            "the action of `N` in a witness of `M`"
+        );
+    }
+
+    #[test]
+    fn steps_that_are_not_a_list_written_out_are_refused() {
+        one_refusal(
+            "export const w = m.witness(M, \"w\", { steps: ALL, expect: (s) => s.n === 0 });\n",
+            45,
+            "`ALL`",
+        );
+        one_refusal(
+            "export const w = m.witness(M, \"w\", { steps: [bump].concat([bump]), expect: (s) => s.n === 0 });\n",
+            45,
+            "`[bump].concat([bump])`",
+        );
+    }
+
+    #[test]
+    fn a_witness_without_its_steps_or_its_expect_or_with_another_part_is_refused() {
+        one_refusal(
+            "export const w = m.witness(M, \"w\", { expect: (s) => s.n === 0 });\n",
+            18,
+            "`m.witness`",
+        );
+        one_refusal(
+            "export const w = m.witness(M, \"w\", { steps: [bump] });\n",
+            18,
+            "`m.witness`",
+        );
+        one_refusal(
+            "export const w = m.witness(M, \"w\", { steps: [], expect: (s) => s.n === 0, until: 1 });\n",
+            75,
+            "`until`",
+        );
+        one_refusal("export const w = m.witness(M, \"w\");\n", 18, "`m.witness`");
+        one_refusal(
+            "export const w = m.witness(M, { steps: [], expect: (s) => s.n === 0 });\n",
+            18,
+            "`m.witness`",
+        );
+    }
+
+    #[test]
+    fn a_witness_that_is_not_exported_is_refused() {
+        one_refusal(
+            "const w = m.witness(M, \"w\", { steps: [bump], expect: (s) => s.n === 1 });\n",
+            11,
+            "`w`",
+        );
+    }
 }

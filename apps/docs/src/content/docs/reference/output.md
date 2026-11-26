@@ -34,6 +34,29 @@ unreadable  src/clock.model.ts
   - `start` lists every field of the start state.
   - Each numbered step gives the action id, its inputs as `name = value` if any, and every changed field as `field: before -> after`.
   - `end` lists every field of the violating state. A 0-step path prints only `start`.
+- **`broken` witness:** a [witness](/reference/typescript/#witnesses) (TypeScript models only) prints like a rule: its id, its sentence, and the path played from the first start state that breaks it, followed by a `why` line at the depth of the path:
+
+  ```text
+  fail        Lift  6 states  0 ms
+    broken  climbs  "Two floors up reaches the top floor"
+      start  floor = 1, doors = false
+      1. up  floor: 1 -> 2
+      end    floor = 2, doors = false
+      why    step 2, `up`, can't happen here
+  ```
+
+  The reason is one of:
+
+  | Reason | Meaning |
+  |---|---|
+  | ``step N, `id`, can't happen here`` | The condition of step `N` is false in the last state of the path |
+  | ``step N, `id`, takes the field `f` out of the values it declares`` | Step `N` gave `f` a value outside its declaration; that step is the last of the path |
+  | ``step N: the condition of the action `id` <fault> here`` | The condition of step `N` faulted |
+  | ``step N: the change of the action `id` <fault> here`` | The change of step `N` faulted |
+  | `what the witness expects is false here` | Every step happened and `expect` is false in the last state |
+  | `what the witness expects <fault> here` | Every step happened and `expect` faulted in the last state |
+
+  `<fault>` is the fault's own words, as in a `fault` finding (for example, `reads a value that is null`).
 - **`stuck`:** a state where every action condition is false and every `end` condition is false. An `end` is evaluated only when no action can happen.
 - **`out of range`:** an action assigns a value outside a field's declared domain (for example, pushing past a sequence `max` or incrementing past a range). The out-of-range state is counted, no rule is judged in it, and search does not continue from it. No rule can receive `holds` in a model with an out-of-range state; rules not seen broken are `unknown`. `explore` in `@earnestjs/model` follows the same rule.
 - **`fault`:** an expression cannot be evaluated in a state (for example, reading a field of `null`, integer overflow, or `m.rem` with a negative input) inside a rule, action condition, action change, or `end` condition. A state where an action condition or `end` faults is a `fault`, not `stuck`. `explore` in `@earnestjs/model` follows the same rule.
@@ -106,6 +129,9 @@ Field meanings:
   - `"broken"` when any counted state breaks the rule.
   - `"holds"` only when exploration completed every reachable state, the rule never faulted, and no out-of-range state or action/end fault cut exploration short.
   - `"unknown"` when not seen broken, but the model was unfinished, the rule faulted, or another fault/out-of-range state left states unreached or unjudged.
+- `rules[].kind`: `"witness"` for a [witness](/reference/typescript/#witnesses). A plain rule has no `kind` key. Witnesses are listed after the model's rules.
+- `rules[].reason`: present only on a broken witness, with the text of its `why` line.
+- A witness's `verdict` is `"holds"` when it plays to the end from every start state, `"broken"` when a start state breaks it (`path` is then the path played until it broke), and `"unknown"` only when the model has more start states than `--max-states` and none of the ones played broke it.
 - `findings[].kind`: `"stuck"`, `"out-of-range"`, or `"fault"`.
 - `skipped`: test files that use the library and were skipped, in path order (`[]` if none).
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
@@ -180,7 +206,7 @@ Additional rules for `--base`:
 
 `earnest report` prints Markdown formatted for a pull request body:
 
-- One section per model with its result line, Mermaid statechart, and the shortest path to each broken rule.
+- One section per model with its result line, Mermaid statechart, the shortest path to each broken rule, and the path and `why` line of each broken witness.
 - An `Unreadable files` section naming every unreadable file and its problems.
 - A `Skipped files` section listing skipped test files that use the library.
 - A `Files that declare no model` section listing skipped Rust files that use the library without declaring a model.

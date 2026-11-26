@@ -27,11 +27,13 @@ export const MOST_VALUES_LISTED = 1_000_000;
  * What one kind of declaration knows about its values. `rest` is where a field of this kind
  * starts when it has no `.initial`; `null` means it starts at every value. `adopt` turns what
  * `.initial` accepts into a value, and `decode` reads a value back from its JSON form, throwing
- * when the JSON is of another kind.
+ * when the JSON is of another kind. `libraryKind` is the kind of the first part whose values are
+ * objects of this library, or `null` when every value is plain JavaScript.
  */
 export interface Shape<T, In = T> {
   readonly kind: string;
   readonly count: number;
+  readonly libraryKind: string | null;
   readonly rest: { readonly value: T } | null;
   values(): readonly T[];
   has(value: unknown): value is T;
@@ -50,6 +52,7 @@ const unreadable = (kind: string, json: Json): Error =>
 const optionalOf = <T, In>(inner: Shape<T, In>): Shape<T | null, In | null> => ({
   kind: "optional",
   count: inner.count + 1,
+  libraryKind: inner.libraryKind,
   rest: null,
   values: () => [null, ...inner.values()],
   has: (value): value is T | null => value === null || inner.has(value),
@@ -81,6 +84,16 @@ export class Declaration<T, In = T> {
   /** How many values the declaration has. Very large counts are approximate. */
   get count(): number {
     return this.#shape.count;
+  }
+
+  /**
+   * Where the values are not plain JavaScript, the kind of the first part that holds objects of
+   * this library, such as `SetValue`: `"set"` for `m.set(item)`, also inside `.optional()` or a
+   * record. `null` when every value is a boolean, a number, a text, `null` or a record of those,
+   * values that any JavaScript code can hold, copy and compare by content.
+   */
+  get libraryKind(): string | null {
+    return this.#shape.libraryKind;
   }
 
   /**
@@ -158,6 +171,40 @@ export const startingAt = (declared: Declaration<unknown, never>, value: unknown
 /** The fields of a model or a record, or the inputs of an action: a declaration for each name. */
 export type Fields = Readonly<Record<string, Declaration<unknown, never>>>;
 
+const combinationCount = (
+  entries: readonly (readonly [string, Declaration<unknown, never>])[],
+): number => entries.reduce((total, [, declared]) => total * declared.count, 1);
+
+/**
+ * Every row of values the declarations in `entries` give, in the order the checker tries an
+ * action's inputs: the first name varies fastest.
+ */
+export const rowsOf = (
+  entries: readonly (readonly [string, Declaration<unknown, never>])[],
+): readonly Row[] =>
+  entries.reduceRight<Row[]>(
+    (rest, [name, declared]) =>
+      rest.flatMap((later) => declared.values().map((value) => ({ [name]: value, ...later }))),
+    [{}],
+  );
+
+/**
+ * Every combination of one value for each of `fields`, in the order `explore` tries an action's
+ * inputs: the first field varies fastest, each through its values in the order of `values()`.
+ * Gives one empty row when there are no fields. Throws, before it lists any, when there are more
+ * than `MOST_VALUES_LISTED` combinations.
+ */
+export const combinationsOf = (fields: Fields): readonly Row[] => {
+  const entries = Object.entries(fields);
+  const count = combinationCount(entries);
+  if (count > MOST_VALUES_LISTED) {
+    throw new Error(
+      `these fields have ${count} combinations of values, too many to list; declare fewer values`,
+    );
+  }
+  return rowsOf(entries);
+};
+
 /** The type of the values a declaration has. */
 export type ValueOf<D> = D extends Declaration<infer T, infer _In> ? T : never;
 
@@ -177,6 +224,7 @@ const same = <T>(value: T): T => value;
 export const booleanOf = (): Declaration<boolean> =>
   new Declaration({
     kind: "boolean",
+    libraryKind: null,
     count: 2,
     rest: null,
     values: () => [false, true],
@@ -196,6 +244,7 @@ export const int = (lo: number, hi: number): Declaration<number> => {
   }
   return new Declaration({
     kind: "number",
+    libraryKind: null,
     count: hi - lo + 1,
     rest: null,
     values: () => Array.from({ length: hi - lo + 1 }, (_, position) => lo + position),
@@ -222,6 +271,7 @@ const choice = <T extends string | number | boolean>(
   }
   return new Declaration({
     kind: "enum",
+    libraryKind: null,
     count: listed.length,
     rest: null,
     values: () => listed,
@@ -259,7 +309,9 @@ export const record = <F extends Fields>(fields: F): Declaration<StateOf<F>> => 
     entries.every(([name, declared]) => declared.has(value[name]));
   return new Declaration({
     kind: "record",
-    count: entries.reduce((total, [, declared]) => total * declared.count, 1),
+    count: combinationCount(entries),
+    libraryKind:
+      entries.find(([, declared]) => declared.libraryKind !== null)?.[1].libraryKind ?? null,
     rest: null,
     values: () =>
       entries
@@ -320,6 +372,7 @@ const mapsOver = <K, V>(keys: readonly K[], values: readonly V[]): MapValue<K, V
 export const set = <T>(item: Declaration<T, never>): Declaration<SetValue<T>> =>
   new Declaration({
     kind: "set",
+    libraryKind: "set",
     count: 2 ** item.count,
     rest: { value: SetValue.of<T>([]) },
     values: () => subsets(item.values()),
@@ -349,6 +402,7 @@ export const map = <K, V>(
   const value = holdable("m.map", valueDeclared);
   return new Declaration({
     kind: "map",
+    libraryKind: "map",
     count: (value.count + 1) ** key.count,
     rest: { value: MapValue.of<K, V>([]) },
     values: () => mapsOver(key.values(), value.values()),
@@ -405,6 +459,7 @@ export const seq = <T>(
   const max = wholeLimit("m.seq's max", limit.max);
   return new Declaration({
     kind: "sequence",
+    libraryKind: "sequence",
     count: listCount(item.count, max),
     rest: { value: SeqValue.of<T>([]) },
     values: () => lists(item.values(), max).map((items) => SeqValue.of(items)),
@@ -429,6 +484,7 @@ export const queue = <T>(
   const capacity = wholeLimit("m.queue's capacity", limit.capacity);
   return new Declaration({
     kind: "queue",
+    libraryKind: "queue",
     count: listCount(item.count, capacity),
     rest: { value: QueueValue.of<T>(capacity, []) },
     values: () => lists(item.values(), capacity).map((items) => QueueValue.of(capacity, items)),
@@ -449,6 +505,7 @@ export const queue = <T>(
 const plainLock = (): Declaration<LockValue> =>
   new Declaration({
     kind: "lock",
+    libraryKind: "lock",
     count: 2,
     rest: { value: LockValue.of(false) },
     values: () => [LockValue.of(false), LockValue.of(true)],
@@ -468,6 +525,7 @@ const ownedLock = <Owner>(owner: Declaration<Owner, never>): Declaration<OwnedLo
   }
   return new Declaration({
     kind: "owned lock",
+    libraryKind: "owned lock",
     count: owner.count + 1,
     rest: { value: OwnedLockValue.of<Owner>(null) },
     values: () => [
@@ -502,6 +560,7 @@ const staged = <Stage extends string, T extends ModelValue>(
   const values = stages.map(at);
   return new Declaration({
     kind,
+    libraryKind: kind,
     count: values.length,
     rest: values[0] === undefined ? null : { value: values[0] },
     values: () => values,
@@ -547,6 +606,7 @@ export const retry = (limit: { readonly max: number }): Declaration<RetryValue> 
   const max = wholeLimit("m.retry's max", limit.max);
   return new Declaration({
     kind: "retry",
+    libraryKind: "retry",
     count: max + 1,
     rest: { value: RetryValue.of(max, 0) },
     values: () => Array.from({ length: max + 1 }, (_, attempts) => RetryValue.of(max, attempts)),

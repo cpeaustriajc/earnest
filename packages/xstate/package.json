@@ -1,0 +1,59 @@
+{
+  "name": "@earnestjs/xstate",
+  "version": "0.1.0",
+  "description": "Earnest's breadth-first state search for XState: a path generator for model-based tests and a check of rules and stuck states",
+  "homepage": "https://earnest.cpeaustriajc.dev",
+  "license": "LGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cpeaustriajc/earnest.git",
+    "directory": "packages/xstate"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "LICENSE.LESSER"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsrs -p tsconfig.build.json",
+    "prepack": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\" && bun run build && node scripts/publish-manifest.ts apply",
+    "postpack": "node scripts/publish-manifest.ts restore",
+    "typecheck": "tsrs --noEmit",
+    "format": "oxfmt --check",
+    "format:fix": "oxfmt",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@earnestjs/model": "workspace:0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@xstate/graph": "^3.0.4",
+    "oxfmt": "^0.79.0",
+    "tsrs": "^7.1.0-beta.tsrs3",
+    "vitest": "^5.1.1",
+    "xstate": "^5.33.4"
+  },
+  "peerDependencies": {
+    "@xstate/graph": "^3.0.4",
+    "xstate": "^5.19.4"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
