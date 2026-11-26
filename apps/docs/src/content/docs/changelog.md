@@ -44,6 +44,10 @@ module bank {
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
 
+## November 2026: Quint fairness of the step beside fairness of an action
+
+A temporal property under `weakFair(step, vars)` together with `weakFair(A, vars)` was judged broken where Quint's TLC run says it holds, when a run could stop in a state where the step can do nothing more and `A` alone could still happen. Such a run is not fair to `A`, so it no longer counts. Fairness of the step alone, and of an action alone, are judged as before.
+
 ## November 2026: fairness of a Quint action judged by the action alone
 
 - **Fixed, a wrong verdict:** `weakFair(pay, vars)` where the step puts a condition around the call, as in `any { all { open, pay }, toggle }`, `all { open or paid, any { pay, toggle } }` or `if (open) …`, was judged as if `pay` could happen only where the step lets it, so a property that `quint verify --backend tlc` finds holds came out broken, and `earnest confirm --tlc` agreed with it. Fairness of an action is now judged from the action's own definition, as TLC reads `WF_vars(pay)`, and the TLA+ export states the fairness of the action alone.
