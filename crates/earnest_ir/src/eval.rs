@@ -59,9 +59,7 @@ impl Fault {
                 "takes a division with a negative number or a divisor below 1".to_owned()
             }
             Self::Outside(ty) => format!("computes a number outside `{}`", ty.name()),
-            Self::Missing => {
-                "reads a key, a position or a case that is not there".to_owned()
-            }
+            Self::Missing => "reads a key, a position or a case that is not there".to_owned(),
             Self::Undefined => {
                 "computes a power or a run of numbers that is not defined".to_owned()
             }
@@ -693,10 +691,7 @@ fn on_map(op: MapOp, first: Value, second: Option<Value>, third: Option<Value>) 
             entries.insert(key, value);
             Ok(Value::map(entries))
         }
-        MapOp::MustGet => entries
-            .get(&needed(second)?)
-            .cloned()
-            .ok_or(Fault::Missing),
+        MapOp::MustGet => entries.get(&needed(second)?).cloned().ok_or(Fault::Missing),
         MapOp::Replace => {
             let key = needed(second)?;
             let value = needed(third)?;

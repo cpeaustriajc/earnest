@@ -32,13 +32,19 @@ fn fault(why: &str) -> impl Fn(earnest_ir::Fault) -> crate::reader::Refusal {
     move |fault| refusal("`init`", &format!("{why} {}", fault.describe()))
 }
 
-fn start_of(path: &Path, picked: &[Value], fields: &[String]) -> Read<Option<Vec<Value>>> {
+fn start_of(
+    path: &Path,
+    picked: &[Value],
+    fields: &[String],
+    slots: usize,
+) -> Read<Option<Vec<Value>>> {
     let slots = path
         .choices
         .iter()
         .map(|choice| choice.slot.saturating_add(1))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(slots);
     let mut frame = Frame::new(&[], slots);
     for (choice, value) in path.choices.iter().zip(picked) {
         frame.put(choice.slot, value.clone());
@@ -55,11 +61,15 @@ fn start_of(path: &Path, picked: &[Value], fields: &[String]) -> Read<Option<Vec
     Ok(Some(state))
 }
 
-pub(crate) fn start_states(paths: &[Path], fields: &[String]) -> Read<Vec<Vec<Value>>> {
+pub(crate) fn start_states(
+    paths: &[Path],
+    fields: &[String],
+    slots: usize,
+) -> Read<Vec<Vec<Value>>> {
     let mut found = BTreeSet::new();
     for path in paths {
         for picked in combinations(path)? {
-            if let Some(state) = start_of(path, &picked, fields)? {
+            if let Some(state) = start_of(path, &picked, fields, slots)? {
                 found.insert(state);
             }
         }

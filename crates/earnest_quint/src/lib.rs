@@ -11,6 +11,7 @@
 //! and names the definition it was found in.
 
 mod builtins;
+mod data;
 mod json;
 mod model;
 mod reader;

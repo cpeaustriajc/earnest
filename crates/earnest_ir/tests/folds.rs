@@ -95,10 +95,7 @@ fn a_fold_over_nothing_gives_its_start() {
 
 #[test]
 fn a_fold_that_adds_each_image_to_a_set_is_a_set_map() {
-    let image = apply(
-        Op::Math(Math::Remainder),
-        &[Expr::Local(ITEM), int(2)],
-    );
+    let image = apply(Op::Math(Math::Remainder), &[Expr::Local(ITEM), int(2)]);
     let answer = both(&fold(
         set_value(&[1, 2, 3]),
         Expr::Const(set_value(&[])),
@@ -215,7 +212,11 @@ fn replace_at_changes_one_item_and_faults_outside_the_sequence() {
 fn a_power_is_defined_for_powers_from_zero_except_zero_to_zero() {
     let power = |base, exponent| both(&apply(Op::Power, &[int(base), int(exponent)]));
     assert_eq!(power(2, 3), Ok(Value::Int(8)), "2 cubed");
-    assert_eq!(power(-2, 3), Ok(Value::Int(-8)), "an odd power keeps the sign");
+    assert_eq!(
+        power(-2, 3),
+        Ok(Value::Int(-8)),
+        "an odd power keeps the sign"
+    );
     assert_eq!(power(5, 0), Ok(Value::Int(1)), "anything else to the zero");
     assert_eq!(power(2, -1), Err(Fault::Undefined), "a negative power");
     assert_eq!(power(0, 0), Err(Fault::Undefined), "zero to the zero");

@@ -80,7 +80,7 @@ fn ids(paths: &[Path], fallback: &str) -> Vec<String> {
         .collect()
 }
 
-fn action(id: String, path: &Path, fields: &[String]) -> Read<Action> {
+fn action(id: String, path: &Path, fields: &[String], slots: usize) -> Read<Action> {
     let updates = assigned(path, fields, &id)?;
     let changed: Vec<bool> = updates
         .iter()
@@ -106,7 +106,8 @@ fn action(id: String, path: &Path, fields: &[String]) -> Read<Action> {
         .iter()
         .map(|choice| choice.slot.saturating_add(1))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .max(slots);
     Ok(Action {
         label: id.clone(),
         id,
@@ -148,13 +149,14 @@ fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<
             );
         };
         let holds = reader.pure(conjunct)?;
+        let slots = reader.slots;
         rules.push(Rule {
             id: name.clone(),
             says: format!("The Quint invariant `{name}` holds"),
             line: DECLARED_ON,
             text: name.clone(),
             holds: Code::new(holds),
-            slots: 0,
+            slots,
         });
     }
     Ok(rules)
@@ -205,7 +207,7 @@ fn parts<'a>(
     reader.in_init = true;
     let starting = unfolded(reader, init)?;
     reader.in_init = false;
-    let starts = start_states(&starting, names)?;
+    let starts = start_states(&starting, names, reader.slots)?;
     let stepping = unfolded(reader, step)?;
     let fallback = match &step.expr {
         Quint::Name { name, .. } => name.clone(),
@@ -214,12 +216,17 @@ fn parts<'a>(
     let actions = ids(&stepping, &fallback)
         .into_iter()
         .zip(&stepping)
-        .map(|(id, path)| action(id, path, names))
+        .map(|(id, path)| action(id, path, names, reader.slots))
         .collect::<Read<Vec<Action>>>()?;
     Ok((starts, actions, rules))
 }
 
 pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusal>> {
+    let met = built(path, compiled, Symbols::default())?;
+    built(path, compiled, met.symbols.alphabetical())
+}
+
+fn built(path: &str, compiled: &Compiled, symbols: Symbols) -> Result<Model, Vec<Refusal>> {
     if !compiled.errors.is_empty() {
         return Err(vec![refusal(
             "the compiled module",
@@ -259,10 +266,10 @@ pub(crate) fn model(path: &str, compiled: &Compiled) -> Result<Model, Vec<Refusa
             STEP
         }));
     };
-    let mut reader = Reader::new(&compiled.table, defs.clone(), positions);
+    let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
     let (starts, actions, rules) =
         parts(&mut reader, &defs, (init, step), &names).map_err(|refusal| vec![refusal])?;
-    let mut symbols = Symbols::default();
+    let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()
         .enumerate()
