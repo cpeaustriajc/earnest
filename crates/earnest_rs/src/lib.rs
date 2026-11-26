@@ -40,6 +40,13 @@ pub use library::{declares_a_model, uses_library};
 /// and `#[group]` methods, read from a `format!` or a `.to_string()` or `.to_owned()`. A number
 /// or a `&'static str` marked `#[one_of(a, b)]` is a choice of the listed values.
 ///
+/// `#[action("...", fair)]` sets the action's `fair`. A method marked `#[eventually("...")]` is
+/// a rule about runs whose body is what every run reaches, and `after = name` starts it where
+/// the helper method `name` is true. A method marked `#[witness("...")]` is a witness: its body
+/// is `Some(condition)`, or `let name = self.a()?.b(1)?;` then `Some(condition)` on `name`,
+/// whose actions are the steps, and `setup = name` plays it from a setup. A method marked
+/// `#[setup("...")]` whose body is `Self { field: constant, ..self.clone() }` is a setup.
+///
 /// The value inside an `Option` is read with `if let Some(x) = value { .. } else { .. }`,
 /// `value.unwrap_or(default)`, `value.map_or(default, |x| ..)`, `let x = value?;` and `let Some(x)
 /// = value else { return None; };` in an action, where `None` means the action does not happen.
