@@ -1,7 +1,8 @@
 use crate::explore::Search;
 use crate::limits::asked;
 use crate::outcome::{Path, RuleKind, RuleOutcome, Step, Verdict};
-use earnest_ir::{Eventually, FairStep, Fairness, Fault, Frame};
+use earnest_ir::{Action, Alone, Eventually, FairStep, Fairness, Fault, Frame};
+use earnest_value::Value;
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 
@@ -208,6 +209,7 @@ enum Stops {
 struct Part {
     actions: Vec<u32>,
     arrows: Option<Vec<bool>>,
+    possible: Option<Vec<bool>>,
 }
 
 impl Part {
@@ -494,7 +496,10 @@ impl Kept {
     fn possible(&self, fair: &[Part]) -> Vec<Vec<bool>> {
         fair.iter()
             .map(|part| {
-                let mut flags = vec![false; self.parents.len()];
+                let mut flags = part
+                    .possible
+                    .clone()
+                    .unwrap_or_else(|| vec![false; self.parents.len()]);
                 for (at, edge) in self.edges.all.iter().enumerate() {
                     if part.counts(at, edge) {
                         put(&mut flags, edge.from, true);
@@ -637,6 +642,7 @@ impl Search<'_> {
             .map(|action| Part {
                 actions: vec![action],
                 arrows: None,
+                possible: None,
             })
             .collect();
         let mut kept = Kept {
@@ -650,43 +656,115 @@ impl Search<'_> {
         Some(kept)
     }
 
-    fn parts(&self, fairness: &Fairness, edges: &Edges) -> Vec<Part> {
+    fn parts(&self, fairness: &Fairness, edges: &Edges) -> Option<Vec<Part>> {
         let actions = self.model.actions.len();
         fairness
             .actions
             .iter()
             .map(|part| {
                 let narrowed = part.iter().any(|position| *position >= actions);
-                Part {
+                let alone: Vec<&FairStep> = self
+                    .steps_of(part)
+                    .into_iter()
+                    .filter(|step| step.alone.is_some())
+                    .collect();
+                let possible = if alone.is_empty() {
+                    None
+                } else {
+                    Some(self.possible_alone(&alone)?)
+                };
+                Some(Part {
                     actions: part
                         .iter()
                         .filter(|position| **position < actions)
                         .filter_map(|position| u32::try_from(*position).ok())
                         .collect(),
-                    arrows: narrowed.then(|| self.counted(part, edges)),
-                }
+                    arrows: if narrowed {
+                        Some(self.counted(part, edges)?)
+                    } else {
+                        None
+                    },
+                    possible,
+                })
             })
             .collect()
     }
 
-    fn counted(&self, part: &[usize], edges: &Edges) -> Vec<bool> {
+    fn steps_of(&self, part: &[usize]) -> Vec<&FairStep> {
         let actions = self.model.actions.len();
-        let steps: Vec<&FairStep> = part
-            .iter()
+        part.iter()
             .filter_map(|position| position.checked_sub(actions))
             .filter_map(|step| self.model.runs.fair_steps.get(step))
-            .collect();
+            .collect()
+    }
+
+    fn counted(&self, part: &[usize], edges: &Edges) -> Option<Vec<bool>> {
+        let steps = self.steps_of(part);
         edges
             .all
             .iter()
             .map(|edge| {
                 let action = usize::try_from(edge.action).unwrap_or(usize::MAX);
-                part.contains(&action)
-                    || steps
-                        .iter()
-                        .any(|step| step.action == action && self.takes(step, edge))
+                if part.contains(&action) {
+                    return Some(true);
+                }
+                for step in &steps {
+                    let counts = match &step.alone {
+                        Some(alone) => self.taken_alone(alone, &step.over, edge)?,
+                        None => step.action == action && self.takes(step, edge),
+                    };
+                    if counts {
+                        return Some(true);
+                    }
+                }
+                Some(false)
             })
             .collect()
+    }
+
+    fn possible_alone(&self, steps: &[&FairStep]) -> Option<Vec<bool>> {
+        (0..self.store.len())
+            .map(|id| {
+                let before = self.store.state(id);
+                for step in steps {
+                    let Some(alone) = &step.alone else { continue };
+                    let changes = |next: &[Option<Value>]| {
+                        next.iter().enumerate().any(|(field, value)| {
+                            (step.over.is_empty() || step.over.contains(&field))
+                                && value
+                                    .as_ref()
+                                    .is_some_and(|value| before.get(field) != Some(value))
+                        })
+                    };
+                    if moves(alone, &before, &changes)? {
+                        return Some(true);
+                    }
+                }
+                Some(false)
+            })
+            .collect()
+    }
+
+    fn taken_alone(&self, alone: &Alone, over: &[usize], edge: &Edge) -> Option<bool> {
+        let (Ok(from), Ok(to)) = (usize::try_from(edge.from), usize::try_from(edge.to)) else {
+            return Some(false);
+        };
+        let (before, after) = (self.store.state(from), self.store.state(to));
+        if !over.is_empty()
+            && over
+                .iter()
+                .all(|field| before.get(*field) == after.get(*field))
+        {
+            return Some(false);
+        }
+        let gives = |next: &[Option<Value>]| {
+            next.iter().enumerate().all(|(field, value)| {
+                value
+                    .as_ref()
+                    .is_none_or(|value| after.get(field) == Some(value))
+            })
+        };
+        moves(alone, &before, &gives)
     }
 
     fn takes(&self, step: &FairStep, edge: &Edge) -> bool {
@@ -765,7 +843,19 @@ impl Search<'_> {
                 let hunted = match &rule.fair {
                     None => hunt.lasso(&judged),
                     Some(fairness) => {
-                        let fair = self.parts(fairness, &kept.edges);
+                        let Some(fair) = self.parts(fairness, &kept.edges) else {
+                            trouble.get_or_insert_with(|| {
+                                (
+                                    0,
+                                    format!(
+                                        "the fairness of the rule `{}` is not worked out: an \
+                                         action it names faults in a state",
+                                        rule.id
+                                    ),
+                                )
+                            });
+                            return Self::unknown(rule);
+                        };
                         let possible = kept.possible(&fair);
                         let stops = if fairness.step {
                             Stops::WhereNothingChangesTheState
@@ -790,4 +880,64 @@ impl Search<'_> {
             trouble,
         }
     }
+}
+
+fn moves(
+    alone: &Alone,
+    before: &[Value],
+    wanted: &dyn Fn(&[Option<Value>]) -> bool,
+) -> Option<bool> {
+    for (position, action) in alone.actions.iter().enumerate() {
+        let mut frame = Frame::new(before, action.slots);
+        if chosen(alone, (position, action), 0, &mut frame, wanted)? {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+fn chosen(
+    alone: &Alone,
+    (position, action): (usize, &Action),
+    input: usize,
+    frame: &mut Frame<'_>,
+    wanted: &dyn Fn(&[Option<Value>]) -> bool,
+) -> Option<bool> {
+    let Some(each) = action.inputs.get(input) else {
+        if !action.guard.truth(frame).ok()? {
+            return Some(false);
+        }
+        let mut next = Vec::with_capacity(action.updates.len());
+        for update in &action.updates {
+            next.push(match update {
+                Some(code) => Some(code.eval(frame).ok()?),
+                None => None,
+            });
+        }
+        return Some(wanted(&next));
+    };
+    let picked = alone
+        .picks
+        .iter()
+        .find(|pick| pick.action == position && pick.input == input);
+    let values: Vec<Value> = match picked {
+        Some(pick) => match pick.from.eval(frame).ok()? {
+            Value::Set(items) => items.iter().cloned().collect(),
+            _ => return None,
+        },
+        None => each.values.clone(),
+    };
+    for value in values {
+        frame.put(each.slot, value);
+        if chosen(
+            alone,
+            (position, action),
+            input.saturating_add(1),
+            frame,
+            wanted,
+        )? {
+            return Some(true);
+        }
+    }
+    Some(false)
 }

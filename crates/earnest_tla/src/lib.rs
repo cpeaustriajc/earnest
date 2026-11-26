@@ -39,7 +39,7 @@ mod limits;
 mod names;
 mod scribe;
 
-use earnest_ir::{Action, Expr, Fairness, Model};
+use earnest_ir::{Action, Alone, Expr, Fairness, Model, Pick};
 use earnest_value::{Domain, Value};
 use helper::{EVERY_HELPER, Helper};
 use kind::Kind;
@@ -392,9 +392,18 @@ impl Writer<'_> {
             };
             let defined = self.names.claim(&format!(
                 "Fair_{}_{}",
-                action.id,
+                step.alone.as_ref().map_or(action.id.as_str(), |alone| alone
+                    .actions
+                    .first()
+                    .map_or(action.id.as_str(), |first| first.id.as_str())),
                 position.saturating_add(1)
             ));
+            if let Some(alone) = &step.alone {
+                self.alone(alone, &defined, blocks);
+                subscripts.push(self.subscript(&step.over));
+                fair_to.push(defined);
+                continue;
+            }
             let mut narrowed = action.clone();
             for (at, value) in &step.inputs {
                 if let Some(input) = narrowed.inputs.get_mut(*at) {
@@ -403,13 +412,7 @@ impl Writer<'_> {
                 }
             }
             blocks.push(self.action(step.action, &narrowed, &defined));
-            let over: Vec<String> = step
-                .over
-                .iter()
-                .filter_map(|field| self.scribe.variables().get(*field))
-                .map(|variable| variable.name.clone())
-                .collect();
-            subscripts.push((!over.is_empty()).then(|| format!("<<{}>>", over.join(", "))));
+            subscripts.push(self.subscript(&step.over));
             fair_to.push(defined);
         }
         (fair_to, subscripts)
@@ -549,17 +552,57 @@ impl Writer<'_> {
         self.scribe.expr(expr, &mut scope)
     }
 
+    fn subscript(&self, over: &[usize]) -> Option<String> {
+        let over: Vec<String> = over
+            .iter()
+            .filter_map(|field| self.scribe.variables().get(*field))
+            .map(|variable| variable.name.clone())
+            .collect();
+        (!over.is_empty()).then(|| format!("<<{}>>", over.join(", ")))
+    }
+
+    fn alone(&mut self, alone: &Alone, defined: &str, blocks: &mut Vec<String>) {
+        let mut ways = Vec::with_capacity(alone.actions.len());
+        for (position, action) in alone.actions.iter().enumerate() {
+            let way = self
+                .names
+                .claim(&format!("{defined}_way_{}", position.saturating_add(1)));
+            let picks: Vec<&Pick> = alone
+                .picks
+                .iter()
+                .filter(|pick| pick.action == position)
+                .collect();
+            let written = self.action_with(action, &way, &picks, Rest::Free);
+            blocks.push(written);
+            ways.push(way);
+        }
+        if ways.is_empty() {
+            ways.push("FALSE".to_owned());
+        }
+        blocks.push(definition(defined, &[ways.join(" \\/ ")]));
+    }
+
     fn action(&mut self, position: usize, action: &Action, defined: &str) -> String {
-        let mut scope = Scope::new(&self.names);
-        let mut choices = Vec::with_capacity(action.inputs.len());
-        let mut needed = vec![IN_RANGE.to_owned()];
-        let picks: Vec<_> = self
+        let picks: Vec<&Pick> = self
             .model
             .runs
             .picks
             .iter()
             .filter(|pick| pick.script.is_none() && pick.action == position)
             .collect();
+        self.action_with(action, defined, &picks, Rest::Kept)
+    }
+
+    fn action_with(
+        &mut self,
+        action: &Action,
+        defined: &str,
+        picks: &[&Pick],
+        rest: Rest,
+    ) -> String {
+        let mut scope = Scope::new(&self.names);
+        let mut choices = Vec::with_capacity(action.inputs.len());
+        let mut needed = vec![IN_RANGE.to_owned()];
         for (at, input) in action.inputs.iter().enumerate() {
             let (set, kind) = if let Some(pick) = picks.iter().find(|pick| pick.input == at) {
                 let written = self.scribe.expr(pick.from.expr(), &mut scope);
@@ -590,6 +633,9 @@ impl Writer<'_> {
                 kept.push(variable.name.clone());
             }
         }
+        if rest == Rest::Free {
+            kept.clear();
+        }
         kept.extend(self.filler.clone());
         if !kept.is_empty() {
             primed.push(format!("/\\ UNCHANGED <<{}>>", kept.join(", ")));
@@ -607,6 +653,12 @@ impl Writer<'_> {
         chosen.extend(lines.iter().map(|line| format!("{INDENT}{line}")));
         definition(defined, &chosen)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rest {
+    Kept,
+    Free,
 }
 
 fn reads_the_state(expr: &Expr) -> bool {

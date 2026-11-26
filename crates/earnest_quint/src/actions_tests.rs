@@ -66,11 +66,23 @@ fn a_tuple_of_variables_through_vals_is_fairness_over_every_variable() {
             .and_then(|rule| rule.fair.clone())
             .unwrap_or_else(|| panic!("no rule about runs {id}"))
     };
+    let tick = fair.actions.len()
+        + fair
+            .runs
+            .fair_steps
+            .iter()
+            .position(|step| {
+                step.alone
+                    .as_ref()
+                    .is_some_and(|alone| alone.named == "tick()")
+                    && step.over.is_empty()
+            })
+            .unwrap_or_else(|| panic!("`tick` alone is a fair step: {:?}", fair.runs.fair_steps));
     for id in ["finishes", "finishesThroughVals", "finishesBackwards"] {
         assert_eq!(
             fair_to(id).actions,
-            [vec![0]],
-            "{id} is fair to `tick`, the step's first action"
+            [vec![tick]],
+            "{id} is fair to `tick` alone, over every variable"
         );
     }
     assert!(fair_to("unfairFinishes").actions.is_empty(), "no fairness");

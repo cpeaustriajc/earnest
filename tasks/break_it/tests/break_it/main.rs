@@ -10,6 +10,8 @@ mod fourth_a;
 mod fourth_b;
 mod ninth;
 mod quint_first;
+mod quint_fourth;
+mod quint_fourth_fixes;
 mod quint_second;
 mod quint_third;
 mod second;

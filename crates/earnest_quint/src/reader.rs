@@ -89,10 +89,14 @@ impl Path {
     fn joined(&self, other: &Self) -> Self {
         let mut both = self.clone();
         both.name = self.name.clone().or_else(|| other.name.clone());
-        if self.name.is_none() {
-            both.given.clone_from(&other.given);
-            both.branch.clone_from(&other.branch);
-            both.named_branches = other.named_branches;
+        match (&self.name, &other.name) {
+            (None, None) => both.branch.extend(other.branch.iter().cloned()),
+            (None, Some(_)) => {
+                both.given.clone_from(&other.given);
+                both.branch.clone_from(&other.branch);
+                both.named_branches = other.named_branches;
+            }
+            (Some(_), _) => {}
         }
         let mut later = other.clone();
         if !self.guards.is_empty() {
@@ -948,7 +952,7 @@ impl<'a> Reader<'a> {
                     path.branch.truncate(outer);
                 }
                 if let Some(written) = &written {
-                    path.branch.insert(0, written.clone());
+                    path.branch.push(written.clone());
                 }
                 path.named_branches = path.branch.len();
                 path.name = Some(def.name.clone());

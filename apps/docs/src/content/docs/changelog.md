@@ -40,6 +40,14 @@ module bank {
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).
 
+## November 2026: fairness of a Quint action judged by the action alone
+
+- **Fixed, a wrong verdict:** `weakFair(pay, vars)` where the step puts a condition around the call, as in `any { all { open, pay }, toggle }`, `all { open or paid, any { pay, toggle } }` or `if (open) …`, was judged as if `pay` could happen only where the step lets it, so a property that `quint verify --backend tlc` finds holds came out broken, and `earnest confirm --tlc` agreed with it. Fairness of an action is now judged from the action's own definition, as TLC reads `WF_vars(pay)`, and the TLA+ export states the fairness of the action alone.
+- **A spec that imports a module twice over:** a spec with `import types.*` and `import helpers as H`, where `helpers` imports `types.*` too, is built from the typecheck. It was compiled, and `quint compile` stops on it.
+- **Where Quint's error is:** a compile Quint fails on is reported at the check's `.qnt` file, not at a line of Quint's own code.
+
+See [What is read today](/reference/quint/#what-is-read-today).
+
 ## November 2026: Quint fairness given a part of a pick, and fixes from the third Quint pass
 
 - **Fairness given a part of a pick:** `weakFair(buy(p._1), vars)` where the step picks `nondet p = tuples(BUYERS, ITEMS).oneOf()` and calls `buy(p._1)` is read, as are a record field (`buy(r.who)`) and any expression over one `nondet` (`act(b + 1)`): a step counts when its pick gives the value. It was refused.
