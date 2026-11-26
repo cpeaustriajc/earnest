@@ -460,10 +460,11 @@ fn search_reason(model: &Value) -> Value {
         model["status"], "pass",
         "a compiled check that did not play every run it sees does not pass: {model}"
     );
-    assert_eq!(
-        model["reason"],
-        format!("runs not played: {}", unplayed.join(", ")),
-        "{model}"
+    assert!(
+        model["reason"].as_str().is_some_and(|reason| {
+            reason.starts_with(&format!("runs not played: {}", unplayed.join(", ")))
+        }),
+        "the reason names the runs not played: {model}"
     );
     Value::Null
 }

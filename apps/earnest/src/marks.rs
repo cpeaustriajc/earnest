@@ -46,15 +46,19 @@ fn is_a_name(text: &str) -> bool {
 
 fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
     let rest = rest.trim();
-    let (first, after) = rest
-        .split_once(|each: char| each.is_whitespace())
-        .map_or((rest, ""), |(first, after)| (first, after.trim()));
-    let (kind, listed) = match first {
-        "" => return Some((Kind::Holds, Vec::new())),
-        BROKEN => (Kind::Broken, after),
-        REACHABLE => (Kind::Reachable, after),
-        _ => (Kind::Holds, rest),
+    let word = |kind: &str| {
+        rest.strip_prefix(kind).filter(|after| {
+            after.is_empty() || after.starts_with(|each: char| each.is_whitespace() || each == ',')
+        })
     };
+    let (kind, listed) = if let Some(after) = word(BROKEN) {
+        (Kind::Broken, after)
+    } else if let Some(after) = word(REACHABLE) {
+        (Kind::Reachable, after)
+    } else {
+        (Kind::Holds, rest)
+    };
+    let listed = listed.trim().strip_prefix(',').unwrap_or(listed).trim();
     if listed.is_empty() {
         return Some((kind, Vec::new()));
     }
@@ -85,20 +89,31 @@ pub(crate) fn read_doc(doc: &str) -> Doc {
     let mut lines = doc.lines().map(str::trim).enumerate();
     while let Some((line, trimmed)) = lines.next() {
         if let Some(rest) = trimmed.strip_prefix(MARK) {
-            let spaced = rest.is_empty() || rest.starts_with(char::is_whitespace);
+            let spaced = rest.is_empty()
+                || rest.starts_with(|each: char| each.is_whitespace() || each == ',');
             let mut written = rest.trim_end().to_owned();
+            let mut went_on: Option<&str> = None;
             while written.ends_with(',') {
                 match lines.next() {
                     Some((_, next)) if !next.is_empty() => {
+                        went_on.get_or_insert(next);
                         written.push(' ');
                         written.push_str(next);
                     }
                     _ => break,
                 }
             }
-            match words_after(&written).filter(|_| spaced) {
-                Some((kind, names)) => read.marks.push(Mark { kind, names, line }),
-                None => read.wrong.push((line, unknown_mark(trimmed))),
+            if let Some((kind, names)) = words_after(&written).filter(|_| spaced) {
+                read.marks.push(Mark { kind, names, line });
+            } else {
+                let on_its_line = rest.trim_end().strip_suffix(',').unwrap_or(rest);
+                let message = match went_on {
+                    Some(next) if spaced && words_after(on_its_line).is_some() => {
+                        list_goes_on(trimmed, next)
+                    }
+                    _ => unknown_mark(trimmed),
+                };
+                read.wrong.push((line, message));
             }
         } else if is_unspaced(trimmed) {
             read.wrong.push((line, unspaced_mark(trimmed)));
@@ -129,6 +144,14 @@ pub(crate) fn names_unended(names: &[&str]) -> String {
          does not end with a comma, so it is read as the check's sentence and none of them is \
          judged: end the line of the mark with a comma, `{MARK} a,`, so the list goes on here",
         listed.join(", ")
+    )
+}
+
+fn list_goes_on(written: &str, next: &str) -> String {
+    format!(
+        "the mark `{written}` ends with a comma, so its list of names goes on over the next doc \
+         line, and `{next}` is not a list of names: take the comma away to end the list there, or \
+         write the rest of the names on the next line"
     )
 }
 
@@ -329,13 +352,24 @@ mod tests {
             [0],
             "a list that ends with a comma"
         );
+        assert_eq!(
+            marks("@check,\nok").0,
+            [mark(Kind::Holds, &["ok"], 0)],
+            "a bare mark with a comma goes on too"
+        );
+        assert_eq!(
+            marks("@check broken,\nsmall").0,
+            [mark(Kind::Broken, &["small"], 0)]
+        );
+        let (_, _, wrong) = marks("@check broken small,\nwhich the third step breaks.");
+        assert_eq!(wrong, [0], "the comma sends the list on to a sentence");
     }
 
     #[test]
     fn a_mark_the_checker_can_not_read_is_wrong_at_its_line() {
         for (doc, line) in [
             ("@checked", 0),
-            ("first\n@check broken, x", 1),
+            ("first\n@check brokn x", 1),
             ("check", 0),
             ("check broken", 0),
             ("says\ncheck reachable", 1),

@@ -36,6 +36,10 @@ module bank {
 - **A list of names goes on over the next line** when its line ends with a comma; a doc line of a check made only of names it sees, after a line with no comma, is `unreadable` at that line.
 - **`///@check small`** above a module or a definition is `unreadable` at that line, read from the source.
 - **One name after two marks** of a module's doc is `unreadable`. A mark on a definition that a check's doc names under another word is not: the check's doc wins.
+- **More specs imported whole are built:** a spec with a variable of a sum type, with its types in a types module of another file, with an `assume` (left out, as `quint compile` leaves it out), or with a helper imported under a name, so its runs are played. A check beside another that imports the same spec under a name is built too.
+- **Why a check was not built:** the reason of an `unfinished` check names the declaration the checker does not build and its line, as `import Spec.specTest` at `one_name.qnt:10`; copying the runs into the module stays the last resort.
+- **`/// @check,`** then a line of names is a list; a comma followed by a sentence is reported as such.
+- **A blank `///` line after `///@check broken`:** the mark is reported at its own line.
 - **A spec imported whole with a property:** a check that plays a run declared in a module it imports, `import Spec.*` with a property among them, is built from `quint typecheck`, so the run is played. A compiled check that sees a run it can't play is `unfinished` with `(runs not played: …)`, not `pass`, and a marked run it can't play no longer makes it `unreadable`: its properties are judged.
 
 See [Checks marked in the model](/reference/quint/#checks-marked-in-the-model).

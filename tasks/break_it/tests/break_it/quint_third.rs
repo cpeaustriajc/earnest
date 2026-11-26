@@ -151,6 +151,16 @@ fn the_note_of_runs_not_played_names_only_runs_quint_test_plays() {
         .filter_map(Value::as_str)
         .collect();
     assert!(
+        model["reason"].as_str().is_some_and(|reason| {
+            reason.contains(
+            "the checker does not build `import Spec.specTest` at `one_name.qnt:10` from `quint \
+             typecheck`"
+        )
+        }),
+        "the reason names the declaration that keeps the check from being built, at its line\n\
+         {report:#}"
+    );
+    assert!(
         !named.contains(&"specOverTest"),
         "`OneName` imports `Spec.specTest` alone (with `init`, `step` and `v`), so `quint test \
          --main OneName` plays `specTest` and `ownTest` and never `specOverTest`; the note says \
@@ -435,7 +445,7 @@ fn a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile() {
             "`quint compile --main TwiceImported` writes this variable twice under one id, as \
              `A::S::v` and `A::v`"
         ) && message
-            .contains("put the two modules in separate files")),
+            .contains("put the modules that bring it in differently in separate files")),
         "`quint compile` writes `v` twice under the id 114 when another module of the file \
          exports `Spec`; the refusal says it is Quint's compile and what to do\n{report}"
     );
