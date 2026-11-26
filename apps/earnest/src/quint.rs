@@ -1,5 +1,7 @@
 use crate::cache::{fingerprint_of, folder_in, write_whole};
-use crate::checks::{CHECKS_FILE, Check, EXPECT_COUNTEREXAMPLE, example, read_entries};
+use crate::checks::{
+    CHECKS_FILE, Check, EXPECT_COUNTEREXAMPLE, Written, example, is_a_name, read_entries,
+};
 use crate::discovery::Listed;
 use crate::places::{Places, place_all};
 use crate::reading::{Content, Declared, ModelFile, Readable};
@@ -50,11 +52,13 @@ struct Asked {
 
 #[derive(Debug)]
 struct Job {
+    checks: String,
     shown: String,
     real: PathBuf,
     check: Check,
     name: Option<String>,
     expected: Vec<String>,
+    written: Vec<Written>,
     read: u64,
     quint: Result<Quint, String>,
 }
@@ -397,6 +401,40 @@ fn shown_in(file: &Path, job: &Job) -> String {
     shown_in_folder(file, &job.real, &job.shown)
 }
 
+fn written_place(said: &str, job: &Job) -> Option<(String, Place)> {
+    let written: Vec<&String> = job
+        .check
+        .invariants
+        .iter()
+        .filter(|item| !is_a_name(item))
+        .collect();
+    let named = said
+        .split_once("Name '")
+        .and_then(|(_, rest)| rest.split_once('\''))
+        .map(|(name, _)| name);
+    let item = named
+        .and_then(|name| written.iter().find(|item| item.contains(name)))
+        .or_else(|| written.first())?;
+    let text = fs::read_to_string(&job.checks).ok()?;
+    let at = text
+        .find(&format!("\"{item}\""))
+        .or_else(|| text.find(item.as_str()))?;
+    let before = text.get(..at)?;
+    let line = before.matches('\n').count().saturating_add(1);
+    let column = before
+        .rsplit('\n')
+        .next()
+        .map_or(0, |last| last.chars().count())
+        .saturating_add(1);
+    Some((
+        job.checks.clone(),
+        Place {
+            line: u32::try_from(line).unwrap_or(u32::MAX),
+            column: u32::try_from(column).unwrap_or(u32::MAX),
+        },
+    ))
+}
+
 fn compile(job: &Job) -> Result<String, Problem> {
     let failed = |message: String| Problem::new(&job.shown, TOP_OF_FILE, "`quint`", &message);
     let quint = job.quint.clone().map_err(failed)?;
@@ -441,6 +479,11 @@ fn compile(job: &Job) -> Result<String, Problem> {
     if !output.status.success() {
         let said = String::from_utf8_lossy(&output.stderr);
         let (file, place) = quint_place(&said, job);
+        let (file, place) = if file == job.shown && place == TOP_OF_FILE {
+            written_place(&said, job).unwrap_or((file, place))
+        } else {
+            (file, place)
+        };
         return Err(Problem::new(
             &file,
             place,
@@ -502,6 +545,7 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
     let mut first = None;
     for (init, step) in tried {
         let attempt = Job {
+            checks: job.checks.clone(),
             shown: job.shown.clone(),
             real: job.real.clone(),
             check: Check {
@@ -511,6 +555,7 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
             },
             name: job.name.clone(),
             expected: job.expected.clone(),
+            written: job.written.clone(),
             read: job.read,
             quint: job.quint.clone(),
         };
@@ -531,6 +576,9 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
 
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
     let check = &job.check;
+    if !check.invariants.iter().all(|item| is_a_name(item)) {
+        return None;
+    }
     typechecked?.setup(&Setup::new(
         &check.main,
         (&check.init, &check.step),
@@ -613,10 +661,19 @@ fn refused(job: &Job, name: &str, message: &str) -> Problem {
 }
 
 fn widened(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
-    for name in job.expected.clone() {
+    for expected in job.expected.clone() {
+        let name = job
+            .written
+            .iter()
+            .find(|written| written.id == expected)
+            .map_or(expected, |written| written.is.clone());
         let check = &job.check;
         let listed_run = matches!(&check.runs, Runs::Named(names) if names.contains(&name));
         if check.invariants.contains(&name) || check.temporal.contains(&name) || listed_run {
+            continue;
+        }
+        if !is_a_name(&name) {
+            job.check.invariants.push(name);
             continue;
         }
         let qualifier = places.map_or(PROPERTY_QUALIFIERS[0], |found| {
@@ -776,11 +833,13 @@ fn jobs_of(asked: BTreeMap<PathBuf, Asked>, files: &mut Vec<ModelFile>) -> Vec<J
                 })
                 .clone();
             jobs.push(Job {
+                checks: shown_checks.clone(),
                 shown: shown_string(&shown),
                 real: real_file,
                 check,
                 name: entry.name,
                 expected: entry.expected,
+                written: entry.written,
                 read: tree,
                 quint,
             });
@@ -833,6 +892,43 @@ fn compiled_once(
         .collect()
 }
 
+fn named_as_written(job: &Job, model: &mut earnest_ir::Model) -> Result<(), Vec<Located>> {
+    for (item, rule) in job.check.invariants.iter().zip(model.rules.iter_mut()) {
+        let written = job.written.iter().find(|written| written.is == *item);
+        let Some(id) = written
+            .map(|written| written.id.clone())
+            .or_else(|| (!is_a_name(item)).then(|| item.clone()))
+        else {
+            continue;
+        };
+        rule.says = format!("The Quint invariant `{id}` holds");
+        item.clone_into(&mut rule.text);
+        rule.id = id;
+    }
+    let ids: Vec<&str> = model.rule_ids().collect();
+    match ids.iter().enumerate().find(|(position, id)| {
+        ids.iter()
+            .skip(position.saturating_add(1))
+            .any(|other| other == *id)
+    }) {
+        Some((_, id)) => Err(vec![Located::new(
+            Problem::new(
+                &job.shown,
+                TOP_OF_FILE,
+                &format!("`{id}`"),
+                &format!(
+                    "two properties of the check `{}` are named `{id}`: give the invariant \
+                     written as an expression its own `name`",
+                    job.model_name()
+                ),
+            ),
+            None,
+            None,
+        )]),
+        None => Ok(()),
+    }
+}
+
 fn read_check(job: &Job, compiled: Result<String, Problem>) -> Result<Compiled, Vec<Located>> {
     let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
     let model = if runs_only(&job.check) {
@@ -842,6 +938,7 @@ fn read_check(job: &Job, compiled: Result<String, Problem>) -> Result<Compiled, 
     };
     let mut model = model?;
     job.model_name().clone_into(&mut model.name);
+    named_as_written(job, &mut model)?;
     let expected =
         expected_ids(job, &model).map_err(|problem| vec![Located::new(problem, None, None)])?;
     Ok((json, model, expected))

@@ -3834,6 +3834,25 @@ On the tree merged with the integration head `641c099`:
    does not change what Quint is given checks again with no compile. Tests:
    `quint_expected::a_cached_run_and_any_number_of_jobs_...`, `::editing_the_expectations_...`.
 
+5. **Invariants written as expressions** (added by the orchestrator after the first push;
+   `checks.rs` `properties`, `Written`, `one_expression`; `model.rs` `rules`; `quint.rs`
+   `named_as_written`, `written_place`): an item of `invariants` or `expectCounterexample` is a
+   name, an expression, or `{ "name", "is" }`. `quint compile --invariant a,b` parses the text as
+   `and(a, b)` (seen with 0.33.1: `Set(1,2).contains(x)` stays one item, a parse error says
+   `parsing val q::inv = and(...)`), so the conjuncts of `q::inv` line up with the items; an item
+   with a comma outside brackets is refused. The reader keeps a conjunct that is not a name as a
+   rule (`invariant 3`), unless its top is plainly not boolean (`iadd`, `Set`, a literal, …),
+   which Quint 0.33.1 compiles without a word; the app then gives the rule the item's id. A check
+   with an expression skips the typecheck-built path and is compiled whole. Quint's error has no
+   place for such an item, so it is put at the item in `earnest.quint.json` (the item that holds
+   the name Quint quotes, else the first expression). `temporal` stays names only, refused in the
+   checks file otherwise: the temporal reader is keyed on definitions. Tests:
+   `quint_expected::an_expected_expression_breaks_where_its_guard_holds` (ends at `n = 3`, and
+   `Small` alone at `n = 2`), `::an_expression_takes_a_short_name_and_rule_selects_it`,
+   `::an_expression_quint_or_earnest_refuses_...`, `::editing_an_expression_checks_again_...`.
+   With Quint 0.33.1 and TLC: `quint verify --backend tlc --invariant 'Late implies Small'`
+   ends at `n = 3`, `--invariant Small` at `n = 2`, as earnest; `confirm --tlc`: `same`.
+
 ### Forms chosen
 
 - Text, under the result line, before other broken rules and findings: `broken  P  (expected)`

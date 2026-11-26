@@ -13,6 +13,7 @@ const INVARIANTS: &str = "invariants";
 const TEMPORAL: &str = "temporal";
 const RUNS: &str = "runs";
 const NAME: &str = "name";
+const IS: &str = "is";
 pub(crate) const EXPECT_COUNTEREXAMPLE: &str = "expectCounterexample";
 const KEYS: [&str; 9] = [
     FILE,
@@ -45,6 +46,25 @@ pub(crate) struct Entry {
     pub(crate) check: Check,
     pub(crate) name: Option<String>,
     pub(crate) expected: Vec<String>,
+    pub(crate) written: Vec<Written>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Written {
+    pub(crate) id: String,
+    pub(crate) is: String,
+}
+
+pub(crate) fn is_a_name(text: &str) -> bool {
+    text.split("::").all(|segment| {
+        segment
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_alphabetic() || first == '_')
+            && segment
+                .chars()
+                .all(|each| each.is_alphanumeric() || each == '_')
+    })
 }
 
 impl Entry {
@@ -111,6 +131,99 @@ fn names(entry: &Map<String, Value>, key: &str, at: &str) -> Result<Vec<String>,
             .collect(),
         Some(other) => Err(not_names(kind_of(other))),
     }
+}
+
+fn only_names(entry: &Map<String, Value>, at: &str) -> Result<Vec<String>, Wrong> {
+    let listed = names(entry, TEMPORAL, at)?;
+    match listed.iter().position(|each| !is_a_name(each.trim())) {
+        Some(position) => Err(wrong(
+            &format!("{at}.{TEMPORAL}[{position}]"),
+            "`temporal` takes the names of temporal properties: define the property in the \
+             module, as `temporal name = ...`, and list its name",
+        )),
+        None => Ok(listed),
+    }
+}
+
+fn properties(entry: &Map<String, Value>, key: &str, at: &str) -> Result<Vec<Written>, Wrong> {
+    let Some(Value::Array(items)) = entry.get(key) else {
+        return names(entry, key, at).map(|_| Vec::new());
+    };
+    items
+        .iter()
+        .enumerate()
+        .map(|(position, item)| property(item, &format!("{at}.{key}[{position}]")))
+        .collect()
+}
+
+fn property(item: &Value, at: &str) -> Result<Written, Wrong> {
+    let not_a_property = |found: &str| {
+        wrong(
+            at,
+            &format!(
+                "each property is a name or a Quint expression in quotes, or an object \
+                 `{{ \"{NAME}\": ..., \"{IS}\": ... }}`, and it is {found}"
+            ),
+        )
+    };
+    let text = |value: Option<&Value>, key: &str| match value {
+        Some(Value::String(text))
+            if !text.trim().is_empty() && !text.contains(char::is_control) =>
+        {
+            Ok(text.trim().to_owned())
+        }
+        Some(other) => Err(wrong(
+            &format!("{at}.{key}"),
+            &format!(
+                "`{key}` must be text on one line, and it is {}",
+                kind_of(other)
+            ),
+        )),
+        None => Err(wrong(at, &format!("the object needs `{key}`"))),
+    };
+    match item {
+        Value::String(_) => {
+            let is = text(Some(item), IS).map_err(|_| not_a_property("empty"))?;
+            one_expression(&is, at)?;
+            Ok(Written { id: is.clone(), is })
+        }
+        Value::Object(fields) => {
+            if let Some(unknown) = fields.keys().find(|key| *key != NAME && *key != IS) {
+                return Err(wrong(
+                    &format!("{at}.{unknown}"),
+                    &format!("a property has no key `{unknown}`: its keys are `{NAME}` and `{IS}`"),
+                ));
+            }
+            let is = text(fields.get(IS), IS)?;
+            one_expression(&is, &format!("{at}.{IS}"))?;
+            Ok(Written {
+                id: text(fields.get(NAME), NAME)?,
+                is,
+            })
+        }
+        other => Err(not_a_property(kind_of(other))),
+    }
+}
+
+fn one_expression(text: &str, at: &str) -> Result<(), Wrong> {
+    let mut depth: usize = 0;
+    let mut quoted = false;
+    for each in text.chars() {
+        match each {
+            '"' => quoted = !quoted,
+            '(' | '[' | '{' if !quoted => depth = depth.saturating_add(1),
+            ')' | ']' | '}' if !quoted => depth = depth.saturating_sub(1),
+            ',' if !quoted && depth == 0 => {
+                return Err(wrong(
+                    at,
+                    "a property is one expression, and this one has a comma outside brackets, \
+                     which Quint would read as two: list each as its own item",
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn runs(entry: &Map<String, Value>, at: &str) -> Result<Runs, Wrong> {
@@ -185,14 +298,47 @@ fn entry(value: &Value, at: &str) -> Result<Entry, Wrong> {
         main: required(entry, MAIN, at)?,
         init: name(entry, INIT, at)?.unwrap_or_else(|| DEFAULT_INIT.to_owned()),
         step: name(entry, STEP, at)?.unwrap_or_else(|| DEFAULT_STEP.to_owned()),
-        invariants: names(entry, INVARIANTS, at)?,
-        temporal: names(entry, TEMPORAL, at)?,
+        invariants: Vec::new(),
+        temporal: only_names(entry, at)?,
         runs: runs(entry, at)?,
     };
+    let invariants = properties(entry, INVARIANTS, at)?;
+    let expected = properties(entry, EXPECT_COUNTEREXAMPLE, at)?;
+    let mut seen: Vec<(&str, &Written)> = Vec::new();
+    for (key, items) in [
+        (INVARIANTS, &invariants),
+        (EXPECT_COUNTEREXAMPLE, &expected),
+    ] {
+        for (position, item) in items.iter().enumerate() {
+            let clashes = seen.iter().any(|(earlier, other)| {
+                other.id == item.id && (other.is != item.is || *earlier == key)
+            });
+            if clashes {
+                return Err(wrong(
+                    &format!("{at}.{key}[{position}]"),
+                    &format!(
+                        "two properties of this check are named `{}`: give each its own `{NAME}`",
+                        item.id
+                    ),
+                ));
+            }
+            seen.push((key, item));
+        }
+    }
+    let written: Vec<Written> = invariants
+        .iter()
+        .chain(&expected)
+        .filter(|item| item.id != item.is || !is_a_name(&item.is))
+        .cloned()
+        .collect();
     Ok(Entry {
-        check,
+        check: Check {
+            invariants: invariants.into_iter().map(|item| item.is).collect(),
+            ..check
+        },
         name: model_name(entry, at)?,
-        expected: names(entry, EXPECT_COUNTEREXAMPLE, at)?,
+        expected: expected.into_iter().map(|item| item.id).collect(),
+        written,
     })
 }
 

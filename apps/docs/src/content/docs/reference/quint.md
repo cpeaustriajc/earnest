@@ -24,8 +24,8 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 | `main` | required | The module to check, as `quint compile --main` takes it |
 | `init` | `"init"` | The action that makes the start states |
 | `step` | `"step"` | The action that makes each next state |
-| `invariants` | none | Values that must hold in every reachable state |
-| `temporal` | none | Temporal properties |
+| `invariants` | none | Values that must hold in every reachable state: names, or expressions. See [Invariants written as expressions](#invariants-written-as-expressions) |
+| `temporal` | none | Temporal properties, by name |
 | `runs` | `false` | `true` for the runs whose name ends in `Test` (as `quint test` picks them), or a list of run names |
 | `name` | `main` | The check's name, so one module can be checked several times |
 | `expectCounterexample` | none | Invariants, temporal properties or runs that must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
@@ -101,6 +101,46 @@ A property in `expectCounterexample` is judged so:
 A temporal property that earnest checks in parts, `P`, `P#2`, …, is met when at least one part is broken, as `quint verify` expects the property as a whole to have a counterexample.
 
 A met expectation prints one line, `broken  nonNegative  (expected)`, with no path under it. The path is in the JSON and in `earnest report`. One that is not met prints `holds  nonNegative  a counterexample was expected`. In the JSON both keep their verdict and add `"expected": "broken"`; see [the JSON output](/reference/output/#json-output).
+
+### Invariants written as expressions
+
+An item of `invariants` or of `expectCounterexample` may be a Quint expression, as `quint verify --invariant` takes one. A known bug that shows only where a guard holds is the expression `Guard implies Inv`: its counterexample ends in a state where `Guard` is true and `Inv` is false.
+
+```quint title="specs/guard.qnt"
+module guard {
+  var n: int
+
+  action init = n' = 0
+  action step = any {
+    all { n < 4, n' = n + 1 },
+    all { n >= 4, n' = n },
+  }
+
+  val Small = n < 2
+  val Late = n >= 3
+}
+```
+
+```json title="specs/earnest.quint.json"
+{
+  "checks": [
+    { "file": "guard.qnt", "main": "guard", "invariants": ["n >= 0"], "expectCounterexample": [{ "name": "LateBreak", "is": "Late implies Small" }] }
+  ]
+}
+```
+
+`Small` alone first breaks at `n = 2`, where `Late` is false. `LateBreak` breaks at `n = 3`, as `quint verify --backend tlc --invariant 'Late implies Small'` finds:
+
+```text
+pass        guard  5 states  0 ms
+  broken  LateBreak  (expected)
+```
+
+- The rule's id, on the result line, in the JSON and for `--rule`, is the text as written, trimmed: `--rule 'n >= 0'`. The object form `{ "name": "LateBreak", "is": "Late implies Small" }` gives it a short id instead. Two properties of a check with one id make the file `unreadable`.
+- Earnest passes the expressions to `quint compile --invariant`, joined by commas as for names. Quint reads the list as `and(...)` of its items, so a comma inside brackets is part of an item. An item with a comma outside brackets would be two, and makes the file `unreadable`.
+- A check with an expression is always compiled, never built from `quint typecheck`, and is cached as any compile.
+- An expression Quint refuses makes the check `unreadable` with Quint's own error, such as ``Name 'Smal' not found``, at the item in `earnest.quint.json`. An expression that plainly gives no boolean, as `n + 1` or `Set(1)`, is refused by earnest; one whose type shows only when it is evaluated is a fault, as for a named invariant.
+- `temporal` takes names only: define a temporal property in the module and list its name.
 
 ### Stopping once every counterexample is found
 
