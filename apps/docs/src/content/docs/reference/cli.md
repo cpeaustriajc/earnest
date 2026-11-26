@@ -146,7 +146,7 @@ Rules for test files:
 - An unreadable test file (such as a broken symlink under `tests/`) is skipped and listed in `skipped`, not reported as `unreadable`, because the checker cannot tell whether it uses the library.
 - If `--model` or `--rule` asks for a model that exists only in a skipped test file, every command prints the `skipped` line, names the file, explains how to include it, and exits `2`. Any skipped no-model Rust files are also printed and named in the error.
 - A `#[cfg(test)]` module inside a Rust model file is ignored.
-- `--base` applies the same discovery and test-file conventions to files in the base commit. A `.qnt` file at the base is read with `quint parse` only when it, or a file it imports, differs from the working tree.
+- `--base` applies the same discovery and test-file conventions to files in the base commit. A `.qnt` file at the base is read with `quint parse` only when it, or a file it imports, differs from the working tree. A file that can't be read at the base is listed as `not compared` under `rule changes since <base>`, and in `notCompared` in JSON.
 
 ### Command-line paths, deduplication, and unreadable files
 

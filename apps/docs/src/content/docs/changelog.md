@@ -18,7 +18,8 @@ rule changes since origin/main
 - Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
 - A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
 - The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
-- A base that holds an `earnest.quint.json`, does not parse, or can't be read because `quint` is not installed prints `warning: <file> is unreadable at <base>, so its rule changes are not listed`.
+- A file that can't be read at the base, native or Quint, is named on a `not compared` line under `rule changes since <base>`, with why, and in a new `notCompared` key in JSON, so the section no longer says `none` for it. A check whose marks are unreadable at the base is named alone, and the other checks of its file are compared. The stderr warning stays.
+- A folder given twice under two spellings no longer lists the rules of its files as `removed`, for native and Quint models alike.
 - `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
 
 See [Rule changes](/reference/output/#quint-checks).

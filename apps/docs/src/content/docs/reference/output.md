@@ -229,7 +229,15 @@ Additional rules for `--base`:
 - A part is listed when what it says changed, not when the model under it changed. An edit of an action's `when` or `changes`, of a field's declaration or initial value, or of an action that is not fair lists nothing for a witness, setup or rule about runs that is otherwise the same. `earnest verify` judges each of them again on the new model and fails when one no longer holds. For example, a witness that plays `turn` is not listed when `turn` gets a stricter `when`, though it may now be `broken`; a rule about runs is `changed` when `turn` becomes fair. An edit of a setup's values lists the setup once, as `changed`, and not each witness that names it.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
 - Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
-- Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
+- A file unreadable at the base commit can't be compared. It is named on a line of its own after the changes, in the text and in the report, and the section then never says `none` alone, so it can't be read as "nothing changed". The same warning goes to stderr:
+
+  ```text
+  rule changes since origin/main
+    not compared  src/cart.model.ts  unreadable at origin/main
+  ```
+
+  JSON output adds `notCompared` beside `ruleChanges`, only when something was not compared: `[{ "file": "src/cart.model.ts", "reason": "unreadable" }]`. A Quint check that was not compared alone has `"model": "Bad"` too (see [Quint checks](#quint-checks)).
+- The rule changes say what each rule now says, not why a verdict changed: an edit of the model under a rule can change the rule's verdict and list nothing. The results of `earnest verify` give the verdicts.
 - With `--model <name>`, removed models matching `<name>` are still reported even if the model no longer exists in the working tree; exit `2` occurs only when neither the working tree nor `--base` contains `<name>`.
 - With `--rule <id>`, every change of each model where some run lists `<id>` is reported, including a witness of a setup. A rule, rule about runs or witness `<id>` that exists only at `--base` is still reported as `removed`; exit `2` occurs only when neither the working tree nor `--base` contains `<id>`.
 
@@ -248,10 +256,20 @@ rule changes since origin/main
 
 - The id is the name the check sees, as the result lists it. A run has the kind `witness`. A property or a run with no sentence has the sentence the result gives it, as ``The Quint invariant `inRange` holds``.
 - `holds` is the definition's source with each run of white space as one space, after `broken: ` or `reachable: ` when it is marked so.
-- A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison and each lambda's parameters are numbered, so a reformatted file, a comment or a renamed parameter lists nothing. An edit of a helper or of the model under a rule lists nothing either.
-- Every rule of a check in a `.qnt` file the base does not have is `added`, and every rule of a file only the base has is `removed`.
+- A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison, and each lambda's parameters and each name local to a block (`{ val t = n + 1 t > 0 }`) are numbered by their place, so a reformatted file, a comment, a renamed parameter or a renamed local lists nothing. An edit of a helper or of the model under a rule lists nothing either, even when it changes the rule's verdict: a `val` the rule reads, the constant an instance gives (`import Spec(N = 3)`), `init` or `step`.
+- Every rule of a check in a `.qnt` file the base does not have is `added`. Every rule of a check the working tree no longer has is `removed`: a file only the base has, a check removed from its file, and a check that is unreadable now, as a native file that became unreadable lists its rules.
 - The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base starts no `quint` for the base. Any other file starts `quint parse` once, and the result is cached for the next run against the same commit.
-- A file the base holds beside an `earnest.quint.json`, a file that `quint parse` refuses at the base, a base check with a problem in its marks, and a run with no `quint` installed print the warning `warning: <file> is unreadable at <base>, so its rule changes are not listed`.
+- A file that can't be read at the base is `not compared`, with its reason. The reasons in JSON, and the words of the text line, are:
+
+  | `reason` | Text | When |
+  |---|---|---|
+  | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
+  | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
+  | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
+  | `marks` | `its marks are unreadable at <base>` | a mark of the file that belongs to no one check is unreadable at the base |
+
+- A check whose own marks are unreadable at the base is `not compared` alone, named after the file (`  not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD`, `"model": "Bad"` in JSON), and the other checks of the file are compared.
+- A file reached under two spellings, as `earnest verify --base HEAD specs ./specs`, is compared once, by its real path, and so is a `.qnt` file reached through a link: git's link at the base is not read.
 - `--model` and `--rule` narrow the checks as they narrow native models: `--rule belowSix` lists every change of each check that judges `belowSix`, at the working tree or at the base.
 
 ## Statecharts and PR reports
