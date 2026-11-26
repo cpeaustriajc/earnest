@@ -458,6 +458,9 @@ mod tests {
         }
         let played = r#"{"modules": [{"name": "OneName", "declarations": [
             {"kind": "def", "qualifier": "run", "name": "specTest", "id": 1}]}]}"#;
-        assert!(places.runs_not_played("OneName", played).is_empty());
+        assert_eq!(
+            places.runs_not_played("OneName", played),
+            Vec::<String>::new()
+        );
     }
 }
