@@ -19,6 +19,7 @@ pub(crate) enum Builtin {
 pub(crate) fn builtin(opcode: &str) -> Option<Builtin> {
     let found = match opcode {
         "not" => Builtin::Unary(Op::Not),
+        "assert" => Builtin::Unary(Op::Assert),
         "iuminus" => Builtin::Unary(Op::Negate),
         "iadd" => Builtin::Binary(Op::Math(Math::Add)),
         "isub" => Builtin::Binary(Op::Math(Math::Subtract)),
@@ -84,22 +85,17 @@ const TEMPORAL: [&str; 9] = [
     "mustChange",
     "enabled",
 ];
-const RUNS: [&str; 7] = [
-    "then",
-    "reps",
-    "expect",
-    "fail",
-    "assert",
-    "q::test",
-    "q::testOnce",
-];
+const RUNS: [&str; 6] = ["then", "reps", "expect", "fail", "q::test", "q::testOnce"];
 
 pub(crate) fn not_read(opcode: &str) -> Option<&'static str> {
     if TEMPORAL.contains(&opcode) {
         return Some("temporal properties are not read yet");
     }
     if RUNS.contains(&opcode) {
-        return Some("run operators are read only in a `run`");
+        return Some(
+            "a run operator outside a `run`: `then`, `reps`, `expect` and `fail` chain the steps \
+             of a `run` definition, and are read only there",
+        );
     }
     NOT_READ
         .iter()

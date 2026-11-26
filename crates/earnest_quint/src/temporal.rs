@@ -1,6 +1,6 @@
 use crate::json::{Def, Entry, Expr as Quint};
 use crate::reader::{Read, Reader};
-use earnest_ir::{Code, Eventually, Expr, Fairness, Rule};
+use earnest_ir::{Code, Eventually, Expr, Fairness, Op, Rule};
 use earnest_value::Value;
 use std::collections::HashMap;
 
@@ -27,7 +27,7 @@ pub(crate) struct Temporal {
 pub(crate) struct Step<'s> {
     pub(crate) defs: Vec<u64>,
     pub(crate) parts: &'s HashMap<String, Vec<usize>>,
-    pub(crate) fields: usize,
+    pub(crate) fields: &'s [String],
 }
 
 enum Goal {
@@ -184,16 +184,34 @@ impl<'a> Properties<'_, 'a> {
         Ok(fairness)
     }
 
+    fn named_value(&self, expr: &'a Quint) -> &'a Quint {
+        let mut found = expr;
+        for _ in 0..=self.defs.len() {
+            let Quint::Name { id, .. } = found else {
+                break;
+            };
+            match self.def_of(*id) {
+                Some(def)
+                    if def.qualifier != "action" && !matches!(def.expr, Quint::Lambda { .. }) =>
+                {
+                    found = &def.expr;
+                }
+                _ => break,
+            }
+        }
+        found
+    }
+
     fn over_every_variable(
         &mut self,
         vars: &'a Quint,
-        fields: usize,
+        fields: &[String],
     ) -> Read<Vec<(usize, &'a str)>> {
-        let listed: &[Quint] = match vars {
+        let listed: &[Quint] = match self.named_value(vars) {
             Quint::App { opcode, args, .. } if opcode == "Tup" => args,
             other => std::slice::from_ref(other),
         };
-        let mut seen = vec![false; fields];
+        let mut seen = vec![false; fields.len()];
         let mut named = Vec::with_capacity(listed.len());
         for each in listed {
             let read = match each {
@@ -203,7 +221,9 @@ impl<'a> Properties<'_, 'a> {
             let Some((Expr::Field(position), name)) = read else {
                 return self.reader.refuse(
                     "`weakFair`",
-                    "fairness over something that is not a tuple of the state variables",
+                    "fairness over something that is not the state variables: write \
+                     `weakFair(A, vars)` with `vars` a tuple of every variable, such as \
+                     `(x, y)`, or a `val` that is one",
                 );
             };
             if let Some(flag) = seen.get_mut(position) {
@@ -211,12 +231,22 @@ impl<'a> Properties<'_, 'a> {
             }
             named.push((position, name));
         }
-        if seen.iter().all(|flag| *flag) {
+        let missing: Vec<String> = fields
+            .iter()
+            .zip(&seen)
+            .filter(|(_, listed)| !**listed)
+            .map(|(name, _)| format!("`{name}`"))
+            .collect();
+        if missing.is_empty() {
             return Ok(named);
         }
         self.reader.refuse(
             "`weakFair`",
-            "fairness over only some of the state variables is not read: list them all",
+            &format!(
+                "fairness over only some of the state variables is not read: the tuple leaves \
+                 out {}, so list every variable",
+                missing.join(", ")
+            ),
         )
     }
 
@@ -298,6 +328,7 @@ impl<'a> Properties<'_, 'a> {
                     reaches: self.state(reaches, "leadsTo")?,
                 },
                 ("always", [inner]) => self.always(inner)?,
+                ("not", [inner]) => self.negated(each, inner)?,
                 _ => return self.not_a_goal(each),
             };
             goals.push(goal);
@@ -332,6 +363,26 @@ impl<'a> Properties<'_, 'a> {
         Ok(Goal::Always(self.state(inner, "always")?))
     }
 
+    fn negated(&mut self, whole: &'a Quint, inner: &'a Quint) -> Read<Goal> {
+        let not = |holds: Expr| Expr::Apply(Op::Not, vec![holds]);
+        if let Quint::App { opcode, args, .. } = self.unfolded(inner)
+            && let [over] = args.as_slice()
+            && self.first_temporal(over, 0).is_none()
+        {
+            match opcode.as_str() {
+                "eventually" => return Ok(Goal::Always(not(self.reader.pure(over)?))),
+                "always" => {
+                    return Ok(Goal::Reaches {
+                        after: None,
+                        reaches: not(self.reader.pure(over)?),
+                    });
+                }
+                _ => {}
+            }
+        }
+        self.not_a_goal(whole)
+    }
+
     fn not_a_goal<T>(&mut self, expr: &'a Quint) -> Read<T> {
         let opcode = match expr {
             Quint::App { opcode, .. } => opcode.as_str(),
@@ -340,6 +391,10 @@ impl<'a> Properties<'_, 'a> {
         if let Some(inner) = self.first_temporal(expr, 0) {
             let why = if opcode == "implies" {
                 "an `implies` that is not fairness `implies` what must hold is not read".to_owned()
+            } else if opcode == "not" {
+                "a temporal operator under `not` is read only as `not(eventually(P))` or \
+                 `not(always(P))` over a state condition `P`"
+                    .to_owned()
             } else if TEMPORAL.contains(&opcode) {
                 format!("`{opcode}` is not read in a temporal property")
             } else {

@@ -58,10 +58,17 @@ fn is_assert(expr: &Quint) -> bool {
 
 impl<'a> Run<'_, 'a> {
     fn refuse<T>(&self, feature: &str, why: &str) -> Read<T> {
-        Err(refusal(
-            feature,
-            &format!("{why}, in the run `{}`", self.name),
-        ))
+        Err(refusal(feature, &format!("{why}, in the run `{}`", self.name)).within(self.name))
+    }
+
+    fn refuse_at<T>(&self, expr: &Quint, feature: &str, why: &str) -> Read<T> {
+        self.refuse(feature, why).map_err(|refused| match expr {
+            Quint::App { id, .. } | Quint::Name { id, .. } => refused.at(*id),
+            Quint::Let { opdef, .. } => refused.at(opdef.id),
+            Quint::Int { .. } | Quint::Bool { .. } | Quint::Str { .. } | Quint::Lambda { .. } => {
+                refused
+            }
+        })
     }
 
     fn called_run(&self, expr: &Quint) -> Option<&'a Def> {
@@ -204,7 +211,12 @@ impl<'a> Run<'_, 'a> {
             }
             ("fail", [first]) => {
                 if place == Place::Inside {
-                    return self.refuse("`fail`", "a `fail()` that is not the run's last operator");
+                    return self.refuse_at(
+                        expr,
+                        "`fail`",
+                        "a `fail()` that is not the run's last operator: write `A.fail()` only at \
+                         the end of the run, as Quint judges it there",
+                    );
                 }
                 let can_be_false = self.walk(first, Place::Inside, drawn)?;
                 match drawn.steps.last_mut() {
@@ -213,11 +225,13 @@ impl<'a> Run<'_, 'a> {
                 }
                 Ok(false)
             }
-            ("then" | "reps" | "expect" | "fail", _) => self.refuse(
+            ("then" | "reps" | "expect" | "fail", _) => self.refuse_at(
+                expr,
                 &format!("`{opcode}`"),
                 &format!("it is given {} arguments", args.len()),
             ),
-            _ if UNMAPPED.contains(&opcode.as_str()) => self.refuse(
+            _ if UNMAPPED.contains(&opcode.as_str()) => self.refuse_at(
+                expr,
                 &format!("`{opcode}`"),
                 "a run operator the reader does not map",
             ),
@@ -242,7 +256,8 @@ impl<'a> Run<'_, 'a> {
         if times < 1 {
             return self.refuse(
                 "`reps`",
-                "a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset",
+                "a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: \
+                 repeat from 1 to 1000 times",
             );
         }
         if usize::try_from(times).map_or(true, |times| times > MOST_STEPS) {
@@ -286,9 +301,11 @@ impl<'a> Run<'_, 'a> {
     fn leaf(&mut self, expr: &'a Quint, drawn: &mut Drawn) -> Read<bool> {
         if !drawn.started {
             if !self.is_init(expr) {
-                return self.refuse(
+                return self.refuse_at(
+                    expr,
                     "a run",
-                    "a run that does not start with `init`: Quint plays a run from no state",
+                    "a run that does not start with `init`: Quint plays a run from no state, so \
+                     write `init.then(...)`",
                 );
             }
             drawn.started = true;
@@ -304,8 +321,9 @@ impl<'a> Run<'_, 'a> {
             }
             _ => (&[], std::slice::from_ref(expr)),
         };
-        if rest.iter().any(is_assert) {
-            return self.refuse(
+        if let Some(late) = rest.iter().find(|each| is_assert(each)) {
+            return self.refuse_at(
+                late,
                 "`assert`",
                 "an `assert` after another part of the step: it is read only at the start of a \
                  step's `all { ... }`",

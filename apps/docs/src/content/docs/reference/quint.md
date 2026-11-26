@@ -30,7 +30,7 @@ Put `earnest.quint.json` beside the specs. Each entry is one check: a module of 
 
 Each check is one model in every output: its result line, its JSON entry and `--model` use `main` as the name, and the `.qnt` file is its file. Each invariant is a rule with the invariant's name as its id, so `--rule inRange` selects it.
 
-The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two entries name the same `file` and `main`. The problem names the key, such as `` `checks[1].runs` ``, and nothing in the file is checked.
+The file is `unreadable` when it is not JSON, when a key is unknown or has the wrong type, or when two entries name the same `file` and `main`. A file written two ways, as `a.qnt`, `./a.qnt` or `sub/../a.qnt`, is the same file. The problem names the key, such as `` `checks[1].runs` ``, and nothing in the file is checked.
 
 ## Which `.qnt` files are checked
 
@@ -117,6 +117,19 @@ When the reader refuses a construct of a compiled module, the source map from `q
 
 The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
 
+Actions may be joined with `all`, `any`, `if (c) A else B` and `match`. A `match` whose branches are actions, in `init`, in a step or in a run step, is one action for each branch, which can happen only when the value has that branch's variant, with the variant's value bound to the branch's name; a `_` branch covers the variants the earlier branches do not name:
+
+```quint
+action step = match order {
+  | Move(n) => all { x' = x + n, order' = order }
+  | _ => all { x' = x, order' = Move(1) }
+}
+```
+
+An `assert(P)` inside an action (not as a run step, see [Runs](#runs)) is part of the action's condition. While `P` is true it changes nothing, as in both of Quint's backends. Where it is false, Quint's backends disagree: `quint run` and `quint test` stop with `Assertion failed`, and `quint verify --backend tlc` reads it as a guard that keeps the action from happening. Earnest reports a `fault` finding, "finds an `assert` false", with the path to the state, and the rules it could not judge there are `unknown`.
+
+A temporal property's fairness is `weakFair(A, vars)`, where `A` is the step or one of its top-level actions and `vars` is a tuple of every state variable in any order, written out (`(x, y)`) or a `val` that is one, through any chain of `val`s, as Quint's own `val vars = (x, y)`. A tuple that leaves a variable out is refused, and the message names the variable. At the top of a property, or of what fairness `implies`, `not(eventually(P))` is read as `always(not(P))`, and `not(always(P))` as `eventually(not(P))`: from every start state, every run that is fair as the property says reaches a state where `P` is false.
+
 A `nondet x = S.oneOf()` may pick from a set that does not change, from a state variable (`pending.oneOf()`), from an expression over the state (`balances.keys().filter(k => balances.get(k) < 3)`, `1.to(left)`), or from a set that reads an earlier `nondet` of the same action or of `init` (`Set("a", "b", "c").exclude(Set(giver))`). In each state the search works the set out and tries every value, with no bound, however large the set grows: a path step prints the value picked, such as `serve  who = "ann"`. Where the set is empty, the action can't happen. Runs and temporal properties try every value in the same way.
 
 The reader also takes:
@@ -134,7 +147,8 @@ Only the definitions that `init`, `step`, a listed invariant, a listed temporal 
 Still refused, each named in the problem with what to write instead:
 
 - Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `Nat` and `Int` anywhere but `in`, `contains` and `subseteq` (such as `Nat.map(...)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
-- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled`, `eventually(always(P))`, `weakFair` of an action given arguments or of an action inside another, `not` over anything but `eventually(P)` or `always(P)` of a state condition, and the nestings the temporal report lists.
+- An action where Quint wants a value, as in an operator's argument or a condition: the problem names it, as `` `all { … }` `` or `` `x' = …` ``.
 - Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
 - Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written, such as `` `100000000000000000000` ``.
 
@@ -180,17 +194,35 @@ A run starts with `init`, from every start state. Earnest reads these run operat
 | `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
 | a run's name | That run, played in place |
 
-A step plays every way its action can happen: each branch of an `any` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. One difference goes the other way too: for a `nondet` at the top of a run, Quint takes another value when the run is false for one, and earnest needs every value to pass.
+A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. A `nondet` at the top of a run is judged the same way by both: the run must pass for every value, and `quint test` fails the run on the first value it samples that breaks it.
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
-Refused, each named in the problem: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
+Refused, each named in the problem and reported at its line in the `.qnt` file: a run that does not start with `init`, a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
 
 The runs of the spec module are played in a setup that earnest builds from `quint typecheck`, as `quint test --main Small` plays them: with `"runs": true`, the runs of `Clock` whose name ends in `Test` and those of `Small`; with a list, the runs it names from either (`tickTwice`, or `C::tickTwice` under a name). They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
 
 A run must start with the check's `init`. With two instances of one spec, `P::upTest` starts with `P::init`, which sets only part of the state. `quint test` plays it from that part, and earnest can't, so such a run makes the check `unreadable`. Check that setup without `runs`, or write the run in the setup module from its own `init`.
 
 A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why.
+
+## How values print
+
+A Quint check prints its values as Quint's REPL writes them, in a path, a `why` line, the chart and `earnest report`:
+
+| Quint value | Printed | In the JSON |
+|---|---|---|
+| tuple `(1, 5)`, unit `()` | `(1, 5)`, `()` | `{"#tup": [1, 5]}`, `{"#tup": []}` |
+| variant `Some(3)`, `None` | `Some(3)`, `None` | `{"tag": "Some", "value": 3}`, `{"tag": "None", "value": {"#tup": []}}` |
+| record | `{ a: 1, b: "x" }` | `{"a": 1, "b": "x"}` |
+| set | `Set(1, 2)`, `Set()` | `[1, 2]` |
+| map | `Map("a" -> 1)`, `Map()` | `[["a", 1]]` |
+| list | `[1, 2]` | `[1, 2]` |
+| text, integer, boolean | `"a"`, `-3`, `true` | `"a"`, `-3`, `true` |
+
+The JSON of a tuple and a variant is the one Quint's ITF traces use (`quint run --out-itf`); sets, maps and lists keep earnest's JSON. The items of a set and the keys of a map are in earnest's order: Quint's for numbers, texts, records and tuples, item by item for a set of sets.
+
+A module that itself writes a record whose fields are exactly `tag` and `value`, or only `_1`, `_2`, ..., would print that record as a variant or a tuple. Earnest looks for such a record in the compiled module, and when it finds one, prints every value of that kind as a record instead, as `{ tag: "Plain", value: () }`.
 
 ## Names
 
@@ -203,7 +235,7 @@ Quint names what it flattens from an instance after the instance: `Small::Clock:
 Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
 
 - A compiled module is reused while the text of `quint --version`, the check's `main`, `init`, `step`, `invariants`, `temporal` and `runs`, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them compiles the check again. When `quint parse` fails, the `.qnt` files below the folder of `earnest.quint.json` stand in for them.
-- The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again.
+- The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
 - What `quint parse` gave is reused while `quint --version` and every file it lists are the same.
 - What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 

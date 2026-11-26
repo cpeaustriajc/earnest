@@ -11,4 +11,4 @@ mod value;
 
 pub use domain::{Domain, MOST_VALUES_LISTED};
 pub use int_type::{IntType, MOST_SAFE_INTEGER};
-pub use value::{Sym, Symbols, Value};
+pub use value::{Notation, Quint, Sym, Symbols, Value};

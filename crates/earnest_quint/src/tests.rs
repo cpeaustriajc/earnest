@@ -1,7 +1,7 @@
 use crate::{is_compiled_quint, read};
 use earnest_diagnostics::Problem;
 use earnest_ir::{Expr, Model, Op, SetOp};
-use earnest_value::{Domain, Value};
+use earnest_value::{Domain, Notation, Value};
 use std::collections::BTreeSet;
 
 const COUNTER: &str = include_str!("../../../tasks/quint/models/counter.json");
@@ -353,7 +353,7 @@ fn texts_are_named_in_alphabetical_order_whatever_order_the_file_has_them_in() {
 }
 
 #[test]
-fn a_variant_is_a_record_of_its_tag_and_its_value() {
+fn a_variant_is_a_record_of_its_tag_and_its_value_printed_as_quint_writes_it() {
     let shapes = model(SHAPES);
     let starts = shapes.runs.starts.expect("shapes lists its start state");
     let shown: Vec<String> = starts[0]
@@ -362,12 +362,19 @@ fn a_variant_is_a_record_of_its_tag_and_its_value() {
         .collect();
     assert_eq!(
         shown,
+        ["(0, \"x\")", "Red", "Quiet"],
+        "light is Red, inbox is Quiet and pair the tuple (0, \"x\")"
+    );
+    let held = shapes.symbols.written_in(Notation::Earnest);
+    let encoded: Vec<String> = starts[0].iter().map(|value| held.show(value)).collect();
+    assert_eq!(
+        encoded,
         [
             "{_1: 0, _2: \"x\"}",
             "{tag: \"Red\", value: {}}",
             "{tag: \"Quiet\", value: {}}"
         ],
-        "light is Red, inbox is Quiet and pair the tuple (0, \"x\")"
+        "a tuple is held as a record of `_1`, `_2`, a variant as the record of its tag and value"
     );
 }
 

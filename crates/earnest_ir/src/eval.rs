@@ -52,6 +52,9 @@ pub enum Fault {
     /// The time limit passed while the expression was being evaluated. It says nothing about
     /// the model: the search drops the state it was evaluating.
     Stopped,
+    /// An `assert` in a Quint action is false: `quint run` stops there with an error, where
+    /// TLC takes it as a guard.
+    Asserted,
 }
 
 impl Fault {
@@ -83,6 +86,9 @@ impl Fault {
                  {MOST_RANGE_VALUES} numbers a range may hold"
             ),
             Self::Stopped => "was stopped by the time limit".to_owned(),
+            Self::Asserted => "finds an `assert` false, which `quint run` stops on as an error \
+                               and TLC reads as a guard that disables the action"
+                .to_owned(),
         }
     }
 }
@@ -529,6 +535,8 @@ pub(crate) fn applied<T>(
             Ok(Value::seq((lo..hi).map(Value::Int).collect()))
         }
         Op::InTlcOrder => Ok(Value::seq(crate::tlc_order::listed(set_in(&first)?))),
+        Op::Assert if as_bool(&first)? => Ok(first),
+        Op::Assert => Err(Fault::Asserted),
     }
 }
 

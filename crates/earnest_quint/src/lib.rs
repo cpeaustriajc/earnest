@@ -18,6 +18,7 @@ mod data;
 mod json;
 mod model;
 mod names;
+mod notation;
 mod reader;
 mod runs;
 mod scan;
@@ -131,6 +132,8 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
     })
 }
 
+#[cfg(test)]
+mod actions_tests;
 #[cfg(test)]
 mod fixes_tests;
 #[cfg(test)]

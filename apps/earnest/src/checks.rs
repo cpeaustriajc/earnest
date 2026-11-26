@@ -193,7 +193,7 @@ pub(crate) fn read_checks(text: &str) -> Result<Vec<Check>, Wrong> {
     for (position, value) in listed.iter().enumerate() {
         let at = format!("{CHECKS}[{position}]");
         let check = check(value, &at)?;
-        if !seen.insert((check.file.clone(), check.main.clone())) {
+        if !seen.insert((written_plainly(&check.file), check.main.clone())) {
             return Err(wrong(
                 &at,
                 &format!(
@@ -205,6 +205,22 @@ pub(crate) fn read_checks(text: &str) -> Result<Vec<Check>, Wrong> {
         checks.push(check);
     }
     Ok(checks)
+}
+
+fn written_plainly(file: &str) -> Vec<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for part in std::path::Path::new(file).components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir
+                if parts.last().is_some_and(|last| last.as_str() != "..") =>
+            {
+                parts.pop();
+            }
+            other => parts.push(other.as_os_str().to_string_lossy().into_owned()),
+        }
+    }
+    parts
 }
 
 pub(crate) fn example(file: &str, main: &str) -> String {
@@ -294,6 +310,22 @@ mod tests {
         ];
         for (text, feature) in cases {
             assert_eq!(feature_of(text), feature, "{text}");
+        }
+    }
+
+    #[test]
+    fn one_file_written_two_ways_with_one_main_is_the_same_check_twice() {
+        for second in ["./a.qnt", "sub/../a.qnt", "./sub/./../a.qnt", "a.qnt/"] {
+            let text = format!(
+                r#"{{ "checks": [{{ "file": "a.qnt", "main": "A" }}, {{ "file": "{second}", "main": "A" }}] }}"#
+            );
+            assert_eq!(feature_of(&text), "`checks[1]`", "{second}");
+        }
+        for other in ["sub/a.qnt", "../a.qnt", "b/../../a.qnt"] {
+            let text = format!(
+                r#"{{ "checks": [{{ "file": "a.qnt", "main": "A" }}, {{ "file": "{other}", "main": "A" }}] }}"#
+            );
+            assert!(read_checks(&text).is_ok(), "{other} is another file");
         }
     }
 

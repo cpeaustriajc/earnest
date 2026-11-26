@@ -1,6 +1,7 @@
 use crate::Runs as Chosen;
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::names::Short;
+use crate::notation::notation;
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
 use crate::runs::scripts;
 use crate::scan::refused;
@@ -269,7 +270,7 @@ fn parts<'a>(
     let step = Step {
         defs: aliases(reader, step),
         parts: &parts,
-        fields: names.len(),
+        fields: names,
     };
     let mut rules = rules;
     let read = temporal(reader, table, defs, &step)?;
@@ -330,7 +331,9 @@ fn shorten(
 
 pub(crate) fn model(path: &str, compiled: &Compiled, runs: &Chosen) -> Result<Model, Vec<Refusal>> {
     let met = built(path, compiled, Symbols::default(), runs)?;
-    built(path, compiled, met.symbols.alphabetical(), runs)
+    let mut read = built(path, compiled, met.symbols.alphabetical(), runs)?;
+    read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
+    Ok(read)
 }
 
 fn built(

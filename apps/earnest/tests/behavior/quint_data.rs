@@ -74,19 +74,19 @@ fn a_path_prints_maps_records_sets_and_lists_with_their_values() {
     run.exits(1);
     let path = path_under(&run.detail("missingKey"), &["fault"]);
     assert!(
-        path.start.contains("balances = {\"alice\" -> 1}"),
-        "a map prints as {{key -> value}}\n{run}"
+        path.start.contains("balances = Map(\"alice\" -> 1)"),
+        "a map prints as Quint writes it, Map(key -> value)\n{run}"
     );
     let shapes = with_compiled(SAMPLES, &["shapes"]);
     let text = verify(&shapes, "shapes", &[]);
     let broken = path_under(&text.detail("shapes"), &["broken", "notBoth"]);
     assert!(
-        broken.start.contains("pair = {_1: 0, _2: \"x\"}"),
-        "a tuple prints as its record\n{text}"
+        broken.start.contains("pair = (0, \"x\")"),
+        "a tuple prints as Quint writes it\n{text}"
     );
     assert!(
-        broken.start.contains("light = {tag: \"Red\", value: {}}"),
-        "a variant prints as the record of its tag and its value\n{text}"
+        broken.start.contains("light = Red"),
+        "a variant without a value prints as its tag\n{text}"
     );
 }
 

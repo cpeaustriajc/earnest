@@ -187,6 +187,9 @@ pub enum Op {
     /// field names and then its values. Numbers, booleans and texts keep their own order, so
     /// texts are alphabetical, where TLC takes them in the order it first met them.
     InTlcOrder,
+    /// True when its argument is true. False is [`Fault::Asserted`]: an `assert` in a Quint
+    /// action, which Quint's backends read differently when it is false.
+    Assert,
 }
 
 /// What an [`Expr::Sweep`] does with the test's answers.
