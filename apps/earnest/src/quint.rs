@@ -70,11 +70,45 @@ impl Job {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct QuintProperty {
+    pub(crate) id: String,
+    pub(crate) text: String,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct QuintCheck {
     pub(crate) program: PathBuf,
     pub(crate) file: PathBuf,
-    pub(crate) check: Check,
-    pub(crate) written: Vec<Written>,
+    pub(crate) main: String,
+    pub(crate) init: String,
+    pub(crate) step: String,
+    pub(crate) invariants: Vec<QuintProperty>,
+    pub(crate) temporal: Vec<QuintProperty>,
+    pub(crate) runs: Runs,
+    pub(crate) searches: bool,
+}
+
+fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
+    let check = &job.check;
+    let named = |text: &String| QuintProperty {
+        id: job
+            .written
+            .iter()
+            .find(|written| written.is == *text)
+            .map_or_else(|| text.clone(), |written| written.id.clone()),
+        text: text.clone(),
+    };
+    QuintCheck {
+        program: quint.program.clone(),
+        file: job.real.clone(),
+        main: check.main.clone(),
+        init: check.init.clone(),
+        step: check.step.clone(),
+        invariants: check.invariants.iter().map(named).collect(),
+        temporal: check.temporal.iter().map(named).collect(),
+        runs: check.runs.clone(),
+        searches: !runs_only(check),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -508,7 +542,7 @@ fn compile(job: &Job) -> Result<String, Problem> {
     Ok(json)
 }
 
-pub(crate) fn runs_only(check: &Check) -> bool {
+fn runs_only(check: &Check) -> bool {
     check.invariants.is_empty() && check.temporal.is_empty() && check.runs != Runs::None
 }
 
@@ -1070,12 +1104,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     position: 0,
                     expected,
                     runs_not_played,
-                    quint: job.quint.as_ref().ok().map(|quint| QuintCheck {
-                        program: quint.program.clone(),
-                        file: job.real.clone(),
-                        check: job.check.clone(),
-                        written: job.written.clone(),
-                    }),
+                    quint: job.quint.as_ref().ok().map(|quint| as_asked(job, quint)),
                 }]),
             },
             Err(located) => {

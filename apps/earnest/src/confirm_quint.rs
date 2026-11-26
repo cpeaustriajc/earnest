@@ -1,6 +1,6 @@
-use crate::checks::{Check, Written, is_a_name};
+use crate::checks::is_a_name;
 use crate::confirm::read_tlc;
-use crate::quint::{QuintCheck, runs_only, segments_end_alike};
+use crate::quint::{QuintCheck, segments_end_alike};
 use crate::run::{Checked, RuleResult, whole_of};
 use earnest_quint::Runs;
 use std::env;
@@ -215,13 +215,6 @@ fn grouped<'a>(rules: impl Iterator<Item = &'a RuleResult>) -> Vec<(String, &'st
         .collect()
 }
 
-fn id_of(item: &str, written: &[Written]) -> String {
-    written
-        .iter()
-        .find(|written| written.is == item)
-        .map_or_else(|| item.to_owned(), |written| written.id.clone())
-}
-
 fn matching<'a>(
     id: &str,
     among: &'a [(String, &'static str)],
@@ -251,17 +244,16 @@ fn properties(
             .iter()
             .filter(|rule| rule.kind.as_deref() != Some(WITNESS)),
     );
-    let check = &quint.check;
-    let listed = check
+    let listed = quint
         .invariants
         .iter()
         .map(|item| (item, false))
-        .chain(check.temporal.iter().map(|item| (item, true)));
+        .chain(quint.temporal.iter().map(|item| (item, true)));
     let mut found = Vec::new();
     let mut differences = Vec::new();
     let mut matched: Vec<&str> = Vec::new();
     for (item, temporal) in listed {
-        let id = id_of(item, &quint.written);
+        let id = item.id.clone();
         let Some((known, verdict)) = matching(&id, &groups) else {
             differences.push(cannot(
                 format!("property {id}: the checker has no result for it"),
@@ -272,7 +264,7 @@ fn properties(
         matched.push(known);
         found.push(Property {
             id: known.clone(),
-            argument: item.clone(),
+            argument: item.text.clone(),
             temporal,
             verdict,
             expected: expected.iter().any(|name| name == known),
@@ -331,15 +323,15 @@ impl Runner<'_> {
             })
     }
 
-    fn opening(&self, command: &str, check: &Check) -> Vec<OsString> {
+    fn opening(&self, command: &str) -> Vec<OsString> {
         let mut arguments: Vec<OsString> = vec![command.into(), self.quint.file.clone().into()];
-        arguments.extend(["--main", &check.main].map(OsString::from));
+        arguments.extend(["--main", &self.quint.main].map(OsString::from));
         arguments
     }
 
     fn verify(&self, properties: &[&Property]) -> Verified {
-        let check = &self.quint.check;
-        let mut arguments = self.opening("verify", check);
+        let check = self.quint;
+        let mut arguments = self.opening("verify");
         arguments.extend(
             [
                 "--backend",
@@ -380,8 +372,7 @@ impl Runner<'_> {
     }
 
     fn test(&self) -> Result<Vec<Tested>, String> {
-        let check = &self.quint.check;
-        let pattern = match &check.runs {
+        let pattern = match &self.quint.runs {
             Runs::Named(names) => {
                 let last: Vec<&str> = names
                     .iter()
@@ -391,7 +382,7 @@ impl Runner<'_> {
             }
             _ => RUNS_THAT_END_IN_TEST.to_owned(),
         };
-        let mut arguments = self.opening("test", check);
+        let mut arguments = self.opening("test");
         arguments.extend(["--backend", "typescript", "--match", &pattern].map(OsString::from));
         let output = self.run(arguments)?;
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -603,7 +594,7 @@ fn played(checked: &Checked, runner: &Runner<'_>, reasons: &[String]) -> Vec<Dif
 }
 
 fn quint_check_plays_by_ending(quint: &QuintCheck) -> bool {
-    quint.check.runs == Runs::Tests
+    quint.runs == Runs::Tests
 }
 
 #[derive(Debug)]
@@ -637,7 +628,7 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
     let mut run_reasons = asked.backends_differ.clone();
     run_reasons.extend(ours_cut_short(checked));
     let mut found = Vec::new();
-    if !runs_only(&quint.check) {
+    if quint.searches {
         let (properties, unmatched) = properties(checked, quint, asked.expected);
         found.extend(unmatched);
         if java_on_path() {
@@ -654,7 +645,7 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
         .rules
         .iter()
         .any(|rule| rule.kind.as_deref() == Some(WITNESS));
-    if quint.check.runs != Runs::None && (plays || quint_check_plays_by_ending(quint)) {
+    if quint.runs != Runs::None && (plays || quint_check_plays_by_ending(quint)) {
         found.extend(played(checked, &runner, &run_reasons));
     }
     found
