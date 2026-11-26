@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::support::{Run, Sandbox, repository};
 
-const FAKE: &str = r#"#!/bin/sh
+const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
 here="$(dirname "$(readlink -f "$0")")"
 echo "$*" >> "$here/calls"
@@ -29,8 +29,9 @@ case "$1" in
       if [ "$previous" = "--source-map" ]; then map="$argument"; fi
       previous="$argument"
     done
-    echo '{"modules":[]}' > "$out"
-    echo '{"sourceIndex":{},"map":{}}' > "$map"
+    folder="$(cd "$(dirname "$2")" && pwd)"
+    cp "$here/parse.json" "$out"
+    sed "s#\"0\":\"confirm.qnt\"#\"0\":\"$folder/confirm.qnt\"#" "$here/map.json" > "$map"
     ;;
   verify)
     temporal=""
@@ -59,15 +60,8 @@ case "$1" in
     if grep -q 'failed after' "$here/test/$main"; then exit 1; fi
     ;;
 esac
-"#;
+"##;
 
-const CHECKS: &str = r#"{ "checks": [
-  { "file": "confirm.qnt", "main": "lift", "invariants": ["inside"], "temporal": ["reachesTop"], "runs": true, "expectCounterexample": ["low"] },
-  { "file": "confirm.qnt", "main": "big", "invariants": ["belowBig"] },
-  { "file": "confirm.qnt", "main": "halves", "invariants": ["halfAbove"] },
-  { "file": "confirm.qnt", "main": "ranges", "runs": true },
-  { "file": "confirm.qnt", "main": "words", "invariants": ["counted"] }
-] }"#;
 
 const RUNS_PLAYED: &str = "\n  lift\n    ok upTest passed 1 test(s)\n    1) pickTest failed after 3 test(s)\n\n  1 passing (5ms)\n  1 failed\nerror: Tests failed\n";
 
@@ -110,7 +104,14 @@ impl Quint {
                 .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
         };
         sandbox.write("specs/confirm.qnt", &read(samples.join("confirm.qnt")));
-        sandbox.write("specs/earnest.quint.json", CHECKS);
+        sandbox.write(
+            "fake/parse.json",
+            &read(samples.join("fixtures/confirm.parse.json")),
+        );
+        sandbox.write(
+            "fake/map.json",
+            &read(samples.join("fixtures/confirm.sourcemap.json")),
+        );
         for main in ["lift", "big", "halves", "ranges", "words"] {
             sandbox.write(
                 &format!("fake/compiled/{main}.json"),
@@ -267,6 +268,11 @@ fn a_compiled_model_changed_by_hand_differs_from_what_quint_reads_in_the_qnt_fil
         .expect("the compiled JSON is cached")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
+        .filter(|path| {
+            !path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("places-"))
+        })
         .filter(|path| {
             fs::read_to_string(path).is_ok_and(|text| text.contains("\"name\":\"lift\""))
         })
@@ -608,10 +614,6 @@ fn a_setup_whose_spec_imports_a_module_with_variables(played: &str) -> Sandbox {
             .unwrap_or_else(|error| panic!("{name} can't be read: {error}"))
     };
     sandbox.write("specs/skipped.qnt", &read("skipped.qnt"));
-    sandbox.write(
-        "specs/earnest.quint.json",
-        r#"{ "checks": [ { "file": "skipped.qnt", "main": "setup", "invariants": ["ok"], "runs": true } ] }"#,
-    );
     for name in ["parse.json", "map.json", "setup.json"] {
         sandbox.write(&format!("fake/{name}"), &read(name));
     }
@@ -705,6 +707,11 @@ fn a_difference_in_lift_compiled_as(fixture: &str) -> Run {
         .expect("the compiled JSON is cached")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
+        .filter(|path| {
+            !path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("places-"))
+        })
         .filter(|path| {
             fs::read_to_string(path).is_ok_and(|text| text.contains("\"name\":\"lift\""))
         })
