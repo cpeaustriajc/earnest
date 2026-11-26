@@ -1158,4 +1158,275 @@ mod tests {
             "`w`",
         );
     }
+
+    fn eventually(rest: &str) -> earnest_ast::EventuallyDraft {
+        draft(&format!("{ACTIONS}{rest}"))
+            .runs
+            .eventually
+            .into_iter()
+            .next()
+            .expect("one rule about runs")
+    }
+
+    fn setup(rest: &str) -> earnest_ast::SetupDraft {
+        draft(&format!("{ACTIONS}{rest}"))
+            .runs
+            .setups
+            .into_iter()
+            .next()
+            .expect("one setup")
+    }
+
+    #[test]
+    fn a_rule_about_runs_with_where_it_starts_and_what_it_reaches() {
+        let found = eventually(
+            "export const settles = m.eventually(M, \"Once pressed, the count settles\", \
+             { after: (state) => state.last !== null, reaches: (s) =>\n\ts.n ===   3 });\n",
+        );
+        assert_eq!(found.id, "settles", "the exported name");
+        assert_eq!(
+            found.says, "Once pressed, the count settles",
+            "the sentence"
+        );
+        assert_eq!(found.place, Place { line: 6, column: 1 }, "the `export`");
+        let after = found.after.expect("an `after`");
+        assert_eq!(
+            after.state_name.as_deref(),
+            Some("state"),
+            "the state's name in `after`"
+        );
+        assert_eq!(show(&after.term), "(!== state.last null)", "the start");
+        assert_eq!(after.text, "state.last !== null", "the source of `after`");
+        assert_eq!(
+            found.reaches.state_name.as_deref(),
+            Some("s"),
+            "the state's name in `reaches`"
+        );
+        assert_eq!(show(&found.reaches.term), "(=== s.n 3)", "the goal");
+        assert_eq!(
+            found.reaches.text, "s.n === 3",
+            "as written, with each run of white space as one space"
+        );
+    }
+
+    #[test]
+    fn a_rule_about_runs_without_after_starts_in_the_start_states() {
+        let found = eventually(
+            "export const ends = m.eventually(M, \"It gets there\", { reaches: () => true });\n",
+        );
+        assert_eq!(found.after, None, "no `after`");
+        assert_eq!(found.reaches.state_name, None, "the goal reads no state");
+        assert_eq!(show(&found.reaches.term), "true", "the goal");
+    }
+
+    #[test]
+    fn rules_about_runs_come_after_the_rules_and_before_the_witnesses() {
+        let found = draft(&format!(
+            "{ACTIONS}export const w = m.witness(M, \"w\", {{ steps: [], expect: (s) => s.n === 0 }});\n\
+             export const second = m.eventually(M, \"b\", {{ reaches: (s) => s.n === 3 }});\n\
+             export const first = m.eventually(M, \"a\", {{ reaches: (s) => s.n === 0 }});\n\
+             export const low = m.rule(M, \"low\", (s) => s.n < 4);\n"
+        ));
+        let ids: Vec<&str> = found.rule_ids().collect();
+        assert_eq!(
+            ids,
+            ["low", "second", "first", "w"],
+            "the rules, the rules about runs in file order, the witnesses"
+        );
+    }
+
+    #[test]
+    fn a_rule_about_runs_written_wrongly_is_refused() {
+        one_refusal(
+            "export const e = m.eventually(M, \"e\", { after: (s) => s.n === 1 });\n",
+            18,
+            "`m.eventually`",
+        );
+        one_refusal(
+            "export const e = m.eventually(M, \"e\", { reaches: (s) => s.n === 1, until: 2 });\n",
+            68,
+            "`until`",
+        );
+        one_refusal(
+            "export const e = m.eventually(M, \"e\", { reaches: true });\n",
+            50,
+            "`true`",
+        );
+        one_refusal(
+            "export const e = m.eventually(M, \"e\", { after: (s, t) => s.n < t.n, reaches: (s) => s.n === 1 });\n",
+            48,
+            "`(s, t)`",
+        );
+        one_refusal(
+            "export const e = m.eventually(M, { reaches: (s) => s.n === 1 });\n",
+            18,
+            "`m.eventually`",
+        );
+        one_refusal(
+            "export const e = m.eventually(M, \"e\");\n",
+            18,
+            "`m.eventually`",
+        );
+    }
+
+    #[test]
+    fn a_rule_about_runs_that_is_not_exported_is_refused() {
+        one_refusal(
+            "const e = m.eventually(M, \"e\", { reaches: (s) => s.n === 1 });\n",
+            11,
+            "`e`",
+        );
+    }
+
+    #[test]
+    fn an_action_is_fair_when_it_says_so() {
+        let fair = action("{ fair: true, changes: (s) => ({ n: s.n + 1 }) }");
+        assert!(fair.fair, "`fair: true`");
+        let unfair = action("{ fair: false, changes: (s) => ({ n: s.n + 1 }) }");
+        assert!(!unfair.fair, "`fair: false`");
+        let plain = action("{ changes: (s) => ({ n: s.n + 1 }) }");
+        assert!(!plain.fair, "no `fair`");
+        let wrapped = action("{ fair: (true), changes: (s) => ({ n: s.n + 1 }) }");
+        assert!(wrapped.fair, "`true` in brackets");
+    }
+
+    #[test]
+    fn fair_that_is_not_written_out_is_refused() {
+        let act = |fair: &str| {
+            format!(
+                "export const a = m.action(M, \"a\", {{ fair: {fair}, changes: (s) => ({{ n: s.n }}) }});\n"
+            )
+        };
+        assert_eq!(
+            features(&act("FAIR")),
+            ["`FAIR`"],
+            "a constant is not written out"
+        );
+        assert_eq!(features(&act("1")), ["`1`"], "a number is not a boolean");
+        assert_eq!(
+            features(&act("!false")),
+            ["`!false`"],
+            "an expression is not written out"
+        );
+    }
+
+    #[test]
+    fn a_setup_with_the_fields_it_starts_elsewhere() {
+        let found = setup(
+            "export const pressed = m.setup(M, \"Pressed once\", { n: 2, last: \"key\" });\n",
+        );
+        assert_eq!(found.id, "pressed", "the exported name");
+        assert_eq!(found.says, "Pressed once", "the sentence");
+        assert_eq!(found.place, Place { line: 6, column: 1 }, "the `export`");
+        let starts: Vec<String> = found
+            .starts
+            .iter()
+            .map(|(name, place, value)| {
+                format!(
+                    "{name} at {}:{} = {}",
+                    place.line,
+                    place.column,
+                    show(value)
+                )
+            })
+            .collect();
+        assert_eq!(
+            starts,
+            ["n at 6:53 = 2", "last at 6:59 = \"key\""],
+            "each field with where it is written and its value, in the order written"
+        );
+    }
+
+    #[test]
+    fn the_setups_of_a_model_are_kept_in_file_order() {
+        let found = draft(&format!(
+            "{ACTIONS}export const high = m.setup(M, \"high\", {{ n: 3 }});\n\
+             export const low = m.setup(M, \"low\", {{ n: 0 }});\n"
+        ));
+        let ids: Vec<&str> = found
+            .runs
+            .setups
+            .iter()
+            .map(|each| each.id.as_str())
+            .collect();
+        assert_eq!(ids, ["high", "low"], "the order in the file");
+        assert_eq!(
+            found.rule_ids().count(),
+            0,
+            "a setup is no rule and has no verdict"
+        );
+    }
+
+    #[test]
+    fn a_setup_written_wrongly_is_refused() {
+        one_refusal("export const s = m.setup(M, \"s\", {});\n", 34, "`{}`");
+        one_refusal("export const s = m.setup(M, { n: 1 });\n", 18, "`m.setup`");
+        one_refusal(
+            "export const s = m.setup(M, \"s\", { n: 1 }, { n: 2 });\n",
+            18,
+            "`m.setup`",
+        );
+        one_refusal("export const s = m.setup(M, \"s\");\n", 18, "`m.setup`");
+    }
+
+    #[test]
+    fn a_setup_that_is_not_exported_is_refused() {
+        one_refusal("const s = m.setup(M, \"s\", { n: 1 });\n", 11, "`s`");
+    }
+
+    #[test]
+    fn a_witness_names_the_setup_it_is_played_in() {
+        let found = witness(
+            "export const high = m.setup(M, \"high\", { n: 2 });\n\
+             export const tops = m.witness(M, \"From high, one bump tops it\", \
+             { setup: high, steps: [bump], expect: (s) => s.n === 3 });\n",
+        );
+        assert_eq!(
+            found.setup,
+            Some((
+                "high".to_owned(),
+                Place {
+                    line: 7,
+                    column: 74
+                }
+            )),
+            "the setup's id and where it is named"
+        );
+    }
+
+    #[test]
+    fn a_witness_setup_that_is_not_a_setup_of_the_model_declared_above_is_refused() {
+        let witness_in = |setup: &str| {
+            format!(
+                "export const w = m.witness(M, \"w\", {{ setup: {setup}, steps: [], expect: (s) => s.n === 0 }});\n"
+            )
+        };
+        one_refusal(&witness_in("later"), 45, "`later`");
+        one_refusal(&witness_in("bump"), 45, "`bump`");
+        one_refusal(&witness_in("{ n: 1 }"), 45, "`{ n: 1 }`");
+        let below = format!(
+            "{}export const later = m.setup(M, \"later\", {{ n: 1 }});\n",
+            witness_in("later")
+        );
+        assert_eq!(
+            refused(&below),
+            [(6, 45, "`later`".to_owned())],
+            "a setup declared below the witness"
+        );
+        let source = format!(
+            "{HEAD}export const N = m.model(\"N\", {{ on: m.boolean() }});\n\
+             export const lit = m.setup(N, \"lit\", {{ on: true }});\n\
+             export const w = m.witness(M, \"w\", {{ setup: lit, steps: [], expect: (s) => s.n === 0 }});\n"
+        );
+        let found: Vec<(u32, u32, String)> = read("m.model.ts", &source)
+            .problems
+            .into_iter()
+            .map(|problem| (problem.line, problem.column, problem.feature))
+            .collect();
+        assert_eq!(
+            found,
+            [(6, 45, "`lit`".to_owned())],
+            "the setup of `N` in a witness of `M`"
+        );
+    }
 }
