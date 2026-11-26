@@ -12,6 +12,7 @@ const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
 
 /// Which `run` definitions of the compiled main module [`crate::read_runs`] plays.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Runs {
     /// None of them.
     None,

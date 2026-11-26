@@ -51,8 +51,7 @@ fn definition(def: &Def) -> Option<Refusal> {
         return Some(refusal(&format!("`{}`", def.name), why));
     }
     match def.qualifier.as_str() {
-        "temporal" => None,
-        "run" => None,
+        "temporal" | "run" => None,
         _ => body(def, &def.name),
     }
 }
