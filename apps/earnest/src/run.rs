@@ -396,7 +396,11 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
         },
-        detail: detail_of(&ran.outcome, (&readable.expected, &readable.reachable), model),
+        detail: detail_of(
+            &ran.outcome,
+            (&readable.expected, &readable.reachable),
+            model,
+        ),
         position: readable.position,
     })
 }

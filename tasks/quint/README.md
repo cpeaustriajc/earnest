@@ -4209,3 +4209,88 @@ counts against TLC), `quint_imports::the_runs_of_a_spec_that_imports_other_modul
 - tlaplus/Examples: each folder's `manifest.json` lists models by `.cfg` with `"result": "success"`, `"safety failure"`, `"liveness failure"` or `"deadlock failure"` (read in `specifications/DieHard/manifest.json`): the expected failure lives beside the model, per check.
 - Apalache: `--init`, `--next`, `--cinit`, `--inv`, `--temporal` on the command line, or a TLC `.cfg` via `--config`; no expected violation. Its type annotations live in comments, `\* @type: Int;` (docs `running.md`, `howto-write-type-annotations.md`): a precedent for a marker in a comment.
 - So: Alloy alone puts the check and its expected failure in the model; `@check` / `@check broken` is Alloy's `expect 0` / `expect 1` per property, written Apalache's way. `@check reachable` is Alloy's `run … expect 1`. The proposed spelling stands.
+
+## Checks marked in the model (#72): report
+
+Quint 0.33.1 from npm in a scratch folder, Node 22, Java for `quint verify --backend tlc`.
+
+What was built:
+
+- **Marks** (`apps/earnest/src/marks.rs`): the first line of a definition's `///` doc comment,
+  as `quint parse` gives it in `"doc"`, is `@check`, `@check broken` or `@check reachable`; the
+  lines below are the rule's `says`. A first line that starts with `@check` and goes on with
+  another word (`@check reachble`, `@checked`) is `unreadable` at the mark's line (the
+  definition's line from the source map, less the doc's lines). A `//` comment is not read.
+- **Which modules** (`places.rs`, `checks_in`, `documented`, `sees_a_test`): a module of the
+  file (by the source map's file of the module) that declares no `const`, sees `init` and `step`
+  and sees a mark or a run ending in `Test`. A mark on a spec is seen through each import and
+  instance, named as the setup refers to it: `inRange` through `import Clock(Limit = 3).*`,
+  `C::inRange` through `import Clock(Limit = 5) as C` [ran]; `Lib::x` through a bare `import Lib`,
+  only `x` through `import Lib.x` [read in the parse JSON, not run]. The budget's stop condition
+  did not happen.
+- **Where marks apply** (`quint.rs`): a `.qnt` file in a folder with no `earnest.quint.json`,
+  and one named on the command line that no entry lists, is checked by its marks. A folder with a
+  checks file is checked by its entries, as before, with each listed module's marks added to its
+  entry. Its unlisted `.qnt` files are not looked at (the other reading broke the fixture
+  folders of #66 to #71, which hold unlisted files with `…Test` runs; left to the owner).
+- **`reachable`**: the rule is the `val`'s condition negated on the IR (`Op::Not`), an expected
+  counterexample, so it works in a setup built from the typecheck as in a compiled one.
+  `reached  P` prints the path; `never reached  P` fails; `unknown  P` when the search stopped,
+  as for `broken`. JSON: `"expected": "reached"`.
+- **Counts**: the text line of a model read from a `.qnt` file ends its fields with `N rules, M
+  runs` (whole ids, so a temporal property in parts counts once). Compiled `.json`, TypeScript
+  and Rust lines are unchanged.
+- **Names only** (`checks.rs`): an item of `invariants`, `temporal` or `expectCounterexample`
+  that is not a name, or an object `{ "name", "is" }`, is `unreadable`, with the definition to
+  write (`` `val LateBreak = Late implies Small` ``). The guard fixtures of #69 and the four
+  tests of expressions are gone. `earnest_quint` still reads an invariant that is an expression
+  in JSON the user compiled.
+- **Cache**: the parse entry is keyed by the build (from #71), and a model's cached result by
+  its marks and sentences as well as its JSON.
+
+Tests: `apps/earnest/tests/behavior/quint_marks.rs` on `tasks/quint/marked/`, whose
+`fixtures/` were recorded by running earnest with a wrapper around the real Quint 0.33.1 that
+saved each `parse`, `typecheck` and `compile` output (paths made relative).
+
+The real run, Quint 0.33.1, no `earnest.quint.json`, `--no-cache`:
+
+```text
+$ earnest verify specs
+pass        bank  4 states  0 ms  1 rule, 1 run
+pass        Small  4 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    end    time = 3
+pass        Large  6 states  0 ms  4 rules, 1 run
+  broken  belowLimit  (expected)
+  reached  atTop
+    start  time = 0
+    1. step  time: 0 -> 1
+    2. step  time: 1 -> 2
+    3. step  time: 2 -> 3
+    4. step  time: 3 -> 4
+    5. step  time: 4 -> 5
+    end    time = 5
+3 models: 3 pass, 0 fail, 0 unfinished
+$ earnest verify failing
+fail        wrong  3 states  0 ms  2 rules, 0 runs
+  holds  small  a counterexample was expected
+  never reached  three
+1 model: 0 pass, 1 fail, 0 unfinished
+$ earnest verify typo
+unreadable  typo/typo.qnt  typo
+  typo/typo.qnt:6:7  `atStart`  the doc comment starts with `@check reachble`, which is not a mark the checker knows: ...
+$ earnest verify lost
+pass        lost  1 states  0 ms  1 rule, 0 runs
+$ earnest verify specs/lib.qnt
+unreadable  specs/lib.qnt
+  specs/lib.qnt:1:1  `lib.qnt`  no module of the Quint file is checked, and `earnest.quint.json` lists none: ...
+```
+
+`quint verify --backend tlc --main Small clock.qnt` agrees: `--invariant inRange` finds no
+error, `--invariant belowLimit` and `--invariant 'not(atTop)'` each a violation.
+
