@@ -8,6 +8,7 @@ mod fifth_a;
 mod fourth_a;
 mod fourth_b;
 mod second;
+mod seventh;
 mod sixth;
 mod support;
 mod third;
