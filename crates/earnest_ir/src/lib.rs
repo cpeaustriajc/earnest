@@ -386,6 +386,10 @@ pub struct Runs {
     /// The position in `setups` of the setup this model starts in: [`Model::in_setup`] gave
     /// it. `None` for the model as its file declares it.
     pub chosen: Option<usize>,
+    /// The start states, each one value per field in the order of [`Model::fields`], when the
+    /// model lists them. `None` starts from every combination of the fields' `starts`. A
+    /// setup does not change a listed start state.
+    pub starts: Option<Vec<Vec<Value>>>,
 }
 
 /// One part of a chart label.

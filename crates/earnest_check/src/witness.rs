@@ -127,7 +127,7 @@ impl Search<'_> {
 
     fn play(&self, witness: &Witness) -> Ended {
         let most = self.limits.max_states;
-        for (played, start) in Starts::new(&self.model.fields).enumerate() {
+        for (played, start) in Starts::of(self.model).enumerate() {
             if played >= most {
                 return Ended::TooManyStarts;
             }

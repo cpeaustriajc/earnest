@@ -1,0 +1,103 @@
+use serde::Deserialize;
+use serde::de::IgnoredAny;
+use std::collections::HashMap;
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Probe {
+    pub(crate) stage: String,
+    #[serde(rename = "main")]
+    _main: String,
+    #[serde(rename = "modules")]
+    _modules: IgnoredAny,
+    #[serde(rename = "table")]
+    _table: IgnoredAny,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Compiled {
+    pub(crate) main: String,
+    pub(crate) modules: Vec<Module>,
+    pub(crate) table: HashMap<String, Entry>,
+    #[serde(default)]
+    pub(crate) errors: Vec<IgnoredAny>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Module {
+    pub(crate) name: String,
+    pub(crate) declarations: Vec<Declaration>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Entry {
+    pub(crate) kind: String,
+    pub(crate) id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Type {
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub(crate) enum Declaration {
+    Var {
+        id: u64,
+        name: String,
+        #[serde(rename = "typeAnnotation")]
+        type_annotation: Type,
+    },
+    Const {
+        name: String,
+    },
+    Def(Def),
+    Typedef {
+        name: String,
+    },
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Def {
+    pub(crate) id: u64,
+    pub(crate) name: String,
+    pub(crate) qualifier: String,
+    pub(crate) expr: Expr,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct Param {
+    pub(crate) id: u64,
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub(crate) enum Expr {
+    Int {
+        value: serde_json::Number,
+    },
+    Bool {
+        value: bool,
+    },
+    Str {},
+    Name {
+        id: u64,
+        name: String,
+    },
+    App {
+        id: u64,
+        opcode: String,
+        args: Vec<Expr>,
+    },
+    Lambda {
+        params: Vec<Param>,
+        expr: Box<Expr>,
+    },
+    Let {
+        opdef: Box<Def>,
+        expr: Box<Expr>,
+    },
+}

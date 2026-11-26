@@ -468,7 +468,9 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
         for target in targets.iter().filter(|target| {
             target.file.path == file.path && target.readable.model.runs.chosen.is_none()
         }) {
-            let new = &target.readable.draft;
+            let Some(new) = &target.readable.draft else {
+                continue;
+            };
             let was = old.iter().find(|draft| draft.name == new.name);
             compared
                 .changes
@@ -477,7 +479,8 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
         let now: Vec<&str> = file
             .models()
             .iter()
-            .map(|readable| readable.draft.name.as_str())
+            .filter_map(|readable| readable.draft.as_ref())
+            .map(|draft| draft.name.as_str())
             .collect();
         compared
             .changes

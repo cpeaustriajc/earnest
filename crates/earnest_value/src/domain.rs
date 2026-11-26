@@ -36,6 +36,9 @@ pub enum Domain {
         /// The most items a sequence holds.
         max: usize,
     },
+    /// Every value. A field with this domain is never out of range. It has too many values to
+    /// list: [`Domain::count`] gives `u128::MAX` and [`Domain::values`] gives none.
+    Any,
 }
 
 /// The most values the checker lists for one declaration. Compare [`Domain::count`] with it
@@ -59,6 +62,7 @@ impl Domain {
             Self::Set(item) => power(2, item.count()),
             Self::Map(key, value) => power(value.count().saturating_add(1), key.count()),
             Self::Seq { item, max } => seq_count(item.count(), *max),
+            Self::Any => u128::MAX,
         }
     }
 
@@ -81,6 +85,7 @@ impl Domain {
             Self::Set(item) => set_values(&item.values()),
             Self::Map(key, value) => map_values(&key.values(), &value.values()),
             Self::Seq { item, max } => seq_values(&item.values(), *max),
+            Self::Any => Vec::new(),
         }
     }
 
@@ -88,7 +93,9 @@ impl Domain {
     #[must_use]
     pub fn contains(&self, value: &Value) -> bool {
         match (self, value) {
-            (Self::Bool, Value::Bool(_)) | (Self::Optional(_), Value::Null) => true,
+            (Self::Bool, Value::Bool(_)) | (Self::Optional(_), Value::Null) | (Self::Any, _) => {
+                true
+            }
             (Self::Int { lo, hi }, Value::Int(number)) => lo <= number && number <= hi,
             (Self::OneOf(values), found) => values.contains(found),
             (Self::Optional(inner), found) => inner.contains(found),
