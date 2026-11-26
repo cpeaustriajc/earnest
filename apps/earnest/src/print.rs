@@ -86,6 +86,7 @@ impl Verified<'_> {
             }
             while let Some(next) = checked.next_if(|next| next.result.file == file.path) {
                 lines.push(model_line(&next.result));
+                lines.extend(not_played_line(&next.result));
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
         }
@@ -137,6 +138,18 @@ fn model_line(result: &ModelResult) -> String {
         fields.push("(cached)".to_owned());
     }
     fields.join(INDENT)
+}
+
+fn not_played_line(result: &ModelResult) -> Option<String> {
+    if result.runs_not_played.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{INDENT}note{INDENT}runs not played: {} (written in a module this one imports, whose \
+         runs `quint compile` drops: the checker plays them only in a setup it builds itself, \
+         so write them in this module to play them here)",
+        one_line(&result.runs_not_played.join(", "))
+    ))
 }
 
 pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
@@ -282,6 +295,7 @@ mod tests {
             milliseconds: 1,
             cached: false,
             reason: None,
+            runs_not_played: Vec::new(),
             rules: vec![RuleResult {
                 id: "fine".to_owned(),
                 says: "All is fine".to_owned(),

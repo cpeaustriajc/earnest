@@ -689,6 +689,23 @@ fn jobs_of(asked: BTreeMap<PathBuf, Asked>, files: &mut Vec<ModelFile>) -> Vec<J
     jobs
 }
 
+fn runs_not_played(
+    checks: &[Job],
+    compiled: &[Result<(String, bool), Problem>],
+    places: &HashMap<PathBuf, Places>,
+) -> Vec<Vec<String>> {
+    checks
+        .iter()
+        .zip(compiled)
+        .map(|(job, compiled)| match (compiled, places.get(&job.real)) {
+            (Ok((json, false)), Some(found)) if job.check.runs == Runs::Tests => {
+                found.runs_not_played(&job.check.main, json)
+            }
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
 pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut files = Vec::new();
     let mut checks = jobs_of(asked(listed), &mut files);
@@ -740,10 +757,13 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                 } else {
                     compile(job)
                 }
+                .map(|json| (json, false))
             },
-            Ok,
+            |json| Ok((json, true)),
         )
     });
+    let not_played = runs_not_played(&checks, &compiled, &places);
+    let compiled = compiled.into_iter().map(|each| each.map(|(json, _)| json));
     let read: Vec<Result<(String, earnest_ir::Model), Vec<Located>>> = checks
         .iter()
         .zip(compiled)
@@ -757,7 +777,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             Err(problem) => Err(vec![Located::new(problem, None, None)]),
         })
         .collect();
-    for (job, read) in checks.iter().zip(read) {
+    for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
         files.push(match read {
             Ok((json, model)) => ModelFile {
                 path: job.shown.clone(),
@@ -770,6 +790,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     draft: None,
                     model,
                     position: 0,
+                    runs_not_played,
                 }]),
             },
             Err(located) => {

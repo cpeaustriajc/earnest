@@ -237,16 +237,47 @@ fn the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them(
 }
 
 #[test]
-fn runs_true_on_a_compiled_setup_that_drops_the_spec_s_runs_is_refused_naming_them() {
-    let report = compiled(
+fn runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play() {
+    let recorded = RecordedQuint::new(&QuintFixtures {
+        file: "runs_not_played.qnt",
+        source: include_str!("../../models/quint_second/runs_not_played/runs_not_played.qnt"),
+        typecheck: include_str!("../../models/quint_second/runs_not_played/parse.json"),
+        compiled: include_str!("../../models/quint_second/runs_not_played/Plays.json"),
+        checks: r#"{ "checks": [ { "file": "runs_not_played.qnt", "main": "Plays", "runs": true } ] }"#,
+    });
+    let report = recorded.verify(&["--no-cache"]);
+    let model = model_named(&report, "Plays");
+    assert_eq!(
+        (model["status"].as_str(), &model["runsNotPlayed"]),
+        (Some("pass"), &serde_json::json!(["S::upTest"])),
+        "`quint test --main Plays` plays `S::upTest` and `ownTest`; `quint compile` drops \
+         `S::upTest`, so the check plays `ownTest` and says it did not play `S::upTest`\n\
+         {report:#}"
+    );
+    assert_eq!(
+        run_ids(model),
+        vec![("ownTest".to_owned(), "holds".to_owned())],
+        "the run the compiled module holds is played\n{report:#}"
+    );
+    let output = Command::new(binary())
+        .args(["verify", "--no-cache", "."])
+        .env("EARNEST_QUINT", &recorded.quint)
+        .current_dir(recorded.folder.path())
+        .output()
+        .expect("earnest starts");
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        text.lines()
+            .any(|line| line.trim_start().starts_with("note") && line.contains("S::upTest")),
+        "the text names the run not played on a line under the result\n{text}"
+    );
+    let direct = compiled(
         "Named",
         include_str!("../../models/quint_second/named_runs/Named.json"),
     );
-    let said = report.json["unreadable"].to_string();
     assert!(
-        report.is_unreadable() && said.contains("`upTest`") && report.model("Named").is_null(),
-        "`quint compile --main Named` drops `C::upTest`, so a check that plays every run \
-         ending in `Test` would pass without it; it is refused, naming `upTest`\n{report}"
+        !direct.is_unreadable() && direct.model("Named")["runsNotPlayed"].is_null(),
+        "a compiled file read on its own plays the runs it holds, with no note\n{direct}"
     );
 }
 

@@ -252,7 +252,12 @@ The runs of the spec module are played in a setup that earnest builds from `quin
 
 With two instances of one spec, `import Base(K = 2) as P` and `import Base(K = 3) as R`, the run `P::upTest` starts with `P::init` and is played over `P::v` alone, as `quint test --main Pair` plays it.
 
-A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why. So does `"runs": true` when an imported module has a run whose name ends in `Test`: the problem names each run that would not be played, so that a `pass` never stands for runs that did not run. List the runs of the checked module by name, or leave `runs` out.
+A setup that is compiled holds only the runs written in the checked module itself, because `quint compile` drops the runs of the modules it imports. Those runs are not played there. A run that a check lists by name and that only an imported module has makes the check `unreadable`, and the problem says why. With `"runs": true`, the check plays the runs the compiled module holds and says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as `quint test` names them: a `note` line under the result line, and the [`runsNotPlayed`](/reference/output/#json-output) key in JSON. A compiled `.json` named on the command line plays the runs it holds, with no note.
+
+```text
+pass        Plays  0 states  0 ms
+  note  runs not played: S::upTest (written in a module this one imports, whose runs `quint compile` drops: the checker plays them only in a setup it builds itself, so write them in this module to play them here)
+```
 
 ## How values print
 

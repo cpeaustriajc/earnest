@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 const QUALIFIED: &str = "::";
+const RUN: &str = "run";
+const TESTS_END_WITH: &str = "Test";
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Names {
@@ -14,6 +16,7 @@ struct Names {
     declared: Vec<(String, u64)>,
     instances: Vec<(String, String)>,
     has_an_instance: bool,
+    run_prefixes: Vec<(String, String)>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +46,12 @@ fn names_of(module: &Value) -> Option<Names> {
                 if let Some(proto) = text(declaration, "protoName") {
                     let alias = text(declaration, "qualifiedName").unwrap_or(proto);
                     names.instances.push((alias.to_owned(), proto.to_owned()));
+                    let prefix = match (kind, text(declaration, "qualifiedName")) {
+                        ("instance", _) => format!("{}{QUALIFIED}{alias}{QUALIFIED}", names.name),
+                        (_, Some(alias)) => format!("{alias}{QUALIFIED}"),
+                        (_, None) => String::new(),
+                    };
+                    names.run_prefixes.push((proto.to_owned(), prefix));
                 }
             }
             (Some(_), Some(name), Some(id)) => names.declared.push((name.to_owned(), id)),
@@ -96,6 +105,38 @@ impl Places {
 
     pub(crate) fn files_read(&self) -> Vec<&str> {
         self.files.values().map(String::as_str).collect()
+    }
+
+    pub(crate) fn runs_not_played(&self, main: &str, compiled: &str) -> Vec<String> {
+        let Some(module) = self.module(main) else {
+            return Vec::new();
+        };
+        let Ok(compiled) = serde_json::from_str::<Value>(compiled) else {
+            return Vec::new();
+        };
+        let runs: Vec<&str> = compiled
+            .get("table")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flat_map(|table| table.values())
+            .filter(|entry| text(entry, "qualifier") == Some(RUN))
+            .filter_map(|entry| text(entry, "name"))
+            .filter(|name| name.ends_with(TESTS_END_WITH))
+            .collect();
+        let mut found: Vec<String> = module
+            .run_prefixes
+            .iter()
+            .filter_map(|(proto, prefix)| Some((self.module(proto)?, prefix)))
+            .flat_map(|(spec, prefix)| {
+                spec.declared
+                    .iter()
+                    .filter(|(name, _)| runs.contains(&name.as_str()))
+                    .map(move |(name, _)| format!("{prefix}{name}"))
+            })
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
     }
 
     pub(crate) fn declares(&self, main: &str, name: &str) -> bool {

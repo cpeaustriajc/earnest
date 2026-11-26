@@ -2191,13 +2191,18 @@ that failed before among them.
   `a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`,
   `a_nondet_behind_a_guard_or_an_if_is_picked_only_where_the_guard_holds`.
 - **Setups under a name.** A file is typechecked when one of its modules has any instance (`as
-  C`, constants by a name, `export`, several instances), not only `.*`. The places cache's field
-  was renamed, so entries written before are read again. Where a setup is compiled all the same,
-  `"runs": true` with a run of an imported module whose name ends in `Test` makes the check
-  `unreadable`, naming each run that would not be played, as a named run is refused: a note on a
-  `pass` could be read as a pass of those runs. Tests:
+  C`, constants by a name, `export`, several instances), not only `.*`. The places cache's fields
+  changed, so entries written before are read again. Where a module is compiled all the same and
+  the check has `"runs": true`, the check is read, plays the runs the compiled module holds, and
+  says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as
+  `quint test` names them (`S::upTest`, `Main::C::upTest`): a `note` line under the result line
+  and `runsNotPlayed` in JSON. The status is what the played runs and rules give. A compiled
+  `.json` read on its own plays the runs it holds, as before, and a run listed by name that only
+  an imported module has stays `unreadable`. (A first version refused such checks; it made
+  eleven of #66's compiled fixtures, and the owner's `import Spec as Main` run modules,
+  unreadable, so it was replaced.) Tests:
   `the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them`,
-  `runs_true_on_a_compiled_setup_that_drops_the_spec_s_runs_is_refused_naming_them`.
+  `runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play`.
 - **Tuples of ten items or more.** In a model with such tuples the reader hands `Op::InTlcOrder`
   the names `_1`, `_2`, … in position order; the order and the export's order predicate compare a
   record whose fields are all among them by position, as TLC compares a tuple. Below ten items,
