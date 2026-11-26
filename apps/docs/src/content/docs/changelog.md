@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint picks from sets the state holds
+
+The Quint reader reads a `nondet x = S.oneOf()` whose set comes from the state, from an expression over it, or from an earlier `nondet` of the same action or of `init`. In each state the search tries every value of the set, with no bound, and an empty set means the action can't happen there. Paths, runs, temporal properties and the TLA+ export pick from the same set, and a path step prints the value picked. `Int.oneOf()` and `Nat.oneOf()` are refused by name. See [What is read today](/reference/quint/#what-is-read-today).
+
 ## November 2026: Quint modules listed in `earnest.quint.json`
 
 `earnest verify` checks Quint modules. List each module to check, with its invariants, in `earnest.quint.json` beside the specs:

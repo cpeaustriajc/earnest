@@ -6,4 +6,5 @@ module initpick {
     x' = b
   }
   action step = x' = x
+  val small = x <= 1
 }

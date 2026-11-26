@@ -145,6 +145,22 @@ fn the_tla_export_picks_from_the_same_sets() {
 }
 
 #[test]
+fn a_pick_inside_a_run_does_not_change_the_model_action_at_the_same_position() {
+    let sandbox = with_compiled(&["servedruns"]);
+    let run = sandbox.earnest(&["tla", "--out", "out", "models/servedruns.json"]);
+    run.exits(0);
+    let written = sandbox.read("out/servedRuns.tla");
+    assert!(
+        written.contains("Action_add ==\n    \\E who \\in {\"ann\", \"bob\"} :"),
+        "add picks among the names written out, as the model's step says:\n{written}"
+    );
+    assert!(
+        written.contains("Action_serve ==\n    \\E who \\in pending :"),
+        "{written}"
+    );
+}
+
+#[test]
 fn runs_that_serve_a_pending_request_get_the_verdicts_quint_test_gives() {
     let sandbox = with_compiled(&["servedruns"]);
     let run = verify(&sandbox, "servedruns", &["--json"]);

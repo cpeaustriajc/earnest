@@ -438,11 +438,12 @@ fn a_pick_among_both_booleans_lists_them() {
 }
 
 #[test]
-fn a_nondet_in_init_over_a_set_computed_from_another_nondet_is_refused() {
-    refused_with(
-        INIT_PICK,
-        "`nondet b`",
-        "`init` picks with `oneOf` over a set computed from another `nondet`",
+fn a_nondet_in_init_over_a_set_computed_from_another_nondet_starts_from_each_pick() {
+    let found = model(INIT_PICK);
+    assert_eq!(
+        found.runs.starts,
+        Some(vec![numbers(&[0]), numbers(&[1]), numbers(&[2])]),
+        "a in 1..2, then b in 0..a: b is 0, 1 or 2"
     );
 }
 

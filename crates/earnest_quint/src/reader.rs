@@ -683,8 +683,7 @@ impl<'a> Reader<'a> {
                         return self.refuse("`to`", "a range whose ends are not integers");
                     }
                     None => {
-                        return self
-                            .worked_out_in_each_state(&feature, Expr::Apply(Op::Interval, ends));
+                        return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
                     }
                 }
             }
@@ -714,18 +713,8 @@ impl<'a> Reader<'a> {
                 Ok(Picked::Listed(Domain::OneOf(values.clone()), values))
             }
             Some(_) => self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set"),
-            None => self.worked_out_in_each_state(&feature, set),
+            None => Ok(Picked::Computed(set)),
         }
-    }
-
-    fn worked_out_in_each_state(&self, feature: &str, set: Expr) -> Read<Picked> {
-        if self.in_init {
-            return self.refuse(
-                feature,
-                "`init` picks with `oneOf` over a set computed from another `nondet`",
-            );
-        }
-        Ok(Picked::Computed(set))
     }
 
     fn nondet(&mut self, opdef: &'a Def, body: &'a Quint) -> Read<Vec<Path>> {

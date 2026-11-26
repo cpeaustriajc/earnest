@@ -505,7 +505,7 @@ impl Writer<'_> {
             .runs
             .picks
             .iter()
-            .filter(|pick| pick.action == position)
+            .filter(|pick| pick.script.is_none() && pick.action == position)
             .collect();
         for (at, input) in action.inputs.iter().enumerate() {
             let (set, kind) = if let Some(pick) = picks.iter().find(|pick| pick.input == at) {
