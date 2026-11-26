@@ -18,6 +18,7 @@ earnest report --base origin/main    # Markdown for a PR body
 earnest tla src/cart.model.ts --out build/tla
 earnest confirm --tlc tla2tools.jar
 earnest confirm --tla-rs ~/.cargo/bin/tla-rs
+earnest confirm --quint specs/
 ```
 
 | Command | What it does |
@@ -26,7 +27,7 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | `chart` | Print each model as a Mermaid `stateDiagram-v2` statechart |
 | `report` | Print Markdown for a pull request body: results, charts, paths, and optional rule changes |
 | `tla` | Write `<Model>.tla` and `<Model>.cfg` for each model, and `<Model>_<setup>.tla` and `.cfg` for each of its setups, into `--out` |
-| `confirm` | Export each model to TLA+, run TLC or `tla-rs`, and compare state counts and verdicts with `earnest` |
+| `confirm` | Export each model to TLA+ and run TLC or `tla-rs`, or run Quint's own `quint verify` and `quint test` on each Quint check, and compare state counts and verdicts with `earnest` |
 
 ## Flags
 
@@ -43,8 +44,9 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | `--max-arrows <n>` | `20` | `chart`, `report` | Maximum arrows drawn per chart (at least `1`) |
 | `--base <git ref>` | none | `verify`, `report` | Compare each model's rules with the same file at this commit |
 | `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` (and `<Model>_<setup>.tla` and `.cfg` per setup) are written |
-| `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc` or `--tla-rs` is required) |
+| `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc`, `--tla-rs` or `--quint` is required) |
 | `--tla-rs <path>` | none | `confirm` | Path to the `tla-rs` binary (needs no Java) |
+| `--quint` | off | `confirm` | Run `quint verify --backend tlc` (requires Java) and `quint test` on each [Quint check](/reference/quint/#confirming-a-check-with-quint) |
 
 ## Worker threads and determinism
 

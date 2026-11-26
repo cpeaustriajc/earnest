@@ -145,15 +145,21 @@ pub(crate) struct Confirm {
     #[arg(
         long,
         value_name = "JAR",
-        required_unless_present = "tla_rs",
+        required_unless_present_any = ["tla_rs", "quint"],
         help = "The path of tla2tools.jar: check each model with TLC, which needs Java"
     )]
     pub(crate) tlc: Option<PathBuf>,
     #[arg(
         long = "tla-rs",
         value_name = "PATH",
-        required_unless_present = "tlc",
+        required_unless_present_any = ["tlc", "quint"],
         help = "The path of the tla-rs program: check each model with it, which needs no Java"
     )]
     pub(crate) tla_rs: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Check each Quint check with Quint's own `quint verify --backend tlc`, which needs \
+                Java, and `quint test`"
+    )]
+    pub(crate) quint: bool,
 }

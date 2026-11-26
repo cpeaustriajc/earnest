@@ -1,6 +1,7 @@
 use crate::arguments::{self, Chart, Confirm, Models, Report, Tla};
 use crate::changes::{Compare, Difference, check_base, rule_changes};
 use crate::confirm::{Checker, Tool, confirm_lines, differences, runs_differences};
+use crate::confirm_quint::{Asked, quint_differences, quint_folder, quint_lines};
 use crate::discovery::{discover, language_of};
 use crate::print::{
     no_model_line, problem_lines, skipped_line, to_stderr, to_stdout, unreadable_lines,
@@ -439,14 +440,18 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
     let targets = select(&files, model, None)
         .map_err(|error| refusing(&skipped, &no_model, model, None, error))?;
     say_what_is_unread(&files, model, None, &targets);
-    let all = exported(&targets)?;
+    let all = if tools.is_empty() {
+        Vec::new()
+    } else {
+        exported(&targets)?
+    };
     let ran = explore_expecting(
         &searched(&targets, None, Stops::AtTheEnd),
         bounds,
         Graphs::Dropped,
     );
     let mut everything_agrees = true;
-    for ((target, ran), exported) in targets.iter().zip(&ran).zip(&all) {
+    for (position, (target, ran)) in targets.iter().zip(&ran).enumerate() {
         let model = &target.readable.model;
         let ours = match checked(target.readable, ran) {
             Ok(ours) => ours,
@@ -455,7 +460,15 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
                 return Ok(Exit::Failed);
             }
         };
-        for (tool, program) in &tools {
+        let mut beyond_tlc = limits(model);
+        if ran.outcome.computes_beyond_32_bits {
+            beyond_tlc.push(BEYOND_32_BITS_COMPUTED.to_owned());
+        }
+        for (exported, (tool, program)) in all
+            .get(position)
+            .into_iter()
+            .flat_map(|exported| tools.iter().map(move |tool| (exported, tool)))
+        {
             let folder = match tool {
                 Tool::Tlc => Path::new(CONFIRM_FOLDER).join(&exported.name),
                 Tool::TlaRs => Path::new(CONFIRM_FOLDER)
@@ -478,15 +491,25 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
                     Err(error) => found.push(error),
                 }
             }
-            let mut beyond = Vec::new();
-            if *tool == Tool::Tlc {
-                beyond = limits(model);
-                if ran.outcome.computes_beyond_32_bits {
-                    beyond.push(BEYOND_32_BITS_COMPUTED.to_owned());
-                }
-            }
+            let beyond = if *tool == Tool::Tlc {
+                beyond_tlc.clone()
+            } else {
+                Vec::new()
+            };
             everything_agrees &= found.is_empty();
             to_stdout(&confirm_lines(&ours, &found, &beyond, *tool).join("\n"));
+        }
+        if arguments.quint {
+            let found = quint_differences(&Asked {
+                checked: &ours,
+                quint: target.readable.quint.as_ref(),
+                expected: &target.readable.expected,
+                beyond_tlc,
+                compiled: &target.file.source,
+                folder: quint_folder(),
+            });
+            everything_agrees &= found.is_empty();
+            to_stdout(&quint_lines(&ours, &found).join("\n"));
         }
     }
     say_what_was_skipped(&skipped, &no_model);

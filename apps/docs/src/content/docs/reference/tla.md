@@ -1,6 +1,6 @@
 ---
 title: TLA+ export and confirmation
-description: Export models to TLA+ modules and confirm earnest's state counts and verdicts against TLC or tla-rs.
+description: Export models to TLA+ modules and confirm earnest's state counts and verdicts against TLC, tla-rs or Quint.
 ---
 
 Every earnest model can be exported as TLA+ so an independent TLA+ checker can confirm the distinct state count and every rule verdict.
@@ -29,6 +29,7 @@ earnest confirm --tlc tla2tools.jar --tla-rs ~/.cargo/bin/tla-rs
 - `--jobs <n>` sets the worker count passed to each checker (`--workers`).
 - Because `tla-rs` stops at its first violated invariant, each rule invariant runs in its own invocation. Differences report `tla-rs found` and `tla-rs says`.
 - `--tlc` also runs TLC once for each [rule about runs](/reference/typescript/#rules-about-runs), with that rule's property alone, and compares its verdict: `Temporal property Eventually_id was violated.` (or the older `Temporal properties were violated.`) is `broken`, a run with no error is `holds`, and anything else is `unknown`.
+- A Quint check can also be set beside Quint's own `quint verify` and `quint test` with `--quint`, which reads the `.qnt` file and so also finds a fault in earnest's reading of it. See [Confirming a check with Quint](/reference/quint/#confirming-a-check-with-quint) for what each confirms; neither is a proof.
 - An invariant that reads no variable is judged by TLC before the search; `The invariant of Rule_id is equal to FALSE` is `broken`. `tla-rs` is not run on rules about runs, so `--tla-rs` compares only the state count and the plain rules.
 
 ## How models map to TLA+

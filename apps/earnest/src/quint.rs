@@ -70,6 +70,48 @@ impl Job {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct QuintProperty {
+    pub(crate) id: String,
+    pub(crate) text: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QuintCheck {
+    pub(crate) program: PathBuf,
+    pub(crate) file: PathBuf,
+    pub(crate) main: String,
+    pub(crate) init: String,
+    pub(crate) step: String,
+    pub(crate) invariants: Vec<QuintProperty>,
+    pub(crate) temporal: Vec<QuintProperty>,
+    pub(crate) runs: Runs,
+    pub(crate) searches: bool,
+}
+
+fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
+    let check = &job.check;
+    let named = |text: &String| QuintProperty {
+        id: job
+            .written
+            .iter()
+            .find(|written| written.is == *text)
+            .map_or_else(|| text.clone(), |written| written.id.clone()),
+        text: text.clone(),
+    };
+    QuintCheck {
+        program: std::path::absolute(&quint.program).unwrap_or_else(|_| quint.program.clone()),
+        file: job.real.clone(),
+        main: check.main.clone(),
+        init: check.init.clone(),
+        step: check.step.clone(),
+        invariants: check.invariants.iter().map(named).collect(),
+        temporal: check.temporal.iter().map(named).collect(),
+        runs: check.runs.clone(),
+        searches: !runs_only(check),
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Quint {
     pub(crate) program: PathBuf,
     pub(crate) version: String,
@@ -720,7 +762,7 @@ fn widened(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
     Ok(())
 }
 
-fn segments_end_alike(first: &str, second: &str) -> bool {
+pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
     let first: Vec<&str> = first.split(QUALIFIED).collect();
     let second: Vec<&str> = second.split(QUALIFIED).collect();
     first.ends_with(&second) || second.ends_with(&first)
@@ -1074,6 +1116,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     position: 0,
                     expected,
                     runs_not_played,
+                    quint: job.quint.as_ref().ok().map(|quint| as_asked(job, quint)),
                 }]),
             },
             Err(located) => {
