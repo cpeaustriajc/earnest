@@ -104,7 +104,7 @@ For such a check, earnest builds from what `quint typecheck` wrote the module th
 
 The spec itself must import, instantiate and export nothing, and declare only constants, variables, definitions and types. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A check of runs only, of a module with no `init` or `step` of its own and of another shape, is `unreadable`, and the problem says to name an `init` and a `step` the module has. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
+A check of runs only whose module is of another shape, such as `import CounterSpec as Main` of a spec with variables, is compiled. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -227,6 +227,7 @@ Earnest reads these run operators as `quint test` judges them:
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step |
 | `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
 | a run's name | That run, played in place |
+| a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |
 
 A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. A `nondet` at the top of a run is judged the same way by both: the run must pass for every value, and `quint test` fails the run on the first value it samples that breaks it.
 
@@ -238,6 +239,8 @@ A run that reads a variable its first action gives no value is `unreadable`, wit
 unreadable  specs/Unset.qnt  Unset
   specs/Unset.qnt:13:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
 ```
+
+A definition that chains steps may be called at the start of a run, in the middle, inside `reps`, from another such definition, and followed by `expect`, `fail` or `then`. Its arguments must be known before the run starts, such as a constant or the run's own `nondet`. Quint refuses a `def` that chains steps (`Use action instead`), so these are `action`s or `run`s. Used as `init`, `step` or in a property, a chain is refused: it is a run, not one step.
 
 Also refused, each named in the problem and reported at its line in the `.qnt` file: a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
 
