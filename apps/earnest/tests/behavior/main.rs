@@ -9,6 +9,7 @@ mod expected;
 mod harness;
 mod limits;
 mod offline;
+mod quint;
 mod replay;
 mod results;
 mod runs;

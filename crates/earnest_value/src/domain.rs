@@ -291,4 +291,21 @@ mod tests {
         assert_eq!(seq_count(1, 1_000_000_000_000), 1_000_000_000_001);
         assert_eq!(seq_count(2, usize::MAX), u128::MAX);
     }
+
+    #[test]
+    fn the_domain_of_every_value_holds_every_value_and_lists_none() {
+        let every = super::Domain::Any;
+        for value in [
+            crate::Value::Null,
+            crate::Value::Bool(true),
+            crate::Value::Int(i64::MIN),
+        ] {
+            assert!(
+                every.contains(&value),
+                "{value:?} is in the domain of every value"
+            );
+        }
+        assert_eq!(every.count(), u128::MAX, "it has too many values to count");
+        assert!(every.values().is_empty(), "it lists none of them");
+    }
 }

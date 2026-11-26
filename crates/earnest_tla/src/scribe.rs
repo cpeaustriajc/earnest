@@ -249,6 +249,7 @@ impl<'a> Scribe<'a> {
                     "((Len({subject}) <= {max}) /\\ (\\A {each} \\in DOMAIN {subject} : {fits}))"
                 )
             }
+            Domain::Any => "TRUE".to_owned(),
             _ => unknown("a declaration of a kind added after it was written").text,
         }
     }

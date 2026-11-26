@@ -416,7 +416,43 @@ impl Writer<'_> {
         definition(IN_RANGE, &lines)
     }
 
+    fn listed_starts(&mut self, listed: &[Vec<Value>]) -> String {
+        let variables = self.scribe.variables().to_vec();
+        let mut states = Vec::with_capacity(listed.len());
+        for state in listed {
+            let parts: Vec<String> = state
+                .iter()
+                .zip(&variables)
+                .map(|(value, variable)| {
+                    format!(
+                        "({} = {})",
+                        variable.name,
+                        self.scribe.value(value, &variable.kind)
+                    )
+                })
+                .collect();
+            states.push(match parts.as_slice() {
+                [] => "TRUE".to_owned(),
+                [only] => only.clone(),
+                many => format!("({})", many.join(" /\\ ")),
+            });
+        }
+        let either = if states.is_empty() {
+            "FALSE".to_owned()
+        } else {
+            states.join(" \\/ ")
+        };
+        let mut lines = vec![format!("/\\ ({either})")];
+        if let Some(filler) = &self.filler {
+            lines.push(format!("/\\ {filler} = 0"));
+        }
+        definition(STARTS, &lines)
+    }
+
     fn starts(&mut self) -> String {
+        if let Some(listed) = self.model.runs.starts.clone() {
+            return self.listed_starts(&listed);
+        }
         let mut lines = Vec::with_capacity(self.model.fields.len());
         let variables = self.scribe.variables().to_vec();
         for (field, variable) in self.model.fields.iter().zip(variables) {

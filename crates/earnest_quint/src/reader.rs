@@ -98,15 +98,15 @@ fn reads_state(expr: &Expr) -> bool {
     }
 }
 
-fn fold(exprs: Vec<Expr>, empty: bool, join: fn(Box<Expr>, Box<Expr>) -> Expr) -> Expr {
+fn fold(exprs: Vec<Expr>, empty: Value, join: fn(Box<Expr>, Box<Expr>) -> Expr) -> Expr {
     exprs
         .into_iter()
         .reduce(|first, second| join(Box::new(first), Box::new(second)))
-        .unwrap_or(Expr::Const(Value::Bool(empty)))
+        .unwrap_or(Expr::Const(empty))
 }
 
 pub(crate) fn all_of(exprs: Vec<Expr>) -> Expr {
-    fold(exprs, true, Expr::And)
+    fold(exprs, Value::Bool(true), Expr::And)
 }
 
 fn fault_refusal(fault: Fault) -> Refusal {
@@ -352,7 +352,7 @@ impl<'a> Reader<'a> {
         let built = match (found, arguments.len()) {
             (Builtin::Unary(op), 1) | (Builtin::Binary(op), 2) => Expr::Apply(op, arguments),
             (Builtin::And, _) => all_of(arguments),
-            (Builtin::Or, _) => fold(arguments, false, Expr::Or),
+            (Builtin::Or, _) => fold(arguments, Value::Bool(false), Expr::Or),
             (Builtin::Implies, 2) => {
                 let second = arguments.pop().unwrap_or(Expr::Const(Value::Bool(true)));
                 let first = arguments.pop().unwrap_or(Expr::Const(Value::Bool(true)));

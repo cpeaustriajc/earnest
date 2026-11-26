@@ -134,7 +134,7 @@ fn rules<'a>(reader: &mut Reader<'a>, defs: &HashMap<u64, &'a Def>) -> Read<Vec<
     let Some(invariants) = named(defs, INVARIANTS) else {
         return Ok(Vec::new());
     };
-    reader.within = INVARIANTS.to_owned();
+    INVARIANTS.clone_into(&mut reader.within);
     let conjuncts: &[Quint] = match &invariants.expr {
         Quint::App { opcode, args, .. } if opcode == "and" => args,
         other => std::slice::from_ref(other),
@@ -167,7 +167,7 @@ fn unfolded<'a>(reader: &mut Reader<'a>, root: &'a Def) -> Read<Vec<Path>> {
     {
         reader.unnamed.push(found.id);
     }
-    reader.within = root.name.clone();
+    reader.within.clone_from(&root.name);
     reader.paths(&root.expr)
 }
 
