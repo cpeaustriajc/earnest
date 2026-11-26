@@ -2233,3 +2233,44 @@ Two notes of the final report, settled with the findings they belong to:
 A `nondet` that picks from a written set of such tuples tries its values in the same positional
 order, as the docs say. Not changed: the usability notes and the constructs still refused, left
 for a later ticket.
+
+## Third Quint pass
+
+An adversarial pass over what was merged after the second one (runs from any first action and
+modules of runs only, #66; `all`/`any` of conditions and actions as arguments, #67; fairness of an
+action given arguments over some variables and properties that are an `and`, #68; the checks
+file's `name`, `expectCounterexample` and stopping early, #69; the #70 fixes), made on commit
+2adbfe5 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_third.rs` and its files in `models/quint_third/`: each `.qnt` beside the JSON
+Quint wrote for it, to a file, so the tests need no Node. The oracles: `quint verify --backend tlc`
+(Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties, and
+`quint test --backend typescript` for runs (the Rust evaluator could not be fetched: GitHub
+answered `Forbidden`). `tla2tools.jar` is the `v1.8.0` release's. Only cases where earnest matches
+neither backend, or contradicts its own docs, are findings.
+
+### A temporal property that is a `forall` over an empty set is left out
+
+`models/quint_third/empty_forall.qnt`: `pure val Buyers: Set[str] = Set()` and `temporal
+everyonePays = Buyers.forall(b => eventually(paid.get(b)))`, listed in the check. An empty `and`
+is true in every run. `quint verify --backend tlc --temporal everyonePays` stops with `Error:
+Temporal formula is a tautology (its negation is unsatisfiable).` and `[failure] TLC encountered
+an error`. Earnest: `pass  empty_forall  1 states` with no rule at all (`"rules": []`); `--rule
+everyonePays` says `the model `empty_forall` has no rule `everyonePays``, and the same name in
+`expectCounterexample` makes the check `unreadable` with ``the module `empty_forall` has no
+property of that name``, which is not so. The docs read `S.forall(x => body)` as the `and` of
+`body` for each item, and every listed property is a rule. A setup that gives a set of buyers as
+`Set()` meets it: its liveness property vanishes from the output without a word. Right result: a
+rule `everyonePays` that holds, or the check refused naming it. Test:
+`a_temporal_property_that_is_a_forall_over_an_empty_set_is_still_a_rule`.
+
+### The note of runs not played names a run `quint test` does not play
+
+`models/quint_third/one_name/one_name.qnt`: `module OneName { import Spec.specTest  import
+Spec.init  import Spec.step  import Spec.v  run ownTest = ... }`, where `Spec` has `specTest` and
+`specOverTest`. `quint test --backend typescript --main OneName` prints `ok specTest passed` and
+`ok ownTest passed`, `2 passing`: it plays only the run imported by name. Earnest (`"runs": true`,
+the module is compiled) plays `ownTest` and prints `note  runs not played: specOverTest,
+specTest`, and `"runsNotPlayed": ["specOverTest", "specTest"]`. `specOverTest`, which fails, is
+played by no Quint command here, and a user who reads the note would add it to the module and see
+it fail. Right result: the note names `specTest` alone (or plays it). Test:
+`the_note_of_runs_not_played_names_only_runs_quint_test_plays`.
