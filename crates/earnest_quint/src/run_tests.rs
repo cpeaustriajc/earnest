@@ -72,7 +72,7 @@ fn the_runs_whose_names_end_in_test_are_read_in_the_order_they_are_written() {
     );
     assert_eq!(
         script(&runs, "plainTest").says,
-        "The Quint run `plainTest` passes",
+        "Quint run `plainTest`",
         "the sentence"
     );
     let played = model(PLAYED);

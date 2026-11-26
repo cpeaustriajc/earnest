@@ -16,6 +16,41 @@ pub(crate) fn word<T: Serialize>(value: &T) -> String {
     }
 }
 
+const MADE_UP_KINDS: [&str; 3] = ["invariant", "run", "temporal property"];
+const EVERY_START: &str = " in every start state";
+
+fn part_of(says: &str) -> Option<(&str, &str, &str)> {
+    let (number, rest) = says.strip_prefix("part ")?.split_once(" of ")?;
+    let (of, name) = rest.split_once(" of the ")?;
+    let digits = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    (digits(number) && digits(of)).then_some((number, of, name))
+}
+
+fn made_up_name(sentence: &str) -> bool {
+    let sentence = sentence.strip_suffix(EVERY_START).unwrap_or(sentence);
+    MADE_UP_KINDS.iter().any(|kind| {
+        sentence
+            .strip_prefix("Quint ")
+            .and_then(|rest| rest.strip_prefix(kind))
+            .and_then(|rest| rest.strip_prefix(" `"))
+            .and_then(|rest| rest.strip_suffix('`'))
+            .is_some_and(|name| !name.contains('`'))
+    })
+}
+
+fn broken_line(id: &str, says: &str) -> String {
+    let head = format!("broken  {}", one_line(id));
+    if made_up_name(says) {
+        return head;
+    }
+    match part_of(says) {
+        Some((number, of, name)) if made_up_name(name) => {
+            format!("{head}  (part {number} of {of})")
+        }
+        _ => format!("{head}  {}", quoted(says)),
+    }
+}
+
 pub(crate) fn quoted(sentence: &str) -> String {
     format!("\"{}\"", one_line(sentence))
 }
@@ -141,7 +176,7 @@ pub fn detail_lines_in(outcome: &Outcome, notation: Notation) -> Vec<String> {
     for rule in &outcome.rules {
         if let Some(path) = &rule.path {
             add(
-                format!("broken  {}  {}", one_line(&rule.id), quoted(&rule.says)),
+                broken_line(&rule.id, &rule.says),
                 path,
                 rule.reason.as_deref(),
             );
@@ -159,8 +194,28 @@ pub fn detail_lines_in(outcome: &Outcome, notation: Notation) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::word;
+    use super::{broken_line, word};
     use earnest_check::{FindingKind, Status, Verdict};
+
+    #[test]
+    fn a_made_up_sentence_prints_no_quote_and_a_part_prints_which_part_of_how_many() {
+        assert_eq!(
+            broken_line("small", "Quint invariant `small`"),
+            "broken  small"
+        );
+        assert_eq!(
+            broken_line("wrongTest", "Quint run `wrongTest`"),
+            "broken  wrongTest"
+        );
+        assert_eq!(
+            broken_line("P#2", "part 2 of 3 of the Quint temporal property `P`"),
+            "broken  P#2  (part 2 of 3)"
+        );
+        assert_eq!(
+            broken_line("small", "The count stays small."),
+            "broken  small  \"The count stays small.\""
+        );
+    }
 
     #[test]
     fn a_kind_prints_as_the_words_it_serializes_to() {

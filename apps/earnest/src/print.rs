@@ -174,8 +174,11 @@ impl Verified<'_> {
                 let counts = self
                     .readable_of(next)
                     .filter(|readable| readable.counted)
-                    .map(|readable| counts_of(&readable.model));
-                lines.push(model_line(&next.result, counts.as_deref()));
+                    .map(|readable| (counts_of(&readable.model), only_runs(&readable.model)));
+                lines.push(model_line(
+                    &next.result,
+                    counts.as_ref().map(|(text, only)| (text.as_str(), *only)),
+                ));
                 lines.extend(not_played_line(&next.result));
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
@@ -215,6 +218,10 @@ impl Verified<'_> {
     }
 }
 
+fn only_runs(model: &Model) -> bool {
+    model.rules.is_empty() && model.runs.eventually.is_empty() && !model.runs.scripts.is_empty()
+}
+
 fn counts_of(model: &Model) -> String {
     let mut rules: Vec<&str> = Vec::new();
     let always = model.rules.iter().map(|rule| rule.id.as_str());
@@ -237,7 +244,7 @@ fn counts_of(model: &Model) -> String {
     )
 }
 
-fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
+fn model_line(result: &ModelResult, counts: Option<(&str, bool)>) -> String {
     let so_far = if result.reason.as_deref().is_some_and(|reason| {
         reason != EVERY_EXPECTED_FOUND && !only_runs_not_played(reason, &result.runs_not_played)
     }) {
@@ -248,10 +255,12 @@ fn model_line(result: &ModelResult, counts: Option<&str>) -> String {
     let mut fields = vec![
         format!("{:<STATUS_WIDTH$}", result.status.word()),
         one_line(&result.run_name()),
-        format!("{} states{so_far}", result.states),
-        format!("{} ms", result.milliseconds),
     ];
-    fields.extend(counts.map(str::to_owned));
+    if !counts.is_some_and(|(_, only_runs)| only_runs && result.states == 0) {
+        fields.push(format!("{} states{so_far}", result.states));
+    }
+    fields.push(format!("{} ms", result.milliseconds));
+    fields.extend(counts.map(|(text, _)| text.to_owned()));
     fields.extend(result.reason.as_ref().map(|reason| format!("({reason})")));
     if result.cached {
         fields.push("(cached)".to_owned());

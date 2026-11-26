@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint result lines state no verdict
+
+A Quint invariant, run or temporal property with no sentence of its own prints `broken  small`, where it printed a made-up sentence ending in `holds` or `passes`. A part of a temporal property prints `(part 2 of 3)`. A check of runs only prints no states field, `pass  OnlyRuns  0 ms  0 rules, 4 runs`. In JSON `says` keeps its key and states no verdict, and `"states"` stays `0`.
+
 ## November 2026: Quint checks marked in the model, and no `earnest.quint.json`
 
 `earnest verify specs/` checks the modules marked `/// @check` in the `.qnt` files below `specs/`. No other file says what to check:
