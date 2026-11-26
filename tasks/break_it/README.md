@@ -2242,7 +2242,8 @@ action given arguments over some variables and properties that are an `and`, #68
 file's `name`, `expectCounterexample` and stopping early, #69; the #70 fixes), made on commit
 2adbfe5 of the integration branch with Quint 0.33.1 from npm. Its tests are in
 `tests/break_it/quint_third.rs` and its files in `models/quint_third/`: each `.qnt` beside the JSON
-Quint wrote for it, to a file, so the tests need no Node. The oracles: `quint verify --backend tlc`
+Quint wrote for it, to a file, so the tests need no Node. The two tests of the findings fail
+today; the seeded comparison's test passes. The oracles: `quint verify --backend tlc`
 (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties, and
 `quint test --backend typescript` for runs (the Rust evaluator could not be fetched: GitHub
 answered `Forbidden`). `tla2tools.jar` is the `v1.8.0` release's. Only cases where earnest matches
@@ -2348,6 +2349,42 @@ Constructs `quint typecheck` accepts, beyond the earlier tables and the docs' li
   set, map keys and a list (101 states, two invariants broken), on `empty_forall` (both leave
   the property out), and on all six checks of the project model below.
 
+### A seeded random comparison
+
+`models/quint_third/random/generate.py SEED` prints a module `RSEED` of buyers: `BUYERS` of two or
+three, a cap of 1 or 2, a map of counts, a last buyer, a flag and a tuple; `buy(b)` (whose change
+of `last` is, by seed, always or only on a buyer's first buy), sometimes `reset(b)`, and a step
+that calls `buy` through `nondet b = BUYERS.oneOf()` inside an `all` that keeps the other
+variables, sometimes `buy(1)` directly as well, a toggle, an action given as an argument to
+`guarded(a)` whose guard is a random condition, and sometimes a wrap of the tuple. Three random
+invariants (with `all`/`any` of conditions, `forall`, `exists`, `fold`, an operator given a
+lambda); five temporal properties: fairness per buyer over some of the variables (`cnt`, `last`,
+`(cnt, last)`, `{ c: cnt }`, `[last]`, `(cnt, (last))`), of `buy(c)` for one buyer, of the step,
+and their `and`, under `eventually`, an `and` of `always`, a fair `eventually` and a bare
+condition, `leadsTo`, a `forall` per buyer of its own fairness and goal, and nested `and`s with
+`always(eventually)`; four runs that start with `init`, a helper `start(k)` or an `all { … }` in
+place, then `step`, a chained helper `buyTwice(b)`, `reps` and `guarded(…)`, ending in `expect`
+or `fail()`, and a run with a `nondet` before a helper.
+
+Each seed was compared with `quint verify --backend tlc` (one run for the state count, one for
+each property), `quint test --backend typescript --match 'Test$'`, earnest with `--jobs 1` against
+the default, and a second check named `exp` with every invariant TLC breaks in
+`expectCounterexample`. Seeds 1 to 180: 180 models of 10 to 876 states, 1 440 property verdicts and
+900 runs. Every state count is TLC's, every verdict TLC's or `quint test`'s (a property in parts is
+broken when one part is), `--jobs 1` gives the same verdicts and paths, and each `exp` check is
+`pass`, stopped early, with each expected path as long as the full search's and never longer than
+TLC's counterexample. Nothing differed. (One seed's invariant `2 <= 1` is reported by Quint's TLC
+run as `The invariant of q_inv is equal to FALSE` with `[failure]`; earnest says broken, as the
+second pass settled.) The same 60 first seeds were also played as modules of runs only, `module
+WSEED { import RSEED as M … }` with each run written over `M::`: 600 runs, each as `quint test
+--main WSEED`, the module's own runs and `M::`'s.
+
+Ten are committed: seeds 6, 9, 13, 14, 15, 16, 25, 30, 35 and 36 (14 to 876 states), each `.qnt`
+beside `quint compile --target json --main RSEED --invariant inv0,inv1,inv2 --temporal
+t0,t1,t2,t3,t4` (to a file) and `expected.json`, TLC's states and verdicts and `quint test`'s runs
+(130 answers). `every_seeded_model_of_buyers_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test`
+reads them with no Node, with one job and with four, and passes today.
+
 ### The project model, extended
 
 `models/quint_third/project/`: the second pass's `types.qnt` and `lock.qnt`, with `requestBy(n)`
@@ -2404,3 +2441,12 @@ why (the same as `quint verify`, which simply finds no violation).
   from the first level.
 - Messages still name a setup's definitions by Quint's long names (`three::lock::requestBy`), as
   the second pass noted.
+
+### Not covered
+
+Windows. Apalache's own checking (`quint verify` without `--backend tlc` waits on a prompt about
+temporal support). Quint's Rust evaluator (`Failed to fetch from GitHub: Forbidden`). Setups whose
+spec imports other modules (#71) and invariants written in the checks file (#69's follow-up), as
+asked. After the owner's decision to replace `earnest.quint.json` with marks in the `.qnt` file
+(#72), the checks file's own keys and messages were not attacked further than the name collisions
+above.
