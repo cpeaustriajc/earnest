@@ -96,7 +96,8 @@ pub fn lower_with_earlier(
 /// can't be read against the newer fields.
 ///
 /// A witness's [`Witness::setup`] and each [`Played::action`] are positions in the older
-/// draft's setups and actions, so compare them by the ids found there.
+/// draft's setups and actions, so compare them by the ids found there. Each [`Played::input`]
+/// follows the inputs of the older draft's action, so compare it by those input names.
 #[derive(Clone, Debug, Default)]
 pub struct EarlierParts {
     /// The plain rules, in the order of the older draft's rules.
