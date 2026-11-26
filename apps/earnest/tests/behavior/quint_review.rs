@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 19] = [
+const SETS: [&str; 20] = [
     "samename",
     "exported",
     "nospace",
@@ -75,6 +75,7 @@ const SETS: [&str; 19] = [
     "sumtype",
     "typesmodule",
     "barecomma",
+    "falseassume",
 ];
 
 const TIGHT_DEFINES: [&str; 5] = ["neverFull", "Half", "belowHalf", "reset", "stepOrReset"];
@@ -117,6 +118,25 @@ impl Quint {
         }
         sandbox.write("fake/calls", "");
         Self { sandbox, program }
+    }
+
+    fn without_typecheck(&self, set: &str) {
+        fs::remove_dir_all(
+            self.sandbox
+                .path()
+                .join("fake/fixtures/typechecked")
+                .join(set),
+        )
+        .expect("the typecheck of the set goes");
+    }
+
+    fn compiles(&self) -> Vec<String> {
+        self.sandbox
+            .read("fake/calls")
+            .lines()
+            .filter(|call| call.starts_with("compile"))
+            .map(str::to_owned)
+            .collect()
     }
 
     fn report(&self, set: &str) -> Value {
@@ -440,4 +460,67 @@ fn a_bare_mark_followed_by_a_comma_as_the_unreadable_names_line_asks_is_read_on(
          doing so, `/// @check,` then `/// ok`, is called `not a mark the checker knows` and no \
          module is checked: {report}"
     );
+}
+
+fn built_and_compiled(set: &str, main: &str) {
+    let built = Quint::new();
+    let ours = built.report(set);
+    assert!(
+        !built
+            .compiles()
+            .iter()
+            .any(|call| call.contains(&format!("--main {main} "))),
+        "{set}: `{main}` is built from the typecheck: {:?}",
+        built.compiles()
+    );
+    let compiled = Quint::new();
+    compiled.without_typecheck(set);
+    let theirs = compiled.report(set);
+    let (ours, theirs) = (model(&ours, main), model(&theirs, main));
+    assert_eq!(
+        ours["states"], theirs["states"],
+        "{set}: states\n{ours}\n{theirs}"
+    );
+    let searched = |found: &Value| -> Vec<Value> {
+        found["rules"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|rule| rule["kind"] != "witness")
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        searched(ours),
+        searched(theirs),
+        "{set}: each property, its verdict and its path, as `quint compile` gives them"
+    );
+    assert!(
+        ours["runsNotPlayed"].is_null()
+            && ours["rules"]
+                .as_array()
+                .is_some_and(|rules| rules.iter().any(|rule| rule["kind"] == "witness")),
+        "{set}: the built check plays the runs of the spec it imports: {ours}"
+    );
+}
+
+#[test]
+fn a_spec_whose_state_holds_a_sum_type_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("sumtype", "Setup");
+}
+
+#[test]
+fn a_spec_that_imports_its_types_from_another_file_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("typesmodule", "Setup");
+}
+
+#[test]
+fn a_spec_that_holds_an_assumption_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("specassume", "Setup");
+    built_and_compiled("falseassume", "Setup");
+}
+
+#[test]
+fn a_spec_that_imports_a_helper_under_a_name_is_built_as_the_model_quint_compile_writes() {
+    built_and_compiled("spechelper", "Setup");
 }
