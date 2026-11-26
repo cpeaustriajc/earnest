@@ -2967,3 +2967,152 @@ for it, so this was the same; an action alone can now be possible where the step
 project writes liveness. The seeded comparison below meets it on its own (seeds 16 and 28). Right
 result: the four properties hold. Test:
 `fairness_of_the_step_beside_fairness_of_an_action_does_not_let_a_run_stop_where_the_action_could_happen`.
+The nested form `weakFair(step, vars).implies(weakFair(pay(1), vars).implies(eventually(…)))`
+and a part of an `and` with both fairnesses were broken in the same way (TLC `[ok]`). Fixed on the
+integration branch at 4b9d3a0 (`Hunt::stays`: under fairness of the step a run stops only where
+the step has no arrow and no fair part is possible); the test passes there and on this branch
+after the merge.
+
+### Legal Quint that earnest still refuses
+
+Beyond the earlier tables and the docs' list. Marked *likely* where a project replacing its
+`quint verify` and `quint test` jobs is likely to write it, *unclear* where the message does not
+say what is wrong or what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| a run whose own `nondet`s give more than 1,000 choices, `run rareTest = { nondet k = 1.to(1001).oneOf() init.then(setTo(k)).expect(x != 777) }` (*likely*: a witness over a range of ids) | the check is `unreadable`: ``the run's own choices give more than 1000 plans, in the run `rareTest` `` (*unclear*: the docs name no such limit, only ``more than 100000 branches from one start state``, which makes a run `unknown` and its model `unfinished`; "plans" is not a word the docs use, and nothing says what to write). `1.to(1000)` is played: broken with `k = 777`, as `quint test` (`failed after 6031 test(s)` with `1.to(50000)`) |
+| `weakFair(touch, vars)` of an action the step never reaches | ``fairness of something that is not the step or one of its top-level actions``, as the docs say; the action is reached nowhere, so the message is right but reads as if a nested action were refused |
+
+Nothing else a project is likely to write was refused in this pass: every construct of the
+seeded generator below (fairness of guarded actions with and without arguments, a part of a
+picked tuple, `nondet` from the state inside the fair action, `if` and `match` inside it, an
+action calling another, guards of the step as `all`, `if` and `match`, nested) was read.
+
+### Attacked and found correct
+
+- Fairness by the action alone (#79), each against `quint verify --backend tlc`
+  (models not committed unless named): a fair action whose own guard comes before a `nondet`
+  over `m.get(1)` (no fault where the key is missing, as TLC), and before an `if`, a `match` and a
+  `nondet` over `q[0]` (`a5`: 7 states, six properties as TLC); a fair action whose only guard is
+  the step's and which faults alone (`m.get(1)` with no key): earnest `fault` with ``the
+  fairness of the rule `t` is not worked out``, TLC ``Attempted to apply function ... not in the
+  domain`` and `[failure]`; a `nondet` over a set built from an earlier `nondet` of the action
+  (`nondet j = i.to(2).oneOf()`) and an action given its argument through a part of a pick
+  (`a1`: 16 states, four properties as TLC, the lasso of `p1` read by hand: the `pick(0)` arrow
+  that `pick(1)` alone also gives counts as `pick(1)`, as `<<pick(1)>>_vars` does); an arrow of
+  another action that gives what `A` gives on `A`'s variables and something else on the rest,
+  `A` leaving a variable free, `A` keeping one outside `e`, `e` some of the variables (`a2`: 9
+  states, six properties as TLC); the whole step's fairness beside an action's, in a stopping
+  state, in `and`, nested and in parts (the finding; `a3`, `step_fair`, `nest`).
+- After the fix (4b9d3a0, built on this branch after the merge): `models/quint_fifth/stops/`, a
+  stopping state where one fair action is possible alone (`pay`) and another is not (`send`
+  needs `paid`), fairness of the step with no action fairness (broken, as before), a state with no
+  arrow but a stuttering one where the fair action `touch` alone changes nothing (broken: the run
+  may stay), `leadsTo` and a property in three parts under both fairnesses, fairness of the step
+  with an action over some of the variables: 12 states and ten verdicts as TLC; each `why` line
+  read against the end state (`nothing changes the state from here`: only `touch` is left, and
+  `send` needs `paid`); `confirm --tlc` and `confirm --quint` `same`. Test:
+  `a_run_under_fairness_of_the_step_stops_only_where_no_fair_action_could_change_its_variables`
+  (passes).
+- The loops read by hand (seed 7's three, `toggle` twice; `a1`'s `pick` back and forth) are
+  cycles of the step, and each fair action is either not possible alone at some state of them
+  or given by one of their arrows.
+- A spec that imports `types.*`, `types as T`, `helpers as H` (which imports `types.*`) and
+  `deep as D` (which imports `helpers as H` and `types.*`), with a `pure val Max` in `types` read
+  as `Max` and `T::Max`, a `pure def` read as `lift` and `T::lift`, and a setup `import spec(N =
+  3).*`: 12 states (counted by hand: `Low` at each `k`, `High(1..3)` capped by `types::Max`),
+  `inRange` and `lifted` hold, `belowHelpers` broken at `High(3)`, `resets` holds; the runs
+  `upTest`, `twiceTest` hold and `hTest` breaks, as `quint test --main small` (`ok
+  small::spec::upTest`, `ok small::spec::twiceTest`, `1) small::spec::hTest failed`). `quint
+  verify` and `quint compile` stop on it (`Internal error while flattening [QNT404] Name
+  'small::spec::H::up' not found`); `confirm --quint` says `cannot` with that error, `confirm
+  --tlc` `same`. Quint refuses the same name defined in `types` and in `helpers` (`QNT101`).
+- `--rule` of every rule of seeds 1, 3, 4, 7, 8, 16 and 28, fresh and cached: 140 selections,
+  each with the full run's verdict and path.
+- `confirm --quint`: `same` on seeds 3, 5 and 7, `differs` on seed 16 (the finding, ``property
+  t2: the checker says broken, `quint verify` says holds``), as `confirm --tlc`; `cannot` with
+  Quint's error where Quint cannot compile the spec; a check earnest refuses (`strongFair`) is
+  listed `unreadable` and the run exits 1 beside a `same` check. A run with one failing choice in
+  50,000 cannot be compared: earnest refuses runs of more than 1,000 choices (above).
+
+### A seeded random comparison
+
+`models/quint_fifth/random/generate.py SEED` prints a module `GSEED` with `cnt` per buyer, `open`,
+`done`, a list `q` and a phase `Run | Halt`. `buy(b)` assigns only `cnt` (sometimes `q' = q` too,
+a variable outside the fairness), in one of five forms: its own guard, a `nondet k` over
+`1.to(CAP - cnt.get(b))` (empty at the cap), an `if` with an `else` that changes nothing, a
+`match` on the phase, or a guard of its own around a call of `bump(b)`. `toggle` (sometimes
+guarded), `finish` (assigns `done` and the phase), `push` with a `nondet`, `pop`. The step calls
+`buy` through `nondet b`, through a part of a picked tuple `buy(p._1)` and as `buy(1)`, each
+branch in an `all` that gives the other variables, and each branch maybe under a guard of the step
+(`all { g, … }`, `if (g) … else idle`, `match ph { | Run => … | Halt => idle }`), and the whole
+under an outer guard (`all { not(done), any { … } }`, a `match` on the phase, an `if`) or none.
+Two invariants; five temporal properties, each a random `and` of one to three fairnesses
+(`B.forall(b => weakFair(buy(b), cnt))`, `weakFair(buy(1), …)`, of `toggle`, `finish`, `pop`,
+`push`, and of the step over every variable or some), under `eventually`, `always(eventually)`,
+`leadsTo`, and an `and` with an `always`; two runs from `init` through the step, `buy(1)` and
+`toggle`.
+
+Seeds 2 to 208 (207 models of 1 to 252 states, 9 314 in all), each with `quint verify --backend
+tlc` (a run for the count and one for each property, against four Apalache servers on their own
+ports, one TLC per server at a time), `quint test --backend typescript --match 'Test$'`, and
+earnest with `--jobs 1`, `--jobs 4` and then cached (equal JSON every time): 207 state counts, 414
+invariant verdicts, 1 035 temporal verdicts and 414 runs. On the build of 8fe5534 every one was
+Quint's except eight temporal verdicts in seeds 16, 28, 95, 120 (two), 180 and 196, each a
+property with `weakFair(step, ALLV)` beside an action's fairness: the finding. On the build after
+the fix all 1 863 verdicts and runs and 207 counts are Quint's, with `--jobs 1`, `4` and cached
+alike. The whole comparison took about 35 minutes.
+
+Ten are committed: seeds 4, 7, 11, 13, 14, 23, 24, 34, 38 and 44 (24 to 252 states), each `.qnt`
+beside `quint compile --target json --main GSEED --invariant inv0,inv1 --temporal
+t0,t1,t2,t3,t4` and `expected.json`, Quint's answers (100).
+`every_seeded_model_whose_step_guards_its_fair_actions_has_the_answers_of_quint_s_tlc_run_and_quint_test`
+reads them with one job and with four, and passes.
+
+### The project model, guarded
+
+`models/quint_fifth/project/`: the fourth pass's project model with `stepGuarded` added to
+`lock.qnt`: an outer guard `open = grants < NODES.size()`, inside it the picked
+`requestTimes(p._1, p._2)` under `peers.get(p._1).sent < MAX_SENT`, `deliver` under `net.length()
+> 0`, `grant` under `waiting.length() < 2` (stricter than its own guard), `releaseBy(n)` under
+`peers.get(n).holds`, and `settle`; once closed, only `deliver` or an idle step. `fairG` is the
+fairness of `requestTimes(n, 1)` per node, `deliver`, `grant` and `releaseBy(n)` per node; five
+properties, two of them also with `weakFair(stepGuarded, vars)`.
+
+| Check | earnest | `quint verify --backend tlc` |
+|---|---|---|
+| `threeG` | 2243 states; 3 invariants hold; `gRequests`, `gDrains`, `gServed`, `gIdle` hold, `gHolds` broken (3 parts) | 2243; ok ×3; ok, ok, ok, ok; violation |
+| `twoG` | 388 states; 4 invariants hold; the same temporal verdicts | 388; ok ×4; the same |
+
+The same before and after the fix. The lasso of `gHolds` in `twoG` was read by hand: both nodes
+request once, `settle` drops both requests, and in the end state no fair action is possible alone
+(no idle node, no message, an empty queue, nobody holds). `confirm --tlc`: `same` on both (39 s);
+`confirm --quint`: `same` on both (2 min 46 s, 18 jobs, with the seeded comparison running
+beside it); `earnest verify --no-cache`: 2.6 s for both.
+
+### Usability notes
+
+- Both `confirm` options say `same` when earnest's verdict is `unknown` after a fault and Quint's
+  TLC run stops with an error on that property. `models/quint_fifth/unknown_same/sg2.qnt`: `take =
+  all { nondet v = m.get(1).oneOf() … }` is guarded by the step only, so `take` alone faults where
+  the key is missing; earnest prints `fault  the fairness of the rule `t` is not worked out`, the
+  check is `fail`, and `quint verify --backend tlc --temporal t` stops with ``Attempted to apply
+  function: <<>> to argument 1`` and `[failure]`. `confirm --quint` prints `same  sg2  4 states
+  fail  (Quint)`: the property alone is `unknown` on both sides, the two other properties and the
+  count agree. The docs' table says a stopped Quint gives `cannot` and that `same` means the same
+  verdicts; here neither side has one. The check is still `fail`, so nothing is hidden, but a
+  reader of `same` would take TLC to have agreed.
+- A run of more than 1,000 choices is refused at the file, where the docs only speak of runs of
+  more than 100,000 branches being `unknown` (see the table above).
+- `quint verify --backend tlc` against an Apalache server already running on its own port
+  (`apalache-mc server --port=…`, then `--server-endpoint localhost:…`) takes 1 to 2 s a
+  property; four servers side by side worked, one TLC per server at a time.
+
+### Not covered
+
+Windows. Apalache's own checking (`quint verify` without `--backend tlc`). Quint's Rust
+evaluator. The checks file itself (being replaced by marks in the `.qnt` file, #72), past writing
+fixtures with it. Integers past 32 bits, which TLC holds otherwise (listed in the docs). A
+`quint test` sample that misses a failing choice: not reachable within earnest's limit of 1,000
+choices for a run.

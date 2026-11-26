@@ -638,6 +638,17 @@ impl Places {
             .is_some_and(|module| module.has_an_instance)
     }
 
+    /// Whether `main` imports a module whole by its own name, `import Spec.*`.
+    pub(crate) fn imports_whole(&self, main: &str) -> bool {
+        self.module(main).is_some_and(|module| {
+            module.links.iter().any(|link| {
+                link.kind == "import"
+                    && link.alias.is_none()
+                    && link.only.as_deref() == Some(EVERY_NAME)
+            })
+        })
+    }
+
     /// Whether the check of `main` plays a run that a module it imports declares, which
     /// `quint compile` drops: one whose name ends in `Test`, or one `runs` names.
     pub(crate) fn plays_an_imported_run(&self, main: &str, runs: &Runs) -> bool {

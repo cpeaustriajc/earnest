@@ -103,7 +103,7 @@ impl Placer<'_> {
         let Some((file, spot_line, column)) = each.spot else {
             return Problem::new(self.shown, TOP_OF_FILE, feature, message);
         };
-        let doc_lines = u32::try_from(each.doc.lines().count()).unwrap_or(0);
+        let doc_lines = u32::try_from(each.doc.split('\n').count()).unwrap_or(0);
         let offset = u32::try_from(line).unwrap_or(0);
         let place = Place {
             line: spot_line
@@ -162,7 +162,7 @@ impl Placer<'_> {
     fn at_module(&self, (name, doc): (&str, &str), line: usize, message: &str) -> Problem {
         let feature = format!("`module {name}`");
         let place = self.module_line(name).map_or(TOP_OF_FILE, |found| {
-            let doc_lines = u32::try_from(doc.lines().count()).unwrap_or(0);
+            let doc_lines = u32::try_from(doc.split('\n').count()).unwrap_or(0);
             Place {
                 line: found
                     .saturating_sub(doc_lines)

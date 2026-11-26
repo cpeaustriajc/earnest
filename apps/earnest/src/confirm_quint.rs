@@ -2,7 +2,7 @@ use crate::checks::is_a_name;
 use crate::confirm::read_tlc;
 use crate::confirm_reach::where_backends_differ;
 use crate::quint::{QuintCheck, segments_end_alike};
-use crate::run::not_played_reason;
+use crate::run::only_runs_not_played;
 use crate::run::{Checked, RuleResult, whole_of};
 use earnest_quint::Runs;
 use std::env;
@@ -616,7 +616,7 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
         .result
         .reason
         .as_ref()
-        .filter(|reason| **reason != not_played_reason(&checked.result.runs_not_played))
+        .filter(|reason| !only_runs_not_played(reason, &checked.result.runs_not_played))
     {
         return vec![cannot(
             "not compared".to_owned(),
