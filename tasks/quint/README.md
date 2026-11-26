@@ -736,3 +736,75 @@ no deadlock error) and the same broken invariants.
 
 The tests: `crates/earnest_quint/src/tests.rs` (the reader) and
 `apps/earnest/tests/behavior/quint.rs` (the CLI on the samples above).
+
+## Slice 1: report
+
+### Done
+
+- `crates/earnest_quint`: serde types for the compiled JSON, names resolved through `table`,
+  operators, `val` and `def` inlined, `q::init` worked out into listed start states, `q::step`
+  unfolded into actions (one per path through `any`/`all`/`if`/`let`/`nondet`/calls, named after
+  the top-level action reached, `#2` after a repeated name, at most 1000 per step), each named
+  invariant of `q::inv` a rule, and one end that is `true`. It gives an `earnest_ir::Model`
+  directly.
+- `earnest_value::Domain::Any` (every `int` variable): `contains` is always true, `count` is
+  `u128::MAX`, `values` lists none.
+- `earnest_ir::Runs::starts`: listed start states, read by `explore/starts.rs` (`Starts::of`),
+  so by the search and the witness player.
+- The CLI: a `.json` file named on the command line that `quint compile` wrote goes to the new
+  reader; a folder search does not pick up `.json` files. `Readable.draft` is an `Option`,
+  because a Quint model has no draft. Output, JSON, cache, `--rule` and `--model` are the
+  existing code.
+- The TLA+ export: a `Domain::Any` field is `TRUE` in `InRange`, and listed start states are
+  written as one disjunction in `Init` (it wrote the product of the fields' starts, which was
+  wrong for these models).
+
+### The audit of `values()` and `count()` for `Domain::Any`
+
+- `earnest_semantic` (`lib.rs:356`, `:363`): lists only domains it built from a draft, never
+  `Any`.
+- `store/codec.rs`: `Any` counts more than the listed limit, so it gets the `Grown` codec, a
+  dictionary of the values the search reaches, each inside the domain.
+- `store/layout.rs`: only `Int` and `Bool` get a range slot; `Any` gets the grown width.
+- Inputs: the reader gives every input a listed domain (`OneOf` or `Int`), never `Any`.
+- `earnest_tla` (`scribe.rs` `within`, `kind.rs`, `limits.rs`): `within` writes `TRUE` now; the
+  others fall to their `_` arms (kind unknown, no limits to note), which is right.
+- The chart reads values, not domains. `expand.rs:2254` is a test helper.
+
+### Refused
+
+Records, tuples, sets as values, maps, lists, text, variants and `match`, integer powers
+(`ipow`), temporal properties (`temporal` and `q::temporalProps`), inductive invariants, runs,
+`const` without a value, type definitions, imports and other declarations, a `nondet` that is
+not `oneOf` over `Set(...)` or `a.to(b)` of constants, a `oneOf` over a set computed from the
+state or from another `nondet`, `oneOf`/`Set`/`to` anywhere else, an action used as a value,
+an operator passed as a value, a step or an `init` that leaves a variable unassigned or assigns
+one twice, an `init` that reads a variable, an integer literal beyond 64 bits, a fault while
+`init` is worked out, more than 1000 actions from one step, and more than 1,000,000 combinations
+in `init`. The compiled JSON has no line numbers, so **every problem is at line 1, column 1**,
+and names the construct and the definition it is in.
+
+### Where the spike's README was wrong
+
+- 1.1: `table` entries for a `def` do carry the body (`expr`); the reader still takes bodies from
+  the module's declarations, by id.
+- Constants are not folded by the compile: `-1` is `iuminus(1)` and `Limit` stays a `pureval`
+  definition. The reader inlines them and works out each `oneOf` set when it reads the file.
+- 1.3: serde_json reads a literal beyond 64 bits as a float, so the problem shows it as `1e+20`.
+  It is refused either way.
+- The spike's `counter.json` was compiled with `--invariant inRange` only; the issue needs
+  `inRange,tooBig`, so it was compiled again.
+- 4.2 says `let` becomes `Bind`. The reader substitutes the value where it is used instead,
+  as TLC does; an expression used many times is evaluated many times.
+- `temporal` and `run` cannot be module names (they are keywords), and an action with
+  parameters whose body is a `{ val ... }` block needs its result type (`: bool`) in 0.33.1.
+
+### Doubts about existing code
+
+- `earnest verify --base` (rule changes) skips a Quint file, because `language_of` does not
+  know `.json`; a rule removed from a compiled module is not listed. Left for slice 7.
+- A setup (`Model::in_setup`) does not change listed start states. No Quint model has setups
+  in this slice; slice 4 needs to decide.
+- Order inside `all { ... }`: earnest evaluates every condition before any assignment, TLC in
+  the order written, so `all { x' = 1 / y, y > 0 }` faults in TLC and is disabled in earnest
+  when `y` is 0.
