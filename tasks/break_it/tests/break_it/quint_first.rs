@@ -37,16 +37,30 @@ fn a_range_that_counts_down_is_not_a_fault() {
 }
 
 #[test]
-fn a_set_of_pairs_with_a_key_twice_becomes_the_map_both_backends_give() {
+fn a_set_of_pairs_with_a_key_twice_is_a_fault_that_names_set_to_map() {
     let report = compiled(
         "set_to_map",
         include_str!("../../models/quint_first/set_to_map.json"),
     );
+    let faulted = report.model("set_to_map")["findings"]
+        .as_array()
+        .is_some_and(|findings| {
+            findings.iter().any(|finding| {
+                finding["kind"] == "fault"
+                    && finding["message"].as_str().is_some_and(|message| {
+                        message.contains("`firstKept`")
+                            && message.contains("`setToMap`")
+                            && message.contains("TLC the first in its order")
+                            && message.contains("the evaluator the last written")
+                    })
+            })
+        });
     assert!(
-        holds_or_refused(&report, "set_to_map", "firstKept", "setToMap"),
-        "`Set((1, 3), (1, 2)).setToMap()` is `Map(1 -> 2)` in Quint's TLC run and in its \
-         TypeScript simulator, so `firstKept` holds, or the file is refused naming \
-         `setToMap`\n{report}"
+        faulted,
+        "`Set((1, 3), (1, 2)).setToMap()` keeps the first pair in TLC's order and the last \
+         written in the TypeScript simulator; they agree here only by chance, so the rule \
+         `firstKept` is a fault that names `setToMap` and says which pair each backend keeps\n\
+         {report}"
     );
 }
 
@@ -118,4 +132,22 @@ fn membership_in_a_wide_range_does_not_run_out_of_memory() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+}
+
+#[test]
+fn seeded_folds_over_nested_sets_take_the_order_quint_tlc_run_takes() {
+    let report = compiled(
+        "fold_seeded",
+        include_str!("../../models/quint_first/fold_seeded/fold_seeded.json"),
+    );
+    let model = report.model("fold_seeded");
+    for index in 0..28 {
+        let id = format!("fold{index}");
+        assert_eq!(
+            rule(model, &id)["verdict"],
+            "holds",
+            "`quint verify --backend tlc` finds every `{id}` of `fold_seeded.qnt` (seed 63) to \
+             hold, so each set is folded in TLC's order\n{report}"
+        );
+    }
 }

@@ -132,6 +132,8 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
 }
 
 #[cfg(test)]
+mod fixes_tests;
+#[cfg(test)]
 mod run_tests;
 #[cfg(test)]
 mod tests;

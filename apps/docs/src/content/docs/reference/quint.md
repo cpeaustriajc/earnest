@@ -119,6 +119,17 @@ Still refused, each named in the problem:
 
 The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
 
+### Where Quint's backends differ
+
+Quint's TLC run and its TypeScript evaluator give different answers to a few expressions. Earnest gives the answer of the TLC run, or names the expression:
+
+- `range(s, e)` is every number from `s` up to, not including, `e`, so `range(3, 1)` is `[]`, as Quint's TLC run gives. Quint leaves `range` undefined when `s` is greater than `e`, and the TypeScript evaluator gives `[3, 2]`.
+- `S.fold(v, f)` takes the items of `S` in the order TLC takes them. A set, a list, a map, a tuple or a record with fewer items comes first, and two of one size are compared item by item: a set's items in this same order, a map's keys and then their values, a tuple's items by position, a record's fields by name. Numbers and booleans go from low to high. Texts and record field names go alphabetically, where TLC takes them in the order it first met them, so a fold over texts whose answer depends on the order can differ from TLC's. A tuple of ten or more items compares its tenth item before its second. A `nondet` that picks from a set that does not change tries its values in the same order.
+- `S.setToMap()` where two pairs of `S` have the same key is a fault, because TLC keeps the first pair in its order and the evaluator the last one written: ``the rule `firstKept` gives `setToMap` two pairs with one key, which Quint's backends keep differently (TLC the first in its order, the evaluator the last written) in this state``. With each key once, it is the map of the pairs.
+- `weakFair(A, vars)`, where `A` on its own does not give every variable of `vars` its next value, is refused with the first variable it leaves open. TLC stops on such a formula. Fairness of the whole step, and of an action that assigns every variable, is read.
+
+`x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends of the range and never build it, so `n.in(0.to(1000000000))` costs as much as `0 <= n and n <= 1000000000`. Any other range of more than 1,000,000 numbers is a fault, ``the rule `wide` builds the range of numbers from 0 to 1000000000, more than the 1000000 numbers a range may hold in this state``, where it would take the machine's memory.
+
 ## Runs
 
 A check with `"runs": true` plays the module's `run` definitions whose name ends in `Test`, as `quint test` picks them. A list plays exactly the runs it names, in its order; a name the module has no run of makes the check `unreadable` and is named. Without `runs`, the module's runs are not read. A compiled `.json` named on the command line plays the runs whose name ends in `Test`.

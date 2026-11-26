@@ -709,7 +709,11 @@ impl<'a> Reader<'a> {
                         &format!("a set of more than {MOST_VALUES_LISTED} values"),
                     );
                 }
-                let values: Vec<Value> = items.iter().cloned().collect();
+                let listed = Expr::Apply(Op::InTlcOrder, vec![Expr::Const(Value::Set(items))]);
+                let values = match constant(&listed, self.slots)? {
+                    Some(Value::Seq(values)) => values.to_vec(),
+                    _ => Vec::new(),
+                };
                 Ok(Picked::Listed(Domain::OneOf(values.clone()), values))
             }
             Some(_) => self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set"),

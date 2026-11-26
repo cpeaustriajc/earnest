@@ -1456,7 +1456,9 @@ found`. Earnest: `firstKept` broken in the start state. With text values it goes
 `2 -> "x"` in earnest. Cause: `Data::SetToMap` in `crates/earnest_quint/src/data.rs` folds the
 pairs in earnest's order with `MapOp::Set`, so the last pair of a key wins. Right result:
 `firstKept` holds, or the file refused naming `setToMap`. Test:
-`a_set_of_pairs_with_a_key_twice_becomes_the_map_both_backends_give`.
+`a_set_of_pairs_with_a_key_twice_becomes_the_map_both_backends_give`, changed after the pass to
+`a_set_of_pairs_with_a_key_twice_is_a_fault_that_names_set_to_map` (see "Settled after the
+pass": the two backends agree on this sample only by chance).
 
 ### `fold` over maps, sets and lists takes another order than both backends
 
@@ -1639,3 +1641,52 @@ inv0,inv1[,inv2] GSEED.qnt > GSEED.json`, with the output going to a file: throu
 The Rust evaluator of Quint (could not be fetched). Apalache's own checking (`quint verify`
 without `--backend tlc`). `oneOf` over a set computed from the state and setups flattened by
 earnest, which other builders are adding. Windows.
+
+### Settled after the pass
+
+Merged with the integration branch at ea7e3fb (Quint slices 3 and 4). All five tests pass; only
+the `setToMap` test asserts something else than it did.
+
+- `range(s, e)` with `s >= e` is `[]`, as Quint's TLC run gives. Quint's own `builtin.qnt`
+  does not define it: "`i` is inclusive and `j` is exclusive. The behavior is undefined when `i`
+  is greater than `j`" (0.33.1); `[]` is also every `i` with `s <= i < e`.
+  `data.rs` maps `range` to a choice: `Op::Ascending` when `s < e`, else the empty list, so
+  `Op::Ascending`, which no TypeScript or Rust model uses, is unchanged. `short` holds.
+- `setToMap` of a set with two pairs for one key is a fault: ``the rule `firstKept` gives
+  `setToMap` two pairs with one key, which Quint's backends keep differently (TLC the first in
+  its order, the evaluator the last written) in this state`` (`MapOp::Once`, `Fault::KeyTwice`).
+  `Set((1, 3), (1, 2))` gives `Map(1 -> 2)` in both backends only because TLC's first and the
+  evaluator's last pair happen to be the same one; `Set((1, 2), (1, 3))` splits them. So the
+  test, which is not on `origin/main`, now asserts the fault and its message. With every key
+  once the map is unchanged.
+- A `fold` over a set walks `Op::InTlcOrder`, the set's items in the order TLC's `CHOOSE` takes
+  them (`ApaFoldSet` takes `CHOOSE x \in S : TRUE` first). From `compareTo` in TLC's
+  `SetEnumValue`, `TupleValue`, `FcnRcdValue` and `RecordValue`: size or length first, then a
+  set's normalized items, a tuple's or list's items by position, a function's keys and then its
+  values, a record's names and then its values, item by item. Numbers and booleans already
+  agreed. Texts and record field names stay alphabetical (TLC compares `UniqueString` by the
+  order it first met them), and `reference/quint.md` says so. `Value`'s `Ord` is unchanged. The
+  values of a `nondet` over a set that does not change are listed in the same order; `map`,
+  `flatten`, `tuples` and `setToMap` build sets or maps, where the order does not show, and
+  `toList` and `chooseSome` are refused. Shown on `models/quint_first/fold_seeded/` (generated
+  by `generate.py 63 28`): 28 folds of four items each over sets, lists, maps, tuples and
+  records of `int` and `bool` and over sets of lists, lists of sets, tuples of a set, maps to and
+  from sets, records of a list and a set, sets of tuples and lists of maps, each compared with
+  the list of its items in that order. `quint verify --backend tlc` finds no violation, and a
+  copy with one list reversed is violated (`The invariant of q_inv is equal to FALSE`);
+  earnest holds all 28 (`seeded_folds_over_nested_sets_take_the_order_quint_tlc_run_takes`).
+- `weakFair(A, vars)` where a path of `A` alone does not assign a variable of `vars` is
+  refused: ``` `weakFair` ```: ``` `weakFair(move, …)`, where `move` alone does not give `t'`,
+  is not read: Quint's TLC runs stop on such a formula ```. Fairness of the whole step and of an
+  action that assigns every variable is read as before.
+- `x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends.
+  `Op::Interval` and `Op::Ascending` of more than 1 000 000 numbers (`MOST_RANGE_VALUES`) are
+  `Fault::TooWide`, ``builds the range of numbers from 0 to 1000000000, more than the 1000000
+  numbers a range may hold``: one comparison before the set is built. `wide_range` passes with
+  3 states in 5 ms.
+
+Unit tests: `crates/earnest_ir/tests/tlc_order.rs` and `crates/earnest_quint/src/fixes_tests.rs`
+(fixture `fixes.qnt`, compiled once with its invariants and two temporal properties as
+`fixes.json` and once with only `bumpFair` as `fairpart.json`). Two bullets of "Seen, not
+written up" no longer hold on the merged tree: `--rule inRange` selects the invariant of a
+setup, and `runs: true` on a setup plays the spec's `upTest`.
