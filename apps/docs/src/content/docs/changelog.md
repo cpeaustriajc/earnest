@@ -5,6 +5,16 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `--base` reads a witness's inputs by name
+
+`earnest verify --base <ref>` compares each step of a witness by its action and the value it gives each input, by the input's name.
+
+- **No longer listed:** a witness whose action now declares its inputs in another order, as in `input: { by, to }` for `input: { to, by }`.
+- **Now listed:** a Rust witness whose call, such as `self.turn(1, 2)?`, now gives its arguments to other parameters because the action's parameters were swapped.
+- **Said in the docs:** a part is listed when what it says changed, not when the model under it changed. An edited action under an unchanged witness lists nothing, and `earnest verify` judges the witness again.
+
+See [Rule changes](/reference/output/#rule-changes---base).
+
 ## November 2026: Quint modules listed in `earnest.quint.json`
 
 `earnest verify` checks Quint modules. List each module to check, with its invariants, in `earnest.quint.json` beside the specs:
