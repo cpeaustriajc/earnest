@@ -143,3 +143,61 @@ fn the_tla_export_picks_from_the_same_sets() {
         );
     }
 }
+
+#[test]
+fn runs_that_serve_a_pending_request_get_the_verdicts_quint_test_gives() {
+    let sandbox = with_compiled(&["servedruns"]);
+    let run = verify(&sandbox, "servedruns", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    let runs = model(&report, "servedRuns");
+    for (id, verdict) in [
+        ("serveOneTest", "holds"),
+        ("serveAnnTest", "broken"),
+        ("serveNobodyTest", "broken"),
+        ("serveNobodyFailsTest", "holds"),
+    ] {
+        assert_eq!(
+            rule(runs, id)["verdict"],
+            verdict,
+            "quint test --backend typescript judges {id} so\n{run}"
+        );
+    }
+    let picked = &rule(runs, "serveAnnTest")["path"];
+    let last = steps(picked).last().expect("the run's steps");
+    assert_eq!(last["action"], "serve", "{run}");
+    assert_eq!(
+        last["input"][0]["value"], "bob",
+        "the run fails only when bob is served first\n{run}"
+    );
+    assert_eq!(
+        rule(runs, "serveNobodyTest")["reason"],
+        "step 1, `serve`, can't happen here",
+        "nobody is pending, so there is nobody to pick\n{run}"
+    );
+}
+
+#[test]
+fn a_temporal_property_over_a_computed_pick_is_judged_as_tlc_judges_it() {
+    let sandbox = with_compiled(&["draining"]);
+    let run = verify(&sandbox, "draining", &["--json"]);
+    run.exits(1);
+    let report = run.json();
+    let found = model(&report, "draining");
+    assert_eq!(
+        found["states"], 9,
+        "the subsets of {{1, 2, 3}}, and done\n{run}"
+    );
+    for (id, verdict) in [
+        ("drained", "broken"),
+        ("fairDrained", "holds"),
+        ("fairDone", "broken"),
+        ("bothFair", "holds"),
+    ] {
+        assert_eq!(
+            rule(found, id)["verdict"],
+            verdict,
+            "TLC judges {id} so\n{run}"
+        );
+    }
+}

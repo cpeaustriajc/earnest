@@ -807,3 +807,47 @@ fn a_check_that_asks_for_no_runs_ignores_the_runs_of_its_module() {
         "the runs are neither played nor refused\n{run}"
     );
 }
+
+#[test]
+fn a_pick_among_every_integer_is_reported_at_its_line_in_the_quint_file() {
+    let quint = Quint::new();
+    let fixture = |name: &str| {
+        let path = repository()
+            .join("crates/earnest_quint/fixtures")
+            .join(name);
+        fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+    };
+    quint
+        .sandbox
+        .write("fake/compiled/allNumbers.json", &fixture("allnumbers.json"));
+    for name in ["allnumbers.parse.json", "allnumbers.sourcemap.json"] {
+        quint
+            .sandbox
+            .write(&format!("fake/parsed/{name}"), &fixture(name));
+    }
+    quint
+        .sandbox
+        .write("models/allnumbers.qnt", &fixture("allnumbers.qnt"));
+    quint.sandbox.write(
+        "models/earnest.quint.json",
+        r#"{ "checks": [{ "file": "allnumbers.qnt", "main": "allNumbers" }] }"#,
+    );
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    assert_eq!(
+        problems(&run.json()),
+        [(
+            "models/allnumbers.qnt".to_owned(),
+            4,
+            30,
+            "`nondet y`".to_owned(),
+        )],
+        "line 4 is `action step = {{ nondet y = Int.oneOf() x' = y }}`, and the pick starts at \
+         `Int`, column 30\n{run}"
+    );
+    assert!(
+        message_of(&run.json()).contains("`Int.oneOf()` picks among numbers without end"),
+        "{run}"
+    );
+}

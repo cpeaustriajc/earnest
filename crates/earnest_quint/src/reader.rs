@@ -631,6 +631,18 @@ impl<'a> Reader<'a> {
     }
 
     pub(crate) fn picked_from(&mut self, opdef: &'a Def) -> Read<Picked> {
+        let id = match &opdef.expr {
+            Quint::App { id, .. } => *id,
+            _ => opdef.id,
+        };
+        self.picked_from_set(opdef)
+            .map_err(|refused| match refused.id {
+                Some(_) => refused,
+                None => refused.at(id),
+            })
+    }
+
+    fn picked_from_set(&mut self, opdef: &'a Def) -> Read<Picked> {
         let feature = format!("`nondet {}`", opdef.name);
         let Quint::App { opcode, args, .. } = &opdef.expr else {
             return self.refuse(&feature, "a `nondet` whose value is not `oneOf` a set");

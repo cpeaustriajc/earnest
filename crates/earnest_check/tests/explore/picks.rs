@@ -213,3 +213,42 @@ fn a_set_that_is_not_a_set_is_a_fault_of_the_action() {
         .expect("a number has no items to pick");
     assert!(fault.message.contains("go"), "{}", fault.message);
 }
+
+fn served_by_witness(who: i64) -> Outcome {
+    let mut model = serving(Stops::Anywhere);
+    model.runs.witnesses.push(earnest_ir::Witness {
+        id: "serveFirst".to_owned(),
+        says: "serve one".to_owned(),
+        line: 1,
+        setup: None,
+        steps: vec![earnest_ir::Played {
+            action: 0,
+            input: vec![Value::Int(who)],
+        }],
+        expect: Code::new(yes()),
+        slots: 0,
+    });
+    explore(&model, &Limits::default())
+}
+
+#[test]
+fn a_witness_takes_a_picked_input_only_when_the_set_holds_its_value() {
+    let pending = served_by_witness(2);
+    let held = pending
+        .rules
+        .iter()
+        .find(|rule| rule.id == "serveFirst")
+        .expect("the witness is played");
+    assert_eq!(held.verdict, Verdict::Holds, "2 is pending at the start");
+    let absent = served_by_witness(7);
+    let broken = absent
+        .rules
+        .iter()
+        .find(|rule| rule.id == "serveFirst")
+        .expect("the witness is played");
+    assert_eq!(broken.verdict, Verdict::Broken, "7 is never pending");
+    assert_eq!(
+        broken.reason.as_deref(),
+        Some("step 1, `serve`, can't happen here")
+    );
+}
