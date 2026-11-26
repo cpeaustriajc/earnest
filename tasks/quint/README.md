@@ -1119,7 +1119,9 @@ quint compile --target json --main pass --invariant oneHolder,neverC pass.qnt > 
 quint compile --target json --main widening --invariant lastSeen,belowForty widening.qnt > widening.json
 quint compile --target json --main drain --invariant notNegative,notEmpty drain.qnt > drain.json
 quint compile --target json --main mixedpick --invariant inRange,noFour mixedpick.qnt > mixedpick.json
-quint compile --target json --main initpick initpick.qnt > initpick.json          # refused
+quint compile --target json --main initpick --invariant small initpick.qnt > initpick.json
+quint compile --target json --main servedRuns --invariant everyoneOnce servedruns.qnt > servedruns.json
+quint compile --target json --main draining --temporal drained,fairDrained,fairDone,bothFair draining.qnt > draining.json
 quint compile --target json --main allNumbers allnumbers.qnt > allnumbers.json    # refused
 quint compile --target json --main flags flags.qnt > flags.json
 ```
@@ -1243,13 +1245,16 @@ state. `from` reads the state and the action's earlier inputs. No field was adde
 Shape (b), positions with a bound, was not tried: it needs a bound that adapts and a second way
 to print the value.
 
-**For the witness player and the runs player** (slice 6):
-`earnest_check::picks::combinations(model, action, state) -> (Vec<Vec<Value>>, Option<Fault>)`.
-It gives every combination of the action's inputs in that state, each in the order of
-`Action::inputs` and the list in the order the search numbers them. It works for any action:
-listed inputs give their listed values. Beside the list it gives the first fault met while a set
-was worked out, whose combinations are left out. It is `pub(crate)`. `witness.rs` does not call
-it yet, so a witness step that names a value outside a picked set is not refused.
+**The players** (`witness.rs`, after the merge with slice 6). `Pick` names its script
+(`script: Option<usize>`): `None` for an action of `Model::actions`, `Some(i)` for one of
+`Runs::scripts[i].actions`, which the reader builds for each step of a run. Each alternative of
+the player carries its action's sets. In each state the player plays every combination
+`picks::combinations_of(action, sets, state)` gives, as the search does. A stage that names the
+action with its `nondet` left open tries them all. A witness step that gives a value plays it only
+when the set holds that value in that state. A fault while a set is worked out breaks the run:
+"step N: the set the action `serve` picks from ... here". The path of a broken run prints the value
+picked. Other callers use `picks::combinations(model, action, state)`, which gives the same list
+for an action of the model. Both are `pub(crate)` and give the first fault beside the list.
 
 ### Why the walk is reached through a pointer
 
@@ -1267,38 +1272,101 @@ No model of `tasks/benchmark/models` has a picked input, yet each first shape of
 Through `Picking::walk`, called from `general`'s last branch, `every_input_told_apart` executes
 exactly the base's instructions, and every case of `just counts` is within 0.3%.
 
+### After the merge with slices 5, 6 and 7
+
+The branch was brought up to the integration head `e66f839` by a merge.
+
+- My `grows` fixture is now `widening` (module and file), since slice 5 has a `grows.qnt` of its
+  own. Slice 5 names an action that `step` reaches only through names (`action step = serve`)
+  `step`, so those paths print `step  who = "ann"`, and the tests and tables above say so.
+- **Runs over a computed pick**: `servedruns.qnt` (`init.then(add("ann")).then(add("bob")).then(serve)`),
+  compiled with `--main servedRuns --invariant everyoneOnce`. The default evaluator of
+  `quint test` is fetched from GitHub, which refused here ("Release v0.7.1 not found: Failed to
+  fetch from GitHub: Forbidden"), so the run was compared with
+  `quint test --backend typescript --main servedRuns servedruns.qnt`:
+
+  ```text
+      ok serveOneTest passed 10000 test(s)
+      1) serveAnnTest failed after 2 test(s)
+      2) serveNobodyTest failed after 1 test(s)
+      ok serveNobodyFailsTest passed 1 test(s)
+  ```
+
+  earnest gives the same four verdicts. `serveAnnTest` fails for one pick of two, and its path
+  ends `3. serve  who = "bob"` with `why  what the run expects after step 3 is false here`.
+  `serveNobodyTest` gives `step 1, `serve`, can't happen here`. The invariant `everyoneOnce` is
+  broken: TLC says `Invariant q_inv is violated` (12 distinct states at the stop), earnest
+  breaks it after `add`, `serve`, `add` of `"ann"`, and `confirm --tlc` says `same  servedRuns  16 states  fail`.
+- **Temporal properties and fairness over a computed pick**: `draining.qnt` (`serve` picks from
+  `pending`; `finish` sets `done` once `pending` is empty), compiled with
+  `--temporal drained,fairDrained,fairDone,bothFair`. By hand: 9 states (the subsets of
+  `{1, 2, 3}`, and `done` after the empty one). `drained` is broken (a run may stutter),
+  `fairDrained` (`weakFair(serve)`) holds, `fairDone` is broken (`finish` may wait forever), and
+  `bothFair` holds. `quint verify --backend tlc --temporal <one>` gives the same four:
+  `Temporal property q_temporalProps was violated.` with `State 4: Stuttering` and
+  `State 5: Stuttering` for the two broken ones, and `[ok] No violation found` for the others, each
+  `14 states generated, 9 distinct states found`. earnest gives them too, and `confirm --tlc` says
+  `same  draining  9 states  fail`. The liveness pass needed no change: it reads the arrows the
+  search keeps, and a picked action's arrows are kept like any other.
+- **Refusals carry a place**: every refusal from a `nondet`'s pick goes through `Reader::refuse`
+  and, when it has none of its own, takes the id of its `oneOf` expression, so the CLI gives a
+  line in the `.qnt` file. `quint_checks.rs` tests that `Int.oneOf()` is reported at line 4,
+  column 30 of `allnumbers.qnt`, with `allnumbers.parse.json` and `allnumbers.sourcemap.json`
+  as Quint 0.33.1 wrote them (the absolute path in `sourceIndex` replaced by the file's name).
+- **A computed `oneOf` in `init`** is read now. Start states are worked out when the file is
+  read, so `starts.rs` works out each choice's set with the earlier choices in their slots: about
+  30 lines, a quarter of an hour. `initpick.qnt` (`a` from `1.to(2)`, `b` from `0.to(a)`) starts
+  from `x` = 0, 1 and 2. TLC says `Invariant q_inv is violated by the initial state` for
+  `small` (`x <= 1`); earnest breaks it at `start  x = 2`, and `confirm --tlc` says
+  `same  initpick  3 states  fail`.
+- **A bug the merge showed**: the TLA+ export took a pick by its action's position alone, so a
+  run's pick was written on the model's action at the same position (`Action_add` picked from
+  `pending`). It now takes only the model's own picks, and a behaviour test reads the export.
+- **Docs**: `reference/quint.md` says what a `oneOf` may pick from, that every value is tried with
+  no bound, and what is still refused. There is a changelog entry.
+
 ### Checks, each with its last line
 
-- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,060,200 | +0.22% | 1.00% | met |`
+On the merged tree:
+
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,222,011 | +0.23% | 1.00% | met |`
   (`wide` 0.00% with 1 and with 4 workers). Not re-recorded.
 - `just benchmark`: every budget line `met` (5 of 5); the last is `wide, search time with all
-  cores (0.078 s) over search time with 1 worker (0.254 s): 0.31x, budget at most 0.75x: met`.
+  cores (0.082 s) over search time with 1 worker (0.247 s): 0.33x, budget at most 0.75x: met`.
 - `just same-answers origin/main`: `every model file: 392 runs, 64 differences`; the three sweeps
-  `0 differences`. Every difference is in `tasks/conformance/runs/` (`cart.model.ts`,
-  `cart_broken.model.ts`, `clock.model.ts` and the rest of that folder), the 16 files of the
+  `0 differences`. Every difference is in `tasks/conformance/runs/`, the 16 files of the
   integration branch that `origin/main` cannot read, as in slice 2.
-  `just same-answers 62a6f50` (this branch's base): `every model file: 392 runs, 0 differences`, every
-  sweep 0.
+  SAME_HEAD_LINE
 - `cargo test --locked -p earnest-cli --test reference`: 5 passed.
 - `cargo fmt --check`: exit 0.
 - `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
 - `just lint-library`: both passes `Finished`, exit 0.
 - `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
 - `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
-- `cargo test --locked` (after `bun install --frozen-lockfile`): 81 suites, 1858 passed, 0 failed.
-- `tests_kept.py --base origin/main`: `tests kept: 1523 tests, 4443 assertions (base: 1304, 3798)`;
-  against the integration branch `tests kept: 1523 tests, 4443 assertions (base: 1507, 4396)`.
-- `quint verify --backend tlc` and `earnest confirm --tlc`: in "Slice 3: what is checked"; every
-  model `same`. Java ran here, and so did TLC, both through Quint and on earnest's export.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 81 suites, 1967 passed, 0 failed.
+- `just typescript`: `Test Files  8 passed (8)`, `Tests  76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `tests_kept.py --base origin/main`: `tests kept: 1595 tests, 4647 assertions (base: 1304, 3798)`;
+  against the integration head `tests kept: 1595 tests, 4647 assertions (base: 1574, 4587)`.
+- `earnest confirm --tlc target/tools/tla2tools.jar` on each of the nine fixtures (`serve`,
+  `keys`, `pass`, `widening`, `drain`, `mixedpick`, `initpick`, `servedruns`, `draining`): `same`.
 
-New tests: `crates/earnest_check/tests/explore/picks.rs` (every item tried, the value printed in
-text and JSON, an empty set and a stuck state, a set that reads an earlier input, 40 items alike
-with 1 and 4 workers, the state limit met while an action tries its items, a set that is not a
-set), `apps/earnest/tests/behavior/quint_picks.rs` (the six fixtures, the state limit, `earnest
-report`, the TLA+ export), and four in `crates/earnest_quint/src/tests.rs`. One slice 1 test
-there, not on `origin/main`, pinned the refusal this slice lifts: it was
-`a_nondet_over_a_set_computed_from_the_state_is_refused` and is now
-`a_nondet_over_a_set_computed_from_the_state_is_an_input_worked_out_in_each_state`.
+New tests:
+
+- `crates/earnest_check/tests/explore/picks.rs`, 8 tests: every item tried; the value printed in
+  text and JSON; an empty set and a stuck state; a set that reads an earlier input; 40 items alike
+  with 1 and 4 workers; the state limit met while an action tries its items; a set that is not a
+  set; a witness that names a value inside and outside the set.
+- `apps/earnest/tests/behavior/quint_picks.rs`, 12 tests: the fixtures, the state limit, `earnest
+  report`, the TLA+ export, the runs and the temporal properties.
+- One test in `quint_checks.rs`, and five in `crates/earnest_quint/src/tests.rs`.
+
+Two tests there pinned refusals this slice lifts; neither is on `origin/main`:
+
+- slice 1's `a_nondet_over_a_set_computed_from_the_state_is_refused` is now
+  `a_nondet_over_a_set_computed_from_the_state_is_an_input_worked_out_in_each_state`;
+- this slice's own `..._in_init_..._is_refused` is now
+  `a_nondet_in_init_over_a_set_computed_from_another_nondet_starts_from_each_pick`.
 
 ### Refused, by name
 
@@ -1306,10 +1374,9 @@ there, not on `origin/main`, pinned the refusal this slice lifts: it was
   list: pick from a range such as `0.to(9)`". `Bool.oneOf()` is read, as `false` and `true`.
 - `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, as slice 2
   refuses them.
+- A `nondet` at the top of a run whose set reads the state: "a run's own `nondet` over a set read
+  from the state: pick inside the step that uses it". Before `init` there is no state to read.
 - A `nondet` whose value is not `oneOf` a set (Quint's compiler already refuses most).
-- In `init`, a `oneOf` over a set that reads another `nondet` ("`init` picks with `oneOf` over a
-  set computed from another `nondet`"). `init` cannot read the state, so this is the only
-  computed set it could have.
 
 Quint has no set of every string, so there is nothing to refuse for one.
 
@@ -1322,20 +1389,16 @@ Quint has no set of every string, so there is nothing to refuse for one.
   a slowdown.
 - The picked walk does not drop a repeated successor within one action, as the listed walk does
   with `Seen`. Each repeat costs one more look-up in the store, which files and counts it once.
-- `witness.rs` plays an input's value without checking it against the input's values, listed or
-  picked. A witness of a TypeScript or Rust model cannot name an unlisted value, but a Quint run
-  could.
+- `witness.rs` plays a witness's given value for a listed input without checking that it is
+  listed. A picked input is checked now; a TypeScript or Rust witness cannot name an unlisted
+  value, so only a hand-built model meets this.
 
 ### Unfinished, and the next step
 
-- Problems still sit at line 1, column 1. Matching ids against `quint parse --source-map` was
-  left for a later slice.
-- The witness player and the runs player should check a played value with
-  `picks::combinations` (slice 6).
-- A `oneOf` over a set that reads another `nondet` in `init`. It needs `starts.rs` to work out
-  each set with the earlier choices in place, like `Cursor`.
-- Next: slice 5 (temporal properties) and slice 6 (runs) can merge on top of this. Each touches
-  `Runs` beside `picks`, and the expansion only through `Successors`.
+- Nothing of the brief or of the merge request is left open.
+- A run's top-level `nondet` over a set read from the state stays refused. Quint would pick it
+  from the state after `init`; it needs a plan per start state instead of per run.
+- Next: the orchestrator's merge into the integration branch.
 
 ## Slice 5: what is checked
 
