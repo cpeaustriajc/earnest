@@ -70,6 +70,14 @@ impl Job {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct QuintCheck {
+    pub(crate) program: PathBuf,
+    pub(crate) file: PathBuf,
+    pub(crate) check: Check,
+    pub(crate) written: Vec<Written>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Quint {
     pub(crate) program: PathBuf,
     pub(crate) version: String,
@@ -500,7 +508,7 @@ fn compile(job: &Job) -> Result<String, Problem> {
     Ok(json)
 }
 
-fn runs_only(check: &Check) -> bool {
+pub(crate) fn runs_only(check: &Check) -> bool {
     check.invariants.is_empty() && check.temporal.is_empty() && check.runs != Runs::None
 }
 
@@ -716,7 +724,7 @@ fn widened(job: &mut Job, places: Option<&Places>) -> Result<(), Problem> {
     Ok(())
 }
 
-fn segments_end_alike(first: &str, second: &str) -> bool {
+pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
     let first: Vec<&str> = first.split(QUALIFIED).collect();
     let second: Vec<&str> = second.split(QUALIFIED).collect();
     first.ends_with(&second) || second.ends_with(&first)
@@ -1058,6 +1066,12 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                     position: 0,
                     expected,
                     runs_not_played,
+                    quint: job.quint.as_ref().ok().map(|quint| QuintCheck {
+                        program: quint.program.clone(),
+                        file: job.real.clone(),
+                        check: job.check.clone(),
+                        written: job.written.clone(),
+                    }),
                 }]),
             },
             Err(located) => {

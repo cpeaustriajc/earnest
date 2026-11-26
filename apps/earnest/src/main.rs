@@ -6,6 +6,7 @@ mod changes;
 mod checks;
 mod commands;
 mod confirm;
+mod confirm_quint;
 mod discovery;
 mod places;
 mod print;
