@@ -74,6 +74,27 @@ fn unlabelled(job: &Job) -> Job {
     }
 }
 
+fn in_label(job: &Job, problem: Problem) -> Problem {
+    let inside = [job.labels.state.as_ref(), job.labels.group.as_ref()]
+        .into_iter()
+        .flatten()
+        .find(|label| {
+            label.written.as_ref().is_some_and(|(file, first, last)| {
+                *file == problem.file && (*first..=*last).contains(&problem.line)
+            })
+        });
+    match inside {
+        Some(label) => Problem {
+            message: format!(
+                "`quint compile --main {}` fails in the chart label `{}`: {}",
+                job.check.main, label.name, problem.message
+            ),
+            ..problem
+        },
+        None => problem,
+    }
+}
+
 pub(super) fn blamed(
     checks: &[Job],
     compiled: Vec<Result<String, Problem>>,
@@ -95,7 +116,7 @@ pub(super) fn blamed(
                             problem.message
                         ),
                     )),
-                    Err(_) => Err(problem),
+                    Err(_) => Err(in_label(job, problem)),
                 }
             }
             other => other,

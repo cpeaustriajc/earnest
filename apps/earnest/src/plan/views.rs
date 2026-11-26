@@ -5,17 +5,21 @@ use super::{
 use crate::marks::Doc;
 use crate::places::Marked;
 use crate::view_marks::{
-    Part, ViewMark, def_label, no_label, read_views, second_view, two_views, unspaced_view,
-    unspaced_view_mark, view_on_module, view_unseen,
+    Part, ViewMark, def_label, imported_views, no_label, read_views, second_view, two_views,
+    unspaced_view, unspaced_view_mark, view_on_module, view_unseen,
 };
 use earnest_diagnostics::{Place, Problem};
 use std::collections::BTreeSet;
+use std::fs;
 use std::path::Path;
+
+mod near;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Labelling {
     pub(crate) name: String,
     pub(crate) at: Problem,
+    pub(crate) written: Option<(String, u32, u32)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -63,16 +67,20 @@ impl Viewing {
 const DEFS: [&str; 2] = ["def", "puredef"];
 const A_DEF: &str = "a `def`";
 
-fn not_a_label(locator: &Placer<'_>, id: u64) -> Option<&'static str> {
+fn not_a_label(locator: &Placer<'_>, id: u64) -> Option<String> {
     let places = locator.places;
-    match places.qualifier_of(id) {
-        Some(qualifier) if VALUES.contains(&qualifier) && places.kind_of(id) == Some("def") => {
-            what_is(places, id).or_else(|| DEFS.contains(&qualifier).then_some(A_DEF))
+    let defined = places.kind_of(id) == Some("def");
+    let what = match places.qualifier_of(id) {
+        Some(qualifier) if VALUES.contains(&qualifier) && defined => {
+            what_is(places, id).or_else(|| DEFS.contains(&qualifier).then_some(A_DEF))?
         }
-        Some(TEMPORAL) if places.kind_of(id) == Some("def") => Some("a `temporal` definition"),
-        Some(RUN) if places.kind_of(id) == Some("def") => Some("a `run`"),
-        _ => what_is(places, id).or(Some("a declaration of that kind")),
-    }
+        Some(TEMPORAL) if defined => "a `temporal` definition",
+        Some(RUN) if defined => "a `run`",
+        Some("action") if defined => "an `action`",
+        Some(qualifier) if defined => return Some(format!("a `{qualifier}` definition")),
+        _ => what_is(places, id).unwrap_or("a declaration of that kind"),
+    };
+    Some(what.to_owned())
 }
 
 fn the_label(locator: &Placer<'_>, id: u64, marks: &[ViewMark]) -> Option<(Part, usize)> {
@@ -109,7 +117,7 @@ fn mark_problems(locator: &Placer<'_>, each: &Marked<'_>, marks: &[ViewMark]) ->
         let message = if what == A_DEF {
             def_label(&each.name, *part)
         } else {
-            no_label(&each.name, what, *part)
+            no_label(&each.name, &what, *part)
         };
         found.push(at(*line, &message));
     }
@@ -151,6 +159,11 @@ fn in_this_file(locator: &Placer<'_>, each: &Marked<'_>) -> Option<usize> {
 }
 
 pub(super) fn view_definitions(locator: &Placer<'_>, planned: &mut Planned) {
+    planned.problems.extend(
+        near::near_marks(locator)
+            .into_iter()
+            .map(|problem| (None, problem)),
+    );
     for each in locator.places.marks_in(locator.real) {
         let feature = format!("`{}`", each.name);
         let doc = crate::marks::read_doc(each.doc);
@@ -207,6 +220,7 @@ struct Seen<'a> {
     doc: &'a str,
     part: Part,
     line: usize,
+    own: bool,
 }
 
 fn labels_seen<'a>(locator: &Placer<'a>, main: &str) -> Vec<Seen<'a>> {
@@ -222,15 +236,14 @@ fn labels_seen<'a>(locator: &Placer<'a>, main: &str) -> Vec<Seen<'a>> {
         let Some((part, line)) = the_label(locator, each.id, &marks) else {
             continue;
         };
-        if found.iter().all(|seen| seen.id != each.id) {
-            found.push(Seen {
-                name: each.name,
-                id: each.id,
-                doc,
-                part,
-                line,
-            });
-        }
+        found.push(Seen {
+            own: places.declares(main, &each.name),
+            name: each.name,
+            id: each.id,
+            doc,
+            part,
+            line,
+        });
     }
     found
 }
@@ -261,29 +274,82 @@ fn seen_by(locator: &Placer<'_>, main: &str, viewing: &mut Viewing) {
     }
 }
 
+fn written_lines(locator: &Placer<'_>, id: u64) -> Option<(String, u32, u32)> {
+    let (file, line, column) = locator.places.spot_of(id)?;
+    let text = fs::read_to_string(file).ok()?;
+    let lines: Vec<&str> = text.lines().collect();
+    let first = usize::try_from(line).ok()?;
+    let indent = usize::try_from(column).ok()?;
+    let more = lines
+        .iter()
+        .skip(first.saturating_add(1))
+        .take_while(|each| {
+            let body = each.trim_start();
+            let depth = each.len().saturating_sub(body.len());
+            body.is_empty() || depth > indent || body.starts_with(['}', ')', ']'])
+        })
+        .count();
+    let last = first.saturating_add(more);
+    let shown = super::shown_in_folder(Path::new(file), locator.real, locator.shown);
+    Some((
+        shown,
+        u32::try_from(first.saturating_add(1)).ok()?,
+        u32::try_from(last.saturating_add(1)).ok()?,
+    ))
+}
+
+fn chosen<'s, 'a>(
+    locator: &Placer<'_>,
+    main: &str,
+    seen: &'s [Seen<'a>],
+    part: Part,
+) -> Result<Option<&'s Seen<'a>>, Problem> {
+    let of_part: Vec<&Seen<'a>> = seen.iter().filter(|each| each.part == part).collect();
+    let own: Vec<&Seen<'a>> = of_part.iter().copied().filter(|each| each.own).collect();
+    match (own.as_slice(), of_part.as_slice()) {
+        ([], []) => Ok(None),
+        ([only], _) | ([], [only]) => Ok(Some(*only)),
+        ([first, second, ..], _) => {
+            let message = two_views(main, part, (&first.name, &second.name));
+            let feature = format!("`{}`", second.name);
+            Err(locator.at_definition(
+                &marked_of(locator, second),
+                second.line,
+                (&feature, &message),
+            ))
+        }
+        ([], imported) => {
+            let names: Vec<&str> = imported.iter().map(|each| each.name.as_str()).collect();
+            let place = locator
+                .module_line(main)
+                .map_or(Place { line: 1, column: 1 }, |line| Place {
+                    line,
+                    column: 1,
+                });
+            Err(Problem::new(
+                locator.shown,
+                place,
+                &format!("`module {main}`"),
+                &imported_views(main, part, &names),
+            ))
+        }
+    }
+}
+
 fn labelling(
     locator: &Placer<'_>,
     main: &str,
     seen: &[Seen<'_>],
     part: Part,
 ) -> Result<Option<Labelling>, Problem> {
-    let mut of_part = seen.iter().filter(|each| each.part == part);
-    let Some(first) = of_part.next() else {
+    let Some(first) = chosen(locator, main, seen, part)? else {
         return Ok(None);
     };
     let feature = format!("`{}`", first.name);
-    if let Some(second) = of_part.next() {
-        let message = two_views(main, part, (&first.name, &second.name));
-        let feature = format!("`{}`", second.name);
-        return Err(locator.at_definition(
-            &marked_of(locator, second),
-            second.line,
-            (&feature, &message),
-        ));
-    }
     Ok(Some(Labelling {
         name: first.name.clone(),
         at: locator.at_definition(&marked_of(locator, first), first.line, (&feature, "")),
+        written: written_lines(locator, first.id),
     }))
 }
 

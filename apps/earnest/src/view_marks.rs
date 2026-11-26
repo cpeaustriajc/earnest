@@ -72,6 +72,81 @@ pub(crate) fn unspaced_view(source_line: &str) -> Option<&str> {
     word_ends.then_some(written)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Near {
+    Case,
+    LineComment,
+    BlockComment,
+}
+
+fn mark_in_any_case(text: &str) -> Option<(String, String)> {
+    let after = text.strip_prefix('@')?;
+    let end = after
+        .find(|each: char| !each.is_ascii_alphabetic())
+        .unwrap_or(after.len());
+    let (word, rest) = after.split_at(end);
+    word.eq_ignore_ascii_case(UNSPACED).then(|| {
+        let rest = rest.trim().trim_end_matches("*/").trim_end();
+        (
+            format!("@{word}{}", if rest.is_empty() { "" } else { " " }),
+            rest.to_owned(),
+        )
+    })
+}
+
+pub(crate) fn near_view(trimmed: &str) -> Option<(Near, String, String)> {
+    if let Some(doc) = trimmed.strip_prefix("///") {
+        return near_in(Near::Case, doc.trim_start());
+    }
+    if let Some(comment) = trimmed.strip_prefix("//") {
+        return near_in(Near::LineComment, comment.trim_start());
+    }
+    let block = trimmed.strip_prefix("/*")?;
+    near_in(
+        Near::BlockComment,
+        block.trim_start_matches('*').trim_start(),
+    )
+}
+
+pub(crate) fn near_view_in_block(trimmed: &str) -> Option<(Near, String, String)> {
+    near_in(
+        Near::BlockComment,
+        trimmed.trim_start_matches('*').trim_start(),
+    )
+}
+
+fn near_in(kind: Near, text: &str) -> Option<(Near, String, String)> {
+    let (word, rest) = mark_in_any_case(text)?;
+    if kind == Near::Case && word.trim_end() == VIEW {
+        return None;
+    }
+    Some((kind, format!("{word}{rest}"), rest))
+}
+
+pub(crate) fn near_mark(kind: Near, written: &str, rest: &str) -> String {
+    let mark = if rest.is_empty() {
+        format!("/// {VIEW}")
+    } else {
+        format!("/// {VIEW} {rest}")
+    };
+    match kind {
+        Near::Case => format!(
+            "the doc comment holds `{written}`, which is not a mark: a mark is written in small \
+             letters, `{mark}`, or it is read as a sentence and the chart is not labelled"
+        ),
+        Near::LineComment => format!(
+            "`// {written}` is a comment that `quint parse` does not hand over, so the chart is \
+             not labelled: write the mark in a doc comment, with three slashes, `{mark}`, on the \
+             line above the `val`"
+        ),
+        Near::BlockComment => format!(
+            "`{written}` is in a `/* */` comment, which `quint parse` does not hand over, so the \
+             chart is not labelled: write the mark in a doc comment, with three slashes, \
+             `{mark}`, on the line above the `val`"
+        ),
+    }
+}
+
 fn unknown_word(written: &str, name: &str) -> String {
     format!(
         "the doc comment of `{name}` holds `{written}`, which is not a mark the checker knows: \
@@ -132,6 +207,18 @@ pub(crate) fn two_views(module: &str, part: Part, (first, second): (&str, &str))
     format!(
         "the check `{module}` sees two definitions marked `{VIEW} {word}`, `{first}` and \
          `{second}`, and a chart takes one: keep the mark on one of them"
+    )
+}
+
+pub(crate) fn imported_views(module: &str, part: Part, names: &[&str]) -> String {
+    let word = part.word();
+    let listed: Vec<String> = names.iter().map(|name| format!("`{name}`")).collect();
+    format!(
+        "the check `{module}` sees {} definitions marked `{VIEW} {word}` in the modules it \
+         imports, {}, and a chart takes one: mark a `val` of `{module}` itself `/// {VIEW} \
+         {word}` to choose its label, and the imported ones are not used",
+        listed.len(),
+        listed.join(" and ")
     )
 }
 
