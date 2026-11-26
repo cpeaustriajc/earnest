@@ -4,7 +4,7 @@ use crate::discovery::{
 use crate::reading::{ModelFile, read};
 use crate::run::Bounds;
 use crate::select::Target;
-use earnest_ast::{ConditionDraft, Draft, RuleDraft};
+use earnest_ast::{ConditionDraft, Draft, Quoting, RuleDraft, same_condition_text};
 use earnest_chart::{ChangeKind, ChangedPart, RuleChange, RuleText};
 use earnest_check::{Limits, Verdict, explore};
 use earnest_ir::{Code, Expr, Model, Op, Rule};
@@ -287,8 +287,8 @@ fn broken_rules(model: Model, rules: Vec<Rule>, bounds: Bounds) -> Vec<String> {
         .collect()
 }
 
-fn by_wording(was: &RuleDraft, now: &RuleDraft) -> Option<Kind> {
-    by_text(&Wording::of(was), &Wording::of(now))
+fn by_wording(was: &RuleDraft, now: &RuleDraft, quoting: Quoting) -> Option<Kind> {
+    by_text(&Wording::of(was), &Wording::of(now), quoting)
 }
 
 fn told_apart(
@@ -297,10 +297,11 @@ fn told_apart(
     pairs: &[(&RuleDraft, &RuleDraft)],
     bounds: Bounds,
 ) -> Vec<Option<Kind>> {
+    let quoting = new.language.quoting();
     let Ok((model, at_base)) = lower_with_earlier(new, old) else {
         return pairs
             .iter()
-            .map(|(was, now)| by_wording(was, now))
+            .map(|(was, now)| by_wording(was, now, quoting))
             .collect();
     };
     let lowered: Vec<Option<(&Rule, &Rule)>> = pairs
@@ -343,7 +344,7 @@ fn told_apart(
             } else if before.holds != after.holds {
                 Some(Kind::Changed)
             } else {
-                by_wording(was, now)
+                by_wording(was, now, quoting)
             }
         })
         .collect()
@@ -434,8 +435,8 @@ fn one_sided(file: &str, model: &str, named: Named<'_>, change: Kind) -> Differe
     }
 }
 
-fn by_text(was: &Wording, now: &Wording) -> Option<Kind> {
-    if was.holds != now.holds {
+fn by_text(was: &Wording, now: &Wording, quoting: Quoting) -> Option<Kind> {
+    if !same_condition_text(&was.holds, &now.holds, quoting) {
         Some(Kind::Changed)
     } else if was.says != now.says {
         Some(Kind::Reworded)
@@ -453,7 +454,7 @@ fn changes_about_runs(old: Option<&Draft>, new: &Draft) -> Vec<Difference> {
             changes.push(one_sided(&new.file, &new.name, now.clone(), Kind::Added));
             continue;
         };
-        if let Some(change) = by_text(&was.wording, &now.wording) {
+        if let Some(change) = by_text(&was.wording, &now.wording, new.language.quoting()) {
             changes.push(Difference {
                 file: new.file.clone(),
                 model: new.name.clone(),
