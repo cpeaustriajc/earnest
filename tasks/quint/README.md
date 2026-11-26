@@ -1554,8 +1554,10 @@ beyond records, tuples, sets, maps, lists, text, variants and `ipow` is still re
 
 The models, each `.qnt` beside the `.json` compiled from it with Quint 0.33.1:
 
+- `models/runs.qnt`, the spike's, as it was: its `emptyTest` filters a set, which the reader
+  takes since slice 2.
 - `models/runs_ints.qnt`: `runs.qnt` with `emptyTest` choosing from `Set()` in place of
-  `Set().filter(x => x > 0)`, which needs sets. `runs.qnt` is kept as it was.
+  `Set().filter(x => x > 0)`, written before slice 2 so that it needs ints and bools alone.
 - `models/stuck.qnt`: the module `stuck` of `edge.qnt` with `Test` added to each run's name, since
   `quint test` plays no run of the original (`quint test --main stuck edge.qnt` lists none;
   the spike's 5 runs came from `--match`). `edge.qnt` is kept as it was.
@@ -1568,6 +1570,7 @@ The models, each `.qnt` beside the `.json` compiled from it with Quint 0.33.1:
 A plain compile keeps the runs written in the main module; it needs no flag [ran]:
 
 ```sh
+quint compile --target json --main runs runs.qnt > runs.json
 quint compile --target json --main runs runs_ints.qnt > runs_ints.json
 quint compile --target json --main stuck --invariant ok stuck.qnt > stuck.json
 quint compile --target json --main played played.qnt > played.json
@@ -1601,7 +1604,10 @@ quint compile --target json --main unstarted unstarted.qnt > unstarted.json
 | `assertedTest` | ok | holds | |
 | `wrongExpectTest` | failed (QNT508, expect) | broken | what the run expects after step 1 is false here |
 
-13 runs in `runs_ints.qnt` and 5 in `stuck.qnt`, as the spike counted. The invariant `ok` of
+13 runs in `runs_ints.qnt` and 5 in `stuck.qnt`, as the spike counted. The original `runs.qnt`
+gives the same 13 verdicts in both (`quint test --backend typescript --main runs runs.qnt`: `7
+passing`, `6 failed`, the same six; `earnest verify tasks/quint/models/runs.json`: the same six
+broken with the same reasons). The invariant `ok` of
 `stuck` holds.
 
 | Run of `played.qnt` | `quint test` | earnest | earnest's reason |
@@ -1842,10 +1848,20 @@ fail        stuck  3 states  0 ms
 - `earnest_quint/src/runs.rs`: reads each `run` whose name ends in `Test`, in the order written
   (the order of the definitions' ids), as section "How earnest plays a run" above describes. The
   edits to the other files are small: `reader.rs` exposes the binding of a name, the unfolding
-  of an `all`, `picked_from` and `is_action`, and resets the input slots; `model.rs` calls the
-  run reader; `scan.rs` leaves `run` definitions to it; the refusal of a run operator elsewhere
-  now says "run operators outside a `run` are not read yet". Every refused run is listed, not
-  only the first.
+  of an `all`, `picked_from` and `is_action`; `model.rs` calls the run reader; `scan.rs` leaves
+  `run` definitions to it; the refusal of a run operator elsewhere now says "run operators are
+  read only in a `run`". Every refused run is listed, not only the first.
+- Which runs are played is a parameter: `earnest_quint::read_runs(path, source, &Runs)` with
+  `Runs::{None, Tests, Named(Vec<String>)}`; `read` is `read_runs` with `Runs::Tests`, which the
+  CLI uses for a compiled `.json` named directly. A listed run the module lacks makes the file
+  unreadable and is named (`` `run missingTest` ``). Slice 7 wires its checks file to it.
+- An `unknown` witness or script makes the model `unfinished` when nothing is broken: a script
+  stopped at the branch cap gives the reason ``the run `<id>` has more than 100000 branches from
+  one start state``, a witness with more start states than the state limit keeps the search's
+  own reason (the search stopped at the same limit), and so does a search that stopped at its
+  state limit. Before, such a model was `pass`.
+- Merged with the integration head (slices 2 and 5): the run reader takes their records, sets,
+  maps and text in steps and conditions, and counts slots as slice 2's reader does.
 - The CLI needed no change: `rule_ids` gives `--rule` and the declared rules, the cache stores
   outcomes as they are, `earnest confirm` compares only the rules of kind `always` with TLC, and
   `earnest tla` exports no witness.
@@ -1855,15 +1871,17 @@ fail        stuck  3 states  0 ms
 
 ### Tests
 
-- `crates/earnest_check/tests/explore/scripts.rs` (9): alternatives with open inputs, a step no
+- `crates/earnest_check/tests/explore/scripts.rs` (12): alternatives with open inputs, a step no
   alternative can take, a condition after a middle step, a last step that must be refused in both
   outcomes, several start states with the values a plan chose, every plan, assertions, start
   conditions and runs that must not finish, the branch cap, `only_rule` and the order after the
-  rules.
-- `crates/earnest_quint/src/run_tests.rs` (9): the reading of every run of `runs_ints`,
-  `stuck`, `played` and `unstarted`.
-- `apps/earnest/tests/behavior/quint_runs.rs` (5): the verdicts in JSON, the text path and
-  `why`, `--rule`, the `stuck` module and an unreadable file.
+  rules; the model `unfinished` at the branch cap, with the search's own reason when it stopped
+  at its state limit, and for a witness with more start states than the limit.
+- `crates/earnest_quint/src/run_tests.rs` (11): the reading of every run of `runs_ints`,
+  `stuck`, `played` and `unstarted`, and `Runs::None`, `Tests` and `Named`, with a name the
+  module lacks.
+- `apps/earnest/tests/behavior/quint_runs.rs` (6): the verdicts in JSON, for `runs_ints` and the
+  original `runs`, the text path and `why`, `--rule`, the `stuck` module and an unreadable file.
 - Brought to the new truth (slice 1, not on `origin/main`): `a_run_is_refused_and_named` in
   `crates/earnest_quint/src/tests.rs` is now
   `a_run_whose_name_ends_in_test_is_read_and_listed_after_the_rules`.
@@ -1887,9 +1905,8 @@ refuses inside a step is still refused, by name.
 
 ### Doubts about existing code
 
-- An `unknown` witness or script (too many start states, or the branch cap) leaves the model's
-  status `pass`, and the text output prints only broken rules, so it shows only in the JSON. This
-  was already so for witnesses; changing the status is not this slice's to decide.
+- The text output prints only broken rules, by design, so an `unknown` run shows in the result
+  line's reason and in the JSON, not under the model.
 - `Model::in_setup` does not change listed start states (slice 1's doubt), which is why a script
   gives the same answer in every setup.
 - `earnest verify --base` still skips a compiled Quint file (slice 1's doubt), so a run added or
@@ -1918,8 +1935,8 @@ refuses inside a step is still refused, by name.
 
 ### Unfinished, and the next step
 
-- `--match` and the choice of runs per check go into slice 7's `earnest.quint.json`; today the
-  reader takes the names that end in `Test`, as `quint test` does by default.
+- Slice 7 passes its checks file's choice of runs to `read_runs`; once both are on the
+  integration head, the wiring is a call with its list in place of `Runs::Tests`.
 - Runs written in a spec that a setup module imports are dropped by `quint compile --main
   <setup>` (spike 1.4); slice 4 has to compile the spec module too, or read `quint typecheck`.
 - Problems are at line 1, column 1 (slice 3).
