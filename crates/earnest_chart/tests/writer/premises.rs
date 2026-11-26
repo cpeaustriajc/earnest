@@ -1,4 +1,4 @@
-use crate::support::{edge, graph, node, read, start};
+use crate::support::{broken, edge, graph, inside, node, read, start};
 use earnest_chart::{ARROW_LIMIT, chart, chart_with_limit};
 use earnest_check::{Edge, Graph, Node, Premise, PremiseKind};
 
@@ -429,4 +429,69 @@ fn a_premise_already_on_a_broken_route_costs_nothing() {
         "the eight arrows left go to the nearest states"
     );
     assert!(chart(&branches).ends_with("The premise of `midway` first holds in `a5`."));
+}
+
+#[test]
+fn a_box_in_a_group_is_named_with_its_group() {
+    let mut servers = graph(
+        vec![
+            inside("server up", start("idle")),
+            inside("server up", node("an order paid")),
+            inside("server down", broken("an order paid", &["upOnConfirm"])),
+        ],
+        vec![edge(0, 1, &["pay"]), edge(0, 2, &["crash"])],
+    );
+    holds(&mut servers, "confirms", PremiseKind::Implies, &[1, 2]);
+    assert_eq!(
+        read(&chart(&servers)).premises.as_deref(),
+        Some("The premise of `confirms` first holds in `server up` / `an order paid`."),
+        "the label alone fits the broken box in `server down` too"
+    );
+}
+
+#[test]
+fn only_a_box_in_a_group_is_named_with_one() {
+    let mut mixed = graph(
+        vec![start("home"), inside("away", node("far")), node("near")],
+        vec![edge(0, 1, &["leave"]), edge(0, 2, &["stay"])],
+    );
+    holds(&mut mixed, "left", PremiseKind::Implies, &[1]);
+    holds(&mut mixed, "stayed", PremiseKind::Implies, &[2]);
+    assert_eq!(
+        read(&chart(&mixed)).premises.as_deref(),
+        Some(
+            "The premise of `left` first holds in `away` / `far`. The premise of `stayed` first \
+             holds in `near`."
+        )
+    );
+}
+
+#[test]
+fn a_long_group_and_a_long_label_are_each_cut_in_the_note() {
+    let long = |name: &str| {
+        let fields: Vec<String> = (0..30).map(|at| format!("{name}{at} = {at}")).collect();
+        fields.join(", ")
+    };
+    let (group, label) = (long("g"), long("f"));
+    let mut wide = graph(
+        vec![start("home"), inside(&group, node(&label))],
+        vec![edge(0, 1, &["go"])],
+    );
+    holds(&mut wide, "wide", PremiseKind::Implies, &[1]);
+    let note = read(&chart(&wide)).premises.expect("a note");
+    let place = note
+        .strip_prefix("The premise of `wide` first holds in `")
+        .and_then(|rest| rest.strip_suffix("`."))
+        .unwrap_or_else(|| panic!("two code spans in `{note}`"));
+    let (shown_group, shown_label) = place
+        .split_once("` / `")
+        .unwrap_or_else(|| panic!("a group and a label in `{place}`"));
+    for (shown, whole) in [(shown_group, &group), (shown_label, &label)] {
+        assert_eq!(shown.chars().count(), 80, "{shown}");
+        assert!(shown.ends_with('\u{2026}'), "{shown}");
+        assert!(
+            whole.starts_with(shown.trim_end_matches('\u{2026}')),
+            "{shown}"
+        );
+    }
 }

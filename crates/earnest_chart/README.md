@@ -74,6 +74,9 @@ When a premise has a target, one more line follows after a blank line, one sente
 must reach holds in `x5 y5`.```, ``` `settles` starts in `x5 y5`, where what it must reach holds
 too.```, ``` `settles` starts in `x1 y1`.``` when no box of `reaches` follows the start, and
 ``What `grows` must reach first holds in `x5 y5`.`` for an eventually rule without `after`.
-`beyond what is shown` takes the place of `in` and the box when the route did not fit. The
-sentences never say that a rule holds. A label longer than `LONGEST_NOTE_LABEL` (80) characters
-is cut there with `…` in this line only.
+`beyond what is shown` takes the place of `in` and the box when the route did not fit. A box in
+a group is named `` `group` / `label` ``, as one label can stand in two groups. The sentences
+never say that a rule holds. A box stands for every state with its label and group, so each
+sentence is about some state of the box it names, not all of them; a part of a label that could
+not be worked out is drawn, and named, as `?`. A label or a group longer than
+`LONGEST_NOTE_LABEL` (80) characters is cut there with `…`, each on its own, in this line only.
