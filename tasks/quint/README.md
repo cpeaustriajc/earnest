@@ -1895,8 +1895,8 @@ runs in. Verified against Quint 0.33.1:
 - `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
 - `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
 - `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1814 passed, 0
-  failed.
-- `just typescript`: `Tests  76 passed (76)`.
+  failed. After the merge: 81 suites, 1894 passed, 0 failed.
+- `just typescript`: `Tests  76 passed (76)` (after the merge also `189 passed`, `22 passed`).
 - `just docs`: `[build] 18 page(s) built`, `[build] Complete!`; the two `[WARN]` lines (`i18n`,
   `404`) are there on the base too. `dist/llms-full.txt` holds the new page.
 - `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps
@@ -1907,7 +1907,11 @@ runs in. Verified against Quint 0.33.1:
   full list is from a copy of `same.py` with `SHOWN` raised, not committed).
   `just same-answers fdbd03a` (the integration head this branch starts from): `every model
   file: 392 runs, 0 differences`, every sweep 0.
-- `tests_kept.py --base origin/main`: `tests kept: 1491 tests, 4385 assertions (base: 1304, 3798)`.
+- `tests_kept.py --base origin/main`: `tests kept: 1491 tests, 4385 assertions (base: 1304, 3798)`;
+  after the merge `tests kept: 1541 tests, 4513 assertions (base: 1304, 3798)`.
+- After the merge, fmt, clippy, `just lint-library`, `cargo deny check`, `cargo machete` and
+  `just docs` (18 pages, the same two `[WARN]` lines) gave the same last lines as above.
+  `just same-answers` was not run again (not in the review's list).
 - `just counts` and `just benchmark` were not run: no search code changed.
 
 ### Unfinished, and the next step
