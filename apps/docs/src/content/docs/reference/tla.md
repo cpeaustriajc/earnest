@@ -11,7 +11,7 @@ Every earnest model can be exported as TLA+ so an independent TLA+ checker can c
 earnest tla src/cart.model.ts --out build/tla
 ```
 
-`earnest tla` writes `<Model>.tla` and `<Model>.cfg` into `--out` for each matched model. A model with [setups](/reference/typescript/#setups) also gets `<Model>_<setup>.tla` and `<Model>_<setup>.cfg` for each setup: a module of its own, named `<Model>_<setup>`, that is the model's module with the setup's values in `Init`.
+`earnest tla` writes `<Model>.tla` and `<Model>.cfg` into `--out` for each matched model. A model with setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) also gets `<Model>_<setup>.tla` and `<Model>_<setup>.cfg` for each setup: a module of its own, named `<Model>_<setup>`, that is the model's module with the setup's values in `Init`.
 
 ## Confirm with TLC or tla-rs
 
@@ -44,7 +44,7 @@ Each rule `id` is exported as an invariant `Rule_id` listed in `<Model>.cfg`:
 
 ### Rules about runs and fairness
 
-A model with a [rule about runs](/reference/typescript/#rules-about-runs) also gets a specification and one temporal property per rule. For a model whose action `sync` is fair:
+A model with a rule about runs ([TypeScript](/reference/typescript/#rules-about-runs), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) also gets a specification and one temporal property per rule. For a model whose action `sync` is fair:
 
 ```text
 Spec ==
@@ -57,7 +57,7 @@ Eventually_offered ==
     (approved) ~> (offers)
 ```
 
-- **`Spec`:** `Init`, then `[][Next]_vars`, then `WF_vars(Next)`, which says a run never stops while some action can change the state, then `WF_vars(Action_id)` for each action declared with `fair: true`, in declaration order. An action with inputs is one `Action_id` that picks its input with `\E`, so its fairness is fairness of the action as a whole. A step that keeps every variable as it is is stuttering, which `[Next]_vars` allows and weak fairness ignores, as earnest does.
+- **`Spec`:** `Init`, then `[][Next]_vars`, then `WF_vars(Next)`, which says a run never stops while some action can change the state, then `WF_vars(Action_id)` for each fair action (`fair: true` in TypeScript, `#[action("...", fair)]` in Rust), in declaration order. An action with inputs is one `Action_id` that picks its input with `\E`, so its fairness is fairness of the action as a whole. A step that keeps every variable as it is is stuttering, which `[Next]_vars` allows and weak fairness ignores, as earnest does.
 - **Properties:** each rule `id` is `Eventually_id`: `<>(reaches)` without `after`, and `(after) ~> (reaches)` with it. A condition that reads no variable is written `vars = vars /\ condition`, because TLC misjudges a temporal property over a constant.
 - **Configuration:** `<Model>.cfg` names `SPECIFICATION Spec` in place of `INIT Init` and `NEXT Next`, keeps `CHECK_DEADLOCK FALSE`, lists the invariants, and then one `PROPERTY Eventually_id` line per rule. `earnest confirm` checks the invariants from `INIT Init` and `NEXT Next` as before, and each property alone with `SPECIFICATION Spec`.
 - A model without a rule about runs is exported exactly as before, whether or not it has fair actions.

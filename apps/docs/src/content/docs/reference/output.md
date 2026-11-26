@@ -30,7 +30,7 @@ unreadable  src/clock.model.ts
 
 - **Status words:** `pass`, `fail`, `unfinished`, or `unreadable`.
 - **Model line:** status, model name, `<n> states` (or `<n> states so far` when stopped early), `<n> ms`, and `(cached)` when served from `.earnest/`.
-- **Setups:** a model with [setups](/reference/typescript/#setups) prints one line for the model as declared, then one per setup in declaration order, named with the setup's id in brackets: `fail  Clock (behind)  6 states  0 ms`. Each line has its own state count, broken rules and findings, and the summary counts each of them as a model.
+- **Setups:** a model with setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) prints one line for the model as declared, then one per setup in declaration order, named with the setup's id in brackets: `fail  Clock (behind)  6 states  0 ms`. Each line has its own state count, broken rules and findings, and the summary counts each of them as a model.
 - **`broken`:** names the rule id and its sentence, followed by the shortest path to the first violating state:
   - `start` lists every field of the start state.
   - Each numbered step gives the action id, its inputs as `name = value` if any, and every changed field as `field: before -> after`.
@@ -58,7 +58,7 @@ unreadable  src/clock.model.ts
   | `what the witness expects <fault> here` | Every step happened and `expect` faulted in the last state |
 
   `<fault>` is the fault's own words, as in a `fault` finding (for example, `reads a value that is null`).
-- **`broken` rule about runs:** a [rule about runs](/reference/typescript/#rules-about-runs) (TypeScript models only) prints its id, its sentence, and the shortest path from a start state into a run that never reaches what the rule wants, followed by a `why` line at the depth of the path. When that run loops, the path goes once round the loop and the `why` line names its steps, counted from 1:
+- **`broken` rule about runs:** a rule about runs ([TypeScript](/reference/typescript/#rules-about-runs), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)) prints its id, its sentence, and the shortest path from a start state into a run that never reaches what the rule wants, followed by a `why` line at the depth of the path. When that run loops, the path goes once round the loop and the `why` line names its steps, counted from 1:
 
   ```text
   fail        CartBroken  4 states  0 ms
@@ -144,7 +144,7 @@ Field meanings:
   - `"broken"` when any counted state breaks the rule.
   - `"holds"` only when exploration completed every reachable state, the rule never faulted, and no out-of-range state or action/end fault cut exploration short.
   - `"unknown"` when not seen broken, but the model was unfinished, the rule faulted, or another fault/out-of-range state left states unreached or unjudged.
-- `rules[].kind`: `"eventually"` for a [rule about runs](/reference/typescript/#rules-about-runs) and `"witness"` for a [witness](/reference/typescript/#witnesses). A plain rule has no `kind` key. Rules about runs are listed after the plain rules and before the witnesses.
+- `rules[].kind`: `"eventually"` for a rule about runs and `"witness"` for a witness, in a TypeScript or a [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups) model. A plain rule has no `kind` key. Rules about runs are listed after the plain rules and before the witnesses.
 - `rules[].reason`: present only on a broken rule about runs or a broken witness, with the text of its `why` line.
 - `rules[].repeatsFrom`: present only on a rule about runs broken by a loop: the 0-based position in `path.steps` of the first step of the loop. The steps from there to the last can repeat forever. A run that stays in the last state of the path has no `repeatsFrom`.
 - A rule about runs is `"holds"` only when the search finished every reachable state and no state went out of range, no action or `end` faulted, and the rule's `after` and `reaches` had a value in every state. It is `"unknown"` otherwise, unless a run that breaks it was found. When `after` or `reaches` faults, a `fault` finding names the rule, unless the model already has a fault.
@@ -153,7 +153,7 @@ Field meanings:
 - `skipped`: test files that use the library and were skipped, in path order (`[]` if none).
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
 - `summary`: `models` counts models only; `unreadable` counts unreadable files separately. A model with setups counts once for itself and once for each setup.
-- `models[].setup`: present only on the result of a model in a [setup](/reference/typescript/#setups), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
+- `models[].setup`: present only on the result of a model in a setup ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
 - **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects.
 - Two runs on the same files produce identical JSON apart from `milliseconds` and `cached`.
 

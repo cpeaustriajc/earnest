@@ -106,7 +106,7 @@ A rule about runs makes the file `unreadable` when `reaches` is missing, when it
 
 `earnest tla` exports each rule about runs as a temporal property and each fair action as weak fairness, so `earnest confirm --tlc` can compare the verdicts with TLC. See [TLA+ export](/reference/tla/#rules-about-runs-and-fairness).
 
-Rust models have no rules about runs yet.
+A Rust model writes a rule about runs as a method marked `#[eventually("...")]`, and a fair action as `#[action("...", fair)]`: see [Rust models](/reference/rust/#rules-about-runs-witnesses-and-setups).
 
 ## Setups
 
@@ -126,7 +126,7 @@ export const ahead = m.setup(Clock, "The clock runs 10 ahead", { skew: 10 });
 
 A setup makes the file `unreadable` when it names no field, when it is not exported, or when it is not written as `m.setup(Model, "sentence", { field: value })`. `earnest verify` also refuses a field the model lacks, a field named twice, and a value outside the field's declaration. A witness's `setup` must be the exported constant of a setup of the same model declared above the witness.
 
-Rust models have no setups yet.
+A Rust model writes a setup as a method marked `#[setup("...")]` that gives back `Self { field: value, ..self.clone() }`: see [Rust models](/reference/rust/#rules-about-runs-witnesses-and-setups).
 
 ## What a model file may contain
 

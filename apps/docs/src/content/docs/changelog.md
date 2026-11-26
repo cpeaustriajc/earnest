@@ -5,7 +5,7 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
-## November 2026: rules about runs and setups in TypeScript models
+## November 2026: rules about runs and setups
 
 A rule says what must be true in every state. A rule about runs says that every run comes to a state: once approved, the cart offers checkout.
 
@@ -31,7 +31,7 @@ export const behind = m.setup(Clock, "The clock runs 10 behind", { skew: -10 });
 - **Witnesses:** `m.witness(Clock, "...", { setup: behind, steps, expect })` is played from the setup's start states and listed with that setup.
 - **Selecting:** `--model Clock` selects the model and its setups, and `--rule <id>` selects each result that lists the id.
 
-`earnest tla` writes each rule about runs as a temporal property, each fair action as weak fairness in `Spec`, and one module per setup. `earnest confirm --tlc` runs TLC on each rule about runs and compares the verdict. `explore` in `@earnestjs/model` judges rules about runs the same way, and takes `{ setup: behind }`. Rust models have neither yet. See [Rules about runs](/reference/typescript/#rules-about-runs) and [Setups](/reference/typescript/#setups).
+`earnest tla` writes each rule about runs as a temporal property, each fair action as weak fairness in `Spec`, and one module per setup. `earnest confirm --tlc` runs TLC on each rule about runs and compares the verdict. `explore` in `@earnestjs/model` judges rules about runs the same way, and takes `{ setup: behind }`. A Rust model writes them as methods marked `#[eventually("...")]` and `#[setup("...")]`, and a fair action as `#[action("...", fair)]`. See [Rules about runs](/reference/typescript/#rules-about-runs), [Setups](/reference/typescript/#setups) and [Rust models](/reference/rust/#rules-about-runs-witnesses-and-setups).
 
 ## November 2026: witnesses in TypeScript models
 
