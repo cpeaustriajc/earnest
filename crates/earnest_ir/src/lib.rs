@@ -457,7 +457,7 @@ pub struct Stage {
     pub refused: bool,
 }
 
-/// One way to play a [`Script`], from every start state of the model.
+/// One way to play a [`Script`], from every one of its start states.
 #[derive(Clone, Debug)]
 pub struct Plan {
     /// The values the run chose before its first step, each with its name, printed with a
@@ -465,6 +465,10 @@ pub struct Plan {
     pub chosen: Vec<(String, Value)>,
     /// A condition on the start state, before the first step. It must give a boolean.
     pub start: Option<Code>,
+    /// The states the plan starts from, each one value per field of [`Script::fields`] (or of
+    /// [`Model::fields`] when the script has none of its own). `None` starts from the start
+    /// states of whichever setup the model starts in.
+    pub starts: Option<Vec<Vec<Value>>>,
     /// The steps, first to last.
     pub steps: Vec<Stage>,
     /// Whether a branch that gets through every step breaks the plan: the run is false there.
@@ -484,6 +488,10 @@ pub struct Script {
     pub line: u32,
     /// The actions the steps take. They are the script's own, not the model's.
     pub actions: Vec<Action>,
+    /// The fields the script is played over, when they are not [`Model::fields`]: its
+    /// actions, conditions and start states read and change these, by position, and its paths
+    /// print these. Empty plays it over the model's fields.
+    pub fields: Vec<Field>,
     /// The plans. The script holds when every plan holds.
     pub plans: Vec<Plan>,
     /// How many local slots the conditions of the plans need.

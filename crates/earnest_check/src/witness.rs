@@ -1,11 +1,13 @@
 use crate::explore::{Search, Starts};
 use crate::outcome::{Change, Named, Path, RuleKind, RuleOutcome, Step, Verdict};
 use crate::picks::{combinations_of, sets_for, sets_of};
-use earnest_ir::{Action, Code, Fault, Frame, Model, Pick, Plan, Script, Witness};
+use earnest_ir::{Action, Code, Fault, Field, Frame, Model, Pick, Plan, Script, Witness};
 use earnest_value::Value;
 use rustc_hash::FxHashSet;
 
 const MOST_BRANCHES: usize = 100_000;
+const FIRST_CANNOT_HAPPEN: &str =
+    "the run's first action can't happen: it gives no state to start from";
 
 enum Ended {
     Held,
@@ -39,6 +41,8 @@ struct Leg<'a> {
 }
 
 struct Course<'a> {
+    fields: &'a [Field],
+    starts: Option<&'a [Vec<Value>]>,
     start: Option<&'a Code>,
     legs: Vec<Leg<'a>>,
     witness_expects: Option<&'a Code>,
@@ -49,6 +53,8 @@ struct Course<'a> {
 impl<'a> Course<'a> {
     fn of_witness(witness: &'a Witness, model: &'a Model) -> Self {
         Self {
+            fields: &model.fields,
+            starts: None,
             start: None,
             legs: witness
                 .steps
@@ -70,9 +76,19 @@ impl<'a> Course<'a> {
         }
     }
 
-    fn of_plan(plan: &'a Plan, script: &'a Script, picked: (&[Pick], usize)) -> Self {
+    fn of_plan(
+        plan: &'a Plan,
+        (script, model): (&'a Script, &'a Model),
+        picked: (&[Pick], usize),
+    ) -> Self {
         let (picks, number) = picked;
         Self {
+            fields: if script.fields.is_empty() {
+                &model.fields
+            } else {
+                &script.fields
+            },
+            starts: plan.starts.as_deref(),
             start: plan.start.as_ref(),
             legs: plan
                 .steps
@@ -188,13 +204,17 @@ impl Player<'_, '_> {
     }
 
     fn outside(&self, after: &[Value]) -> Option<&str> {
-        self.search
-            .model
+        self.course
             .fields
             .iter()
             .zip(after)
             .find(|(field, value)| !field.domain.contains(value))
             .map(|(field, _)| field.name.as_str())
+    }
+
+    fn taken(&self, chosen: (&Action, &[Value]), before: &[Value], after: &[Value]) -> Step {
+        self.search
+            .step_taken(chosen, self.course.fields, before, after)
     }
 
     fn walk(&mut self, done: usize, state: &[Value], path: &mut Path) -> Result<(), Stop> {
@@ -259,8 +279,7 @@ impl Player<'_, '_> {
                     }
                 };
                 happened = true;
-                path.steps
-                    .push(self.search.step_taken(action, &input, state, &after));
+                path.steps.push(self.taken((action, &input), state, &after));
                 if leg.refused {
                     return Err(Stop::Broken(
                         path.clone(),
@@ -320,10 +339,21 @@ impl Search<'_> {
         Taken::Moved(next)
     }
 
+    fn named_over(&self, fields: &[Field], state: &[Value]) -> Vec<Named> {
+        fields
+            .iter()
+            .zip(state)
+            .map(|(field, value)| Named {
+                name: field.name.clone(),
+                value: self.shown(value),
+            })
+            .collect()
+    }
+
     fn step_taken(
         &self,
-        action: &Action,
-        input: &[Value],
+        (action, input): (&Action, &[Value]),
+        fields: &[Field],
         before: &[Value],
         after: &[Value],
     ) -> Step {
@@ -339,9 +369,7 @@ impl Search<'_> {
                     value: self.shown(value),
                 })
                 .collect(),
-            changes: self
-                .model
-                .fields
+            changes: fields
                 .iter()
                 .zip(before.iter().zip(after))
                 .filter(|(_, (old, new))| old != new)
@@ -351,19 +379,24 @@ impl Search<'_> {
                     after: self.shown(new),
                 })
                 .collect(),
-            state: self.named(after),
+            state: self.named_over(fields, after),
         }
     }
 
     fn play_course(&self, course: &Course<'_>) -> Ended {
         let most = self.limits.max_states;
         let mut held = FxHashSet::default();
-        for (played, start) in Starts::of(self.model).enumerate() {
+        let starts: Box<dyn Iterator<Item = Vec<Value>>> = match course.starts {
+            Some(listed) => Box::new(listed.iter().cloned()),
+            None => Box::new(Starts::of(self.model)),
+        };
+        let mut started = false;
+        for (played, start) in starts.enumerate() {
             if played >= most {
                 return Ended::TooManyStarts;
             }
             let mut path = Path {
-                start: self.named(&start),
+                start: self.named_over(course.fields, &start),
                 steps: Vec::with_capacity(course.legs.len()),
             };
             let mut player = Player {
@@ -389,6 +422,17 @@ impl Search<'_> {
                 Err(Stop::TooManyBranches) => return Ended::TooManyBranches,
             }
             held = player.held;
+            started = true;
+        }
+        if !started
+            && course.starts.is_some()
+            && !(course.must_not_finish && course.legs.is_empty())
+        {
+            let path = Path {
+                start: Vec::new(),
+                steps: Vec::new(),
+            };
+            return Ended::Broken(path, FIRST_CANNOT_HAPPEN.to_owned());
         }
         Ended::Held
     }
@@ -396,7 +440,7 @@ impl Search<'_> {
     fn play_script(&self, number: usize, script: &Script) -> Ended {
         let picked = (self.model.runs.picks.as_slice(), number);
         for plan in &script.plans {
-            match self.play_course(&Course::of_plan(plan, script, picked)) {
+            match self.play_course(&Course::of_plan(plan, (script, self.model), picked)) {
                 Ended::Held => {}
                 Ended::Broken(path, why) if !plan.chosen.is_empty() => {
                     let chosen: Vec<String> = plan

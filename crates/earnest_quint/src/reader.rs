@@ -1,9 +1,10 @@
 use crate::builtins::{Builtin, builtin, not_read};
 use crate::data::{ANY_OTHER_TAG, TAG, VALUE, data_builtin};
 use crate::json::{Compiled, Def, Entry, Expr as Quint, Param, Scheme};
+use crate::reach::variables_reached;
 use earnest_ir::{Expr, Fault, Frame, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 pub(crate) struct Refusal {
     pub(crate) feature: String,
@@ -103,6 +104,7 @@ const ACTION_AS_A_VALUE: &str = "an action where Quint wants a value, such as an
                                  `step` or a run, of `all`, `any`, `if` or a `match`";
 const DEBUG: &str = "q::debug";
 const GENERATED: &str = "q::";
+pub(crate) const READ_BEFORE_SET: &str = "`init` reads a variable before it has a value";
 const ACTION: &str = "action";
 const LAMBDA: &str = "def";
 const OPERATOR_AS_VALUE: &str = "an operator used as a value, which the checker does not hold: \
@@ -301,6 +303,14 @@ impl<'a> Reader<'a> {
 
     pub(crate) fn type_of(&self, id: u64) -> Option<&'a Scheme> {
         self.types.get(&id.to_string())
+    }
+
+    pub(crate) fn variables_reached(&self, roots: &[&Quint]) -> BTreeSet<u64> {
+        variables_reached(self.table, &self.defs, roots)
+    }
+
+    pub(crate) fn place_fields(&mut self, fields: HashMap<u64, usize>) -> HashMap<u64, usize> {
+        std::mem::replace(&mut self.fields, fields)
     }
 
     pub(crate) fn variable_id(&self, position: usize) -> Option<u64> {
@@ -578,10 +588,7 @@ impl<'a> Reader<'a> {
         let entry = self.entry(id, name)?;
         match entry.kind.as_str() {
             "var" => match self.fields.get(&entry.id) {
-                Some(_) if self.in_init => self.refuse(
-                    &format!("`{name}`"),
-                    "`init` reads a variable before it has a value",
-                ),
+                Some(_) if self.in_init => self.refuse(&format!("`{name}`"), READ_BEFORE_SET),
                 Some(position) => Ok(Expr::Field(*position)),
                 None => self.refuse(&format!("`{name}`"), "an unknown variable"),
             },
