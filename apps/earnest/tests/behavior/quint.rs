@@ -120,21 +120,21 @@ fn a_state_with_no_next_action_is_not_reported_stuck() {
 }
 
 #[test]
-fn a_record_variable_makes_the_file_unreadable_and_names_the_construct() {
+fn a_record_variable_is_read_and_its_unbounded_count_runs_into_the_state_limit() {
     let sandbox = with_compiled(&["record"]);
-    let run = verify(&sandbox, "record", &[]);
+    let run = verify(&sandbox, "record", &["--max-states", "100"]);
     run.exits(1);
     assert!(
-        run.stdout.starts_with("unreadable"),
-        "a construct the reader does not take is never skipped\n{run}"
+        run.stdout.starts_with("unfinished"),
+        "r.n grows without end, so the search stops at the limit\n{run}"
     );
     assert!(
-        run.stdout.contains("`var r`") && run.stdout.contains("records"),
-        "the problem names the variable and what it holds\n{run}"
+        run.stdout.contains("state limit of 100"),
+        "the line says which limit stopped it\n{run}"
     );
     assert!(
-        run.stdout.contains("in the definition `step`"),
-        "the problem names the definition the construct is in\n{run}"
+        !run.stdout.contains("`var r`"),
+        "slice 2 reads a record variable instead of refusing it\n{run}"
     );
 }
 
