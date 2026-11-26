@@ -1,0 +1,582 @@
+#![cfg(unix)]
+
+use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::json;
+
+use crate::support::{Run, Sandbox, fields, repository};
+
+const FAKE: &str = r#"#!/bin/sh
+PATH=/usr/bin:/bin
+here="$(dirname "$(readlink -f "$0")")"
+echo "$*" >> "$here/calls"
+if [ "$1" = "--version" ]; then echo "0.33.1"; exit 0; fi
+named=""
+out=""
+map=""
+previous=""
+file=""
+for argument in "$@"; do
+  case "$previous" in
+    --out) out="$argument" ;;
+    --source-map) map="$argument" ;;
+    --main|--init|--step|--invariant|--temporal) named="$named $previous=$argument" ;;
+  esac
+  previous="$argument"
+  file="$argument"
+done
+case "$1" in
+  parse|typecheck) file="$2" ;;
+esac
+folder="$(cd "$(dirname "$file")" && pwd -P)"
+key="$( {
+  echo "$1$named $(basename "$file")"
+  for each in "$folder"/*.qnt; do basename "$each"; cat "$each"; done
+} | /usr/bin/sha256sum | /usr/bin/cut -c1-16)"
+fixtures="$here/fixtures"
+if [ ! -f "$fixtures/$key.code" ] && [ -n "$EARNEST_FAKE_RECORD" ]; then
+  fixtures="$EARNEST_FAKE_RECORD"
+  said="$(mktemp)"
+  PATH="$EARNEST_FAKE_PATH" "$EARNEST_FAKE_REAL" "$@" > "$said"
+  echo "$?" > "$fixtures/$key.code"
+  sed "s#$folder#@FOLDER@#g" "$said" > "$fixtures/$key.stdout"
+  rm -f "$said"
+  if [ -n "$out" ] && [ -f "$out" ]; then sed "s#$folder#@FOLDER@#g" "$out" > "$fixtures/$key.out"; fi
+  if [ -n "$map" ] && [ -f "$map" ]; then sed "s#$folder#@FOLDER@#g" "$map" > "$fixtures/$key.map"; fi
+fi
+if [ ! -f "$fixtures/$key.code" ]; then
+  echo "no fixture $key for quint $*" >&2
+  exit 1
+fi
+if [ -n "$out" ] && [ -f "$fixtures/$key.out" ]; then sed "s#@FOLDER@#$folder#g" "$fixtures/$key.out" > "$out"; fi
+if [ -n "$map" ] && [ -f "$fixtures/$key.map" ]; then sed "s#@FOLDER@#$folder#g" "$fixtures/$key.map" > "$map"; fi
+sed "s#@FOLDER@#$folder#g" "$fixtures/$key.stdout"
+exit "$(cat "$fixtures/$key.code")"
+"#;
+
+const HEADER: &str = "rule changes since HEAD";
+const CLOCK: &str = "specs/clock.qnt";
+const REPOSITORY: &str = "repo";
+
+fn changes_folder() -> PathBuf {
+    repository().join("tasks/quint/changes")
+}
+
+fn original(name: &str) -> String {
+    let path = changes_folder().join(name);
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+}
+
+fn which(program: &str) -> PathBuf {
+    let listed = std::env::var_os("PATH").expect("the tests run with a `PATH`");
+    std::env::split_paths(&listed)
+        .map(|folder| folder.join(program))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| panic!("`{program}` is on the `PATH`"))
+}
+
+struct Repo {
+    sandbox: Sandbox,
+}
+
+impl Repo {
+    fn committed(files: &[(&str, &str)]) -> Self {
+        let sandbox = Sandbox::empty();
+        sandbox.write("fake/quint", FAKE);
+        fs::set_permissions(
+            sandbox.path().join("fake/quint"),
+            fs::Permissions::from_mode(0o755),
+        )
+        .expect("the fake can be made a program");
+        for entry in fs::read_dir(changes_folder().join("fixtures"))
+            .expect("the recorded answers of `quint` can be listed")
+            .filter_map(Result::ok)
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let text = fs::read_to_string(entry.path()).expect("a fixture is text");
+            sandbox.write(&format!("fake/fixtures/{name}"), &text);
+        }
+        sandbox.write("fake/calls", "");
+        fs::create_dir_all(sandbox.path().join("programs")).expect("a folder can be made");
+        symlink(which("git"), sandbox.path().join("programs/git")).expect("a link can be made");
+        let repo = Self { sandbox };
+        fs::create_dir_all(repo.root()).expect("the repository's folder can be made");
+        for (relative, text) in files {
+            repo.write(relative, text);
+        }
+        repo.git(&["init", "--quiet"]);
+        repo.write(".gitignore", ".earnest/\n");
+        repo.git(&["add", "--all"]);
+        repo.git(&["commit", "--quiet", "--allow-empty", "--message", "base"]);
+        repo
+    }
+
+    fn root(&self) -> PathBuf {
+        self.sandbox.path().join(REPOSITORY)
+    }
+
+    fn git(&self, arguments: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(self.root())
+            .args(["-c", "user.name=Conformance"])
+            .args(["-c", "user.email=conformance@earnest.invalid"])
+            .args(["-c", "commit.gpgsign=false"])
+            .args(["-c", "init.defaultBranch=main"])
+            .args(arguments)
+            .output()
+            .expect("`git` is on the `PATH`");
+        assert!(
+            output.status.success(),
+            "git {arguments:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn write(&self, relative: &str, text: &str) {
+        self.sandbox
+            .write(&format!("{REPOSITORY}/{relative}"), text);
+    }
+
+    fn read(&self, relative: &str) -> String {
+        self.sandbox.read(&format!("{REPOSITORY}/{relative}"))
+    }
+
+    fn edit(&self, relative: &str, from: &str, to: &str) {
+        let text = self.read(relative);
+        assert!(text.contains(from), "{relative} holds {from:?}");
+        self.write(relative, &text.replacen(from, to, 1));
+    }
+
+    fn remove(&self, relative: &str) {
+        fs::remove_file(self.root().join(relative)).expect("a file can be deleted");
+    }
+
+    fn run(&self, arguments: &[&str], quint: &Path) -> Run {
+        let fake_path = std::env::var_os("PATH").unwrap_or_default();
+        Run::of(
+            self.sandbox
+                .command()
+                .current_dir(self.root())
+                .env("EARNEST_QUINT", quint)
+                .env("EARNEST_FAKE_PATH", fake_path)
+                .env("PATH", self.sandbox.path().join("programs"))
+                .args(arguments),
+        )
+    }
+
+    fn earnest(&self, arguments: &[&str]) -> Run {
+        self.run(arguments, &self.sandbox.path().join("fake/quint"))
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.sandbox
+            .read("fake/calls")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn base_parses(&self) -> usize {
+        self.calls()
+            .iter()
+            .filter(|call| call.starts_with("parse") && call.contains("/.earnest/quint/base-"))
+            .count()
+    }
+}
+
+fn with_clock() -> Repo {
+    Repo::committed(&[(CLOCK, &original("clock.qnt"))])
+}
+
+fn section(run: &Run) -> Vec<Vec<String>> {
+    run.stdout
+        .lines()
+        .skip_while(|line| line.trim() != HEADER)
+        .skip(1)
+        .take_while(|line| line.starts_with(char::is_whitespace))
+        .map(fields)
+        .collect()
+}
+
+fn heads(run: &Run) -> Vec<(String, String)> {
+    section(run)
+        .into_iter()
+        .filter(|line| {
+            line.first()
+                .is_some_and(|word| word != "was" && word != "now")
+        })
+        .map(|line| (line[0].clone(), line[1].clone()))
+        .collect()
+}
+
+fn listed(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(change, rule)| ((*change).to_owned(), (*rule).to_owned()))
+        .collect()
+}
+
+const SMALL_RULES: [&str; 5] = [
+    "Small.inRange",
+    "Small.belowLimit",
+    "Small.atTop",
+    "Small.alwaysInRange",
+    "Small.tickTest (witness)",
+];
+
+const LARGE_RULES: [&str; 6] = [
+    "Large.inRange",
+    "Large.belowLimit",
+    "Large.atTop",
+    "Large.belowSix",
+    "Large.alwaysInRange",
+    "Large.tickTest (witness)",
+];
+
+fn every(change: &str) -> Vec<(String, String)> {
+    SMALL_RULES
+        .iter()
+        .chain(&LARGE_RULES)
+        .map(|rule| (change.to_owned(), (*rule).to_owned()))
+        .collect()
+}
+
+#[test]
+fn a_quint_file_the_base_does_not_have_lists_every_rule_and_run_of_its_checks_as_added() {
+    let repo = Repo::committed(&[]);
+    repo.write(CLOCK, &original("clock.qnt"));
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(heads(&run), every("added"), "{run}");
+    assert!(
+        run.stdout.contains(
+            "  added      Small.inRange  \"The time stays between zero and the limit.\"  \
+             specs/clock.qnt\n"
+        ),
+        "the line of an added rule, as a native model's added rule has it\n{run}"
+    );
+    assert!(
+        section(&run)
+            .iter()
+            .any(|line| line[..2] == ["added", "Small.tickTest (witness)"]),
+        "a run is listed as a witness, as the results list it\n{run}"
+    );
+    assert_eq!(repo.base_parses(), 0, "the base has no file to read");
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(
+        json["ruleChanges"][0],
+        json!({
+            "file": "specs/clock.qnt",
+            "model": "Small",
+            "id": "inRange",
+            "change": "added",
+            "was": null,
+            "now": {
+                "says": "The time stays between zero and the limit.",
+                "holds": "time >= 0 and time <= top",
+            },
+        })
+    );
+    assert_eq!(
+        json["ruleChanges"][4]["kind"], "witness",
+        "{}",
+        json["ruleChanges"]
+    );
+    assert_eq!(
+        json["ruleChanges"][2]["now"]["holds"], "reachable: time == Limit",
+        "the mark is part of what the rule says"
+    );
+    let report = repo.earnest(&["report", "--base", "HEAD"]);
+    report.exits(0);
+    assert!(
+        report.stdout.contains("## Rule changes")
+            && report.stdout.contains(
+                "  added      Large.belowSix  \"The Quint invariant `belowSix` holds\"  \
+                 specs/clock.qnt\n"
+            ),
+        "the report lists them too, a rule with no sentence by the sentence the results give \
+         it\n{report}"
+    );
+}
+
+#[test]
+fn a_quint_file_deleted_since_the_base_lists_the_rules_of_its_checks_as_removed() {
+    let repo = with_clock();
+    repo.remove(CLOCK);
+    repo.write("specs/lamp.qnt", &original("lamp.qnt"));
+    repo.write("specs/switch.qnt", &original("switch.qnt"));
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    let mut expected = listed(&[("added", "lamp.litOrDark")]);
+    expected.extend(every("removed"));
+    assert_eq!(heads(&run), expected, "{run}");
+}
+
+#[test]
+fn a_rule_is_added_removed_reworded_or_changed_by_name_within_its_check() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "  val belowSix",
+        "  /// @check\n  val fresh = time >= 0\n  val belowSix",
+    );
+    repo.edit(
+        CLOCK,
+        "  /// @check\n  /// The time is in range in every state of every run.\n",
+        "  /// The time is in range in every state of every run.\n",
+    );
+    repo.edit(
+        CLOCK,
+        "The clock shows the limit.",
+        "The clock shows its limit.",
+    );
+    repo.edit(
+        CLOCK,
+        "val belowLimit = time < Limit",
+        "val belowLimit = time <= Limit",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
+    run.exits(1);
+    assert_eq!(
+        heads(&run),
+        listed(&[
+            ("changed", "Small.belowLimit"),
+            ("reworded", "Small.atTop"),
+            ("added", "Small.fresh"),
+            ("removed", "Small.alwaysInRange"),
+        ]),
+        "the rules the check has now in its order, then the one it lost\n{run}"
+    );
+    let lines = section(&run);
+    assert_eq!(
+        lines[1..3],
+        [
+            fields(
+                "    was  \"The time reaches the limit, so it is not always below it.\"  broken: \
+                 time < Limit"
+            ),
+            fields(
+                "    now  \"The time reaches the limit, so it is not always below it.\"  broken: \
+                 time <= Limit"
+            ),
+        ],
+        "{run}"
+    );
+    assert_eq!(repo.base_parses(), 1, "{:?}", repo.calls());
+}
+
+#[test]
+fn a_reformatted_file_or_a_changed_helper_under_a_rule_lists_nothing() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "val inRange = time >= 0 and time <= top",
+        "val inRange =\n    time >= 0\n    and time <= top",
+    );
+    repo.edit(CLOCK, "  run tickTest", "\n\n  run   tickTest");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(section(&run), [fields("  none")], "{run}");
+    repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(
+        section(&run),
+        [fields("  none")],
+        "a part is listed when what it says changed, not when the model under it did\n{run}"
+    );
+}
+
+#[test]
+fn a_property_marked_broken_since_the_base_is_changed() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "  /// @check\n  /// The time stays",
+        "  /// @check broken\n  /// The time stays",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
+    assert_eq!(
+        heads(&run),
+        listed(&[("changed", "Small.inRange")]),
+        "{run}"
+    );
+    assert_eq!(
+        section(&run)[2],
+        fields(
+            "    now  \"The time stays between zero and the limit.\"  broken: time >= 0 and time <= \
+             top"
+        ),
+        "{run}"
+    );
+}
+
+fn warned_and_not_listed(run: &Run, file: &str) {
+    assert!(
+        run.stderr.contains(&format!(
+            "warning: {file} is unreadable at HEAD, so its rule changes are not listed"
+        )),
+        "{run}"
+    );
+}
+
+#[test]
+fn a_base_that_does_not_parse_is_warned_of() {
+    let repo = Repo::committed(&[(CLOCK, "module Clock {\n")]);
+    repo.write(CLOCK, &original("clock.qnt"));
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    warned_and_not_listed(&run, CLOCK);
+    assert_eq!(section(&run), [fields("  none")], "{run}");
+}
+
+#[test]
+fn a_base_whose_checks_a_checks_file_lists_is_warned_of() {
+    let repo = Repo::committed(&[
+        (CLOCK, &original("clock.qnt")),
+        ("specs/earnest.quint.json", "[]\n"),
+    ]);
+    repo.remove("specs/earnest.quint.json");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    warned_and_not_listed(&run, CLOCK);
+    assert_eq!(repo.base_parses(), 0, "{:?}", repo.calls());
+}
+
+#[test]
+fn a_base_is_warned_of_when_quint_is_not_installed() {
+    let repo = with_clock();
+    repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
+    let run = repo.run(
+        &["verify", "--base", "HEAD"],
+        &repo.sandbox.path().join("nowhere/quint"),
+    );
+    warned_and_not_listed(&run, CLOCK);
+}
+
+#[test]
+fn a_changed_property_of_an_imported_file_is_listed_under_the_check_that_judges_it() {
+    let repo = Repo::committed(&[
+        ("specs/lamp.qnt", &original("lamp.qnt")),
+        ("specs/switch.qnt", &original("switch.qnt")),
+    ]);
+    repo.edit("specs/switch.qnt", "not(on)", "if (on) false else true");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(section(&run), [fields("  none")], "a helper changed\n{run}");
+    repo.edit("specs/switch.qnt", "lit or not(lit)", "not(lit) or lit");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(
+        heads(&run),
+        listed(&[("changed", "lamp.litOrDark")]),
+        "`lamp.qnt` is as the base has it, and the file it imports is not\n{run}"
+    );
+}
+
+#[test]
+fn model_and_rule_narrow_the_quint_changes() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "The clock shows the limit.",
+        "The clock shows its limit.",
+    );
+    repo.edit(CLOCK, "val belowSix = time < 6", "val belowSix = time < 7");
+    let large = repo.earnest(&["verify", "--base", "HEAD", "--model", "Large"]);
+    assert_eq!(
+        heads(&large),
+        listed(&[("reworded", "Large.atTop"), ("changed", "Large.belowSix")]),
+        "{large}"
+    );
+    let rule = repo.earnest(&["verify", "--base", "HEAD", "--rule", "belowSix"]);
+    assert_eq!(
+        heads(&rule),
+        listed(&[("reworded", "Large.atTop"), ("changed", "Large.belowSix")]),
+        "only `Large` judges `belowSix`, and it is listed whole, as a native model is\n{rule}"
+    );
+    let every = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        heads(&every),
+        listed(&[
+            ("reworded", "Small.atTop"),
+            ("reworded", "Large.atTop"),
+            ("changed", "Large.belowSix"),
+        ]),
+        "{every}"
+    );
+}
+
+#[test]
+fn a_folder_with_native_and_quint_models_lists_the_changes_of_both() {
+    let counter = repository().join("tasks/conformance/models/counter.model.ts");
+    let counter = fs::read_to_string(&counter).expect("the fixture can be read");
+    let repo = Repo::committed(&[("specs/counter.model.ts", &counter)]);
+    repo.write(CLOCK, &original("clock.qnt"));
+    repo.edit(
+        "specs/counter.model.ts",
+        "The count is never above three",
+        "The count stays at most three",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    let mut expected = listed(&[("reworded", "Counter.bounded")]);
+    expected.extend(every("added"));
+    assert_eq!(heads(&run), expected, "{run}");
+}
+
+#[test]
+fn a_file_as_the_base_has_it_starts_no_quint_for_the_base() {
+    let repo = with_clock();
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(section(&run), [fields("  none")], "{run}");
+    assert_eq!(repo.base_parses(), 0, "{:?}", repo.calls());
+    repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
+    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
+    assert_eq!(repo.base_parses(), 1, "{:?}", repo.calls());
+    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
+    assert_eq!(
+        repo.base_parses(),
+        1,
+        "the base's parse is kept in the cache: {:?}",
+        repo.calls()
+    );
+}
+
+#[test]
+fn a_folder_with_no_quint_file_gives_the_json_it_gave_before() {
+    let counter = repository().join("tasks/conformance/models/counter.model.ts");
+    let counter = fs::read_to_string(&counter).expect("the fixture can be read");
+    let repo = Repo::committed(&[]);
+    repo.write("counter.model.ts", &counter);
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--json"]);
+    run.exits(0);
+    assert_eq!(
+        run.json()["ruleChanges"],
+        json!([
+            {
+                "file": "counter.model.ts",
+                "model": "Counter",
+                "id": "bounded",
+                "change": "added",
+                "was": null,
+                "now": { "says": "The count is never above three", "holds": "s.count <= 3" },
+            },
+            {
+                "file": "counter.model.ts",
+                "model": "Counter",
+                "id": "even",
+                "change": "added",
+                "was": null,
+                "now": { "says": "Twice the count is even", "holds": "m.rem(s.count * 2, 2) === 0" },
+            },
+        ]),
+        "{run}"
+    );
+    assert!(repo.calls().is_empty(), "{:?}", repo.calls());
+}
