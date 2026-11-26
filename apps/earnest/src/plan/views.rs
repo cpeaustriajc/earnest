@@ -5,7 +5,7 @@ use super::{
 use crate::marks::Doc;
 use crate::places::Marked;
 use crate::view_marks::{
-    Part, ViewMark, no_label, read_views, second_view, two_views, unspaced_view,
+    Part, ViewMark, def_label, no_label, read_views, second_view, two_views, unspaced_view,
     unspaced_view_mark, view_on_module, view_unseen,
 };
 use earnest_diagnostics::{Place, Problem};
@@ -60,11 +60,14 @@ impl Viewing {
     }
 }
 
+const DEFS: [&str; 2] = ["def", "puredef"];
+const A_DEF: &str = "a `def`";
+
 fn not_a_label(locator: &Placer<'_>, id: u64) -> Option<&'static str> {
     let places = locator.places;
     match places.qualifier_of(id) {
         Some(qualifier) if VALUES.contains(&qualifier) && places.kind_of(id) == Some("def") => {
-            what_is(places, id)
+            what_is(places, id).or_else(|| DEFS.contains(&qualifier).then_some(A_DEF))
         }
         Some(TEMPORAL) if places.kind_of(id) == Some("def") => Some("a `temporal` definition"),
         Some(RUN) if places.kind_of(id) == Some("def") => Some("a `run`"),
@@ -103,7 +106,12 @@ fn mark_problems(locator: &Placer<'_>, each: &Marked<'_>, marks: &[ViewMark]) ->
     }) = marks.first()
         && let Some(what) = not_a_label(locator, each.id)
     {
-        found.push(at(*line, &no_label(&each.name, what, *part)));
+        let message = if what == A_DEF {
+            def_label(&each.name, *part)
+        } else {
+            no_label(&each.name, what, *part)
+        };
+        found.push(at(*line, &message));
     }
     found
 }

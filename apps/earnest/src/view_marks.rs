@@ -112,6 +112,14 @@ pub(crate) fn no_label(name: &str, what: &str, part: Part) -> String {
     )
 }
 
+pub(crate) fn def_label(name: &str, part: Part) -> String {
+    format!(
+        "`{name}` is declared with `def`, and a chart label is a `val`: write `val {name} = ...` \
+         and mark it `/// {VIEW} {}`",
+        part.word()
+    )
+}
+
 pub(crate) fn second_view() -> String {
     format!(
         "the doc comment holds a second `{VIEW}` mark: a `val` gives one label, so mark it \

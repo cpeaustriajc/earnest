@@ -26,7 +26,7 @@ use std::time::UNIX_EPOCH;
 
 mod labels;
 
-use labels::{at_marks, labelled, without_labels};
+use labels::{at_marks, blamed, label_unbuilt, labelled, without_labels};
 
 const PROGRAM_VARIABLE: &str = "EARNEST_QUINT";
 const PROGRAM: &str = "quint";
@@ -655,14 +655,22 @@ fn builds(found: &Places, job: &Job) -> bool {
         || found.imports_whole(main)
 }
 
-fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<String> {
-    let check = &labelled(job);
-    typechecked?.setup(&Setup::new(
-        &check.main,
-        (&check.init, &check.step),
-        (&check.invariants, &check.temporal),
-        &check.runs,
-    ))
+fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<Result<String, Problem>> {
+    let built = |check: &Check| {
+        typechecked?.setup(&Setup::new(
+            &check.main,
+            (&check.init, &check.step),
+            (&check.invariants, &check.temporal),
+            &check.runs,
+        ))
+    };
+    match built(&labelled(job)) {
+        Some(json) => Some(Ok(json)),
+        None if job.labels.names().next().is_some() => {
+            built(&job.check).map(|_| Err(label_unbuilt(job)))
+        }
+        None => None,
+    }
 }
 
 fn fingerprint_files(paths: &[&str]) -> u64 {
@@ -1098,7 +1106,7 @@ fn compiled_all(
                     .is_some_and(|found| builds(found, job))
             }),
         ) {
-            Some(json) => (Some(Ok(json)), true),
+            Some(json) => (Some(json), true),
             None => (
                 lacks_a_search(&job.check, places.get(&job.real))
                     .then(|| compiled_for_runs(job, places.get(&job.real))),
@@ -1107,7 +1115,7 @@ fn compiled_all(
         },
     });
     let (built, from_typecheck): (Vec<_>, Vec<bool>) = built.into_iter().unzip();
-    compiled_once(checks, built, jobs)
+    blamed(checks, compiled_once(checks, built, jobs))
         .into_iter()
         .zip(from_typecheck)
         .map(|(compiled, from)| compiled.map(|json| (json, from)))
