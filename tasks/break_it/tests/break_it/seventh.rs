@@ -160,8 +160,7 @@ fn two_models_of_one_name_on_one_line_keep_their_own_cached_results() {
         let json = ran.json();
         let statuses: Vec<&Value> = json["models"]
             .as_array()
-            .map(|models| models.iter().map(|model| &model["status"]).collect())
-            .unwrap_or_default();
+            .map_or_default(|models| models.iter().map(|model| &model["status"]).collect());
         assert!(
             ran.code == Some(1) && statuses == ["pass", "fail"],
             "`A` and `B` are both named `Jar` and declared on line 3: `A` passes with 3 states \
