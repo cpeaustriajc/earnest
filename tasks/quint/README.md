@@ -4080,3 +4080,276 @@ The checks-file slice (#69), on its tree merged with the integration head `05838
   and `clock.model.ts`, which `origin/main` reports `unreadable` (`m.eventually`, `m.setup`).
 - `tests_kept.py --base origin/main`: `tests kept: 1693 tests, 4897 assertions (base: 1304,
   3798)`.
+
+## Real project 5 (#71): a spec that imports, `assume`, and shorter paths
+
+The second adversarial pass wrote a model as a project writes one (a types module, a spec with
+constants, setups) and found the spec compiled once per setup, its runs not played, `assume`
+refused at line 1 when checked directly and dropped without a word in a setup, and long
+messages and paths. Quint 0.33.1 from npm in a scratch folder, Node 22, 4 cores.
+
+### What Quint does [ran; read `flattening/fullFlattener.js`, `flattener.js`, `instanceFlattener.js`]
+
+- `flattenModules` flattens the modules in order. For an instance, `instanceFlattener` copies the
+  spec's declarations as they were before flattening, with every name prefixed by the instance's
+  namespace and fresh ids; its imports are kept and flattened after, so a definition the spec
+  imports (`import Helpers.*`, a constructor of `import types.*`) lands in the instance's
+  namespace: `two::doors::closed`, `Star::SpecStar::quad`, `Star::SpecStar::Down`, with fresh ids.
+  A helper of a helper (`Helpers` imports `Lib.*`) is reached the same way (`Star::SpecStar::twice`).
+  The setup's own `import Helpers.*` keeps the bare names and Quint's ids (`twice`, `quad`).
+- Quint 0.33.1 can't compile a spec that imports under a name and is instantiated: `import Lib as L`
+  gives `Internal error while flattening [QNT404] Name 'S::Spec::L::twice' not found`, and one
+  module of a file that imports a helper chain under a name (`import Helpers as H`, `Helpers`
+  imports `Lib.*`) breaks every compile of the file (`Name 'twice' not found`). `quint test`
+  plays both.
+- A plain import's own `.*` imports are copied bare or under the import's name (`H::twice`), with
+  Quint's ids (`first/fixtures/Plain.PlainNested.json`).
+- `assume`: `quint typecheck` takes a false one; `quint test` and `quint run` ignore it; `quint
+  verify --backend tlc` on a module checked directly stops with `Assumption line 14, col 21 to
+  line 14, col 25 of module Direct is false.`; `quint compile` of a setup drops the spec's
+  assumptions (they are not reached), so `quint verify --main Bad` with `N = 0` is `[ok]`.
+
+### earnest
+
+- **Built from the typecheck** (`crates/earnest_quint/src/setup.rs`): an instantiated spec may
+  import whole modules of definitions and types (`.*` or `as A`, any file, any depth). Their
+  definitions join the instance's, under `<setup>::<instance>::<alias>::<name>`, and are reached
+  only through the spec; `init`, `step`, the properties and the runs are looked up among the
+  spec's own. A module copied in more than one place (the spec and the setup, two specs) gets
+  fresh ids in each instance that copies it, the rest keeps Quint's ids, so places through the
+  source map stay. A plain import's `.*` imports are taken too: `PlainNested` is built.
+- **Still compiled**: one name imported alone into a spec (`import Lib.twice`), a spec that
+  imports a module with variables, a setup that imports one module both whole and under a name
+  (`imports/compiled.qnt`), an instance of an instance (`setups/compiled.qnt`'s `Nested`), and a
+  helper imported under a name inside a plain import. Their imported runs are not played, and
+  the #70 note names them.
+- **`assume`**: read as Quint's TLC run reads it in a module it checks, in both places: worked out
+  from the constants when the file is read; a false one is `unreadable` at the assumption
+  (``the assumption `Positive` is false, so no state is checked. Quint's TLC run (`quint verify
+  --backend tlc`) stops on a false assumption of the module it checks; `quint test` and `quint
+  run` do not check it. Make it true, in a setup by giving the constants other values``). The
+  builder keeps the spec's and the setup's assumptions that `quint compile` drops. Decided
+  against ignoring it: Quint's own tools disagree, and a setup with a false assumption is a
+  mistake the owner wants to see.
+- **Short names in messages**: `refuse` and the fairness message name a definition by the
+  shortest ending no other declaration of the module has (``in the definition `picked` ``,
+  not `Few::C::picked`), worked out only when a message is written.
+- **A `match` branch** is `deliver Request`, `deliver _` (the path's branch tags, outer first,
+  up to the innermost named action); a repeat keeps `#n`. The export spells it
+  `Action_deliver_Request`. Fairness goes by the action's name, so `weakFair(deliver, vars)` is
+  unchanged.
+- **A path step** in Quint notation (`earnest_chart::path_lines_in`, `detail_lines_in`, called by
+  the CLI with the model's notation) prints at most three changed parts of a map, record, set or
+  list when that is shorter than the whole change: `balances.get("ann"): 3 -> 4`,
+  `peers.get("a").status: "idle" -> "waiting"`, `seen: + 4`, `queue: + 3 at the end`,
+  `net: - Request("a") at the head`, `queue[2]: 5 -> 6`. A change from or to an empty value
+  prints whole. The parts are found in the printed text, which Quint's notation makes
+  unambiguous; earnest's own notation is never split. `start`/`end` and the JSON keep whole
+  values. The Markdown report keeps whole values.
+- **Left over from #66**: a run whose first action can't happen prints `start  no state: the
+  first action gives none`; a fault while working out its start states names the action
+  (``a value `seed` gives takes a division ...``).
+- **Small ones**: a literal between 2^63 and 2^64 is shown as written. `fieldNames` of an open
+  record already said what to write. Not done: the `getOnlyElement` fault still does not name
+  the operator; it is read as a map lookup, and naming it needs its own operator or fault in
+  `earnest_ir`, which is search code under the budgets.
+
+### The sample, `imports/`
+
+`types.qnt`, `lib.qnt` (imports `types`), `doors.qnt` (constants `NODES`, `LIMIT`, imports both;
+a `match` action, an invariant broken in one setup, a temporal property, three runs),
+`setups.qnt` (`two` and `three` with `.*`, `named` with `as D` and an own run named like the
+spec's, `scenarios`, runs only), `star.qnt` (`Star`; `Both`: two specs that import the same
+helpers), `as.qnt` (`As`: the spec with `import Kinds as T`, `import Helpers as H`),
+`compiled.qnt` (the shapes left to compile), `assume.qnt`, `printing.qnt`, `short.qnt`, `big.qnt`.
+
+| Check | `quint verify --backend tlc` | `quint test` | earnest |
+|---|---|---|---|
+| `two` | 57 states, `neverAllOpen` violated after 4 steps, `drains` holds | `openTest`, `pingTest`, `bothOpenTest` ok, `overTest` failed | the same, built |
+| `three` | 764 states, holds | `overTest` failed | the same, built |
+| `named` | 25 states, holds | `pingTest` and `named::D::pingTest` ok, `overTest` failed | `pingTest`, `D::pingTest`, built |
+| `scenarios` | (runs only) | `sendTest`, `closeTest` ok, `overTest` failed | the same, `0 states`, built |
+| `Star` | 16 states, `noDownAtTop` violated after 4 steps | 2 ok | the same, built |
+| `Both` | 40 states, `tagged` violated after 2 steps | 4 ok | the same, built |
+| `As` | (Quint can't compile it) | 2 ok | as `Star` |
+| `Direct`, `Bad` (`assume.qnt`) | `Assumption ... is false`; `Bad` `[ok]` (dropped) | ok | both `unreadable` at the assumption |
+| `Good` | 3 states | ok | 3 states, built |
+
+Run by the orchestrator (this session's permissions refused running TLC's jar): `earnest verify`
+on `tasks/quint/imports` gives As 16, two 57, three 764, named 25, scenarios 0, Star 16, Both 40
+states in 2.2 s cold, and `earnest confirm --tlc target/tools/tla2tools.jar .` says `same` on all
+seven.
+
+One `earnest verify` of the folder starts `quint --version`, one `parse` per file and one
+`typecheck` per file with a setup, and no `compile`. The second pass's project
+(`tasks/break_it/models/quint_second/project`): one parse and one typecheck, no compile, 2.4 s
+(7.8 s with three Node starts before), the same five state counts.
+
+Tests: `quint_imports::a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_flattens`
+(status, states, reason and every rule with its path against the compiled fixtures, and the
+counts against TLC), `quint_imports::the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_them`,
+`quint_imports::a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike`,
+`quint_imports::a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes`;
+`setup_tests::a_spec_that_imports_a_name_alone_or_a_module_with_variables_is_left_to_quint_compile`,
+`setup_tests::a_definition_imported_into_a_spec_is_named_in_the_instance_with_its_alias`,
+`setup_tests::a_refusal_in_a_setup_names_the_definition_by_its_short_name`,
+`setup_tests::a_literal_past_two_to_the_63_is_shown_in_its_refusal_as_written`; `parts::tests`.
+
+### Tests of earlier slices changed (none is on `origin/main`)
+
+- `quint_first::a_module_of_runs_only_plays_the_runs_of_a_module_it_imports_plainly`: it
+  asserted that `PlainNested` is compiled; now nothing is.
+- `actions_tests::each_branch_of_a_match_of_actions_is_an_action_and_each_branch_in_init_a_start`:
+  `follow#2`, `turn#3` are now `follow Jump`, `turn Idle`.
+
+## Confirm with Quint (#73): what is checked
+
+`earnest confirm --quint` runs `quint verify --backend tlc` and `quint test --backend typescript`
+on each check and compares the state count, each property's verdict and each run's verdict.
+Quint `0.33.1` from npm, Apalache `0.62.4` (downloaded by Quint on its first `verify`), Java 21,
+4 cores. `quint test`'s default Rust backend could not be fetched here (GitHub `Forbidden`), so
+earnest passes `--backend typescript`.
+
+### What Quint does [ran]
+
+- `quint verify --backend tlc` prints TLC's own lines, among them `29 states generated, 16
+  distinct states found, 0 states left on queue.`, then `[ok] No violation found (1008ms).` and
+  exit 0, or `[violation] Found an issue` and exit 1. It runs TLC with `-deadlock` and without
+  `-continue`, so a run with a violation stops early and its count is not the whole model's.
+- With several invariants TLC reports `Invariant q_inv is violated`, the `and` of all of them.
+  `--invariants a b` (as against `--invariant a,b`) does not name the broken one with TLC either.
+  So earnest runs one job with every property and, only when it finds a violation, one job per
+  property. `--invariants` takes each invariant as one argument, so an expression with a comma
+  is passed whole.
+- Quint writes `_apalache-out/` into its working folder: earnest starts it in
+  `.earnest/confirm/quint/` with the absolute path of the `.qnt` file. The Apalache server it
+  starts on port 8822 is stopped when it ends, and two at once would clash, so jobs run one at
+  a time.
+- `quint test` prints `ok NAME passed N test(s)` and `K) NAME failed after N test(s)`. `N` is `1`
+  for a run with no random choice, and up to 10000 for one with a choice: so a run the checker
+  breaks and Quint passes after one sample differs, and after more it is `cannot`.
+- `quint test` names a run `Small::Clock::tickTwice` where earnest says `tickTwice`, and a run
+  of an exported instance twice: `Exported::B::upTest` and `upTest`.
+- `quint test --backend typescript` gives `range(3, 1).length() == 0` false (sample
+  `confirm.qnt`, module `ranges`): `1) emptyTest failed after 1 test(s)`.
+
+### The run over the samples [ran]
+
+Commands, from `tasks/quint`, with `EARNEST_QUINT` pointing at Quint `0.33.1` and a fresh
+`.earnest`:
+
+```sh
+earnest confirm --quint first
+earnest confirm --quint imports
+earnest confirm --quint setups
+earnest confirm --quint confirm
+```
+
+What they printed (the lines of the two checks that are `unreadable` by design, `Unset` and
+`Single`, are cut, and the four repeats of Quint's `Name 'twice' not found` are shown once):
+
+```text
+== earnest confirm --quint first
+cannot   FirstSteps  4 states  fail  (Quint)
+  states: the checker found 4, `quint verify` gave no count
+    Quint can't confirm this: Quint stopped: current state is not a legal state
+  property bounded: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: current state is not a legal state
+same     OnlyRuns  0 states  fail  (Quint)
+same     RunFromHelper  0 states  pass  (Quint)
+same     TwoInstances  0 states  pass  (Quint)
+unreadable  first/Unset.qnt  Unset
+exit 1
+== earnest confirm --quint imports
+cannot   As  16 states  fail  (Quint)
+  states: the checker found 16, `quint verify` gave no count
+    Quint can't confirm this: Quint stopped: Error: Internal error while flattening [QNT404] Name 'twice' not found
+  property ok: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: Error: Internal error while flattening [QNT404] Name 'twice' not found
+  property noDownAtTop: the checker says broken, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: Error: Internal error while flattening [QNT404] Name 'twice' not found
+  property small: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: Error: Internal error while flattening [QNT404] Name 'twice' not found
+same     two  57 states  fail  (Quint)
+same     three  764 states  fail  (Quint)
+same     named  25 states  fail  (Quint)
+same     scenarios  0 states  fail  (Quint)
+same     Star  16 states  fail  (Quint)
+same     Both  40 states  fail  (Quint)
+exit 1
+== earnest confirm --quint setups
+same     Small  16 states  fail  (Quint)
+same     Large  72 states  pass  (Quint)
+same     SmallBits  16 states  fail  (Quint)
+same     Nested  3 states  pass  (Quint)
+same     Renamed  3 states  pass  (Quint)
+same     Low  4 states  fail  (Quint)
+same     High  6 states  fail  (Quint)
+same     Setup  11 states  pass  (Quint)
+same     Dim  6 states  pass  (Quint)
+same     Bright  12 states  pass  (Quint)
+same     Blinding  20 states  fail  (Quint)
+same     Named  4 states  fail  (Quint)
+same     Reexported  4 states  fail  (Quint)
+same     ByOwn  4 states  pass  (Quint)
+same     ByName  5 states  pass  (Quint)
+same     Two  12 states  pass  (Quint)
+same     Pair  12 states  fail  (Quint)
+cannot   Exported  2 states  fail  (Quint)
+  states: the checker found 2, `quint verify` gave no count
+    Quint can't confirm this: Quint stopped: The constant parameter K is not assigned a value by the configuration file.
+  property ok: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: The constant parameter K is not assigned a value by the configuration file.
+  property below: the checker says broken, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: The constant parameter K is not assigned a value by the configuration file.
+  property grows: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: The constant parameter K is not assigned a value by the configuration file.
+  run Exported::B::upTest: `quint test` played it, and the checker did not
+    Quint can't confirm this: Quint also names a run that the checker played as `upTest`, which an `export` makes visible under two names, and the checker can't tell whether it is that run
+  run Exported::B::fullTest: `quint test` played it, and the checker did not
+    Quint can't confirm this: Quint also names a run that the checker played as `fullTest`, which an `export` makes visible under two names, and the checker can't tell whether it is that run
+same     Plain  2 states  fail  (Quint)
+same     Tight  3 states  fail  (Quint)
+same     Four  7 states  fail  (Quint)
+same     Three  4 states  fail  (Quint)
+same     One  2 states  fail  (Quint)
+same     S  12 states  fail  (Quint)
+unreadable  setups/compiled.qnt  Single
+exit 1
+== earnest confirm --quint confirm
+same     lift  4 states  fail  (Quint)
+cannot   big  3 states  pass  (Quint)
+  states: the checker found 3, `quint verify` gave no count
+    Quint can't confirm this: Quint stopped: TLC can't handle a number this big.
+  property belowBig: the checker says holds, `quint verify` says unknown
+    Quint can't confirm this: Quint stopped: TLC can't handle a number this big.
+cannot   halves  4 states  fail  (Quint)
+  property halfAbove: the checker says unknown, `quint verify` says holds
+    Quint can't confirm this: the checker could not judge it
+cannot   ranges  0 states  pass  (Quint)
+  run emptyTest: the checker says holds, `quint test` says broken after 1 sample(s)
+    Quint can't confirm this: the model uses `range`, which Quint's TLC run and `quint test` answer differently when it starts above its end
+exit 1
+```
+
+Times: `first` 14 s, `imports` 133 s, `setups` 416 s, `confirm` 48 s; 82 `quint verify` jobs and
+26 `quint test` jobs in all.
+
+Of the 35 checks that earnest reads in `first`, `imports` and `setups`, 32 print `same` and 3
+print `cannot`. None prints `differs`. Each `cannot` is Quint's own tools failing on the file:
+
+- `FirstSteps`: TLC stops with `current state is not a legal state`. `Other::n` is a variable
+  only the runs reach; the check's `init` never sets it, so Quint's TLA+ starts it at `null`.
+- `As`: Quint 0.33.1 crashes in its flattener on `import X as A` inside an instantiated spec,
+  as `quint compile` does (found in #71).
+- `Exported`: Quint's TLC run says `The constant parameter K is not assigned a value by the
+  configuration file` for `import Base(K = 1) as B` with `export B.*`. Its runs are played by
+  `quint test` under two names, and the second name prints `cannot`.
+
+In `confirm/`, `lift` is `same` (its `low` is in `expectCounterexample` and gets its own job), and
+`big` (a number beyond 32 bits: `TLC can't handle a number this big.`), `halves` (`-3 / 2`, a
+fault for the checker) and `ranges` (`range(3, 1)`) print `cannot`, as the docs say.
+
+So the check "`same` on every sample" is not met as written: 3 samples cannot be confirmed by
+Quint 0.33.1 at all. The stop rule of the Budget (no state count on a violation-free run) did not
+fire: no sample had a violation-free run without a count.

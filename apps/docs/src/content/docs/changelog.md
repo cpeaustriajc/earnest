@@ -5,11 +5,27 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: confirm a Quint check with Quint itself
+
+- **`earnest confirm --quint`:** runs Quint's own `quint verify --backend tlc` and `quint test` on each Quint check and prints `same`, `differs` or `cannot`. Quint reads the `.qnt` file itself, so a fault in earnest's reading of it shows, where `--tlc` checks the model as earnest read it. A check whose properties all hold costs one `quint verify`; a property gets a job of its own only when that job finds a violation.
+- **`cannot`, never `differs`,** where Quint's backends are known to answer otherwise: numbers outside 32 bits, a fault such as `/` of a negative number, a run `quint test` passes on random samples, `range` and folds. Without Java, the line says so.
+
+See [Confirming a check with Quint](/reference/quint/#confirming-a-check-with-quint).
+
 ## November 2026: a kept Quint parse is read again by another build
 
 - **Fixed:** `.earnest/quint/` kept what earnest read from `quint parse` by the version of Quint and the file alone, so a newer build reused what an older build had read. After an update, a check that lists a `val` in `expectCounterexample` was `unreadable` with `which is not an invariant, a temporal property or a run`, and `--no-cache` did not clear it. The entry is now kept for one build, as [cached results](/reference/cli/#caching) are. On an older build, delete `.earnest/quint/` after updating.
 
 See [The cache](/reference/quint/#the-cache).
+
+## November 2026: Quint projects of types, spec and setups from one typecheck, `assume`, and shorter paths
+
+- **A spec that imports:** a setup whose spec imports a types module or helpers (`import types.* from "./types"`, `import Types as T`, helpers that import helpers) is built from the file's one `quint typecheck`, with no `quint compile`, and the spec's runs are played. A check of runs only of a plain import of such a spec is built the same way.
+- **`assume`:** a false assumption makes the check `unreadable` at the assumption, in a module checked directly and in a setup alike. It was refused at line 1 in the first and dropped without a word in the second.
+- **Shorter paths:** in a Quint path a step that changes one key of a map, one field of a record or an item of a set or a list prints only that (`balances.get("ann"): 3 -> 4`, `seen: + 4`, `queue: + 3 at the end`); the `start` and `end` lines and the JSON keep whole values. A branch of a `match` action is named by its variant, `deliver Grant`, not `deliver#2`. Messages name a definition by its short name.
+- **Smaller fixes:** a run whose first action can't happen prints `start  no state`, a fault while working out a run's first action names that action rather than `init`, and a literal between 2^63 and 2^64 is shown as written.
+
+See [What earnest runs](/reference/quint/#what-earnest-runs) and [How values print](/reference/quint/#how-values-print).
 
 ## November 2026: Quint checks under a name, and counterexamples that must be found
 

@@ -15,6 +15,20 @@ fn suffix(parts: &[&str], kept: usize) -> String {
         .join(SEPARATOR)
 }
 
+pub(crate) fn shortest(name: &str, among: &[&str]) -> String {
+    let parts = segments(name);
+    let kept = (1..=parts.len())
+        .find(|kept| {
+            let own = suffix(&parts, *kept);
+            among
+                .iter()
+                .filter(|other| **other != name)
+                .all(|other| suffix(&segments(other), *kept) != own)
+        })
+        .unwrap_or(parts.len());
+    suffix(&parts, kept)
+}
+
 pub(crate) struct Short {
     names: HashMap<String, String>,
 }

@@ -281,3 +281,121 @@ fn typecheck_output_with_errors_or_of_another_stage_is_not_read() {
     assert!(Typechecked::read(&fixture("lamp.Dim.json")).is_none());
     assert!(Typechecked::read("not JSON").is_none());
 }
+
+fn typechecked_import(file: &str) -> Typechecked {
+    let path = format!(
+        "{}/../../tasks/quint/imports/fixtures/{file}.typecheck.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+    Typechecked::read(&source).unwrap_or_else(|| panic!("{file}: the typecheck output is read"))
+}
+
+#[test]
+fn a_spec_that_imports_a_name_alone_or_a_module_with_variables_is_left_to_quint_compile() {
+    let compiled = typechecked_import("compiled");
+    let ok = owned(&["ok"]);
+    for main in ["Single", "Stateful", "Twice"] {
+        let setup = Setup::new(main, ("init", "step"), (&ok, &[]), &Runs::None);
+        assert_eq!(compiled.setup(&setup), None, "{main}");
+    }
+}
+
+#[test]
+fn a_definition_imported_into_a_spec_is_named_in_the_instance_with_its_alias() {
+    let typechecked = typechecked_import("as");
+    let listed = owned(&["ok", "noDownAtTop", "small"]);
+    let built = typechecked
+        .setup(&Setup::new(
+            "As",
+            ("init", "step"),
+            (&listed, &[]),
+            &Runs::None,
+        ))
+        .unwrap_or_else(|| panic!("`As` is built"));
+    let names: Vec<String> = declared(&built).into_iter().map(|(name, _)| name).collect();
+    for name in [
+        "quad",
+        "twice",
+        "As::SpecAs::H::Start",
+        "As::SpecAs::H::quad",
+        "As::SpecAs::H::twice",
+        "As::SpecAs::T::Up",
+        "As::SpecAs::T::Down",
+    ] {
+        assert!(names.iter().any(|each| each == name), "{name} in {names:?}");
+    }
+    let star = typechecked_import("star");
+    let built = star
+        .setup(&Setup::new(
+            "Star",
+            ("init", "step"),
+            (&listed, &[]),
+            &Runs::None,
+        ))
+        .unwrap_or_default();
+    let theirs = std::fs::read_to_string(format!(
+        "{}/../../tasks/quint/imports/fixtures/star.Star.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap_or_default();
+    let sorted = |json: &str| {
+        let mut names = declared(json);
+        names.sort();
+        names
+    };
+    assert_eq!(
+        sorted(&built),
+        sorted(&theirs),
+        "the names `quint compile --main Star` gives"
+    );
+}
+
+#[test]
+fn a_refusal_in_a_setup_names_the_definition_by_its_short_name() {
+    let typechecked = typechecked_import("short");
+    let invariants = owned(&["C::picked"]);
+    let built = typechecked
+        .setup(&Setup::new(
+            "Few",
+            ("init", "step"),
+            (&invariants, &[]),
+            &Runs::None,
+        ))
+        .unwrap_or_else(|| panic!("`Few` is built"));
+    let Err(refused) = crate::read_located("short", &built, &Runs::None) else {
+        panic!("`chooseSome` is refused");
+    };
+    let messages: Vec<String> = refused
+        .iter()
+        .map(|each| each.problem.message.clone())
+        .collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.contains("in the definition `picked`")),
+        "{messages:?}"
+    );
+    assert!(
+        messages.iter().all(|message| !message.contains("Few::C::")),
+        "{messages:?}"
+    );
+}
+
+#[test]
+fn a_literal_past_two_to_the_63_is_shown_in_its_refusal_as_written() {
+    let path = format!(
+        "{}/../../tasks/quint/imports/fixtures/big.Big.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+    let Err(refused) = crate::read_located("big", &source, &Runs::None) else {
+        panic!("a literal beyond 64 bits is refused");
+    };
+    assert!(
+        refused
+            .iter()
+            .any(|each| each.problem.feature == "`18446744073709551615`"),
+        "{refused:?}"
+    );
+}
