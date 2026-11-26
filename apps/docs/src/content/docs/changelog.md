@@ -19,6 +19,7 @@ See [What earnest runs](/reference/quint/#what-earnest-runs) and [How values pri
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.
 - **`expectCounterexample`:** invariants, temporal properties or runs listed there must break. A broken one prints `broken  P  (expected)` and keeps its path in the JSON with `"expected": "broken"`; one that holds fails the check.
 - **Stopping early:** a check whose only properties are expected invariants stops once it has found each counterexample, so a model with no end passes.
+- **Invariants as expressions:** an item of `invariants` or `expectCounterexample` may be a Quint expression, such as `Guard implies Inv`, named by its text or by `{ "name": ..., "is": ... }`.
 
 See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 
