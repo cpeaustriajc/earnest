@@ -431,7 +431,19 @@ fn a_base_that_does_not_parse_is_warned_of() {
     let run = repo.earnest(&["verify", "--base", "HEAD"]);
     run.exits(0);
     warned_and_not_listed(&run, CLOCK);
-    assert_eq!(section(&run), [fields("  none")], "{run}");
+    assert_eq!(
+        section(&run),
+        [fields(
+            "  not compared  specs/clock.qnt  unreadable at HEAD"
+        )],
+        "the section names the file it could not compare, and does not say `none`\n{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(json["ruleChanges"], json!([]));
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "specs/clock.qnt", "reason": "unreadable" }])
+    );
 }
 
 #[test]
@@ -444,6 +456,13 @@ fn a_base_whose_checks_a_checks_file_lists_is_warned_of() {
     let run = repo.earnest(&["verify", "--base", "HEAD"]);
     run.exits(0);
     warned_and_not_listed(&run, CLOCK);
+    assert_eq!(
+        section(&run),
+        [fields(
+            "  not compared  specs/clock.qnt  an earnest.quint.json lists its checks at HEAD"
+        )],
+        "{run}"
+    );
     assert_eq!(repo.base_parses(), 0, "{:?}", repo.calls());
 }
 
@@ -579,4 +598,157 @@ fn a_folder_with_no_quint_file_gives_the_json_it_gave_before() {
         "{run}"
     );
     assert!(repo.calls().is_empty(), "{:?}", repo.calls());
+}
+
+const UNREAD_TANK: &str =
+    "import { m } from \"@earnestjs/model\";\nexport const now = Date.now();\n";
+
+#[test]
+fn a_native_file_unreadable_at_the_base_is_named_in_the_text_the_json_and_the_report() {
+    let counter = repository().join("tasks/conformance/models/counter.model.ts");
+    let counter = fs::read_to_string(&counter).expect("the fixture can be read");
+    let repo = Repo::committed(&[("counter.model.ts", UNREAD_TANK)]);
+    repo.write("counter.model.ts", &counter);
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    warned_and_not_listed(&run, "counter.model.ts");
+    assert_eq!(
+        section(&run),
+        [fields(
+            "  not compared  counter.model.ts  unreadable at HEAD"
+        )],
+        "{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "counter.model.ts", "reason": "unreadable" }]),
+        "{json}"
+    );
+    let report = repo.earnest(&["report", "--base", "HEAD"]);
+    report.exits(0);
+    assert!(
+        report.stdout.contains(
+            "## Rule changes\n\n```text\nrule changes since HEAD\n  not compared  \
+             counter.model.ts  unreadable at HEAD\n```"
+        ),
+        "{report}"
+    );
+    assert!(!report.stdout.contains("  none"), "{report}");
+}
+
+const MARKED_AT_BASE: &str = "module Core {
+  var n: int
+  action init = n' = 0
+  action step = n' = (n + 1) % 3
+  val a = n >= 0
+  val b = n < 3
+}
+/// @check a
+module Good { import Core.* }
+/// @check nosuch
+module Bad { import Core.* }
+";
+
+#[test]
+fn a_check_whose_marks_are_unreadable_at_the_base_does_not_hide_the_others_of_its_file() {
+    let repo = Repo::committed(&[("specs/a.qnt", MARKED_AT_BASE)]);
+    repo.write(
+        "specs/a.qnt",
+        &MARKED_AT_BASE
+            .replace("val a = n >= 0", "val a = n >= 1")
+            .replace("@check nosuch", "@check b"),
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        heads(&run),
+        listed(&[("changed", "Good.a"), ("not compared", "specs/a.qnt")]),
+        "{run}"
+    );
+    assert_eq!(
+        section(&run)[3],
+        fields("  not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD"),
+        "{run}"
+    );
+    assert!(
+        run.stderr.contains(
+            "warning: the check `Bad` of specs/a.qnt is unreadable at HEAD, so its rule changes \
+             are not listed"
+        ),
+        "{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "specs/a.qnt", "model": "Bad", "reason": "marks" }])
+    );
+}
+
+#[test]
+fn a_folder_named_twice_under_two_spellings_lists_nothing_as_removed() {
+    let counter = repository().join("tasks/conformance/models/counter.model.ts");
+    let counter = fs::read_to_string(&counter).expect("the fixture can be read");
+    let repo = Repo::committed(&[
+        (CLOCK, &original("clock.qnt")),
+        ("specs/counter.model.ts", &counter),
+    ]);
+    let whole = repo.root().join("specs");
+    let whole = whole.to_string_lossy();
+    for spellings in [["specs", "./specs"], [whole.as_ref(), "specs"]] {
+        let mut arguments = vec!["verify", "--base", "HEAD"];
+        arguments.extend(spellings);
+        let run = repo.earnest(&arguments);
+        run.exits(0);
+        assert_eq!(
+            section(&run),
+            [fields("  none")],
+            "the native and the Quint file are each compared once, by their real path\n{run}"
+        );
+    }
+}
+
+#[test]
+fn a_quint_file_reached_through_a_link_is_compared_once_and_not_warned_of() {
+    let repo = with_clock();
+    symlink("clock.qnt", repo.root().join("specs/link.qnt")).expect("a link can be made");
+    repo.git(&["add", "--all"]);
+    repo.git(&["commit", "--quiet", "--message", "link"]);
+    repo.edit(
+        CLOCK,
+        "val belowLimit = time < Limit",
+        "val belowLimit = time <= Limit",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
+    assert!(!run.stderr.contains("warning"), "{run}");
+    assert_eq!(
+        heads(&run),
+        listed(&[("changed", "Small.belowLimit")]),
+        "{run}"
+    );
+}
+
+#[test]
+fn a_renamed_local_of_a_block_lists_nothing() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "  val belowSix = time < 6",
+        "  /// @check\n  val ahead = { val t = time + 1 t > 0 }\n  val belowSix = time < 6",
+    );
+    repo.git(&["commit", "--quiet", "--all", "--message", "block"]);
+    repo.edit(
+        CLOCK,
+        "{ val t = time + 1 t > 0 }",
+        "{ val u = time + 1 u > 0 }",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(section(&run), [fields("  none")], "{run}");
+    repo.edit(
+        CLOCK,
+        "{ val u = time + 1 u > 0 }",
+        "{ val u = time + 2 u > 0 }",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
+    assert_eq!(heads(&run), listed(&[("changed", "Small.ahead")]), "{run}");
 }
