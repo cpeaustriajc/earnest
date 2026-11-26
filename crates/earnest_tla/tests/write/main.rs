@@ -10,6 +10,7 @@ mod limits;
 mod modules;
 mod names;
 mod ops;
+mod runs;
 mod shape;
 mod walks;
 mod wellformed;
