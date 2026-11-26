@@ -10,6 +10,7 @@ mod harness;
 mod limits;
 mod offline;
 mod quint;
+mod quint_actions;
 mod quint_checks;
 mod quint_data;
 mod quint_picks;

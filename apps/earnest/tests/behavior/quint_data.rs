@@ -141,12 +141,12 @@ fn an_operator_the_reader_does_not_take_makes_the_file_unreadable_and_names_it()
         "a construct the reader does not take is never skipped\n{run}"
     );
     assert!(
-        run.stdout.contains("`chooseSome`") && run.stdout.contains("in the definition `step`"),
+        run.stdout.contains("`powerset`") && run.stdout.contains("in the definition `every`"),
         "the problem names the operator and the definition it is in\n{run}"
     );
     assert!(
-        run.stdout.contains("`foldr`"),
-        "every refused operator is named\n{run}"
+        !run.stdout.contains("`foldr`"),
+        "`foldr` is read, so it is not named\n{run}"
     );
 }
 

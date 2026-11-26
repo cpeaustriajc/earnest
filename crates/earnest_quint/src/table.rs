@@ -129,7 +129,7 @@ fn read_all(compiled: &Compiled, symbols: Symbols) -> (Vec<Result<Value, Fault>>
             _ => None,
         })
         .collect();
-    let mut reader = Reader::new(&compiled.table, defs, HashMap::new(), symbols);
+    let mut reader = Reader::new(compiled, defs, HashMap::new(), symbols);
     let mut values = Vec::with_capacity(CASES.len());
     for (name, _) in &CASES {
         let def = reader

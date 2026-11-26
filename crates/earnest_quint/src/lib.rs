@@ -7,8 +7,8 @@
 //! (`match` among them), `if`, `let`, `nondet` over a set that does not change, and the
 //! module's `init`, `step`, listed invariants and listed temporal properties, each with the
 //! weak fairness it names, and the `run` definitions a check chooses (by default each whose
-//! name ends in `Test`), as [`earnest_ir::Script`]s. Everything else makes the file unreadable;
-//! nothing is skipped.
+//! name ends in `Test`), as [`earnest_ir::Script`]s. Only the definitions these reach are read:
+//! anything else they reach makes the file unreadable, and nothing they reach is skipped.
 //!
 //! The compiled JSON holds no line numbers, so every problem is placed at line 1, column 1,
 //! and names the definition it was found in.
@@ -132,6 +132,8 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
     })
 }
 
+#[cfg(test)]
+mod actions_tests;
 #[cfg(test)]
 mod reads_tests;
 #[cfg(test)]

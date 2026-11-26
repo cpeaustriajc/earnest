@@ -2694,15 +2694,38 @@ at its own expression through the source map), and makes the table say `def` whe
 
 | Built from the typecheck | Compiled with `quint compile --main` |
 |---|---|
-| the main module has one `import Spec(...).*` and otherwise only `def`s | `import Spec(...) as C` (sample `Large`, `Aliased`) |
-| `Spec` has only `const`, `var`, `def`, `type` | `Spec` imports, instantiates or exports (`Nested`: an instance of an instance) |
-| every `const` of `Spec` overridden once, by an expression whose every node is a builtin (no id in the table) | a constant given a definition's value (`ByName`: `import Limit.*` then `K = L`) |
-| `init`, `step` name one `action` of the setup or of `Spec`; each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | `export` (`Exported`), several imports, a name that is missing, qualified, of another kind or defined in both (Quint gives the error) |
+| the main module's declarations are instances (`.*` or `as C`), whole imports of modules of definitions only (`import Lib.*`, `import Lib as L`), `export C.*` of its own instances, typedefs and `def`s | an instance of a module that instantiates or imports (`Nested`), one name imported alone (`Single`: `import Limit.L`), any other declaration |
+| each instantiated module has only `const`, `var`, `def`, `type` | a constant not overridden, or overridden twice |
+| `init`, `step` name one `action` the setup sees (its own, a whole instance's, `C::name`, an exported instance's); each invariant one `val`, `pureval` or `var`; each temporal property one `temporal` | a name that is missing, of another kind or seen twice (Quint gives the error) |
 | the typecheck succeeded | a typecheck that failed, or a type alias that does not resolve |
+
+Second part (asked after the first report, built on the same walk):
+
+- **An instance under a name** (`Large`, `Named`, `Reexported`): Quint names the module
+  `<setup>::<alias>` (`Large::C::time`); a use `C::init` in the setup resolves through the
+  table entry's `importedFrom.id`, the id of the instance declaration.
+- **A constant given by a name** (`ByOwn`, `ByName`, `Renamed`): `compile` copies the override
+  expression unchanged and, in its first flattening pass, walks it where the instance is written,
+  so its definitions (`twice`, `L`) come before everything else. The builder walks the overrides
+  at the same place. A module imported whole keeps its names (`L`); one imported under a name is
+  namespaced with the bare alias (`Li::L`), as `compile` does.
+- **Several instances** (`Two`, `Pair`): each instance has its namespace. Two instances of one
+  spec (`Pair`: `P`, `R`) would share the spec's ids, so, as `compile`'s `generateFreshIds`,
+  each copy gets fresh ids and the table gets an entry for each new id. With one instance of
+  each spec, Quint's ids are kept.
+- **`export`** (`Exported`): `export B.*` makes `B`'s names visible bare to the checks file.
+  Quint 0.33.1's own `compile --main Exported` keeps `const K` and the bare names (its
+  `enterExport` copies the proto module's definitions), so earnest could only read it
+  `unreadable`. The built module names them `Exported::B::...`, and is compared with `Plain`
+  (`import Base(K = 1).*`), which means the same thing.
+- **Runs of one of two instances** (`Pair` with `runs: true`): `P::upTest` starts with `P::init`,
+  which sets `P::v` only. `quint test --main Pair` passes all four (it plays from part of a
+  state); earnest plays a run only from the check's `init` and keeps slice 6's refusal, so such
+  a check is `unreadable`. Without `runs`, `Pair` is built and read.
 
 ### Equality with Quint's own flattening
 
-`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 18 checks, and in `fixtures/` the
+`tasks/quint/setups/`: the shapes, `earnest.quint.json` with 28 checks, and in `fixtures/` the
 typecheck output of each file and the compile output of each check, written with
 
 ```sh
@@ -2721,20 +2744,28 @@ quint compile --target json --main <Main> --init <init> --step <step> [--invaria
 | `clock.qnt` | `Small` | the spike's sample: a set-of-text constant, four temporal properties, runs |
 | `clockbits.qnt` | `SmallBits` | temporal properties with fair parts |
 | `lamp.qnt` | `Dim`, `Bright`, `Blinding` | slice 7's sample, three setups of one spec |
-| `compiled.qnt` | `Nested`, `Aliased`, `ByName`, `Exported` | shapes that are compiled |
-| `clock.qnt` | `Large` | `import ... as C`, compiled |
+| `clock.qnt` | `Large` | `import ... as C` with definitions on top and a run of its own |
+| `more.qnt` | `Named` | `import Base(K = 3) as B` and nothing else: the checks file names `B::init`, `B::ok`, `B::grows` |
+| `more.qnt` | `Reexported` | `as B` with `action init = B::init` and its own invariant and run |
+| `more.qnt` | `ByOwn`, `ByName` | `K = Own` (a `pure val` of the setup), `K = twice(L)` from `import Limit.*` |
+| `more.qnt` | `Two` | `import Base(K = 2).*` with `import Other(M = 3).*`, its own `init` and `step` over both |
+| `more.qnt` | `Pair` | `import Base(K = 2) as P` with `import Base(K = 3) as R`: fresh ids |
+| `more.qnt` | `Exported`, `Plain` | `as B` with `export B.*`, and the same thing imported whole |
+| `compiled.qnt` | `Renamed` | `import Limit as Li` and `K = Li::L`: built |
+| `compiled.qnt` | `Nested`, `Single` | an instance of an instance, `import Limit.L`: compiled |
 
 Tests (no Node: fixtures and a fake `quint`):
 
-- `crates/earnest_quint/src/setup_tests.rs`: for the 13 checks built, the declarations built
+- `crates/earnest_quint/src/setup_tests.rs`: for the 21 checks built, the declarations built
   (name and kind, in order) equal those of Quint's compile; read by the reader, fields, actions,
   rule ids and start states are equal; the other shapes and wrong names give `None`.
 - `apps/earnest/tests/behavior/quint_setups.rs`
   `every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flattens`: earnest runs
-  the 18 checks twice, built (only the 5 others compiled) and all compiled (the typecheck taken
-  away), and for the 17 readable checks the status, state count, reason and every rule (id,
-  sentence, verdict, path with its inputs) are equal. Reversing the declarations built makes it
-  fail.
+  the 28 checks without runs twice, built (only `Nested` and `Single` compiled) and all compiled
+  (the typecheck taken away). For the 24 compiled checks, and `Exported` against `Plain`, the
+  status, state count, reason and every rule (id, sentence, verdict, path with its inputs) are
+  equal. Reversing the declarations built makes it fail, and so does turning off the fresh ids
+  (`Pair` is then unreadable).
 
 Before the test, `cmp.py` (scratch, not committed) compared the built and the compiled modules
 with ids stripped: for all 13, the same declarations in the same order and the same bodies,
@@ -2849,12 +2880,11 @@ check each with `darkWhenOff`. Release builds, real Quint through a wrapper that
 
 ### Shapes
 
-Built from the typecheck: `Low`, `High`, `Setup`, `Four`, `Tight`, `S`, `Three`, `One`, `Small`,
-`SmallBits`, `Dim`, `Bright`, `Blinding`, `S1`..`S17`. Compiled: `Large` and `Aliased`
-(`import ... as C`), `Nested` (an instance of an instance), `ByName` (a second import, a constant
-given a definition), `Exported` (`export`; Quint 0.33.1's compile keeps its `const K`, so it is
-`unreadable` either way), every module that is not a setup, a name Quint would refuse, and a
-file whose typecheck fails.
+Built from the typecheck (after the second part): `Low`, `High`, `Setup`, `Four`, `Tight`, `S`,
+`Three`, `One`, `Small`, `Large`, `SmallBits`, `Dim`, `Bright`, `Blinding`, `Named`,
+`Reexported`, `ByOwn`, `ByName`, `Two`, `Pair`, `Exported`, `Plain`, `Renamed`, `S1`..`S17`.
+Compiled: `Nested` (an instance of an instance), `Single` (`import Limit.L`), every module that
+is not a setup, a name Quint would refuse, and a file whose typecheck fails.
 
 ### Tests
 
@@ -2914,6 +2944,209 @@ changed.
   copies expressions unchanged, so a new read operator needs nothing here.
 - Next: give `import Spec(...) as C` with definitions on top (the `Large` shape) the same
   treatment. It needs Quint's walk from the setup's own definitions only, with the `C::` names.
+
+## Slice 4, second part: report
+
+Asked by the orchestrator after the first report: the shapes a real project is likely to write
+must not end `unreadable`. Built on the integration head `ea7e3fb`.
+
+### Done
+
+- `setup.rs` builds a setup module made of: instances whole (`.*`) or under a name (`as C`),
+  any number of them, two of one spec among them (fresh ids); whole imports of modules of
+  definitions (`import Lib.*`, `import Lib as Li`); `export C.*` of its own instances; and its
+  own definitions. Overrides may name definitions (`K = Own`, `K = twice(L)`, `K = Li::L`).
+  The checks file's names resolve as the setup sees them (own, whole instance, `C::name`,
+  exported). See "Second part" under "How `quint compile` flattens a setup".
+- Order of the four asked: 1 `as C` built (`Large`, `Named`, `Reexported`); 2 constants by name
+  built (`ByOwn`, `ByName` playing `upTest`, `Renamed`); 3 `export` built (`Exported`, compared
+  with `Plain` since Quint's own compile is wrong there); 4 several instances built (`Two`,
+  `Pair`). None needed the hour.
+- Still compiled: an instance of an instance (`Nested`), one name imported alone (`Single`), and
+  what Quint would refuse.
+- With real Quint 0.33.1, `tasks/quint/setups` (28 checks, 11 files) runs 11 typechecks and 2
+  compiles; 2 checks are `unreadable` on purpose: `Pair` with `runs: true` (a run from part of
+  the state) and `Single` naming a run of the module it imports.
+
+### `quint test` on the new shapes (`--backend typescript --match 'Test$'`)
+
+```text
+Pair:       ok Pair::P::upTest, Pair::P::fullTest, Pair::R::upTest, Pair::R::fullTest
+Named:      ok Named::B::upTest, Named::B::fullTest
+Reexported: ok Reexported::B::upTest, Reexported::B::fullTest, ownTest
+ByName:     ok ByName::Base::upTest, ByName::Base::fullTest
+Exported:   ok Exported::B::upTest, Exported::B::fullTest, upTest, fullTest
+```
+
+earnest: every one of these `holds`, except `Pair`'s, which earnest refuses (above). Quint plays
+`Exported`'s runs twice, once under each name; earnest plays each once.
+
+### Tests
+
+`setup_tests.rs` (7: 21 shapes built against Quint's declarations and reading, the compiled
+shapes, the export), `quint_setups.rs` (5, now over 28 checks). Only tests of this slice
+changed; none is on `origin/main`.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo test --locked`: 1993 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every line `met`; the last is `| grid_1m | 4 | 1,906,738,888 | 1,911,847,189 | +0.26% | 1.00% | met |`. Not re-recorded.
+- `just benchmark`: every budget `met`; the last line is `wide, search time with all cores
+  (0.119 s) over search time with 1 worker (0.316 s): 0.38x, budget at most 0.75x: met`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the same 64 in the 16 conformance files `origin/main` does not have.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`. `cargo machete`: `... Good job!`
+- `tests_kept.py --base origin/main`: `tests kept: 1609 tests, 4686 assertions (base: 1304, 3798)`.
+
+### Doubts
+
+- A run of one of two instances of a spec can't be played (it starts from part of the state);
+  the check is `unreadable` with slice 6's reason. Playing it would need partial states.
+- `export` has no reference output from Quint 0.33.1; its equality is with an equivalent setup.
+- A refusal inside a copy with fresh ids (`Pair`) has no source place: it stays at 1:1, as a
+  compiled instance's does.
+
+### Next
+
+`import Lib.name` and instances of instances, if a project has them.
+
+## Reads 1 (issue #64): what is checked
+
+Constructs `quint typecheck` accepts that the reader refused, from the first adversarial pass's
+list "Legal Quint that earnest refuses". The fixtures are in `crates/earnest_quint/fixtures/`,
+each `.qnt` beside the JSON `quint compile --target json` wrote for it (to a file, not a pipe):
+`reads` (the sample of all of it), `values` (single values), `onlyfault`, `helpers`, `endless`
+(also `endlessfold.json`, module `endlessFold`), `openfields` and `bigint`; the setup
+`tasks/quint/setups/readsetup.qnt` with its typecheck and compile JSON in `setups/fixtures/`.
+
+### How each is read
+
+- **`Bool`**: a name `Bool` that the compiled table does not hold is the constant set
+  `{false, true}`, wherever an expression is read. `Bool.oneOf()` in a `nondet` was already read.
+- **`Nat`, `Int`**: `x.in(S)`, `S.contains(x)` and `X.subseteq(S)` with `S` the bare name are
+  read before the set is: `x >= 0` for `Nat`, `x == x` for `Int` (so a fault in `x` stays a fault,
+  as `isFinite` does), and `X.forall(e => ...)` for `subseteq`. Anywhere else the name is refused:
+  `` `Nat` is the set of every integer from 0 up, a set without end, which the checker cannot hold:
+  it is read only in `x.in(Nat)`, `S.contains(x)` and `S.subseteq(Nat)`; elsewhere write a range
+  such as `0.to(9)` ``.
+- **`getOnlyElement`**: `S` is bound once; a fold puts each item at key 1 of an empty map, and the
+  result reads the key `S.size()`. A set of one gives its item; an empty set reads key 0 of an
+  empty map and a larger set key 2 or more of a map of one key: both `Fault::Missing`. Quint's
+  TypeScript evaluator stops on both with `QNT505` (`Called 'getOnlyElement' on a set with 0
+  elements`); Apalache 0.62.4 refuses the operator itself (`No entry found for id ... in lookup
+  table`), so `quint verify --backend tlc` gives no value. No `Op` was added: the fault says what
+  any missing key says, not `getOnlyElement`.
+- **`fieldNames`**: worked out when the file is read, from the record's type in the `types` table
+  of the compiled JSON (closed rows only), else from a record written out, a state variable's type,
+  or a constant record. A setup built from `quint typecheck` carries the types of the variables and
+  of each `fieldNames` argument, with aliases inlined. A record whose type is open where it is read
+  (`def names(r) = r.fieldNames()` given `m.get(1)`) is refused with what to write.
+- **`foldr`**: `l.foldr(z, (item, total) => ...)`, Quint's `(List[a], b, (a, b) => b) => b`
+  (`builtinSignatures.js`) and the TypeScript evaluator's `reduceRight` with `lambda([val,
+  accValue])`: a left fold that reverses the list (`[item].concat(total)`), then a left fold over
+  the reversed list with the lambda given the item first.
+- **Operators as arguments**: a bound parameter is now a value, a definition, or a lambda
+  (`Bound::Lambda`). At a call of a definition each argument that is a lambda or names an operator
+  (a definition whose body is a lambda, or a parameter that holds one) is bound as it is, and the
+  rest are read as values. A call of a parameter that holds a lambda reads the lambda's body with
+  its parameters bound to the arguments; `map`, `forall` and the other builtins take one too.
+  Bindings are by Quint's ids, which are unique in a module, and Quint has no recursion, so the
+  substitution ends. `val f = (x) => x + 1` is refused by Quint itself (`QNT200`: use `def`), and
+  Quint's effect checker refuses an operator kept as a value (`if (b) inc else dec`,
+  `Set(inc)`, `f == f`), so the reader's refusal of an operator as a value is not reached from
+  legal Quint.
+- **Unreached definitions**: `scan.rs` no longer looks into definitions; it keeps the refusals of
+  variable types, constants without a value, unknown declarations and `q::inductiveInv`. The
+  reader already read only what `init`, `step`, `q::inv`, `q::temporalProps` and the played runs
+  reach, and refuses at the first construct it does not take. A refusal inside a helper says which
+  definition the read started from and the names in between: `` in the definition `deeper`, which
+  `reached` reaches through `check` ``. Generated `q::` names are left out of the path.
+- **`q::debug(message, value)`**: read as `value`.
+- **Messages**: a literal past 64 bits is shown with `{:.0}` of the `f64` serde gives it, which is
+  the number as written for a round literal such as `100000000000000000000` (serde_json without
+  `arbitrary_precision` keeps no more digits); `chooseSome`, `allLists`, `allListsUpTo`,
+  `setOfMaps`, `q::debug` used otherwise, the powerset limit and the `nondet` limits now say what
+  to write instead; a name the reader does not know says it is neither a definition nor a builtin
+  earnest reads.
+
+### The sample against Quint
+
+`reads.qnt` (8 states: `n` from 0 to 3, `flag` either way) uses all of the above and an unused
+`chooseSome` helper. `quint verify --backend tlc` cannot run it, because Apalache refuses `foldr`
+and `getOnlyElement`, so `tasks/quint/models/reads_tlc.qnt` writes those two with `foldl` and
+`fold` and is otherwise the same file:
+
+| | states | `natural` `booleans` `names` `only` `operators` `folded` | `small` |
+|---|---|---|---|
+| `quint verify --backend tlc` on `reads_tlc.qnt` | 8 distinct | no error | violated |
+| `quint run --backend typescript --max-samples 2000` on `reads.qnt`, one run per invariant | | `[ok]` each | `[violation]` |
+| `earnest verify reads.json` | 8 | holds | broken after 3 steps |
+| `earnest confirm --tlc` (earnest's TLA+ export, TLC in Apalache's jar) | `same` | | |
+
+Each single value in `values.qnt` was run through `quint run --backend typescript --invariant
+<name>`: `foldedRight` (321), `foldedRightList` (`[3, 2, 1]`), `foldedRightEmpty`, `names`,
+`only`, `booleans`, `natural`, `operators`, `debugged` are `[ok]`; `emptyOnly` and `twoOnly` stop
+with `QNT505`.
+
+### Tests
+
+- `crates/earnest_quint/src/reads_tests.rs` (14): each value of `values.json` evaluated in the
+  start state; the `Nat`/`Int` refusals; the open `fieldNames` refusal; the unused helper of
+  `reads.json` read and the used one of `helpers.json` refused with its path; the literal; `Bool`
+  in a run and `q::debug` in an action; the `readsetup` setup built from the typecheck, read as
+  the compiled one, its invariants true at the start.
+- `apps/earnest/tests/behavior/quint_reads.rs` (3): `earnest verify specs/reads.qnt` through a fake
+  `quint` prints one line `fail  reads  8 states`, the verdicts as above, and the
+  `getOnlyElement` fault of `onlyfault.json` with its path and its run passing.
+- `tasks/break_it/tests/tlc/quint_reads.rs` (1, feature `tlc`): `earnest confirm --tlc` on
+  `reads.json` says `same` with 8 states.
+- Earlier slices' tests changed (none is on `origin/main`): `tests.rs`
+  `an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in` swaps the
+  invariant's `powerset` out before looking for `chooseSome` and now asserts `foldr` is not named;
+  `quint_data.rs` `an_operator_the_reader_does_not_take_makes_the_file_unreadable_and_names_it`
+  looks for the `powerset` of `every` and asserts `foldr` is not named; `quint.rs`
+  `an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct` swaps `powerset`
+  out of the fixture text. Each fixture lists both of its helpers as invariants, so the first
+  refusal the reader meets is now the invariant's, where the old scan listed every definition.
+
+### Not done, and doubts
+
+- A check now reports only the first refusal the reader meets; the old scan listed one per
+  definition. A module with several unread constructs shows them one at a time.
+- The `getOnlyElement` fault does not name the operator: that needs a new `Fault`, which every
+  backend's printing would see.
+- `fieldNames` of a record whose type is open where it is read is refused, though the call site's
+  type is known; reading it would need the argument's type carried with the binding.
+- A literal past 2^53 with digits below its leading ones (`123456789012345678901`) is shown as the
+  `f64` nearest it, not as written.
+
+### Checks, each with its last line
+
+On the tree after merging the integration head `6a0bb4f` (slice 4, second part):
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+- `just lint-library`: no warnings.
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 2010 passed, 0 failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392 runs,
+  64 differences`, the 64 of the conformance files `origin/main` does not have, as in slices 2
+  to 7 (the ten printed are `tasks/conformance/runs/cart`, `cart_broken` and `clock`).
+- `tests_kept.py --base origin/main`: `tests kept: 1613 tests, 4696 assertions (base: 1304, 3798)`.
+- `cargo test --locked -p earnest_break_it --features tlc --test tlc quint_reads`, with
+  `EARNEST_TLC_JAR` naming the TLC inside Apalache's jar: 1 passed.
+
+`just counts` and `just benchmark` were not run: `earnest_ir` and `earnest_check` are unchanged,
+and no `Op` or `Expr` variant was added.
+
+On merging: slice 4's second part renumbers the ids of an instance (`id_in`), so the types a built
+setup carries are keyed by the new id and inlined with that instance's aliases. A setup's own
+definition whose `fieldNames` argument has an alias type falls back to `quint compile`.
 
 ## The first pass's reads (#65): what is checked
 

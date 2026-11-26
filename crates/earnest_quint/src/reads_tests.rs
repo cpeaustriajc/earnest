@@ -1,121 +1,207 @@
-use crate::{Runs, read, read_located};
-use earnest_ir::Model;
-use earnest_value::{Notation, Quint};
+use crate::read;
+use earnest_diagnostics::Problem;
+use earnest_ir::{Fault, Frame, Model, Rule};
+use earnest_value::Value;
 
-const MATCHES: &str = include_str!("../fixtures/matches.json");
-const ASSERTS: &str = include_str!("../fixtures/asserts.json");
-const FAIR_TUPLE: &str = include_str!("../fixtures/fairtuple.json");
 const VALUES: &str = include_str!("../fixtures/values.json");
-const LOOKALIKE: &str = include_str!("../fixtures/lookalike.json");
-const RUN_PLACE: &str = include_str!("../fixtures/runplace.json");
+const READS: &str = include_str!("../fixtures/reads.json");
+const ENDLESS: &str = include_str!("../fixtures/endless.json");
+const ENDLESS_FOLD: &str = include_str!("../fixtures/endlessfold.json");
+const HELPERS: &str = include_str!("../fixtures/helpers.json");
+const BIG: &str = include_str!("../fixtures/bigint.json");
+const OPEN_FIELDS: &str = include_str!("../fixtures/openfields.json");
+const ONLY_FAULT: &str = include_str!("../fixtures/onlyfault.json");
 
 fn model(source: &str) -> Model {
     read("model.json", source).unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
 }
 
-fn ids(model: &Model) -> Vec<&str> {
-    model
-        .actions
+fn problems(source: &str) -> Vec<Problem> {
+    match read("model.json", source) {
+        Ok(found) => panic!("{} was read, but it must be refused", found.name),
+        Err(problems) => problems,
+    }
+}
+
+fn at_the_start<'m>(model: &'m Model, rule: &str) -> (&'m Rule, &'m [Value]) {
+    let found = model
+        .rules
         .iter()
-        .map(|action| action.id.as_str())
-        .collect()
+        .find(|each| each.id == rule)
+        .unwrap_or_else(|| panic!("no rule {rule}"));
+    let starts = model
+        .runs
+        .starts
+        .as_ref()
+        .expect("a Quint model lists its start states");
+    (found, starts.first().expect("one start state"))
 }
 
-#[test]
-fn each_branch_of_a_match_of_actions_is_an_action_and_each_branch_in_init_a_start() {
-    let matches = model(MATCHES);
-    assert_eq!(
-        ids(&matches),
-        [
-            "follow", "follow#2", "follow#3", "turn", "turn#2", "turn#3", "turn#4"
-        ],
-        "follow's three branches, then turn's: the `if`'s two, and the `match`'s `Idle` and `_`, \
-         whose `false` keeps it from happening"
-    );
-    assert_eq!(
-        matches.runs.starts.as_ref().map(Vec::len),
-        Some(3),
-        "init's `match` gives each of the three orders its start"
-    );
+fn evaluated((rule, state): (&Rule, &[Value])) -> Result<Value, Fault> {
+    rule.holds.eval(&mut Frame::new(state, rule.slots))
 }
 
-#[test]
-fn an_assert_inside_an_action_is_read() {
-    let asserts = model(ASSERTS);
+fn holds(model: &Model, rule: &str) {
     assert_eq!(
-        ids(&asserts),
-        ["up", "down"],
-        "both asserts are part of a guard"
+        evaluated(at_the_start(model, rule)),
+        Ok(Value::Bool(true)),
+        "Quint's TypeScript evaluator gives true for `{rule}`"
     );
 }
 
+fn the_problem(source: &str, feature: &str) -> Problem {
+    let found = problems(source);
+    found
+        .iter()
+        .find(|problem| problem.feature == feature)
+        .cloned()
+        .unwrap_or_else(|| panic!("no problem names {feature}: {found:?}"))
+}
+
 #[test]
-fn a_tuple_of_variables_through_vals_is_fairness_over_every_variable() {
-    let fair = model(FAIR_TUPLE);
-    let fair_to = |id: &str| {
-        fair.runs
-            .eventually
-            .iter()
-            .find(|rule| rule.id == id)
-            .and_then(|rule| rule.fair.clone())
-            .unwrap_or_else(|| panic!("no rule about runs {id}"))
-    };
-    for id in ["finishes", "finishesThroughVals", "finishesBackwards"] {
-        assert_eq!(
-            fair_to(id).actions,
-            [vec![0]],
-            "{id} is fair to `tick`, the step's first action"
+fn bool_is_the_set_of_both_booleans() {
+    holds(&model(VALUES), "booleans");
+}
+
+#[test]
+fn membership_in_nat_and_int_is_a_comparison() {
+    holds(&model(VALUES), "natural");
+}
+
+#[test]
+fn nat_read_as_a_set_is_refused_with_a_message_that_names_it_and_says_it_has_no_end() {
+    for (source, name) in [(ENDLESS, "Nat"), (ENDLESS_FOLD, "Int")] {
+        let problem = the_problem(source, &format!("`{name}`"));
+        assert!(
+            problem.message.contains("a set without end")
+                && problem.message.contains(&format!("x.in({name})"))
+                && !problem.message.contains("does not say what this name is"),
+            "the message names {name}, says it has no end and what is read: {problem:?}"
         );
     }
-    assert!(fair_to("unfairFinishes").actions.is_empty(), "no fairness");
+}
+
+#[test]
+fn get_only_element_gives_the_item_of_a_set_of_one_and_is_a_fault_on_any_other_set() {
+    let values = model(VALUES);
+    holds(&values, "only");
+    for rule in ["emptyOnly", "twoOnly"] {
+        assert_eq!(
+            evaluated(at_the_start(&values, rule)),
+            Err(Fault::Missing),
+            "Quint's TypeScript evaluator stops with QNT505 on `{rule}`"
+        );
+    }
+}
+
+#[test]
+fn field_names_gives_the_set_of_the_field_names_as_texts() {
+    holds(&model(VALUES), "names");
+}
+
+#[test]
+fn field_names_of_a_record_whose_type_is_left_open_is_refused_with_what_to_write() {
+    let problem = the_problem(OPEN_FIELDS, "`fieldNames`");
     assert!(
-        fair.rules.iter().any(|rule| rule.id == "neverFour"),
-        "`not(eventually(P))` is a rule that always holds"
-    );
-    assert!(
-        fair.runs
-            .eventually
-            .iter()
-            .any(|rule| rule.id == "leavesZero"),
-        "`not(always(P))` is a rule about runs"
+        problem.message.contains("give the parameter a record type")
+            && problem
+                .message
+                .contains("in the definition `names`, which `one` uses"),
+        "the message says what to write and which check reaches it: {problem:?}"
     );
 }
 
 #[test]
-fn a_module_that_writes_a_record_like_a_variant_keeps_variants_as_records() {
+fn foldr_folds_from_the_right_with_the_item_first() {
+    let values = model(VALUES);
+    for rule in ["foldedRight", "foldedRightList", "foldedRightEmpty"] {
+        holds(&values, rule);
+    }
+}
+
+#[test]
+fn an_operator_is_given_as_an_argument_as_a_lambda_or_by_name_and_two_levels_down() {
+    holds(&model(VALUES), "operators");
+}
+
+#[test]
+fn q_debug_is_read_as_its_value() {
+    holds(&model(VALUES), "debugged");
+}
+
+#[test]
+fn an_unused_helper_the_reader_does_not_take_does_not_refuse_the_check() {
+    let reads = model(READS);
     assert_eq!(
-        model(VALUES).symbols.notation(),
-        Notation::Quint(Quint {
-            tuples: true,
-            variants: true,
-        }),
-        "values writes tuples and variants only"
-    );
-    assert_eq!(
-        model(LOOKALIKE).symbols.notation(),
-        Notation::Quint(Quint {
-            tuples: true,
-            variants: false,
-        }),
-        "lookalike writes the record `{{ tag: \"a\", value: 0 }}`"
+        reads.rules.len(),
+        7,
+        "`unused` calls `chooseSome` and no check reaches it, so every invariant is read"
     );
 }
 
 #[test]
-fn a_refusal_inside_a_run_knows_the_run_and_the_refused_expression() {
-    let Err(refused) = read_located("runplace.json", RUN_PLACE, &Runs::Tests) else {
-        panic!("runplace's runs are refused");
-    };
-    let found: Vec<(Option<&str>, bool)> = refused
-        .iter()
-        .map(|each| (each.definition.as_deref(), each.id.is_some()))
-        .collect();
-    assert_eq!(
-        found,
-        [
-            (Some("fromNowhereTest"), true),
-            (Some("lateFailTest"), true)
-        ],
-        "{refused:?}"
+fn a_used_helper_the_reader_does_not_take_is_refused_with_the_names_that_reach_it() {
+    let problem = the_problem(HELPERS, "`chooseSome`");
+    assert!(
+        problem
+            .message
+            .contains("in the definition `deeper`, which `reached` reaches through `check`"),
+        "the problem names the helper and the path from the invariant: {problem:?}"
     );
+}
+
+#[test]
+fn a_literal_past_64_bits_shows_the_number_as_written() {
+    let problem = the_problem(BIG, "`100000000000000000000`");
+    assert!(
+        problem.message.contains("write a smaller number"),
+        "the message says what to write instead: {problem:?}"
+    );
+}
+
+#[test]
+fn bool_one_of_in_a_run_and_q_debug_in_an_action_are_read() {
+    let faulty = model(ONLY_FAULT);
+    assert_eq!(faulty.runs.scripts.len(), 1, "`boolTest` is played");
+    assert_eq!(
+        faulty.actions[0].inputs[0].values,
+        [Value::Bool(false), Value::Bool(true)],
+        "`Bool.oneOf()` picks either boolean"
+    );
+}
+
+const SETUP_FIXTURES: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tasks/quint/setups/fixtures"
+);
+
+fn setup_fixture(name: &str) -> String {
+    let path = format!("{SETUP_FIXTURES}/{name}");
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path} can't be read: {error}"))
+}
+
+#[test]
+fn a_setup_built_from_the_typecheck_reads_field_names_bool_nat_foldr_and_operators_as_compiled() {
+    let typechecked = crate::Typechecked::read(&setup_fixture("readsetup.typecheck.json"))
+        .expect("the typecheck output is read");
+    let invariants = vec!["named".to_owned(), "reversed".to_owned()];
+    let built = typechecked
+        .setup(&crate::Setup::new(
+            "ReadSetup",
+            ("init", "step"),
+            (&invariants, &[]),
+            &crate::Runs::None,
+        ))
+        .expect("the setup is of the plain shape");
+    let ours = model(&built);
+    let theirs = model(&setup_fixture("readsetup.ReadSetup.json"));
+    assert_eq!(ours.runs.starts, theirs.runs.starts);
+    assert_eq!(
+        ours.rule_ids().collect::<Vec<_>>(),
+        theirs.rule_ids().collect::<Vec<_>>()
+    );
+    for read in [&ours, &theirs] {
+        holds(read, "named");
+        holds(read, "reversed");
+    }
 }

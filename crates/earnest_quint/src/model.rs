@@ -385,7 +385,7 @@ fn built(
             STEP
         }));
     };
-    let mut reader = Reader::new(&compiled.table, defs.clone(), positions, symbols);
+    let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
     let (starts, mut actions, mut rules, mut eventually, picks) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
