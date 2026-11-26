@@ -66,7 +66,7 @@ const SPECS: [&str; 11] = [
     "compiled",
 ];
 
-const COMPILED: [&str; 23] = [
+const COMPILED: [&str; 24] = [
     "ints.Low",
     "ints.High",
     "kinds.Setup",
@@ -90,9 +90,10 @@ const COMPILED: [&str; 23] = [
     "more.Plain",
     "compiled.Nested",
     "compiled.Renamed",
+    "compiled.Single",
 ];
 
-const FALLBACKS: [&str; 2] = ["Nested", "Renamed"];
+const FALLBACKS: [&str; 2] = ["Nested", "Single"];
 
 const SAME_AS: [(&str, &str); 1] = [("Exported", "Plain")];
 
@@ -329,6 +330,7 @@ fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() 
         ("ByOwn", &["upTest"][..]),
         ("ByName", &["upTest"][..]),
         ("Exported", &["upTest", "fullTest"][..]),
+        ("Renamed", &["upTest"][..]),
     ] {
         let holding: Vec<(&str, &str)> = runs.iter().map(|run| (*run, "holds")).collect();
         assert_eq!(

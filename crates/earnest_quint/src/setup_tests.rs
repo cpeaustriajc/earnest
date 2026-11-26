@@ -30,7 +30,7 @@ const fn shape(
     }
 }
 
-const BUILT: [Shape; 20] = [
+const BUILT: [Shape; 21] = [
     shape(("ints", "Low", "step"), &["below", "small"], &["reaches"]),
     shape(("ints", "High", "step"), &["below", "small"], &["reaches"]),
     shape(
@@ -77,6 +77,7 @@ const BUILT: [Shape; 20] = [
         ..shape(("more", "Two", "either"), &["ok", "fine"], &[])
     },
     shape(("more", "Pair", "step"), &["ok", "apart"], &[]),
+    shape(("compiled", "Renamed", "step"), &["ok"], &[]),
 ];
 
 fn fixture(name: &str) -> String {
@@ -208,7 +209,7 @@ fn the_runs_a_check_plays_are_kept_from_the_spec_module_after_quints_declaration
 fn a_setup_of_any_other_shape_is_left_to_quint_compile() {
     let compiled = typechecked("compiled");
     let ok = owned(&["ok"]);
-    for main in ["Nested", "Renamed", "Mid", "Base", "Limit", "Nowhere"] {
+    for main in ["Nested", "Single", "Mid", "Base", "Limit", "Nowhere"] {
         let setup = Setup::new(main, ("init", "step"), (&ok, &[]), &Runs::None);
         assert_eq!(compiled.setup(&setup), None, "{main}");
     }

@@ -1,4 +1,4 @@
-// Setups earnest does not build itself: each is compiled by `quint compile --main`.
+// An instance of an instance, a module imported under a name, and one name imported alone.
 module Base {
   const K: int
   var v: int
@@ -23,4 +23,9 @@ module Limit { pure val L = 2 }
 module Renamed {
   import Limit as Li
   import Base(K = Li::L).*
+}
+
+module Single {
+  import Limit.L
+  import Base(K = L).*
 }

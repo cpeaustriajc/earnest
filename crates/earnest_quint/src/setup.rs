@@ -136,6 +136,7 @@ impl Typechecked {
 }
 
 struct Instance<'t> {
+    declared: Option<(u64, &'t str)>,
     alias: Option<&'t str>,
     namespace: String,
     visible: bool,
@@ -164,7 +165,14 @@ struct Filler<'t> {
 }
 
 fn plain_import<'t>(typechecked: &'t Typechecked, declaration: &Value) -> Fill<Vec<&'t Value>> {
-    if text(declaration, "defName") != Some("*") || declaration.get("qualifiedName").is_some() {
+    let whole = matches!(
+        (
+            text(declaration, "defName"),
+            text(declaration, "qualifiedName"),
+        ),
+        (Some("*"), None) | (None, Some(_))
+    );
+    if !whole {
         return None;
     }
     let module = typechecked.module(text(declaration, "protoName")?)?;
@@ -219,6 +227,7 @@ fn instance<'t>(
         return None;
     }
     Some(Instance {
+        declared: Some((number(declaration, "id")?, proto)),
         alias,
         namespace: format!("{main_name}{SEPARATOR}{}", alias.unwrap_or(proto)),
         visible: alias.is_none(),
@@ -243,8 +252,26 @@ impl<'t> Filler<'t> {
                     instances.push(instance(typechecked, main_name, declaration)?);
                 }
                 "import" => {
-                    for definition in plain_import(typechecked, declaration)? {
-                        own.insert(number(definition, "id")?, definition);
+                    let definitions = plain_import(typechecked, declaration)?;
+                    match text(declaration, "qualifiedName") {
+                        None => {
+                            for definition in definitions {
+                                own.insert(number(definition, "id")?, definition);
+                            }
+                        }
+                        Some(alias) => instances.push(Instance {
+                            declared: None,
+                            alias: Some(alias),
+                            namespace: alias.to_owned(),
+                            visible: false,
+                            declarations: definitions
+                                .into_iter()
+                                .map(|definition| Some((number(definition, "id")?, definition)))
+                                .collect::<Fill<HashMap<u64, &Value>>>()?,
+                            constants: HashMap::new(),
+                            typedefs: HashMap::new(),
+                            fresh_ids: false,
+                        }),
                     }
                 }
                 "export" => exports.push(declaration),
@@ -255,7 +282,7 @@ impl<'t> Filler<'t> {
                 _ => return None,
             }
         }
-        if instances.is_empty() {
+        if instances.iter().all(|each| each.declared.is_none()) {
             return None;
         }
         for export in exports {
@@ -270,16 +297,11 @@ impl<'t> Filler<'t> {
         }
         let mut by_declaration = HashMap::new();
         let mut by_instance = HashMap::new();
-        let instance_declarations: Vec<&Value> = list(main, "declarations")
-            .iter()
-            .filter(|each| text(each, "kind") == Some("instance"))
-            .collect();
-        for (position, (each, declaration)) in
-            instances.iter_mut().zip(instance_declarations).enumerate()
-        {
-            let proto = text(declaration, "protoName")?;
-            each.fresh_ids = protos.get(proto).copied().unwrap_or(0) > 1;
-            by_instance.insert(number(declaration, "id")?, position);
+        for (position, each) in instances.iter_mut().enumerate() {
+            if let Some((id, proto)) = each.declared {
+                each.fresh_ids = protos.get(proto).copied().unwrap_or(0) > 1;
+                by_instance.insert(id, position);
+            }
             if !each.fresh_ids {
                 for id in each.declarations.keys().chain(each.constants.keys()) {
                     by_declaration.insert(*id, position);

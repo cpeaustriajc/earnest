@@ -22,5 +22,6 @@
   {"file": "more.qnt", "main": "Exported", "invariants": ["ok", "below"], "temporal": ["grows"], "runs": true},
   {"file": "more.qnt", "main": "Plain", "invariants": ["ok", "below"], "temporal": ["grows"], "runs": true},
   {"file": "compiled.qnt", "main": "Nested", "invariants": ["ok"], "runs": true},
-  {"file": "compiled.qnt", "main": "Renamed", "invariants": ["ok"], "runs": ["upTest"]}
+  {"file": "compiled.qnt", "main": "Renamed", "invariants": ["ok"], "runs": ["upTest"]},
+  {"file": "compiled.qnt", "main": "Single", "invariants": ["ok"], "runs": ["upTest"]}
 ] }
