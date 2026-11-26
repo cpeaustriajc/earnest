@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: charts draw the states the rules are about
+
+A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw the shortest path to where each rule's premise first holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, and where an eventually rule starts and is met. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.`` Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
+
 ## November 2026: Quint fairness of the step beside fairness of an action
 
 A temporal property under `weakFair(step, vars)` together with `weakFair(A, vars)` was judged broken where Quint's TLC run says it holds, when a run could stop in a state where the step can do nothing more and `A` alone could still happen. Such a run is not fair to `A`, so it no longer counts. Fairness of the step alone, and of an action alone, are judged as before.

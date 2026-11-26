@@ -246,6 +246,18 @@ Additional rules for `--base`:
   - A box represents every state sharing its label; the note counts the underlying states in omitted boxes, and one arrow between two boxes counts once regardless of how many actions share it.
   - If the shortest path to a broken state exceeds the arrow cap, the chart draws the prefix of that path and notes: `Not shown: 5 of 26 states and 5 of 25 arrows. A broken state lies beyond what is shown.`
   - If one or more broken states are drawn and others are omitted, the note adds `Another broken state lies beyond what is shown.` (or `<n> more broken states lie beyond what is shown.`).
+- After the paths to broken states, the chart spends what is left of the cap on the shortest path to the nearest box where each rule's premise holds, one rule at a time in the order the result lists the rules. A premise that holds in a box already drawn, or in a start state, costs no arrow. The rest of the cap goes to the states nearest the start.
+- A rule's premise is:
+  - for a rule whose condition is an implication, its left side: `!a || b` in TypeScript and Rust, `a ? b : true` in TypeScript, `if a { b } else { true }` in Rust, each also inside a helper, and `a implies b` in Quint. With several negations before the last `||`, as in `!a || !b || c`, the premise is all of them: `a && b`. Any other condition, such as `!(a && b)` or `a !== 1 || b`, has no premise.
+  - for an eventually rule, the states where its `after` condition holds, and also the states where its `reaches` condition holds, so the chart shows where the rule starts and where it is met.
+- A property marked `/// @check reachable` needs no premise: the state that reaches it breaks its rule, so its path is drawn with the broken states. Witnesses and runs add no premise.
+- When a rule has a premise that holds in a reachable state, the chart ends with one more line, after a blank line, naming where each first holds, or that it lies beyond what is shown:
+
+  ```text
+  The premise of `cornered` first holds in `x = 5, y = 5`. `settles` starts in `busy` and is met in `idle`.
+  ```
+
+  A chart of a model with no premise has no such line.
 
 ### `earnest report`
 
