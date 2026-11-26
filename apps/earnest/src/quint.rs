@@ -891,7 +891,14 @@ fn marked_checks(
     };
     let mut jobs = Vec::new();
     let mut problems = Vec::new();
-    for module in places.modules_in(&candidate.real) {
+    let mut modules = places.modules_in(&candidate.real);
+    modules.sort_by_key(|module| {
+        module
+            .id
+            .and_then(|id| places.spot_of(id))
+            .map_or((u32::MAX, u32::MAX), |(_, line, column)| (line, column))
+    });
+    for module in modules {
         let Some(mark) = module.doc.and_then(mark_of) else {
             continue;
         };
