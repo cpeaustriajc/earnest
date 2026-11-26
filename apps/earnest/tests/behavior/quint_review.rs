@@ -213,7 +213,7 @@ fn a_run_reached_through_an_instance_under_a_name_is_played_when_a_marked_run_is
 #[test]
 fn a_marked_property_of_a_check_with_no_step_is_not_left_unjudged_without_a_word() {
     let report = Quint::new().report("noinit");
-    let judged = find_model(&report, "N").map(verdicts).unwrap_or_default();
+    let judged = find_model(&report, "N").map_or_else(Vec::new, verdicts);
     assert!(
         judged.iter().any(|(id, _)| id == "small") || speaks_of(&report, "noinit.qnt", "small"),
         "`small` is marked `@check` and false, and `N` passes on its run alone: {report}"
@@ -250,5 +250,20 @@ fn following_the_message_for_the_setups_checks_file_keeps_the_verdicts_of_two_an
         two["status"], "pass",
         "`Two` judged `ok` and `fine` and passed; the message's marks on `Base` for `Exported` \
          and `Plain` also land in `TwoChecked`, and no line of it says so: {two}"
+    );
+}
+
+#[test]
+fn a_property_seen_through_an_import_under_a_name_and_its_export_is_judged_once() {
+    let report = Quint::new().report("migrated");
+    let ids: Vec<String> = verdicts(model(&report, "Exported"))
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    let mut once = ids.clone();
+    once.dedup();
+    assert_eq!(
+        ids, once,
+        "`Exported` is `import Base(K = 1) as B` and `export B.*`"
     );
 }
