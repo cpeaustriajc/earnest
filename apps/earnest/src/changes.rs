@@ -1469,12 +1469,11 @@ mod tests {
         run_git(root, &["add", "--all"]);
         run_git(root, &["commit", "--quiet", "--message", "base"]);
         assert_eq!(changes_since_the_base(root, None), [], "nothing changed");
-        let without_the_second = TWINS_AT_BASE
-            .lines()
-            .take(3)
-            .map(|line| format!("{line}\n"))
-            .collect::<String>();
-        put(root, "twins.model.ts", &without_the_second);
+        let second = TWINS_AT_BASE
+            .find("export const B")
+            .expect("the second model is in the file");
+        let without_the_second = &TWINS_AT_BASE[..second];
+        put(root, "twins.model.ts", without_the_second);
         assert_eq!(
             changes_since_the_base(root, None),
             [change("Jar", "lowB", Kind::Removed)],
