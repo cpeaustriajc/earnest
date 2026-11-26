@@ -1817,3 +1817,11 @@ Unit tests: `crates/earnest_ir/tests/tlc_order.rs` and `crates/earnest_quint/src
 `fixes.json` and once with only `bumpFair` as `fairpart.json`). Two bullets of "Seen, not
 written up" no longer hold on the merged tree: `--rule inRange` selects the invariant of a
 setup, and `runs: true` on a setup plays the spec's `upTest`.
+
+Proof on the tree merged with the integration branch at a94146b (Quint reads 1, #64):
+`just same-answers origin/main` finds 0 differences in its three sweeps and 64 in the model files,
+all from 16 files under `tasks/conformance/runs/` and `tasks/conformance/setups/` that
+`origin/main` leaves unreadable (rules about runs and setups); `just counts` and `just benchmark`
+are met with no record changed; `cargo test --locked -p earnest_break_it --features tlc --test
+tlc` passes its 12 tests with `tla2tools.jar` (with the TLC inside Apalache's jar, three
+`confirm --tlc` tests fail on the integration branch's own head as well).
