@@ -12,6 +12,21 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 See [Confirming a check with Quint](/reference/quint/#confirming-a-check-with-quint).
 
+## November 2026: a kept Quint parse is read again by another build
+
+- **Fixed:** `.earnest/quint/` kept what earnest read from `quint parse` by the version of Quint and the file alone, so a newer build reused what an older build had read. After an update, a check that lists a `val` in `expectCounterexample` was `unreadable` with `which is not an invariant, a temporal property or a run`, and `--no-cache` did not clear it. The entry is now kept for one build, as [cached results](/reference/cli/#caching) are. On an older build, delete `.earnest/quint/` after updating.
+
+See [The cache](/reference/quint/#the-cache).
+
+## November 2026: Quint projects of types, spec and setups from one typecheck, `assume`, and shorter paths
+
+- **A spec that imports:** a setup whose spec imports a types module or helpers (`import types.* from "./types"`, `import Types as T`, helpers that import helpers) is built from the file's one `quint typecheck`, with no `quint compile`, and the spec's runs are played. A check of runs only of a plain import of such a spec is built the same way.
+- **`assume`:** a false assumption makes the check `unreadable` at the assumption, in a module checked directly and in a setup alike. It was refused at line 1 in the first and dropped without a word in the second.
+- **Shorter paths:** in a Quint path a step that changes one key of a map, one field of a record or an item of a set or a list prints only that (`balances.get("ann"): 3 -> 4`, `seen: + 4`, `queue: + 3 at the end`); the `start` and `end` lines and the JSON keep whole values. A branch of a `match` action is named by its variant, `deliver Grant`, not `deliver#2`. Messages name a definition by its short name.
+- **Smaller fixes:** a run whose first action can't happen prints `start  no state`, a fault while working out a run's first action names that action rather than `init`, and a literal between 2^63 and 2^64 is shown as written.
+
+See [What earnest runs](/reference/quint/#what-earnest-runs) and [How values print](/reference/quint/#how-values-print).
+
 ## November 2026: Quint checks under a name, and counterexamples that must be found
 
 - **`name`:** a check in `earnest.quint.json` may carry a `name`, which is its model name everywhere, so one module can be checked several times with other invariants. Two checks of one module without names stay `unreadable`, and the message says to add `name`. Checks that compile alike start one `quint compile`.

@@ -427,7 +427,7 @@ impl<'a> Run<'_, 'a> {
                 );
             }
         }
-        start_states(&paths, &self.fields, self.reader.slots).map_err(|refused| {
+        start_states((&paths, &first), &self.fields, self.reader.slots).map_err(|refused| {
             let why = format!("{}, in the run `{}`", refused.why, self.name);
             Refusal { why, ..refused }.within(self.name)
         })
