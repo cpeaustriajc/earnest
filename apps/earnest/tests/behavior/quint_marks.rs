@@ -271,7 +271,7 @@ fn a_marked_module_with_no_init_or_step_plays_its_runs_and_an_unmarked_one_is_no
     );
     assert_eq!(rule(plays, "tooFar")["expected"], "broken", "{plays}");
     let text = quint.earnest(&["verify", "runs"]);
-    assert_eq!(text.model_line("Plays")[4], "0 rules, 3 runs", "{text}");
+    assert_eq!(text.model_line("Plays")[3], "0 rules, 3 runs", "{text}");
 }
 
 #[test]

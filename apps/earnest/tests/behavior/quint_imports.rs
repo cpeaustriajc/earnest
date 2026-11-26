@@ -392,14 +392,14 @@ fn a_step_of_a_quint_path_prints_only_the_key_field_or_item_it_changes() {
     assert_eq!(
         run.detail("Printing"),
         [
-            "broken  annBelowFive  \"The Quint invariant `annBelowFive` holds\"",
+            "broken  annBelowFive",
             "start  queue = [1, 2, 3, 4, 5], balances = Map(\"ann\" -> 3, \"bob\" -> 5, \"cy\" -> 0, \
              \"dee\" -> 7, \"eve\" -> 1), seen = Set(1, 3, 5, 7)",
             "1. step  queue: + 3 at the end, balances.get(\"ann\"): 3 -> 4",
             "2. step  queue: + 4 at the end, balances.get(\"ann\"): 4 -> 5, seen: + 4",
             "end    queue = [1, 2, 3, 4, 5, 3, 4], balances = Map(\"ann\" -> 5, \"bob\" -> 5, \
              \"cy\" -> 0, \"dee\" -> 7, \"eve\" -> 1), seen = Set(1, 3, 4, 5, 7)",
-            "broken  noStartTest  \"The Quint run `noStartTest` passes\"",
+            "broken  noStartTest",
             "start  no state: the first action gives none",
             "why    the run's first action can't happen: it gives no state to start from",
         ],

@@ -136,9 +136,9 @@ fn written(expr: &Quint) -> String {
 
 fn property_says(name: &str, number: usize, of: usize) -> String {
     if of < 2 {
-        return format!("The Quint temporal property `{name}` holds");
+        return format!("Quint temporal property `{name}`");
     }
-    format!("Part {number} of the Quint temporal property `{name}` holds")
+    format!("part {number} of {of} of the Quint temporal property `{name}`")
 }
 
 fn numbered(name: &str, number: usize) -> String {
