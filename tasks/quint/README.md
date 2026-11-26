@@ -3235,3 +3235,114 @@ Eventually_unfairFinishes was violated.)". The integration branch before this sl
 for `unfairFinishes` alone (`eventually(done)`, no fairness), which it already read: a broken
 rule about runs without fairness in a Quint model is not matched to TLC's counterexample. It is
 not this slice's, and is left for the TLA+ export's owner.
+
+## The first pass's reads (#65): report
+
+### Done
+
+1. **`match` of actions** (`reader.rs` `is_action`, `cases`): a `match` is an action when one of
+   its branches is; each branch is a path guarded by `tag == "Name"` with the variant's value
+   bound to the branch's parameter, a `_` branch is guarded by `tag` differing from every tag
+   named before it, and a repeated tag is skipped. Read in `init`, a step, `any`/`all`, and a
+   run step. `if (c) A else B` of actions was already read and is in the fixture. An action
+   still met where Quint wants a value now names what the file wrote (`` `all { … }` ``,
+   `` `any { … }` ``, `` `x' = …` ``) instead of `` `assign` ``. Tests:
+   `quint_actions::a_match_whose_branches_are_actions_...`,
+   `actions_tests::each_branch_of_a_match_of_actions_is_an_action_...`.
+2. **`assert` in an action** (`builtins.rs`, new `Op::Assert` and `Fault::Asserted` in
+   `earnest_ir`, TLA+ export in `earnest_tla/src/scribe.rs`): true is no change in either
+   backend; false is a TLC guard and a `quint run`/`quint test` error, so earnest makes it a fault
+   that names `assert` and the rules it can't judge are `unknown`. The TLA+ export writes
+   `TRUE` and adds the condition to what must hold for a value, so TLC finds the same fault.
+   In a run, `assert` at the start of a step's `all` stays as slice 6 reads it; an `assert`
+   inside an action a run calls is the fault. Tests: `quint_actions::an_assert_in_an_action_...`,
+   `actions_tests::an_assert_inside_an_action_is_read`.
+3. **Fairness and `not`** (`temporal.rs` `named_value`, `over_every_variable`, `negated`): the
+   tuple is found through any chain of `val`s; order does not matter; the message for a tuple
+   that leaves a variable out names it (`` the tuple leaves out `done` ``). `not(eventually(P))`
+   is a rule (`always(not(P))`), `not(always(P))` a rule about runs reaching `not(P)` with the
+   property's fairness, only at the top of a property or of what fairness `implies`; any
+   temporal operator under them keeps the old refusal, whose message now says which `not`
+   forms are read. Tests: `quint_actions::fairness_over_a_named_tuple_...`,
+   `actions_tests::a_tuple_of_variables_through_vals_...`,
+   `temporal::tests::not_eventually_at_the_top_of_a_property_...`.
+4. **Values as Quint writes them** (`earnest_value`: `Notation`, `Quint`, `Symbols::written_in`;
+   `earnest_quint/src/notation.rs`): `Symbols` already says how a model's values print, so it
+   carries the notation; it defaults to `Notation::Earnest`, and only the Quint reader sets
+   `Notation::Quint`. No field of `Model`, `Field` or `Action` changed, and the values are held
+   as before, so the search, `replay`, the cache and the TLA+ export are untouched. Text and
+   chart: Quint's REPL forms, `(1, 5)`, `()`, `Aa`, `Some(3)`, `Cc((1, "x"))`, `{ a: 1 }`,
+   `Set(1, 2)`, `Map(k -> v)`, `[1, 2]`. JSON: a tuple `{"#tup": [...]}` and a variant
+   `{"tag": ..., "value": ...}` as ITF writes them; sets, maps and lists keep earnest's JSON.
+   When the module itself writes a record (`Rec`) of exactly `tag` and `value`, or of only
+   `_1`..`_n`, that kind is printed as records for the whole model. Tests:
+   `earnest_value/tests/notation.rs` (4),
+   `quint_actions::a_path_prints_tuples_variants_records_sets_and_maps_...` (text, JSON,
+   chart), `quint_actions::a_quint_record_with_the_fields_of_a_variant_...`,
+   `quint_actions::a_typescript_record_with_the_fields_of_a_tuple_or_a_variant_...`.
+5. **Places and small faults**: `runs.rs`'s refusals carry the run's name and, where known, the
+   refused expression's id, so they land at the expression in the `.qnt` file
+   (`quint_actions::with_quint::a_refusal_inside_a_run_...`: 9:25 and 10:22). `checks.rs`
+   compares `file` written plainly (`.` dropped, `x/..` folded), so `a.qnt`, `./a.qnt` and
+   `sub/../a.qnt` with one `main` are `unreadable` (`checks::tests::one_file_written_two_ways_...`,
+   `quint_actions::with_quint::one_file_written_two_ways_...`). The docs no longer say Quint
+   retries a `nondet` at the top of a run. The version cache behind a wrapper script is left:
+   seeing through a script means running `quint --version` (a Node start) on every run, which
+   is the cost the cache is there to save; the docs say to touch the script or point
+   `EARNEST_QUINT` at the program.
+6. **Messages**: `0.reps(...)` says to repeat 1 to 1000 times; a run that does not start with
+   `init` says to write `init.then(...)`; a `fail()` not last says where to write it; an
+   assignment to a name that hides a variable (`` `y_28` `` before) is `` `y' = …` `` and says
+   to rename the parameter, `nondet` or `val`; a `weakFair` over something else says to write a
+   tuple of every variable or a `val` that is one.
+
+### Still refused, with their messages
+
+`strongFair` (only `weakFair(A, vars)` is read as fairness, not strong fairness), `enabled`,
+`next`, `orKeep`, `mustChange` (a temporal operator inside `always`/`eventually` is not read),
+`eventually(always(P))` (the checker finds runs that reach a state, not runs that stay),
+`weakFair` of an action given arguments or of an action inside another (as before), a run that
+does not start with `init`, and `not` over anything but `eventually(P)`/`always(P)` of a state
+condition.
+
+### Tests of earlier slices changed
+
+- `tests::a_variant_is_a_record_of_its_tag_and_its_value` became
+  `..._printed_as_quint_writes_it`: the Quint forms, then the held encoding through
+  `Notation::Earnest`.
+- `temporal::tests::a_temporal_operator_under_not_or_or_is_refused` became
+  `a_temporal_operator_under_or_is_refused`: `not(eventually(P))` is now read.
+- `quint_data::a_path_prints_maps_records_sets_and_lists_with_their_values`: `Map("alice" -> 1)`,
+  `(0, "x")` and `Red` instead of earnest's forms.
+
+On merging #64 (which added `quint_reads.rs`, `reads_tests.rs` and `fixtures/values.*` too),
+this slice's files were renamed `quint_actions.rs`, `actions_tests.rs` and
+`fixtures/printed.*` (module `values` inside).
+
+### Checks, each with its last line
+
+On the tree merged with the integration head `a94146b`:
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings. `just lint-library`: no
+  warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2029 passed, 0
+  failed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`.
+- `just counts`: every row `met` (largest change `+0.28%`, `grid_1m`).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.751 s, 1 worker 2.348 s).
+- `just same-answers origin/main`: the three sweeps `0 differences`; `every model file: 392
+  runs, 64 differences`, the files `origin/main` does not have, as in slices 2 and 4 to 7.
+- `tests_kept.py --base origin/main`: `tests kept: 1625 tests, 4731 assertions (base: 1304,
+  3798)`.
+- `earnest confirm --tlc` (Apalache 0.62.4's jar): `same` for `matches`, `asserts`, `broken`
+  and `fairconfirmed`.
+
+### Doubts and unfinished
+
+- `confirm --tlc` says `differs` for a broken rule about runs without fairness in a Quint model
+  (`eventually(done)`, before this slice too); see above.
+- A module that writes a record shaped like a variant prints all its variants as records. A
+  typed printer (walking each field's Quint type) would avoid it; it was not worth the size.
+- Action ids of `match` branches are numbered (`follow#2`), as `any` branches already are.
