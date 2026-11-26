@@ -373,8 +373,17 @@ fn a_variant_is_a_record_of_its_tag_and_its_value() {
 
 #[test]
 fn an_operator_the_reader_does_not_take_is_refused_with_the_definition_it_is_in() {
-    refused_with(REFUSED, "`chooseSome`", "in the definition `step`");
-    refused_with(REFUSED, "`foldr`", "write `foldl`");
+    let past_the_powerset = REFUSED.replace("\"powerset\"", "\"flatten\"");
+    refused_with(
+        &past_the_powerset,
+        "`chooseSome`",
+        "in the definition `step`",
+    );
+    let found = problems(&past_the_powerset);
+    assert!(
+        found.iter().all(|problem| problem.feature != "`foldr`"),
+        "`foldr` is read: {found:?}"
+    );
 }
 
 #[test]

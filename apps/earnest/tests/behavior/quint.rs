@@ -153,7 +153,8 @@ fn an_operator_still_refused_makes_the_file_unreadable_and_names_the_construct()
     let sandbox = Sandbox::empty();
     let source = crate::support::repository().join("crates/earnest_quint/fixtures/refused.json");
     let text = fs::read_to_string(&source)
-        .unwrap_or_else(|error| panic!("{} can't be read: {error}", source.display()));
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", source.display()))
+        .replace("\"powerset\"", "\"flatten\"");
     sandbox.write("models/refused.json", &text);
     let run = verify(&sandbox, "refused", &[]);
     run.exits(1);

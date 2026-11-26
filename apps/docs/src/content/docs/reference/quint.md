@@ -119,10 +119,26 @@ The reader takes variables of every type but operators: integers, booleans, text
 
 A `nondet x = S.oneOf()` may pick from a set that does not change, from a state variable (`pending.oneOf()`), from an expression over the state (`balances.keys().filter(k => balances.get(k) < 3)`, `1.to(left)`), or from a set that reads an earlier `nondet` of the same action or of `init` (`Set("a", "b", "c").exclude(Set(giver))`). In each state the search works the set out and tries every value, with no bound, however large the set grows: a path step prints the value picked, such as `serve  who = "ann"`. Where the set is empty, the action can't happen. Runs and temporal properties try every value in the same way.
 
-Still refused, each named in the problem:
+The reader also takes:
 
-- Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
-- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `foldr` (write `foldl`), `fieldNames`, `apalache::generate`, `q::debug`, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+- `Bool`, the set of both booleans, wherever a set is read: `nondet b = Bool.oneOf()` in a step, in `init` and in a run, `b.in(Bool)`, `Bool.size()`, `Bool.map(...)`, `Bool.powerset()` and `tuples(Bool, S)`.
+- `x.in(Nat)` as `x >= 0`, `x.in(Int)` as true, the same through `Nat.contains(x)`, and `S.subseteq(Nat)` as `S.forall(x => x >= 0)`.
+- `S.getOnlyElement()`, the item of a set of one. On any other set it is a fault with a path, as Quint's TypeScript evaluator stops with `QNT505`. The fault says the step or rule reads something that is not there; it does not name `getOnlyElement`.
+- `r.fieldNames()`, the field names of a record as texts, worked out when the file is read from the record's type.
+- `l.foldr(z, (item, total) => ...)`, which folds from the last item, with the item first, as Quint's `builtin.qnt` writes it.
+- A definition that takes an operator, such as `pure def app(f: int => int, v: int): int = f(v)`, called with a lambda (`app(v => v + 1, x)`), with a named operator (`app(inc, x)`), with a lambda of two parameters, or passing the operator on to another definition. The reader puts the operator in at the call, as it does for a value.
+- `q::debug(message, value)`, read as `value`.
+
+Only the definitions that `init`, `step`, a listed invariant, a listed temporal property or a played run reaches are read. A helper nothing reaches is never looked at, so a construct earnest refuses in it does not refuse the check. A refusal in a helper names the helper and the check that reaches it: `` `chooseSome` ... in the definition `deeper`, which `reached` reaches through `check` ``.
+
+Still refused, each named in the problem with what to write instead:
+
+- Not read: `Int.oneOf()` and `Nat.oneOf()`, which pick among numbers without end (pick from a range such as `0.to(9)`), `Nat` and `Int` anywhere but `in`, `contains` and `subseteq` (such as `Nat.map(...)`), `powerset`, `setOfMaps`, `allLists` and `allListsUpTo` of a set read from the state, and a `nondet` at the top of a run whose set reads the state.
+- Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled` and the nestings the temporal report lists.
+- Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
+- Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written, such as `` `100000000000000000000` ``.
+
+Quint's typechecker refuses an operator kept as a value (`pure val f = inc`, an `if` that gives an operator, a set of operators), so the reader meets operators only as arguments.
 
 The full lists are in the reports of [the data types](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#refused-by-name) and of [temporal properties](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md#slice-5-report).
 

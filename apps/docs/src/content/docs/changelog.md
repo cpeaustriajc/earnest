@@ -5,6 +5,16 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint reads `Bool`, `Nat`, `foldr` and operators given as arguments
+
+The Quint reader reads more of ordinary Quint, and a helper no check reaches no longer refuses the check.
+
+- **Now read:** `Bool` as the set of both booleans, `x.in(Nat)` and `x.in(Int)`, `S.subseteq(Nat)`, `S.getOnlyElement()` (a fault on a set that does not hold one item), `r.fieldNames()`, `l.foldr(...)`, `q::debug(message, value)`, and a definition that takes an operator, called with a lambda or a named operator.
+- **No longer refused:** a module whose unused helper holds a construct earnest does not read. Only what `init`, `step`, the listed invariants and temporal properties and the played runs reach is read, and a refusal in a helper names the check that reaches it.
+- **Clearer messages:** `Nat` or `Int` read as a set says it has no end and where it is read, a literal past 64 bits shows the number as written, and each construct still refused says what to write instead.
+
+See [What is read today](/reference/quint/#what-is-read-today).
+
 ## November 2026: `--base` reads a witness's inputs by name
 
 `earnest verify --base <ref>` compares each step of a witness by its action and the value it gives each input, by the input's name.

@@ -1,6 +1,6 @@
-use crate::json::Expr as Quint;
-use crate::reader::{Read, Reader, constant};
-use earnest_ir::{Expr, MapOp, Math, Op, SeqOp, SetOp, Shelf, Sweep};
+use crate::json::{Expr as Quint, Scheme};
+use crate::reader::{Read, Reader, constant, endless};
+use earnest_ir::{Expr, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep};
 use earnest_value::{MOST_VALUES_LISTED, Sym, Value};
 use std::collections::BTreeSet;
 
@@ -34,6 +34,9 @@ pub(crate) enum Data {
     MapBy,
     SetToMap,
     Indices,
+    Only,
+    FieldNames,
+    FoldRight,
 }
 
 pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
@@ -82,6 +85,9 @@ pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
         "length" => Data::Apply(Op::Seq(SeqOp::Size), 1),
         "nth" => Data::Apply(Op::Seq(SeqOp::Nth), 2),
         "indices" => Data::Indices,
+        "getOnlyElement" => Data::Only,
+        "fieldNames" => Data::FieldNames,
+        "foldr" => Data::FoldRight,
         "replaceAt" => Data::Apply(Op::Seq(SeqOp::ReplaceAt), 3),
         "slice" => Data::Apply(Op::Seq(SeqOp::Slice), 3),
         "range" => Data::Apply(Op::Ascending, 2),
@@ -89,6 +95,35 @@ pub(crate) fn data_builtin(opcode: &str) -> Option<Data> {
         _ => return None,
     };
     Some(found)
+}
+
+const ENDLESS_NAMES: [&str; 2] = ["Nat", "Int"];
+const NATURALS: &str = "Nat";
+const ONLY_KEY: i64 = 1;
+const RECORD: &str = "rec";
+const ROW: &str = "row";
+const NO_MORE_FIELDS: &str = "empty";
+
+fn member(name: &str, item: Expr) -> Expr {
+    if name == NATURALS {
+        apply(
+            Op::Order(Order::GreaterOrEqual),
+            vec![item, Expr::Const(Value::Int(0))],
+        )
+    } else {
+        apply(Op::Equal, vec![item.clone(), item])
+    }
+}
+
+fn closed_fields(scheme: &Scheme) -> Option<Vec<&str>> {
+    let row = scheme.shape.fields.as_ref()?;
+    let closed = scheme.shape.kind == RECORD
+        && row.kind == ROW
+        && row
+            .other
+            .as_ref()
+            .is_none_or(|other| other.kind == NO_MORE_FIELDS);
+    closed.then(|| row.fields.iter().map(|field| field.name.as_str()).collect())
 }
 
 fn boxed(expr: Expr) -> Box<Expr> {
@@ -165,11 +200,12 @@ impl<'a> Reader<'a> {
 
     fn lambda(&self, expr: &'a Quint, wanted: usize, opcode: &str) -> Read<(Vec<u64>, &'a Quint)> {
         let found = match expr {
-            Quint::Lambda { params, expr } => Some((params, &**expr)),
+            Quint::Lambda { params, expr } => Some((params.as_slice(), &**expr)),
+            Quint::Name { id, .. } if self.given_lambda(*id).is_some() => self.given_lambda(*id),
             Quint::Name { id, name } => {
                 let def = self.operator(self.entry(*id, name)?, name)?;
                 match &def.expr {
-                    Quint::Lambda { params, expr } => Some((params, &**expr)),
+                    Quint::Lambda { params, expr } => Some((params.as_slice(), &**expr)),
                     _ => None,
                 }
             }
@@ -226,7 +262,42 @@ impl<'a> Reader<'a> {
     }
 
     pub(crate) fn data(&mut self, data: Data, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        if let Some(read) = self.endless_member(opcode, args) {
+            return read;
+        }
         self.built(data, opcode, args)
+    }
+
+    fn endless_name(&self, expr: &Quint) -> Option<&'a str> {
+        let Quint::Name { id, name } = expr else {
+            return None;
+        };
+        let known =
+            endless(name).and_then(|_| self.is_builtin_set(*id, name).then_some(name.as_str()))?;
+        ENDLESS_NAMES.iter().copied().find(|each| *each == known)
+    }
+
+    fn endless_member(&mut self, opcode: &str, args: &'a [Quint]) -> Option<Read<Expr>> {
+        let (item, set, every) = match (opcode, args) {
+            ("in", [item, set]) | ("contains", [set, item]) => (item, set, false),
+            ("subseteq", [item, set]) => (item, set, true),
+            _ => return None,
+        };
+        let name = self.endless_name(set)?;
+        Some(self.pure(item).map(|read| {
+            if every {
+                let slot = self.fresh();
+                Expr::Sweep {
+                    sweep: Sweep::Every,
+                    shelf: Shelf::Set,
+                    slot,
+                    source: boxed(read),
+                    body: boxed(member(name, Expr::Local(slot))),
+                }
+            } else {
+                member(name, read)
+            }
+        }))
     }
 
     fn built(&mut self, data: Data, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
@@ -356,6 +427,9 @@ impl<'a> Reader<'a> {
                 Ok(Self::folded(&carried, source, empty_map(), body))
             }
             Data::Powerset => self.powerset(opcode, args),
+            Data::Only => self.only(opcode, args),
+            Data::FieldNames => self.field_names(opcode, args),
+            Data::FoldRight => self.fold_right(opcode, args),
             Data::IsFinite => {
                 self.given(opcode, args, 1)?;
                 let source = self.pure(&args[0])?;
@@ -390,12 +464,101 @@ impl<'a> Reader<'a> {
             }
             Some(Value::Set(_)) => self.refuse(
                 "`powerset`",
-                &format!("the powerset of a set of more than {MOST_POWERSET_ITEMS} items"),
+                &format!(
+                    "the powerset of a set of more than {MOST_POWERSET_ITEMS} items, which has \
+                     more subsets than the checker lists: take the powerset of a smaller set"
+                ),
             ),
             _ => self.refuse(
                 "`powerset`",
                 "`powerset` is read only of a set that does not change, worked out when \
                          the file is read",
+            ),
+        }
+    }
+
+    fn fold_right(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.given(opcode, args, 3)?;
+        let source = self.pure(&args[0])?;
+        let start = self.pure(&args[1])?;
+        let lambda = self.lambda(&args[2], 2, opcode)?;
+        let flipped = self.carried();
+        let reversed = apply(
+            Op::Seq(SeqOp::Concat),
+            vec![Expr::SeqOf(vec![flipped.item()]), flipped.total()],
+        );
+        let backwards = Self::folded_as(
+            Shelf::Seq,
+            &flipped,
+            source,
+            Expr::SeqOf(Vec::new()),
+            reversed,
+        );
+        let carried = self.carried();
+        let body = self.under(lambda, vec![carried.item(), carried.total()])?;
+        Ok(Self::folded_as(
+            Shelf::Seq,
+            &carried,
+            backwards,
+            start,
+            body,
+        ))
+    }
+
+    fn only(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.given(opcode, args, 1)?;
+        let source = self.pure(&args[0])?;
+        let slot = self.fresh();
+        let carried = self.carried();
+        let key = Expr::Const(Value::Int(ONLY_KEY));
+        let keyed = apply(
+            Op::Map(MapOp::Set),
+            vec![carried.total(), key, carried.item()],
+        );
+        let by_size = Self::folded(&carried, Expr::Local(slot), empty_map(), keyed);
+        let size = apply(Op::Set(SetOp::Size), vec![Expr::Local(slot)]);
+        Ok(Expr::Bind {
+            slot,
+            value: boxed(source),
+            body: boxed(apply(Op::Map(MapOp::MustGet), vec![by_size, size])),
+        })
+    }
+
+    fn field_names(&mut self, opcode: &str, args: &'a [Quint]) -> Read<Expr> {
+        self.given(opcode, args, 1)?;
+        let typed = match &args[0] {
+            Quint::Name { id, .. } | Quint::App { id, .. } => self.type_of(*id),
+            _ => None,
+        };
+        let names = match typed.and_then(closed_fields) {
+            Some(names) => names.into_iter().map(|name| self.text(name)).collect(),
+            None => self.read_field_names(&args[0])?,
+        };
+        Ok(Expr::Const(Value::set(
+            names.into_iter().map(Value::Str).collect(),
+        )))
+    }
+
+    fn read_field_names(&mut self, record: &'a Quint) -> Read<Vec<Sym>> {
+        let read = self.pure(record)?;
+        let typed = match &read {
+            Expr::Record(fields) => return Ok(fields.iter().map(|(name, _)| *name).collect()),
+            Expr::Field(position) => self
+                .variable_id(*position)
+                .and_then(|id| self.type_of(id))
+                .and_then(closed_fields),
+            _ => None,
+        };
+        if let Some(names) = typed {
+            return Ok(names.into_iter().map(|name| self.text(name)).collect());
+        }
+        match constant(&read, self.slots)? {
+            Some(Value::Record(fields)) => Ok(fields.iter().map(|(name, _)| *name).collect()),
+            _ => self.refuse(
+                "`fieldNames`",
+                "the field names of a record whose type the compiled file leaves open, such as \
+                 the parameter of a definition that takes any record: give the parameter a \
+                 record type, such as `r: { a: int, b: str }`",
             ),
         }
     }

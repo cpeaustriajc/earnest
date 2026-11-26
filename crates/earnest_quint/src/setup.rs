@@ -6,6 +6,7 @@ const SEPARATOR: &str = "::";
 const WILDCARD: &str = "_";
 const TESTS_END_WITH: &str = "Test";
 const MOST_ALIASES: usize = 64;
+const FIELD_NAMES: &str = "fieldNames";
 
 type Fill<T> = Option<T>;
 
@@ -56,6 +57,7 @@ fn most_id(value: &Value) -> u64 {
 pub struct Typechecked {
     modules: Vec<Value>,
     table: Map<String, Value>,
+    types: Map<String, Value>,
     next: u64,
 }
 
@@ -110,9 +112,14 @@ impl Typechecked {
         let Some(Value::Object(table)) = fields.remove("table") else {
             return None;
         };
+        let types = match fields.remove("types") {
+            Some(Value::Object(types)) => types,
+            _ => Map::new(),
+        };
         Some(Self {
             modules,
             table,
+            types,
             next,
         })
     }
@@ -161,6 +168,7 @@ struct Filler<'t> {
     names: HashSet<String>,
     visiting: HashSet<(Option<usize>, u64)>,
     entries: Map<String, Value>,
+    types: Map<String, Value>,
     next: u64,
 }
 
@@ -321,6 +329,7 @@ impl<'t> Filler<'t> {
             names: HashSet::new(),
             visiting: HashSet::new(),
             entries: Map::new(),
+            types: Map::new(),
             next: typechecked.next,
         })
     }
@@ -378,6 +387,21 @@ impl<'t> Filler<'t> {
         None
     }
 
+    fn keep_type(&mut self, within: Option<usize>, id: u64) -> Fill<()> {
+        if let Some(scheme) = self.typechecked.types.get(&id.to_string()) {
+            let mut scheme = scheme.clone();
+            let shape = scheme.get("type")?;
+            scheme["type"] = match within {
+                Some(position) => self.inlined(position, shape)?,
+                None if text(shape, "kind") == Some("const") => return None,
+                None => shape.clone(),
+            };
+            let key = self.id_in(within, id).to_string();
+            self.types.insert(key, scheme);
+        }
+        Some(())
+    }
+
     fn reach(&mut self, target: u64, within: Option<usize>) -> Fill<()> {
         if !self.visiting.insert((within, target)) {
             return Some(());
@@ -423,6 +447,7 @@ impl<'t> Filler<'t> {
         copy["id"] = json!(self.id_in(within, target));
         if text(declaration, "kind") == Some("var") {
             copy["typeAnnotation"] = self.inlined(within?, declaration.get("typeAnnotation")?)?;
+            self.keep_type(within, target)?;
         } else {
             copy["expr"] = self.expr(declaration.get("expr")?, within)?;
         }
@@ -515,6 +540,13 @@ impl<'t> Filler<'t> {
             }
             "app" => {
                 let id = number(expr, "id")?;
+                if text(expr, "opcode") == Some(FIELD_NAMES) {
+                    for arg in list(expr, "args") {
+                        if let Some(arg) = number(arg, "id") {
+                            self.keep_type(within, arg)?;
+                        }
+                    }
+                }
                 copy["opcode"] = Value::String(self.used(id, text(expr, "opcode")?, within)?);
                 copy["args"] = Value::Array(
                     list(expr, "args")
@@ -737,6 +769,7 @@ impl<'t> Filler<'t> {
                 "declarations": self.pushed,
             }],
             "table": table,
+            "types": self.types,
         });
         serde_json::to_string(&compiled).ok()
     }
