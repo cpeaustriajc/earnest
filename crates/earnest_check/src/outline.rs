@@ -1,4 +1,5 @@
 use crate::explore::{Note, Search};
+use crate::premise::{Premise, Premises};
 use hashbrown::hash_table::{Entry, HashTable};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::hash::BuildHasher;
@@ -44,6 +45,8 @@ pub struct Outline {
     links: Vec<Link>,
     steps: Vec<String>,
     sets: Vec<Vec<u32>>,
+    premises: Vec<Premise>,
+    holding: Vec<Vec<u32>>,
 }
 
 impl Outline {
@@ -131,6 +134,25 @@ impl Outline {
         ))
     }
 
+    /// The premises of the rules that were checked, as [`Graph::premises`] lists them. A
+    /// premise is named by its position in this list.
+    ///
+    /// [`Graph::premises`]: crate::Graph::premises
+    #[must_use]
+    pub fn premises(&self) -> &[Premise] {
+        &self.premises
+    }
+
+    /// The boxes where the premise at `premise` holds in one of their states, from low to
+    /// high. None for a position past the last premise.
+    pub fn holding(&self, premise: usize) -> impl Iterator<Item = usize> {
+        self.holding
+            .get(premise)
+            .into_iter()
+            .flatten()
+            .filter_map(|at| usize::try_from(*at).ok())
+    }
+
     /// The label of each action along the arrow at `at`, each once, in the order they were
     /// first taken: the view's step label or the action's sentence.
     pub fn arrow_labels(&self, at: usize) -> impl Iterator<Item = &str> {
@@ -191,6 +213,8 @@ impl Search<'_> {
 
     fn outline_boxes(&self, outline: &mut Outline) -> Option<Vec<u32>> {
         let view = &self.model.view;
+        let premises = Premises::of(self.model, self.limits.only_rule.as_deref());
+        let mut holds: Vec<Vec<bool>> = vec![Vec::new(); premises.list.len()];
         let mut groups = Names::default();
         let mut places: HashTable<u32> = HashTable::new();
         let mut box_of = Vec::with_capacity(self.store.len());
@@ -232,10 +256,32 @@ impl Search<'_> {
                 }
             };
             box_of.push(place);
-            let spot = outline.spots.get_mut(usize::try_from(place).ok()?)?;
+            let at = usize::try_from(place).ok()?;
+            let spot = outline.spots.get_mut(at)?;
             self.mark_spot(spot, id);
+            if !premises.is_empty() {
+                for premise in premises.holding(state) {
+                    let boxes = holds.get_mut(premise)?;
+                    if boxes.len() <= at {
+                        boxes.resize(at.saturating_add(1), false);
+                    }
+                    *boxes.get_mut(at)? = true;
+                }
+            }
         }
         outline.groups = groups.names;
+        outline.holding = holds
+            .iter()
+            .map(|boxes| {
+                boxes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, holds)| **holds)
+                    .map(|(at, _)| u32::try_from(at).ok())
+                    .collect::<Option<Vec<u32>>>()
+            })
+            .collect::<Option<Vec<Vec<u32>>>>()?;
+        outline.premises = premises.list;
         Some(box_of)
     }
 

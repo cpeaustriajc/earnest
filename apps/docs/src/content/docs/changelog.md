@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: charts draw the states the rules are about
+
+A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
+
 ## November 2026: Quint chart labels marked in the model
 
 A Quint model's chart labelled each state with every variable, `base = Set(1), server = Set(1), screen = Set(), phase = Map(...), ...`. Mark a `val` with `/// @view state` to label each state with its value, and a `val` with `/// @view group` to label the box the state is drawn in:
