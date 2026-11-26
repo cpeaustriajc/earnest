@@ -8,11 +8,14 @@ const COMPILER = "node_modules/.bin/tsrs";
 
 const REJECTED_AT: Readonly<Record<string, string>> = {
   "end-not-boolean": `(s) => s.cta)`,
+  "eventually-reaches-not-boolean": `reaches: (s) => s.count`,
   "input-compared-to-stranger": `by === "touch"`,
   "missing-changes": `m.action(`,
   "null-into-required": `cta: null`,
   "optional-read-unguarded": `s.pressBy.length`,
   "rule-not-boolean": `(s) => s.count)`,
+  "setup-unknown-field": `{ basket: 3 }`,
+  "setup-wrong-type": `{ count: "three" }`,
   "state-assigned": `s.count = 2`,
   "stranger-in-set": `s.seen.add("touch")`,
   "unknown-color": `stuck:`,

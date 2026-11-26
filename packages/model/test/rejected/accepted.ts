@@ -35,3 +35,21 @@ export const addsByMouse = m.witness(Cart, "The buyer adds the item with the mou
   steps: [m.step(press, { by: "mouse" }), land],
   expect: (s) => s.cta === "InCart" && s.pressBy === "mouse",
 });
+
+export const tap = m.action(Cart, "the buyer taps the cart", {
+  fair: true,
+  changes: (s) => ({ count: s.count === 3 ? 0 : s.count + 1 }),
+});
+
+export const full = m.setup(Cart, "The cart starts with three items", { count: 3, cta: "InCart" });
+
+export const lands = m.eventually(Cart, "Once added, the item lands in the cart", {
+  after: (s) => s.cta === "Adding",
+  reaches: (s) => s.cta === "InCart",
+});
+
+export const emptied = m.witness(Cart, "A tap empties a full cart", {
+  setup: full,
+  steps: [tap],
+  expect: (s) => s.count === 0,
+});
