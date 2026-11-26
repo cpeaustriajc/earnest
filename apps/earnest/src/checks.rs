@@ -12,7 +12,19 @@ const STEP: &str = "step";
 const INVARIANTS: &str = "invariants";
 const TEMPORAL: &str = "temporal";
 const RUNS: &str = "runs";
-const KEYS: [&str; 7] = [FILE, MAIN, INIT, STEP, INVARIANTS, TEMPORAL, RUNS];
+const NAME: &str = "name";
+pub(crate) const EXPECT_COUNTEREXAMPLE: &str = "expectCounterexample";
+const KEYS: [&str; 9] = [
+    FILE,
+    MAIN,
+    INIT,
+    STEP,
+    INVARIANTS,
+    TEMPORAL,
+    RUNS,
+    NAME,
+    EXPECT_COUNTEREXAMPLE,
+];
 const DEFAULT_INIT: &str = "init";
 const DEFAULT_STEP: &str = "step";
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
@@ -26,6 +38,19 @@ pub(crate) struct Check {
     pub(crate) invariants: Vec<String>,
     pub(crate) temporal: Vec<String>,
     pub(crate) runs: Runs,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Entry {
+    pub(crate) check: Check,
+    pub(crate) name: Option<String>,
+    pub(crate) expected: Vec<String>,
+}
+
+impl Entry {
+    pub(crate) fn model_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.check.main)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,6 +129,21 @@ fn runs(entry: &Map<String, Value>, at: &str) -> Result<Runs, Wrong> {
     }
 }
 
+fn model_name(entry: &Map<String, Value>, at: &str) -> Result<Option<String>, Wrong> {
+    match entry.get(NAME) {
+        Some(Value::String(text))
+            if text.trim().is_empty() || text.trim() != text || text.contains(char::is_control) =>
+        {
+            Err(wrong(
+                &format!("{at}.{NAME}"),
+                "`name` must be plain text on one line, with no space at either end, and it is \
+                 empty or is not",
+            ))
+        }
+        _ => name(entry, NAME, at),
+    }
+}
+
 fn required(entry: &Map<String, Value>, key: &str, at: &str) -> Result<String, Wrong> {
     name(entry, key, at)?.ok_or_else(|| {
         wrong(
@@ -121,7 +161,7 @@ fn what_is(key: &str) -> &'static str {
     }
 }
 
-fn check(value: &Value, at: &str) -> Result<Check, Wrong> {
+fn entry(value: &Value, at: &str) -> Result<Entry, Wrong> {
     let Value::Object(entry) = value else {
         return Err(wrong(
             at,
@@ -140,7 +180,7 @@ fn check(value: &Value, at: &str) -> Result<Check, Wrong> {
             ),
         ));
     }
-    Ok(Check {
+    let check = Check {
         file: required(entry, FILE, at)?,
         main: required(entry, MAIN, at)?,
         init: name(entry, INIT, at)?.unwrap_or_else(|| DEFAULT_INIT.to_owned()),
@@ -148,6 +188,11 @@ fn check(value: &Value, at: &str) -> Result<Check, Wrong> {
         invariants: names(entry, INVARIANTS, at)?,
         temporal: names(entry, TEMPORAL, at)?,
         runs: runs(entry, at)?,
+    };
+    Ok(Entry {
+        check,
+        name: model_name(entry, at)?,
+        expected: names(entry, EXPECT_COUNTEREXAMPLE, at)?,
     })
 }
 
@@ -162,7 +207,12 @@ fn not_json(error: &serde_json::Error) -> Wrong {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn read_checks(text: &str) -> Result<Vec<Check>, Wrong> {
+    read_entries(text).map(|entries| entries.into_iter().map(|entry| entry.check).collect())
+}
+
+pub(crate) fn read_entries(text: &str) -> Result<Vec<Entry>, Wrong> {
     let value: Value = serde_json::from_str(text).map_err(|error| not_json(&error))?;
     let Value::Object(top) = &value else {
         return Err(wrong(
@@ -189,16 +239,30 @@ pub(crate) fn read_checks(text: &str) -> Result<Vec<Check>, Wrong> {
         ));
     };
     let mut seen = BTreeSet::new();
-    let mut checks = Vec::with_capacity(listed.len());
+    let mut checks: Vec<Entry> = Vec::with_capacity(listed.len());
     for (position, value) in listed.iter().enumerate() {
         let at = format!("{CHECKS}[{position}]");
-        let check = check(value, &at)?;
-        if !seen.insert((written_plainly(&check.file), check.main.clone())) {
+        let check = entry(value, &at)?;
+        let shown = check.model_name().to_owned();
+        if !seen.insert((written_plainly(&check.check.file), shown.clone())) {
             return Err(wrong(
                 &at,
                 &format!(
-                    "a second check of the module `{}` in `{}`: list each module of a file once",
-                    check.main, check.file
+                    "a second check of the module `{}` in `{}` named `{shown}`: give each check \
+                     of one module its own `{NAME}`",
+                    check.check.main, check.check.file
+                ),
+            ));
+        }
+        if let Some(other) = checks.iter().find(|other| {
+            (check.name.is_some() || other.name.is_some()) && other.model_name() == shown
+        }) {
+            return Err(wrong(
+                &format!("{at}.{NAME}"),
+                &format!(
+                    "the check named `{shown}` has the name of the check of the module `{}` in \
+                     `{}`: give each check its own `{NAME}`",
+                    other.check.main, other.check.file
                 ),
             ));
         }

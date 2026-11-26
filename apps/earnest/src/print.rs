@@ -1,7 +1,10 @@
 use crate::changes::Difference;
 use crate::reading::ModelFile;
-use crate::run::{Checked, ModelResult, Status};
+use crate::run::{
+    Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
+};
 use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines};
+use earnest_check::EVERY_EXPECTED_FOUND;
 use earnest_diagnostics::Problem;
 use serde::Serialize;
 use std::io::{self, Write};
@@ -39,9 +42,68 @@ impl Summary {
     }
 }
 
+const EXPECTED: &str = "broken";
+
+#[derive(Debug, Serialize)]
+struct ExpectedRule<'a> {
+    #[serde(flatten)]
+    rule: &'a RuleResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected: Option<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct Expecting<'a> {
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setup: Option<&'a SetupName>,
+    file: &'a str,
+    line: u32,
+    status: Status,
+    states: usize,
+    milliseconds: u64,
+    cached: bool,
+    reason: Option<&'a str>,
+    rules: Vec<ExpectedRule<'a>>,
+    findings: &'a [FindingResult],
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Shown<'a> {
+    Plain(&'a ModelResult),
+    Expecting(Expecting<'a>),
+}
+
+fn shown<'a>(result: &'a ModelResult, expected: &[String]) -> Shown<'a> {
+    if expected.is_empty() {
+        return Shown::Plain(result);
+    }
+    Shown::Expecting(Expecting {
+        name: &result.name,
+        setup: result.setup.as_ref(),
+        file: &result.file,
+        line: result.line,
+        status: result.status,
+        states: result.states,
+        milliseconds: result.milliseconds,
+        cached: result.cached,
+        reason: result.reason.as_deref(),
+        rules: result
+            .rules
+            .iter()
+            .map(|rule| ExpectedRule {
+                rule,
+                expected: is_expected_result(expected, rule).then_some(EXPECTED),
+            })
+            .collect(),
+        findings: &result.findings,
+    })
+}
+
 #[derive(Debug, Serialize)]
 struct Document<'a> {
-    models: Vec<&'a ModelResult>,
+    models: Vec<Shown<'a>>,
     unreadable: Vec<&'a Problem>,
     skipped: &'a [String],
     #[serde(rename = "noModel")]
@@ -77,6 +139,15 @@ impl Verified<'_> {
         }
     }
 
+    fn expected_of(&self, checked: &Checked) -> &[String] {
+        self.files
+            .iter()
+            .filter(|file| file.path == checked.result.file)
+            .flat_map(ModelFile::models)
+            .find(|readable| checked.is_of(readable))
+            .map_or(&[], |readable| readable.expected.as_slice())
+    }
+
     pub(crate) fn text(&self) -> String {
         let mut lines = Vec::new();
         let mut checked = self.checked.iter().peekable();
@@ -108,7 +179,11 @@ impl Verified<'_> {
 
     pub(crate) fn json(&self) -> Result<String, String> {
         let document = Document {
-            models: self.checked.iter().map(|checked| &checked.result).collect(),
+            models: self
+                .checked
+                .iter()
+                .map(|checked| shown(&checked.result, self.expected_of(checked)))
+                .collect(),
             unreadable: self.files.iter().flat_map(ModelFile::problems).collect(),
             skipped: self.skipped,
             no_model: self.no_model,
@@ -121,7 +196,11 @@ impl Verified<'_> {
 }
 
 fn model_line(result: &ModelResult) -> String {
-    let so_far = if result.reason.is_some() {
+    let so_far = if result
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason != EVERY_EXPECTED_FOUND)
+    {
         " so far"
     } else {
         ""

@@ -23,6 +23,8 @@ pub(crate) struct Places {
     files: HashMap<String, String>,
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
+    #[serde(default)]
+    qualifiers: HashMap<u64, String>,
 }
 
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
@@ -81,17 +83,23 @@ impl Places {
             .iter()
             .filter_map(|(id, entry)| Some((id.parse().ok()?, spot(entry)?)))
             .collect();
-        let modules = parsed
-            .get("modules")?
-            .as_array()?
+        let listed = parsed.get("modules")?.as_array()?;
+        let modules = listed.iter().filter_map(names_of).collect();
+        let qualifiers = listed
             .iter()
-            .filter_map(names_of)
+            .filter_map(|module| module.get("declarations")?.as_array())
+            .flatten()
+            .filter_map(|declaration| {
+                let id = declaration.get("id").and_then(Value::as_u64)?;
+                Some((id, text(declaration, "qualifier")?.to_owned()))
+            })
             .collect();
         Some(Self {
             read: 0,
             files,
             at,
             modules,
+            qualifiers,
         })
     }
 
@@ -138,6 +146,15 @@ impl Places {
         named
             .and_then(|module| in_module(module, name))
             .or_else(|| self.only_one(name))
+    }
+
+    pub(crate) fn qualifier(&self, name: &str, main: &str) -> Option<&str> {
+        let id = self.definition(name, main)?;
+        self.qualifiers.get(&id).map(String::as_str)
+    }
+
+    pub(crate) fn declares(&self, name: &str, main: &str) -> bool {
+        self.definition(name, main).is_some()
     }
 
     fn place(&self, located: &Located, main: &str) -> Option<(&str, u32, u32)> {

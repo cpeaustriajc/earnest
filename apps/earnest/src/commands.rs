@@ -7,7 +7,7 @@ use crate::print::{
 };
 use crate::quint;
 use crate::reading::{ModelFile, load, read};
-use crate::run::{Bounds, Graphs, Ran, Search, checked, explore_each};
+use crate::run::{Bounds, Expecting, Graphs, Ran, Search, Stops, checked, explore_expecting};
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
     Charted, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_charts,
@@ -178,12 +178,16 @@ fn warn_of_unreadable(files: &[ModelFile]) -> Exit {
     }
 }
 
-fn searched<'a>(targets: &[Target<'a>], rule: Option<&'a str>) -> Vec<Search<'a>> {
+fn searched<'a>(targets: &[Target<'a>], rule: Option<&'a str>, stops: Stops) -> Vec<Expecting<'a>> {
     targets
         .iter()
-        .map(|target| Search {
-            model: &target.readable.model,
-            only_rule: rule,
+        .map(|target| Expecting {
+            search: Search {
+                model: &target.readable.model,
+                only_rule: rule,
+            },
+            expected: &target.readable.expected,
+            stops,
         })
         .collect()
 }
@@ -202,8 +206,8 @@ pub(crate) fn chart_command(arguments: &Chart) -> Result<Exit, String> {
     let targets = select(&files, model, rule)
         .map_err(|error| refusing(&skipped, &no_model, model, rule, error))?;
     say_what_is_unread(&files, model, rule, &targets);
-    let ran = explore_each(
-        &searched(&targets, rule),
+    let ran = explore_expecting(
+        &searched(&targets, rule, Stops::Early),
         limits_of(&arguments.bounds),
         Graphs::Charted {
             max_arrows: arguments.arrows.max_arrows.get(),
@@ -252,8 +256,8 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         .map_err(|error| refusing(&skipped, &no_model, model, rule, error))?;
     let targets = selected.targets;
     say_what_is_unread(&files, model, rule, &targets);
-    let ran = explore_each(
-        &searched(&targets, rule),
+    let ran = explore_expecting(
+        &searched(&targets, rule, Stops::Early),
         bounds,
         Graphs::Charted {
             max_arrows: arguments.arrows.max_arrows.get(),
@@ -436,7 +440,11 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
         .map_err(|error| refusing(&skipped, &no_model, model, None, error))?;
     say_what_is_unread(&files, model, None, &targets);
     let all = exported(&targets)?;
-    let ran = explore_each(&searched(&targets, None), bounds, Graphs::Dropped);
+    let ran = explore_expecting(
+        &searched(&targets, None, Stops::AtTheEnd),
+        bounds,
+        Graphs::Dropped,
+    );
     let mut everything_agrees = true;
     for ((target, ran), exported) in targets.iter().zip(&ran).zip(&all) {
         let model = &target.readable.model;
