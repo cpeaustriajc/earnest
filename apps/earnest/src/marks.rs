@@ -15,10 +15,6 @@ pub(crate) struct Mark {
     pub(crate) says: Option<String>,
 }
 
-pub(crate) fn is_a_mark(doc: &str) -> bool {
-    doc.trim_start().starts_with(MARK)
-}
-
 pub(crate) fn mark_of(doc: &str) -> Option<Result<Mark, String>> {
     let mut lines = doc.trim_start().lines();
     let first = lines.next()?.trim();
@@ -53,18 +49,54 @@ pub(crate) fn unknown_mark(written: &str) -> String {
 pub(crate) fn misplaced_mark(kind: Kind, name: &str, qualifier: &str) -> String {
     let marks = match kind {
         Kind::Reachable => format!("`{MARK} {REACHABLE}` marks a `val`"),
-        Kind::Holds => format!("`{MARK}` marks a `val` or a `temporal` definition"),
-        Kind::Broken => format!("`{MARK} {BROKEN}` marks a `val` or a `temporal` definition"),
+        Kind::Holds => format!("`{MARK}` marks a module, a `val`, a `temporal` definition or a `run`"),
+        Kind::Broken => {
+            format!("`{MARK} {BROKEN}` marks a `val`, a `temporal` definition or a `run`")
+        }
     };
     format!("{marks}, and `{name}` is declared with `{qualifier}`")
 }
 
+pub(crate) fn module_mark_alone() -> String {
+    format!(
+        "a module is marked `{MARK}` alone, to make it a check: `{MARK} {BROKEN}` and `{MARK} \
+         {REACHABLE}` mark its properties"
+    )
+}
+
+pub(crate) fn constant_unset(module: &str) -> String {
+    format!(
+        "the module `{module}` is marked `{MARK}`, and it leaves a constant unset, so there is \
+         nothing to search: mark a module that sets it instead, as `module Small {{ import \
+         {module}(N = 3).* }}`"
+    )
+}
+
+pub(crate) fn nothing_to_judge(module: &str, searches: bool) -> String {
+    let why = if searches {
+        "it sees no marked property and no run to play"
+    } else {
+        "it sees no `init` and `step` to search with, and no run to play"
+    };
+    format!(
+        "the module `{module}` is marked `{MARK}`, and {why}: mark a `val`, a `temporal` \
+         definition or a `run` it sees, or name a run so that it ends in `Test`"
+    )
+}
+
+pub(crate) fn not_seen(name: &str) -> String {
+    format!(
+        "`{name}` is marked, and no check sees it, so it is never judged: mark with `/// {MARK}` \
+         the module that should judge it, one that sees `{name}` or imports its module"
+    )
+}
+
 pub(crate) fn how_to_mark() -> String {
     format!(
-        "a module is checked when it sees an `init` and a `step`, sets every constant, and sees \
-         a property marked in its doc comment or a run whose name ends in `Test`: mark a \
-         property with the doc comment `/// {MARK}` on the line above its `val` or `temporal` \
-         definition, and its sentence on the lines below the mark"
+        "a module is checked when its doc comment starts with `{MARK}`: write `/// {MARK}` on the \
+         line above `module Name {{`, and mark each property it judges the same way, `/// {MARK}` \
+         on the line above its `val` or `temporal` definition. A module that sees `init` and \
+         `step` searches; every run it sees whose name ends in `Test` is played"
     )
 }
 

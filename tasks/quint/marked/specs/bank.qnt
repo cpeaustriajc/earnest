@@ -1,4 +1,5 @@
 // An account with no constant, so the module is checked as it is.
+/// @check
 module bank {
   var balance: int
   action init = balance' = 0

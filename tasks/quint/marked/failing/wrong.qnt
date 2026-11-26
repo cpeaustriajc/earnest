@@ -1,4 +1,5 @@
 // Marks whose expectation is wrong: each makes the check fail.
+/// @check
 module wrong {
   var n: int
   action init = n' = 0

@@ -273,19 +273,25 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
 }
 
 pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
-    file.problems()
-        .iter()
-        .map(|problem| {
-            format!(
-                "{}:{}:{}{INDENT}{}{INDENT}{}",
-                one_line(&problem.file),
-                problem.line,
-                problem.column,
-                one_line(&problem.feature),
-                one_line(&problem.message)
-            )
-        })
-        .collect()
+    let mut lines = Vec::new();
+    for problem in file.problems() {
+        let mut message = problem.message.lines();
+        lines.push(format!(
+            "{}:{}:{}{INDENT}{}{INDENT}{}",
+            one_line(&problem.file),
+            problem.line,
+            problem.column,
+            one_line(&problem.feature),
+            one_line(message.next().unwrap_or_default())
+        ));
+        lines.extend(
+            message
+                .map(str::trim_end)
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| format!("{INDENT}{INDENT}{line}")),
+        );
+    }
+    lines
 }
 
 pub(crate) fn unreadable_lines(file: &ModelFile) -> Vec<String> {

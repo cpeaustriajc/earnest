@@ -1,4 +1,5 @@
 // A mark with a word the checker does not know.
+/// @check
 module typo {
   var n: int
   action init = n' = 0

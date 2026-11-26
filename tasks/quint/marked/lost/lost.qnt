@@ -1,4 +1,5 @@
 // A mark lost to a typo: `@chek` is no mark, so one rule is counted where two were meant.
+/// @check
 module lost {
   var n: int
   action init = n' = 0

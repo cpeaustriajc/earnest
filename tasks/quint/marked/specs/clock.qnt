@@ -19,10 +19,14 @@ module Clock {
   run tickTest = init.then(step).expect(time == 1)
 }
 
+/// @check
+/// The clock that counts to three.
 module Small {
   import Clock(Limit = 3).*
 }
 
+/// @check
+/// The clock that counts to five, through a named instance.
 module Large {
   import Clock(Limit = 5) as C
   action init = C::init

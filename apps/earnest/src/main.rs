@@ -9,6 +9,7 @@ mod confirm;
 mod confirm_quint;
 mod discovery;
 mod marks;
+mod migrate;
 mod places;
 mod print;
 mod quint;

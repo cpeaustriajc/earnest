@@ -55,7 +55,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 5] = ["specs", "listed", "failing", "typo", "lost"];
+const SETS: [&str; 7] = ["specs", "failing", "typo", "lost", "runs", "rules", "old"];
 
 fn marked() -> PathBuf {
     repository().join("tasks/quint/marked")
@@ -174,51 +174,150 @@ fn problems(report: &Value) -> Vec<(String, u64, String, String)> {
         .collect()
 }
 
+fn pairs(all: &[(&str, &str)]) -> Vec<(String, String)> {
+    all.iter()
+        .map(|(id, verdict)| ((*id).to_owned(), (*verdict).to_owned()))
+        .collect()
+}
+
 #[test]
-fn a_folder_of_marked_files_with_no_checks_file_gives_what_the_same_checks_listed_give() {
+fn a_folder_of_marked_files_gives_what_the_same_checks_gave_when_a_checks_file_listed_them() {
     let quint = Quint::new();
-    let marked = quint.earnest(&["verify", "specs", "--json"]);
-    marked.exits(0);
-    let listed = quint.earnest(&["verify", "listed", "--json"]);
-    listed.exits(0);
-    let (marked, listed) = (marked.json(), listed.json());
-    let names = |report: &Value| -> Vec<String> {
-        models(report)
-            .iter()
-            .map(|each| each["name"].as_str().unwrap_or_default().to_owned())
-            .collect()
-    };
-    assert_eq!(names(&marked), ["bank", "Small", "Large"], "{marked}");
-    assert_eq!(names(&marked), names(&listed), "{listed}");
-    for name in names(&listed) {
-        let (with_marks, with_entries) = (model(&marked, &name), model(&listed, &name));
+    let run = quint.earnest(&["verify", "specs", "--json"]);
+    run.exits(0);
+    let report = run.json();
+    let names: Vec<String> = models(&report)
+        .iter()
+        .map(|each| each["name"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(names, ["bank", "Small", "Large"], "{report}");
+    let listed: [(&str, u64, &[(&str, &str)]); 3] = [
+        ("bank", 4, &[("nonNegative", "holds"), ("depositTest", "holds")]),
+        (
+            "Small",
+            4,
+            &[
+                ("inRange", "holds"),
+                ("belowLimit", "broken"),
+                ("alwaysInRange", "holds"),
+                ("tickTest", "holds"),
+            ],
+        ),
+        (
+            "Large",
+            6,
+            &[
+                ("inRange", "holds"),
+                ("belowLimit", "broken"),
+                ("alwaysInRange", "holds"),
+                ("tickTest", "holds"),
+            ],
+        ),
+    ];
+    for (name, states, judged) in listed {
+        let found = model(&report, name);
         assert_eq!(
-            (&with_marks["status"], &with_marks["states"]),
-            (&with_entries["status"], &with_entries["states"]),
-            "{name}"
+            (&found["status"], &found["states"]),
+            (&serde_json::json!("pass"), &serde_json::json!(states)),
+            "{name}: as the checks file of the first version of #72 gave it"
         );
-        let marked_verdicts = verdicts(&marked, &name);
-        for each in verdicts(&listed, &name) {
-            assert!(
-                marked_verdicts.contains(&each),
-                "{name}: {each:?} is judged alike: {marked_verdicts:?}"
-            );
+        let verdicts = verdicts(&report, name);
+        for each in pairs(judged) {
+            assert!(verdicts.contains(&each), "{name}: {each:?} in {verdicts:?}");
         }
     }
     assert_eq!(
-        verdicts(&marked, "Small").len(),
-        verdicts(&listed, "Small").len() + 1,
-        "the marks also say a state is reached, which a checks file can't"
+        rule(model(&report, "Small"), "atTop")["verdict"],
+        "broken",
+        "the marks also say a state is reached, which a checks file could not"
     );
     assert_eq!(
-        rule(model(&marked, "Small"), "inRange")["says"],
+        rule(model(&report, "Small"), "inRange")["says"],
         "The time stays between zero and the limit.",
         "the doc comment below the mark is the rule's sentence"
     );
+}
+
+#[test]
+fn a_marked_module_with_no_init_or_step_plays_its_runs_and_an_unmarked_one_is_not_judged() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "runs", "--json"]);
+    run.exits(0);
+    let report = run.json();
+    assert_eq!(models(&report).len(), 1, "only `Plays` is a check: {report}");
+    let plays = model(&report, "Plays");
+    assert_eq!(plays["states"], 0, "{plays}");
     assert_eq!(
-        rule(model(&marked, "bank"), "depositTest")["verdict"],
-        "holds",
-        "a run whose name ends in `Test` is played with no mark"
+        verdicts(&report, "Plays"),
+        pairs(&[
+            ("upTest", "holds"),
+            ("twice", "holds"),
+            ("tooFar", "broken")
+        ]),
+        "a run ending in `Test`, a marked run of another name, and a run marked broken"
+    );
+    assert_eq!(rule(plays, "tooFar")["expected"], "broken", "{plays}");
+    let text = quint.earnest(&["verify", "runs"]);
+    assert_eq!(text.model_line("Plays")[4], "0 rules, 3 runs", "{text}");
+}
+
+#[test]
+fn each_way_a_mark_is_unreadable_is_reported_at_its_line() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "rules", "--json"]);
+    run.exits(1);
+    let found: Vec<(u64, String)> = problems(&run.json())
+        .into_iter()
+        .map(|(_, line, feature, _)| (line, feature))
+        .collect();
+    let expected: Vec<(u64, String)> = [
+        (2, "`module Spec`"),
+        (10, "`module Empty`"),
+        (21, "`zero`"),
+        (26, "`module Worded`"),
+        (31, "`fixed`"),
+    ]
+    .iter()
+    .map(|(line, feature)| (*line, (*feature).to_owned()))
+    .collect();
+    let mut sorted = found.clone();
+    sorted.sort();
+    assert_eq!(
+        sorted, expected,
+        "a constant unset, nothing to judge, a mark no check sees (twice, one in a module whose \
+         own mark is unreadable), and an unknown word on a module: {run}"
+    );
+    assert!(models(&run.json()).is_empty(), "nothing is judged: {run}");
+}
+
+#[test]
+fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_entry() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "old", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(file, line, feature, message)] = found.as_slice() else {
+        panic!("one problem: {run}");
+    };
+    assert_eq!(
+        (file.as_str(), *line, feature.as_str()),
+        ("old/earnest.quint.json", 1, "`earnest.quint.json`"),
+        "{run}"
+    );
+    for written in [
+        "1. `clock.qnt`, module `Small`: write `/// @check` above `module Small`, `clock.qnt:14`",
+        "write `/// @check` above `inRange` of the module `Clock`, `clock.qnt:7`",
+        "write `/// @check` above `alwaysInRange` of the module `Clock`, `clock.qnt:10`",
+        "/// @check\nmodule SmallBroken {\n  import Clock(Limit = 3) as V\n  action init = V::init\n  action step = V::step\n  /// @check broken\n  val belowLimit = V::belowLimit\n}",
+        "3. `clock.qnt`, module `Large`: write `/// @check` above `module Large`, `clock.qnt:18`",
+    ] {
+        assert!(message.contains(written), "{written}\nin\n{message}");
+    }
+    assert!(models(&run.json()).is_empty(), "nothing is checked by the file: {run}");
+    let text = quint.earnest(&["verify", "old"]);
+    assert!(
+        text.to_string().contains("\n      module SmallBroken {\n"),
+        "the text output keeps the module on lines of its own, to copy: {text}"
     );
 }
 
@@ -276,7 +375,7 @@ fn a_mark_with_a_word_the_checker_does_not_know_makes_the_check_unreadable_at_it
     };
     assert_eq!(
         (file.as_str(), *line, feature.as_str()),
-        ("typo/typo.qnt", 6, "`atStart`"),
+        ("typo/typo.qnt", 7, "`atStart`"),
         "the line of `/// @check reachble`: {run}"
     );
     assert!(message.contains("`@check reachble`"), "{message}");
@@ -300,7 +399,7 @@ fn the_text_output_counts_the_rules_and_runs_of_each_model_so_a_lost_mark_shows(
 }
 
 #[test]
-fn a_quint_file_with_no_mark_and_no_test_run_is_no_model_and_named_says_how_to_mark() {
+fn a_quint_file_with_no_marked_module_is_no_model_and_named_says_how_to_mark() {
     let quint = Quint::new();
     let searched = quint.earnest(&["verify", "specs", "--json"]);
     assert!(
@@ -341,11 +440,15 @@ fn a_changed_mark_checks_again_and_changes_the_quint_entries() {
         before,
         "the entries are written again"
     );
-    quint.edit("specs/bank.qnt", "/// @check\n", "/// @check broken\n");
+    quint.edit(
+        "specs/bank.qnt",
+        "/// @check\n  /// The balance",
+        "/// @check broken\n  /// The balance",
+    );
     quint.edit(
         "fake/fixtures/parsed/specs/bank.parse.json",
-        "\"@check\\n",
-        "\"@check broken\\n",
+        "\"@check\\nThe balance",
+        "\"@check broken\\nThe balance",
     );
     let broken = quint.earnest(&["verify", "specs"]);
     broken.exits(1);
