@@ -134,7 +134,9 @@ impl Typechecked {
     /// instantiated modules that `check` plays kept, or `None` when the setup is of a shape this
     /// does not build. It builds a module made of instances (`import Spec(K = e).*` or
     /// `import Spec(K = e) as C`) of modules that import nothing, `import Lib.*` of modules of
-    /// definitions only, `export C.*` of its own instances, and definitions of its own.
+    /// definitions only, `export C.*` of its own instances, and definitions of its own. A check
+    /// that lists only runs needs no `init` or `step`: when the module lacks either, the JSON
+    /// has neither `q::init` nor `q::step`, and only [`crate::read_runs`] reads it.
     #[must_use]
     pub fn setup(&self, check: &Setup<'_>) -> Option<String> {
         let filler = Filler::new(self, check.main)?;
@@ -720,8 +722,16 @@ impl<'t> Filler<'t> {
     fn filled(mut self, check: &Setup<'_>) -> Fill<String> {
         self.roots()?;
         let actions = ["action"];
-        let init = self.named(check.init, &actions)?;
-        let step = self.named(check.step, &actions)?;
+        let runs_only =
+            check.invariants.is_empty() && check.temporal.is_empty() && *check.runs != Runs::None;
+        let searched = match (
+            self.named(check.init, &actions),
+            self.named(check.step, &actions),
+        ) {
+            (Some(init), Some(step)) => Some((init, step)),
+            _ if runs_only => None,
+            _ => return None,
+        };
         let invariants = check
             .invariants
             .iter()
@@ -732,8 +742,10 @@ impl<'t> Filler<'t> {
             .iter()
             .map(|name| self.named(name, &["temporal"]))
             .collect::<Fill<Vec<_>>>()?;
-        self.special(("q::init", "action"), &[init])?;
-        self.special(("q::step", "action"), &[step])?;
+        if let Some((init, step)) = searched {
+            self.special(("q::init", "action"), &[init])?;
+            self.special(("q::step", "action"), &[step])?;
+        }
         if !invariants.is_empty() {
             self.special(("q::inv", "val"), &invariants)?;
         }

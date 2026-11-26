@@ -99,6 +99,11 @@ impl Places {
         self.files.values().map(String::as_str).collect()
     }
 
+    pub(crate) fn declares(&self, main: &str, name: &str) -> bool {
+        self.module(main)
+            .is_some_and(|module| module.declared.iter().any(|(each, _)| each == name))
+    }
+
     pub(crate) fn may_be_a_setup(&self, main: &str) -> bool {
         self.module(main)
             .is_some_and(|module| module.imports_all_of_an_instance)
