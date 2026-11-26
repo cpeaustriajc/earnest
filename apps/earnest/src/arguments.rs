@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[command(
     name = "earnest",
     version,
-    about = "Checks models written in TypeScript or Rust by visiting every reachable state"
+    about = "Checks models written in TypeScript, Rust or Quint by visiting every reachable state"
 )]
 pub(crate) struct Arguments {
     #[command(subcommand)]

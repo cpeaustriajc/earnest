@@ -8,6 +8,24 @@ use std::collections::HashMap;
 pub(crate) struct Refusal {
     pub(crate) feature: String,
     pub(crate) why: String,
+    pub(crate) id: Option<u64>,
+    pub(crate) within: Option<String>,
+}
+
+impl Refusal {
+    pub(crate) fn at(self, id: u64) -> Self {
+        Self {
+            id: Some(id),
+            ..self
+        }
+    }
+
+    pub(crate) fn within(self, name: &str) -> Self {
+        Self {
+            within: Some(name.to_owned()),
+            ..self
+        }
+    }
 }
 
 pub(crate) type Read<T> = Result<T, Refusal>;
@@ -16,6 +34,8 @@ pub(crate) fn refusal(feature: &str, why: &str) -> Refusal {
     Refusal {
         feature: feature.to_owned(),
         why: why.to_owned(),
+        id: None,
+        within: None,
     }
 }
 
@@ -201,7 +221,8 @@ impl<'a> Reader<'a> {
         Err(refusal(
             feature,
             &format!("{why}, in the definition `{}`", self.within),
-        ))
+        )
+        .within(&self.within))
     }
 
     pub(crate) fn entry(&self, id: u64, name: &str) -> Read<&'a Entry> {

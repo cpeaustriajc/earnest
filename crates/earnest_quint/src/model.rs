@@ -1,6 +1,7 @@
+use crate::Runs as Chosen;
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint};
 use crate::reader::{Path, Read, Reader, Refusal, all_of, refusal};
-use crate::runs::{Runs as Chosen, scripts};
+use crate::runs::scripts;
 use crate::scan::refused;
 use crate::starts::start_states;
 use crate::temporal::{Step, temporal};
@@ -31,7 +32,8 @@ pub(crate) fn assigned(path: &Path, fields: &[String], within: &str) -> Read<Vec
                 return Err(refusal(
                     &format!("`{name}'`"),
                     &format!("one path through `{within}` assigns this variable twice"),
-                ));
+                )
+                .within(within));
             }
             Some(slot) => *slot = Some(expr.clone()),
             None => {}
@@ -49,6 +51,7 @@ pub(crate) fn assigned(path: &Path, fields: &[String], within: &str) -> Read<Vec
                          TLC runs stop on"
                     ),
                 )
+                .within(within)
             })
         })
         .collect()
@@ -301,16 +304,7 @@ fn built(
     let (starts, actions, rules, eventually) =
         parts(&mut reader, &compiled.table, &defs, (init, step), &names)
             .map_err(|refusal| vec![refusal])?;
-    let started_by = match &init.expr {
-        Quint::Name { name, .. } => named(&defs, name).map_or(init.id, |def| def.id),
-        _ => init.id,
-    };
-    let scripts = scripts(
-        &mut reader,
-        &module.declarations,
-        (started_by, runs),
-        &names,
-    )?;
+    let scripts = scripts(&mut reader, &module.declarations, (init, runs), &names)?;
     let mut symbols = std::mem::take(&mut reader.symbols);
     let fields = variables
         .into_iter()

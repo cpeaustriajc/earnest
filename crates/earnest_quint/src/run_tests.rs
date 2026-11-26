@@ -1,4 +1,4 @@
-use crate::{Runs, read, read_runs};
+use crate::{Runs, read, read_located};
 use earnest_diagnostics::Problem;
 use earnest_ir::{Model, Plan, Script};
 use earnest_value::Value;
@@ -276,7 +276,7 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
 #[test]
 fn the_runs_played_are_a_choice_of_none_the_tests_or_a_list_of_names() {
     let ids = |runs: &Runs| -> Vec<String> {
-        read_runs("model.json", PLAYED, runs)
+        read_located("model.json", PLAYED, runs)
             .unwrap_or_else(|problems| panic!("unreadable: {problems:?}"))
             .runs
             .scripts
@@ -299,9 +299,10 @@ fn the_runs_played_are_a_choice_of_none_the_tests_or_a_list_of_names() {
 #[test]
 fn a_listed_run_the_module_lacks_makes_the_file_unreadable_and_is_named() {
     let listed = Runs::Named(vec!["midExpectTest".to_owned(), "missingTest".to_owned()]);
-    let Err(problems) = read_runs("model.json", PLAYED, &listed) else {
+    let Err(located) = read_located("model.json", PLAYED, &listed) else {
         panic!("a run the module lacks is refused");
     };
+    let problems: Vec<Problem> = located.into_iter().map(|each| each.problem).collect();
     let named: Vec<&str> = problems
         .iter()
         .map(|problem| problem.feature.as_str())

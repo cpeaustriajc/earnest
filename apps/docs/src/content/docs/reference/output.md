@@ -79,7 +79,7 @@ unreadable  src/clock.model.ts
   - Every counted state has its rules judged, including frontier states that are not expanded further; no actions are tried from unexpanded frontier states, so they add no `stuck` or action `fault`.
   - If `--time-limit` interrupts evaluation inside a state before its rules finish, that state is not counted, so a model can report `0 states so far`.
   - Input combinations for an action are tried one at a time under both limits and successor states are deduplicated, so an action with a huge input space ends as `unfinished` with bounded memory.
-- **`unreadable`:** lists each problem as `file:line:column`, the disallowed feature in backticks, and an explanation. No model in an unreadable file is checked.
+- **`unreadable`:** lists each problem as `file:line:column`, the disallowed feature in backticks, and an explanation. No model in an unreadable file is checked. For a [Quint check](/reference/quint/), the header names the module after the file, `unreadable  specs/clock.qnt  Small`, so two checks of one file can be told apart.
 - **`skipped`:** printed before the summary line when test files or no-model Rust files were skipped (`skipped  <n> test files that use the library`). Skipped files are not counted in the summary and do not affect the exit code.
 - **Summary line:** counts each model and each unreadable file once in the total, prints `pass`, `fail`, and `unfinished`, and appends `<n> unreadable` only when unreadable files exist.
 

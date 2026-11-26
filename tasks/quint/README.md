@@ -839,6 +839,31 @@ and names the construct and the definition it is in.
 - `cargo test --locked`: 80 suites, 1673 passed, 0 failed.
 - `tests_kept.py --base origin/main`: `tests kept: 1365 tests, 3953 assertions (base: 1304, 3798)`.
 
+### After merging slices 2 and 5 (the orchestrator's review)
+
+- Merged `claude/lucid-brown-f5xvr8` at `7773aea` (a merge, no rebase). Conflicts: `scan.rs`
+  (the head's meaning kept: its read types and message for `var`, its `data_builtin`/`not_read`
+  test, `Typedef` no longer refused; with `.within(name)` and `.at(*id)` added), `main.rs` of the
+  behavior tests, this README and the changelog (both sides kept).
+- Places for the new refusals: every refusal in `data.rs` and `temporal.rs` goes through
+  `Reader::refuse`, so it carries the definition; `model.rs`'s "assigns this variable twice" and
+  "leaves this variable unassigned" now carry the action's name too.
+- The line test uses `models/choose.qnt` (`chooseSome`, still refused), with its parse and source
+  map from Quint 0.33.1 (`sourceIndex` made relative); the record fixtures are gone.
+- (a) An unreadable check's header names its module after the file: `unreadable  clock.qnt  Small`
+  (`ModelFile::quint_check`, shared with the result cache's name). Test:
+  `two_unreadable_checks_of_one_file_are_told_apart_by_their_module`.
+- (b) The compiled JSON names imported files only as `importedFrom.fromSource` (`"./sub/spec"`),
+  relative to the importing file and only for the definitions flattening kept, so it was not used.
+  `quint parse --source-map` lists every file it loaded, by absolute path, in `sourceIndex`. So
+  earnest now parses each listed `.qnt` file first (once, cached), and keys the compile on the
+  contents of exactly those files; the cached parse is reused while each of them is unchanged.
+  When the parse fails, the `.qnt` tree below the checks folder stands in, as before. Test:
+  `editing_a_file_imported_from_a_parent_folder_compiles_the_check_again`; with real Quint, an
+  edit of `../shared/lib.qnt` turned `pass use 4 states (cached)` into `fail` with a new path.
+- Docs: `reference/quint.md` lists what the head reads and refuses, runs and a `oneOf` over a set
+  computed from the state as "not yet"; `output.md` shows the header.
+
 ### Unfinished, and the next step
 
 - Problems sit at line 1, column 1: slice 3 matches ids against `quint parse --source-map`.
@@ -1942,3 +1967,353 @@ refuses inside a step is still refused, by name.
 - Problems are at line 1, column 1 (slice 3).
 - `assert` after a guard, `reps` of 0 and runs that start elsewhere than `init` could be played
   exactly with an ordered step; they are refused until a model needs them.
+
+## Slice 7: what is checked
+
+`earnest verify` starts the project's own `quint` for the modules listed in `earnest.quint.json`
+(issue #60). Quint 0.33.1 from npm in a scratch folder outside the repository, linked as
+`node_modules`, Java 21 on PATH, 4 cores.
+
+A folder with two spec files and five checks, using only what the reader reads today (`int`,
+`bool`, invariants, `nondet` over a set, an instance with a constant):
+
+```quint
+// A dimmer: a level that goes up to a constant and back to zero.
+module Lamp {
+  const Max: int
+
+  var level: int
+  var on: bool
+
+  action init = all { level' = 0, on' = false }
+
+  action toggle = all { on' = not(on), level' = level }
+  action brighter = all { on, level < Max, level' = level + 1, on' = on }
+  action off = all { on, level == Max, level' = 0, on' = false }
+  action step = any { toggle, brighter, off }
+
+  val levelOk = level <= 6
+  val darkWhenOff = not(on) implies level <= Max
+}
+
+module Dim {
+  import Lamp(Max = 2).*
+}
+
+module Bright {
+  import Lamp(Max = 5).*
+}
+
+module Blinding {
+  import Lamp(Max = 9).*
+}
+```
+
+```quint
+// Two counters that move together or apart.
+module tally {
+  var a: int
+  var b: int
+
+  action init = all { a' = 0, b' = 0 }
+  action both = all { a < 4, a' = a + 1, b' = b + 1 }
+  action left = all { a < 4, a' = a + 1, b' = b }
+  action reset = all { a == 4, a' = 0, b' = 0 }
+  action step = any { both, left, reset }
+
+  val bBelowA = b <= a
+  val small = a + b < 8
+}
+
+module fast {
+  var n: int
+  var even: bool
+
+  action start = all { n' = 0, even' = true }
+  action go = {
+    nondet d = Set(1, 2).oneOf()
+    all { n + d <= 6, n' = n + d, even' = (n + d) % 2 == 0 }
+  }
+
+  val parity = even iff n % 2 == 0
+}
+```
+
+```json
+{ "checks": [
+  { "file": "lamp.qnt", "main": "Dim", "invariants": ["levelOk", "darkWhenOff"] },
+  { "file": "lamp.qnt", "main": "Bright", "invariants": ["levelOk"] },
+  { "file": "lamp.qnt", "main": "Blinding", "invariants": ["levelOk"] },
+  { "file": "tally.qnt", "main": "tally", "invariants": ["bBelowA", "small"] },
+  { "file": "tally.qnt", "main": "fast", "init": "start", "step": "go", "invariants": ["parity"] }
+] }
+```
+
+### By hand
+
+- **Dim** (`Max = 2`): `level` only rises while `on`, `off` takes `Max` back to `(0, false)`, and
+  `toggle` gives every level with `on` false: `(0..2) × on/off` = **6**. `levelOk` and
+  `darkWhenOff` hold.
+- **Bright** (`Max = 5`): **12**; `levelOk` (`level <= 6`) holds.
+- **Blinding** (`Max = 9`): **20**; `levelOk` is broken at level 7: `toggle`, then 7 `brighter`,
+  **8 steps**.
+- **tally**: every `(a, b)` with `0 <= b <= a <= 4`: **15**. `bBelowA` holds; `small`
+  (`a + b < 8`) is broken at `(4, 4)` after 4 `both`.
+- **fast** (`init` `start`, `step` `go`): `n` from 0 to 6 with `even` right: **7**; `parity`
+  holds.
+
+### TLC, as Quint runs it
+
+One command per check (per invariant for `tally`). The lines kept are TLC's counts and verdicts
+and the steps of each violation; the rest is Apalache's and TLC's start-up text:
+
+```text
+=== quint verify --backend tlc --main Dim --invariant levelOk,darkWhenOff lamp.qnt
+10 states generated, 6 distinct states found, 0 states left on queue.
+[ok] No violation found (624ms).
+=== quint verify --backend tlc --main Bright --invariant levelOk lamp.qnt
+19 states generated, 12 distinct states found, 0 states left on queue.
+[ok] No violation found (587ms).
+=== quint verify --backend tlc --main Blinding --invariant levelOk lamp.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <Blinding_Lamp_toggle line 31, col 3 to line 32, col 50 of module Blinding>
+State 3: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+...                                                     (States 4 to 8 the same)
+State 9: <Blinding_Lamp_brighter line 38, col 3 to line 41, col 44 of module Blinding>
+22 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (624ms).
+=== quint verify --backend tlc --main tally --invariant bBelowA tally.qnt
+26 states generated, 15 distinct states found, 0 states left on queue.
+[ok] No violation found (588ms).
+=== quint verify --backend tlc --main tally --invariant small tally.qnt
+Error: Invariant q_inv is violated.
+State 1: <Initial predicate>
+State 2: <both line 25, col 9 to line 25, col 43 of module tally>
+State 3: <both line 25, col 9 to line 25, col 43 of module tally>
+State 4: <both line 25, col 9 to line 25, col 43 of module tally>
+State 5: <both line 25, col 9 to line 25, col 43 of module tally>
+24 states generated, 15 distinct states found, 0 states left on queue.
+[violation] Found an issue (662ms).
+=== quint verify --backend tlc --main fast --init start --step go --invariant parity tally.qnt
+12 states generated, 7 distinct states found, 0 states left on queue.
+[ok] No violation found (486ms).
+```
+
+TLC stops at the first violation, so the counts of `Blinding` and of `tally` with `small` are
+partial; `tally`'s full 15 is from `bBelowA`.
+
+### earnest
+
+```text
+$ earnest verify          (in the folder, with nothing cached: 1.2 s)
+pass        Dim  6 states  0 ms
+pass        Bright  12 states  0 ms
+fail        Blinding  20 states  0 ms
+  broken  Blinding::Lamp::levelOk  "The Quint invariant `Blinding::Lamp::levelOk` holds"
+    start  Blinding::Lamp::level = 0, Blinding::Lamp::on = false
+    1. Blinding::Lamp::toggle  Blinding::Lamp::on: false -> true
+    2. Blinding::Lamp::brighter  Blinding::Lamp::level: 0 -> 1
+    ...                                    (steps 3 to 7 the same, one level each)
+    8. Blinding::Lamp::brighter  Blinding::Lamp::level: 6 -> 7
+    end    Blinding::Lamp::level = 7, Blinding::Lamp::on = true
+fail        tally  15 states  0 ms
+  broken  small  "The Quint invariant `small` holds"
+    start  a = 0, b = 0
+    1. both  a: 0 -> 1, b: 0 -> 1
+    2. both  a: 1 -> 2, b: 1 -> 2
+    3. both  a: 2 -> 3, b: 2 -> 3
+    4. both  a: 3 -> 4, b: 3 -> 4
+    end    a = 4, b = 4
+pass        fast  7 states  0 ms
+5 models: 3 pass, 2 fail, 0 unfinished
+```
+
+| Check | By hand | TLC | earnest | Invariant | By hand | TLC | earnest |
+|---|---|---|---|---|---|---|---|
+| Dim | 6 | 6 | 6 | `levelOk`, `darkWhenOff` | hold | ok | hold |
+| Bright | 12 | 12 | 12 | `levelOk` | holds | ok | holds |
+| Blinding | 20 | 15 (stopped) | 20 | `levelOk` | broken, 8 steps | violation, 8 steps | broken, 8 steps |
+| tally | 15 | 15 | 15 | `bBelowA` | holds | ok | holds |
+| | | | | `small` | broken, 4 steps | violation, 4 steps | broken, 4 steps |
+| fast | 7 | 7 | 7 | `parity` | holds | ok | holds |
+
+A construct the reader still refuses after slices 2 and 5 (`models/choose.qnt`, `chooseSome`),
+with real Quint, is reported at its line: line 7 is `  action step = x' = Set(1, 2).chooseSome()`,
+and Quint's source map starts the call at its receiver, column 22.
+
+```text
+unreadable  choose.qnt  choose
+  choose.qnt:7:22  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read, in the definition `step`
+```
+
+Before the merge, `record.qnt` and `clock.qnt` gave each refused record, set and text construct at
+its line the same way (`record.qnt:3:3 var r`, `5:22 Rec`, `7:22 Rec`, `9:12 field`); slice 2
+reads them now.
+
+### Timing: 17 checks of one file
+
+`many.qnt`: the `Lamp` module above plus 17 setup modules `S1`..`S17`
+(`module S5 { import Lamp(Max = 5).* }`), one check each with `darkWhenOff`, the shape of
+section 2's `timing/many.qnt` over numbers and booleans. Release build, 4 cores:
+
+| Run | Before the merge (load 2.0 to 2.4) | After it, one `parse` first (load 1.3 to 2.3) |
+|---|---|---|
+| nothing cached, `--jobs` all cores (4 at a time) | 4.06 s | 3.91 s |
+| nothing cached, `--jobs 1` | 8.36 s | 7.69 s |
+| the second run, nothing changed (no Node started) | 0.040 s | 0.039 s |
+
+The 17 compiled modules take 7.5 MB in `.earnest/quint/`.
+
+## Slice 7: report
+
+### Done
+
+- `earnest.quint.json` (`apps/earnest/src/checks.rs`): the keys of decision 1, checked by hand on
+  `serde_json::Value` so that each problem names its key (`checks[1].runs`). Not JSON, an unknown
+  key, a wrong type, a missing `file` or `main`, or a second entry for one `(file, main)` makes the
+  checks file `unreadable` with one problem, and nothing in it is checked.
+- Discovery (`discovery.rs`): a folder search lists every `earnest.quint.json`; a `.qnt` named on
+  the command line is listed with the `earnest.quint.json` of its folder, checked only by its
+  entries; a named `earnest.quint.json` checks all of its entries. `.qnt` files are never read by
+  a folder search. `Discovered` has a new `listed` field; `Found`, `Text` and `ModelFile` are
+  unchanged.
+- `quint.rs`: finds `quint` (`EARNEST_QUINT`, then `node_modules/.bin/quint` from the checks
+  file's folder upward, then `PATH`; on Windows `quint.cmd`, `quint.exe`, `quint`), asks its
+  version once per program, compiles each check up to `--jobs` at a time (`workers::run_each`),
+  reads the JSON with the reader, and makes one `ModelFile` per check: its path is the `.qnt`
+  file, its source the compiled JSON, its one model named after `main`. `gather` merges them into
+  the other files in path order; `gather` now takes the job count (`tla` uses all cores).
+- The cache under `.earnest/quint/`: one file per `(real .qnt path, main)` holding the key on its
+  first line and the JSON after it; `version-<hash>.json` with the program's real path, size,
+  modification time (ns) and the text of `quint --version`; `places-<hash>.json` with what
+  `quint parse --source-map` gave. The key is the FNV-64 of `cache.rs` (`fingerprint_of`, the same
+  hash, with each piece prefixed by its length) over the version text, `main`, `init`, `step`,
+  `invariants`, `temporal`, `runs`, the hash of every `.qnt` below the checks file's folder (path
+  and content), and the `.qnt` file itself. Files are written whole by rename (`write_whole`,
+  shared with the result cache).
+- The result cache (`verify.rs`): an entry is matched to its `ModelFile` by identity instead of
+  by path, and a check is cached under `<path>\n<main>`, because two checks share a `.qnt` path.
+- Lines (`places.rs`): `quint parse <file> --out ... --source-map ...` runs once for each listed
+  file (before the merge below: only for a file whose module was refused). A problem goes to the place of its expression id when the source
+  map has it, else to the definition it names (the main module first; `A::C::name` through the
+  module `C`, or the module that the instance alias `C` makes; else the one module that declares
+  `name`), else stays at 1:1. A place in another file (`import ... from "./other"`) is reported in
+  that file.
+- `crates/earnest_quint`: `Refusal` gains `id` and `within`; `scan.rs` sets `within` on every
+  refusal it names a definition for and `id` on an operator it refuses; `Reader::refuse` sets
+  `within`. `lib.rs` adds `Located`, `Runs` and `read_located(path, source, runs)`; `read` is
+  `read_located` without the extra fields. Nothing in how a module is translated changed.
+- Docs: `reference/quint.md` (in the sidebar after Rust), the promise in `README.md` (only the
+  "No runtime" and "Nothing runs" bullets), `reference/cli.md`, `tutorials/pull-request.md` and a
+  Quint bullet in `start/install.md`; `index.mdx` does not repeat the promise, so it is unchanged.
+  A changelog entry. `earnest --help` says "TypeScript, Rust or Quint".
+- Tests: `apps/earnest/tests/behavior/quint_checks.rs` (14 tests, unix only, a fake `quint` shell
+  script), unit tests in `checks.rs` (3) and `places.rs` (1), and one in
+  `crates/earnest_quint/src/tests.rs`. `choose.parse.json` and `choose.sourcemap.json` in
+  `models/` are what Quint 0.33.1 wrote for `choose.qnt`, with the absolute path in
+  `sourceIndex` replaced by `choose.qnt`; the fake writes the sandbox's path back.
+
+### The commands earnest runs
+
+```sh
+quint --version
+quint compile --target json --main <main> --init <init> --step <step> [--invariant a,b] [--temporal c,d] <file>.qnt
+quint parse <file>.qnt --out .earnest/quint/.parse-<pid>-<n>.json --source-map .earnest/quint/.map-<pid>-<n>.json
+```
+
+`<file>` is the path as earnest shows it (relative to where it runs). The parse runs first, once
+per listed `.qnt` file, then the compiles, once per check; each is skipped when its cache holds. Each starts from the folder earnest
+runs in. Verified against Quint 0.33.1:
+
+- `--invariant` and `--temporal` take one argument, names joined by commas (`--help`: "the
+  invariants to check, separated by commas"); `--init` and `--step` always passed.
+- **Not `--out`, unlike decision 4.** In 0.33.1, `compile --out f` writes every module of the
+  file, unflattened (`modules` = `Clock`, `Small`, `Large` for `--main Large`), and still prints the
+  flattened main module on stdout. The reader needs the flattened one, so earnest sends stdout to
+  a file of its own in `.earnest/quint/` and keeps it.
+- **Not a pipe either.** Read through a pipe, the JSON stopped at 65,536 bytes: Quint exits before
+  Node has written the rest. Written to a file, it is whole.
+- A failure: exit 1, nothing on stdout, and on stderr either one line (`error: [QNT404] Name 'nope'
+  not found`, `error: module Nope does not exist`) or a block whose first line is
+  `Error [QNT404]: Name 'y' not found` and whose `at <absolute path>:4:22` line gives the place.
+  Earnest takes the first line that is not blank, and the place from the first `at` line, else
+  1:1.
+
+### Runs
+
+`runs` is read into `earnest_quint::Runs` (`None`, `Tests`, `Named`) and passed to
+`read_located`, which ignores it. It is part of the cache key. Slice 6 should know:
+
+- The compiled JSON holds the runs written in the main module itself (`compile --main Large` has
+  `largeTick`) and no run of an imported module (`--main Small` has none of `Clock`'s four).
+  `quint compile` has no flag that keeps them: flattening takes an imported definition only when
+  something refers to it. To play the spec module's runs for a setup, slice 6 needs another
+  compile (`--main Clock`, which keeps every definition) or option A of section 6.
+- `scan.rs` still refuses every `run` definition, so a main module with its own runs is
+  `unreadable` today whatever `runs` says.
+
+### What is not mapped to a line
+
+- A refusal with no definition: `the compiled module` (Quint reported errors), a missing `init`
+  or `step`, more than 1000 actions from one step, a fault while `init` is worked out, more than
+  1,000,000 combinations in `init`. They stay at 1:1.
+- A refusal from `Reader::refuse` carries the definition but no expression id, so it is placed at
+  the definition (`action bump`), not at the expression. Only the operators `scan.rs` refuses
+  carry an id.
+- A construct flattened in from an instance: its ids are fresh, so it goes to the definition in
+  the imported module, found by name. A constant's value is the instance's override, but the
+  problem goes to the `const` declaration (`Small::Clock::Nodes` at `const Nodes`).
+- A compiled `.json` named on the command line: no `.qnt` to map to, so 1:1 as in slice 1.
+
+### Doubts
+
+- The rules of a module flattened from an instance are named `Blinding::Lamp::levelOk`, as the
+  reader names them, so `--rule levelOk` does not select them although `earnest.quint.json` lists
+  `levelOk`. An unreadable check declares the listed names, so there `--rule levelOk` does select
+  it. Slice 4 (setups) should decide the names.
+- The example in the "not listed" problem has three lines in the JSON `message`; the text output
+  joins them on one line, as it does for every problem.
+- The JSON `unreadable` list names no check: a problem has only `file`, `line`, `column`,
+  `feature` and `message`, so two checks of one file are told apart there only by the text
+  header.
+- The version is keyed on the program's resolved path: with `node_modules/.bin/quint` that is
+  Quint's `cli.js`, which an upgrade rewrites. A wrapper script that runs another `quint` keeps
+  its own size and time; then the version text is not asked again.
+- `earnest verify --base` still skips Quint files (slice 1's doubt), now also `.qnt` checks.
+- The Windows build is not tested: the fake is a shell script, so `quint_checks.rs` is
+  `#![cfg(unix)]`.
+
+### Checks, each with its last line
+
+- `cargo fmt --check`: exit 0.
+- `cargo clippy --all-targets --locked -- -D warnings`: no warnings, `Finished`.
+- `just lint-library`: both passes `Finished`, exit 0.
+- `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `cargo machete`: `cargo-machete didn't find any unused dependencies in this directory. Good job!`
+- `cargo test --locked` (after `bun install --frozen-lockfile`): 80 suites, 1814 passed, 0
+  failed. After the merge: 81 suites, 1894 passed, 0 failed.
+- `just typescript`: `Tests  76 passed (76)` (after the merge also `189 passed`, `22 passed`).
+- `just docs`: `[build] 18 page(s) built`, `[build] Complete!`; the two `[WARN]` lines (`i18n`,
+  `404`) are there on the base too. `dist/llms-full.txt` holds the new page.
+- `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, the sweeps
+  `0 differences`. All 64 (4 runs each) are in 16 files that are not on `origin/main`:
+  `tasks/conformance/runs/{cart,cart_broken,clock,dispatch,gate,kettle,lazy_worker,lift,panel,
+  stove,ticket,worker}.model.ts`, `runs/gate.rs`, `runs/kettle.rs`,
+  `tasks/conformance/setups/clock.model.ts` and `setups/clock.rs` (the script lists 10; the
+  full list is from a copy of `same.py` with `SHOWN` raised, not committed).
+  `just same-answers fdbd03a` (the integration head this branch starts from): `every model
+  file: 392 runs, 0 differences`, every sweep 0.
+- `tests_kept.py --base origin/main`: `tests kept: 1491 tests, 4385 assertions (base: 1304, 3798)`;
+  after the merge `tests kept: 1541 tests, 4513 assertions (base: 1304, 3798)`.
+- After the merge, fmt, clippy, `just lint-library`, `cargo deny check`, `cargo machete` and
+  `just docs` (18 pages, the same two `[WARN]` lines) gave the same last lines as above.
+  `just same-answers` was not run again (not in the review's list).
+- `just counts` and `just benchmark` were not run: no search code changed.
+
+### Unfinished, and the next step
+
+- Nothing of decision 1 to 7 is left out, except the two deviations above (`--out`, the
+  one-line example in the text output).
+- Next: slices 2, 5 and 6 merge onto this; when slice 6 reads runs it gets `Runs` through
+  `read_located`, and needs the spec module's runs as said under "Runs".

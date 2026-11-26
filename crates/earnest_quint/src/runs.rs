@@ -1,3 +1,4 @@
+use crate::Runs;
 use crate::json::{Declaration, Def, Expr as Quint};
 use crate::model::{action, ids};
 use crate::reader::{Read, Reader, Refusal, all_of, constant, refusal};
@@ -8,20 +9,8 @@ const TESTS_END_WITH: &str = "Test";
 const DECLARED_ON: u32 = 1;
 const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
+const MOST_ALIASES: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
-
-/// Which `run` definitions of the compiled main module [`crate::read_runs`] plays.
-#[derive(Clone, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Runs {
-    /// None of them.
-    None,
-    /// Each one whose name ends in `Test`, as `quint test` chooses them when it is given no
-    /// `--match`.
-    Tests,
-    /// These, in this order. A name the module has no run of makes the file unreadable.
-    Named(Vec<String>),
-}
 
 struct Step {
     choices: Vec<usize>,
@@ -47,7 +36,7 @@ struct Drawn {
 struct Run<'r, 'a> {
     reader: &'r mut Reader<'a>,
     fields: &'r [String],
-    init: u64,
+    init: &'a Def,
     name: &'a str,
     actions: Vec<Action>,
     plans: Vec<Plan>,
@@ -262,13 +251,27 @@ impl<'a> Run<'_, 'a> {
         Ok(false)
     }
 
+    fn aliased(&self, def: &'a Def) -> &'a Def {
+        let mut found = def;
+        for _ in 0..MOST_ALIASES {
+            let Quint::Name { id, name } = &found.expr else {
+                break;
+            };
+            match self.reader.definition(*id, name) {
+                Ok(next) if next.qualifier == "action" => found = next,
+                _ => break,
+            }
+        }
+        found
+    }
+
     fn is_init(&self, expr: &Quint) -> bool {
         let Quint::Name { id, name } = expr else {
             return false;
         };
         self.reader
             .definition(*id, name)
-            .is_ok_and(|def| def.id == self.init)
+            .is_ok_and(|def| self.aliased(def).id == self.aliased(self.init).id)
     }
 
     fn leaf(&mut self, expr: &'a Quint, drawn: &mut Drawn) -> Read<bool> {
@@ -333,7 +336,12 @@ impl<'a> Run<'_, 'a> {
     }
 }
 
-fn script<'a>(reader: &mut Reader<'a>, def: &'a Def, init: u64, fields: &[String]) -> Read<Script> {
+fn script<'a>(
+    reader: &mut Reader<'a>,
+    def: &'a Def,
+    init: &'a Def,
+    fields: &[String],
+) -> Read<Script> {
     def.name.clone_into(&mut reader.within);
     let mut run = Run {
         reader,
@@ -396,7 +404,7 @@ fn chosen<'a>(declarations: &'a [Declaration], runs: &Runs) -> Result<Vec<&'a De
 pub(crate) fn scripts<'a>(
     reader: &mut Reader<'a>,
     declarations: &'a [Declaration],
-    (init, runs): (u64, &Runs),
+    (init, runs): (&'a Def, &Runs),
     fields: &[String],
 ) -> Result<Vec<Script>, Vec<Refusal>> {
     let played_runs = chosen(declarations, runs)?;

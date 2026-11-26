@@ -447,3 +447,33 @@ fn a_file_that_is_not_compiled_quint_is_one_problem() {
         "the problem says what the reader takes: {found:?}"
     );
 }
+
+#[test]
+fn each_problem_keeps_the_definition_it_is_in_and_the_id_of_a_refused_operator() {
+    let source = include_str!("../../../tasks/quint/models/choose.json");
+    let located = crate::read_located("choose.json", source, &crate::Runs::Tests)
+        .expect_err("`chooseSome` is refused");
+    let found: Vec<(&str, Option<&str>, bool)> = located
+        .iter()
+        .map(|each| {
+            (
+                each.problem.feature.as_str(),
+                each.definition.as_deref(),
+                each.id.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [("`chooseSome`", Some("step"), true)],
+        "the operator by its definition and its id"
+    );
+    assert_eq!(
+        read("choose.json", source).expect_err("`chooseSome` is refused"),
+        located
+            .into_iter()
+            .map(|each| each.problem)
+            .collect::<Vec<_>>(),
+        "the problems are those of `read`"
+    );
+}

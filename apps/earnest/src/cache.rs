@@ -55,8 +55,46 @@ pub(crate) struct Cache {
 }
 
 fn fingerprint(text: &str) -> u64 {
-    text.bytes().fold(FNV_OFFSET, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
+    folded(FNV_OFFSET, text.as_bytes())
+}
+
+fn folded(start: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(start, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+    })
+}
+
+pub(crate) fn fingerprint_of(pieces: &[&[u8]]) -> u64 {
+    pieces.iter().fold(FNV_OFFSET, |hash, piece| {
+        let length = u64::try_from(piece.len()).unwrap_or(u64::MAX);
+        folded(folded(hash, &length.to_le_bytes()), piece)
+    })
+}
+
+pub(crate) fn folder_in(folder: &Path, inner: &str) -> PathBuf {
+    folder.join(FOLDER).join(inner)
+}
+
+pub(crate) fn write_whole(target: &Path, text: &str) -> io::Result<()> {
+    let folder = target
+        .parent()
+        .ok_or_else(|| io::Error::other("a cache file has a folder"))?;
+    fs::create_dir_all(folder)?;
+    if let Some(root) = folder.ancestors().find(|each| each.ends_with(FOLDER)) {
+        let ignore = root.join(IGNORE_FILE);
+        if !ignore.exists() {
+            fs::write(ignore, IGNORE_EVERYTHING)?;
+        }
+    }
+    let name = target.file_name().unwrap_or_default().to_string_lossy();
+    let unfinished = folder.join(format!(
+        ".{name}.{}.{}.tmp",
+        process::id(),
+        WRITES.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::write(&unfinished, text)?;
+    fs::rename(&unfinished, target).inspect_err(|_| {
+        fs::remove_file(&unfinished).unwrap_or_default();
     })
 }
 
@@ -84,28 +122,12 @@ impl Cache {
     }
 
     pub(crate) fn store(&self, key: &Key, models: &[Checked]) -> io::Result<()> {
-        let target = self.entry_path(&key.file);
-        let folder = self.root.join(ENTRIES);
-        fs::create_dir_all(&folder)?;
-        let ignore = self.root.join(IGNORE_FILE);
-        if !ignore.exists() {
-            fs::write(ignore, IGNORE_EVERYTHING)?;
-        }
         let entry = Entry {
             key: key.clone(),
             models: models.to_vec(),
         };
         let text = serde_json::to_string(&entry).map_err(io::Error::other)?;
-        let unfinished = folder.join(format!(
-            ".{:016x}.{}.{}.tmp",
-            fingerprint(&key.file),
-            process::id(),
-            WRITES.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::write(&unfinished, text)?;
-        fs::rename(&unfinished, &target).inspect_err(|_| {
-            fs::remove_file(&unfinished).unwrap_or_default();
-        })
+        write_whole(&self.entry_path(&key.file), &text)
     }
 }
 
