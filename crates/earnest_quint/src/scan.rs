@@ -8,7 +8,7 @@ const LEFT_FOR_LATER: [(&str, &str); 2] = [
 ];
 
 fn in_definition(feature: &str, why: &str, name: &str) -> Refusal {
-    refusal(feature, &format!("{why}, in the definition `{name}`"))
+    refusal(feature, &format!("{why}, in the definition `{name}`")).within(name)
 }
 
 fn variable(name: &str, kind: &str) -> Option<Refusal> {
@@ -23,10 +23,13 @@ fn variable(name: &str, kind: &str) -> Option<Refusal> {
         "sum" => "variants",
         _ => "values of this type",
     };
-    Some(refusal(
-        &format!("`var {name}`"),
-        &format!("a variable that holds {what}: only `int` and `bool` variables are read yet"),
-    ))
+    Some(
+        refusal(
+            &format!("`var {name}`"),
+            &format!("a variable that holds {what}: only `int` and `bool` variables are read yet"),
+        )
+        .within(name),
+    )
 }
 
 fn expression(expr: &Expr, within: &str) -> Option<Refusal> {
@@ -39,15 +42,18 @@ fn expression(expr: &Expr, within: &str) -> Option<Refusal> {
             within,
         )),
         Expr::Let { opdef, expr } => body(opdef, within).or_else(|| expression(expr, within)),
-        Expr::App { opcode, args, .. } => {
+        Expr::App { id, opcode, args } => {
             if builtin(opcode).is_none()
                 && let Some(kind) = kind_of_builtin(opcode)
             {
-                return Some(in_definition(
-                    &format!("`{opcode}`"),
-                    &format!("{kind} are not read yet"),
-                    within,
-                ));
+                return Some(
+                    in_definition(
+                        &format!("`{opcode}`"),
+                        &format!("{kind} are not read yet"),
+                        within,
+                    )
+                    .at(*id),
+                );
             }
             args.iter().find_map(|each| expression(each, within))
         }
@@ -63,7 +69,7 @@ fn body(def: &Def, within: &str) -> Option<Refusal> {
 
 fn definition(def: &Def) -> Option<Refusal> {
     if let Some((_, why)) = LEFT_FOR_LATER.iter().find(|(name, _)| *name == def.name) {
-        return Some(refusal(&format!("`{}`", def.name), why));
+        return Some(refusal(&format!("`{}`", def.name), why).within(&def.name));
     }
     match def.qualifier.as_str() {
         "temporal" => Some(in_definition(
@@ -89,14 +95,20 @@ pub(crate) fn refused(declarations: &[Declaration]) -> Vec<Refusal> {
                 type_annotation,
                 ..
             } => variable(name, &type_annotation.kind),
-            Declaration::Const { name } => Some(refusal(
-                &format!("`const {name}`"),
-                "a constant without a value: compile the module that gives it one",
-            )),
-            Declaration::Typedef { name } => Some(refusal(
-                &format!("`type {name}`"),
-                "type definitions are not read yet",
-            )),
+            Declaration::Const { name } => Some(
+                refusal(
+                    &format!("`const {name}`"),
+                    "a constant without a value: compile the module that gives it one",
+                )
+                .within(name),
+            ),
+            Declaration::Typedef { name } => Some(
+                refusal(
+                    &format!("`type {name}`"),
+                    "type definitions are not read yet",
+                )
+                .within(name),
+            ),
             Declaration::Def(def) => definition(def),
             Declaration::Other => Some(refusal(
                 "a declaration",

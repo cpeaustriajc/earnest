@@ -28,6 +28,36 @@ pub fn is_compiled_quint(source: &str) -> bool {
     serde_json::from_str::<json::Probe>(source).is_ok_and(|probe| probe.stage == "compiling")
 }
 
+/// Which runs of the main module a check asks for, as listed in `earnest.quint.json`.
+///
+/// The reader takes it and does not play runs yet: a `run` definition in the module is still
+/// refused.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Runs {
+    /// No run is played.
+    #[default]
+    None,
+    /// The runs whose name ends in `Test`, as `quint test` picks them.
+    Tests,
+    /// The runs with these names.
+    Named(Vec<String>),
+}
+
+/// A problem with what is known of where it comes from, so a caller that has the `.qnt` file's
+/// source map can move it to its line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Located {
+    /// The problem, at line 1, column 1.
+    pub problem: Problem,
+    /// The id Quint gave the refused expression, when the reader knows it. Quint keeps the ids
+    /// of the main module's own definitions from `quint parse`; a definition flattened in from
+    /// an instance has ids that `quint parse` never gave.
+    pub id: Option<u64>,
+    /// The definition or declaration the problem is in, as the compiled module names it:
+    /// `step`, or `Small::Clock::step` for one flattened in from an instance.
+    pub definition: Option<String>,
+}
+
 /// Reads the compiled Quint module in `source`, from the file at `path`.
 ///
 /// # Errors
@@ -36,21 +66,41 @@ pub fn is_compiled_quint(source: &str) -> bool {
 /// names the construct and the definition it is in. A source that is not compiled Quint JSON is
 /// one problem.
 pub fn read(path: &str, source: &str) -> Result<Model, Vec<Problem>> {
+    read_located(path, source, &Runs::None)
+        .map_err(|located| located.into_iter().map(|each| each.problem).collect())
+}
+
+/// Reads the compiled Quint module in `source`, from the file at `path`, as [`read`] does, for
+/// a check that asks for `runs`.
+///
+/// # Errors
+///
+/// The problems of [`read`], each with the id and the definition it was found in, when the
+/// reader knows them.
+pub fn read_located(path: &str, source: &str, _runs: &Runs) -> Result<Model, Vec<Located>> {
     let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
-        vec![Problem::new(
-            path,
-            TOP_OF_FILE,
-            "the JSON",
-            &format!(
-                "the file is not what `quint compile --target json` writes, so the checker \
-                 can't read it: {error}"
+        vec![Located {
+            problem: Problem::new(
+                path,
+                TOP_OF_FILE,
+                "the JSON",
+                &format!(
+                    "the file is not what `quint compile --target json` writes, so the checker \
+                     can't read it: {error}"
+                ),
             ),
-        )]
+            id: None,
+            definition: None,
+        }]
     })?;
     model::model(path, &compiled).map_err(|refused| {
         refused
             .into_iter()
-            .map(|refusal| Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why))
+            .map(|refusal| Located {
+                problem: Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why),
+                id: refusal.id,
+                definition: refusal.within.filter(|name| !name.is_empty()),
+            })
             .collect()
     })
 }
