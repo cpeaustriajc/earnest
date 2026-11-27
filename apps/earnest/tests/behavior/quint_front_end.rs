@@ -399,3 +399,67 @@ fn an_import_of_a_file_that_is_not_there_is_refused_as_quint_refuses_it() {
         "as Quint 0.33.1 prints it, with the file as shown\n{run}"
     );
 }
+
+const LABELLED: &[u8] = b"// caf\xe9
+/// @check
+module A {
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 2) x + 1 else 0
+  // \xe9 above the label
+  /// @view state
+  val shown = if (x == 0) \"zero\" else \"more\"
+  // \xff above the rule
+  /// @check
+  /// The counter stays small.
+  val ok = x <= 3
+}
+";
+
+fn git(sandbox: &Sandbox, arguments: &[&str]) {
+    let done = std::process::Command::new("git")
+        .args(arguments)
+        .current_dir(sandbox.path())
+        .env("GIT_AUTHOR_NAME", "earnest")
+        .env("GIT_AUTHOR_EMAIL", "earnest@example.com")
+        .env("GIT_COMMITTER_NAME", "earnest")
+        .env("GIT_COMMITTER_EMAIL", "earnest@example.com")
+        .output()
+        .expect("git runs");
+    assert!(done.status.success(), "git {arguments:?}: {done:?}");
+}
+
+#[test]
+fn bytes_that_are_not_utf_8_above_a_label_and_a_rule_leave_the_chart_and_the_rule_changes_whole() {
+    let sandbox = with_bytes(&[("specs/a.qnt", LABELLED.to_vec())]);
+    let chart = Run::of(sandbox.command().args(["chart", "specs", "--model", "A"]));
+    assert!(
+        chart.stdout.contains("state \"zero\" as s0")
+            && chart.stdout.contains("state \"more\" as s1"),
+        "the chart is labelled by `shown`\n{chart}"
+    );
+    git(&sandbox, &["init", "-q"]);
+    git(&sandbox, &["add", "-A"]);
+    git(&sandbox, &["commit", "-q", "-m", "base"]);
+    fs::write(
+        sandbox.path().join("specs/a.qnt"),
+        replaced(LABELLED, b"x <= 3", b"x <= 4"),
+    )
+    .expect("the file can be edited");
+    let run = Run::of(
+        sandbox
+            .command()
+            .args(["verify", "--base", "HEAD", "specs"]),
+    );
+    run.exits(0);
+    for line in [
+        "  changed    A.ok  specs/a.qnt",
+        "    was  \"The counter stays small.\"  x <= 3",
+        "    now  \"The counter stays small.\"  x <= 4",
+    ] {
+        assert!(
+            run.stdout.lines().any(|each| each == line),
+            "`{line}`: the rule's text is read past the bytes above it\n{run}"
+        );
+    }
+}
