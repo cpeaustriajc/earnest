@@ -6054,8 +6054,13 @@ expression, and room for the module) at the place of that bracket: "the JSON is 
 
 The samples are `tasks/quint/deep/`, written by its `generate.py`: twelve shapes (`not(`, `Set(`,
 parentheses, an else-if chain, nested ifs, records, `and {}`, `or {}`, lambdas in `Set.exists`, a
-`val` chain, `0 + ... + x`, `implies`) at 100, 300 and 500, each a check whose `holds` holds and
-whose `broken` is broken at `x = 3`. Measured by running `earnest verify` on each shape at the front
+`val` chain, `0 + ... + x`, `implies`), each a check whose `holds` holds and whose `broken` is
+broken at `x = 3`. The repository keeps the 15 that cost little in a debug `cargo test`: ten
+shapes at 100, `not(`, `0 + ... + x` and `val` at 300, parentheses at 300 and 500. The tests of
+`earnest_quint_syntax` take 204 s with them, 184 s without (8cc30b47), and `quint_deep.rs` 12 s.
+`generate.py --slow` writes the other 21 (300 and 500 of the rest, records and lambdas at 100),
+whose cost its help gives; `lets_500` is one Quint 0.33.1's own parse and compile overflow on.
+Those are judged by hand and are not held by a test. Measured by running `earnest verify` on each shape at the front
 end's largest accepted depth; "the system's stack" is the command on the process's main thread, as
 `main.rs` runs it when the system refuses its 512 MiB thread (a library for `LD_PRELOAD` refuses
 that thread; `ulimit -s` sets the stack).
