@@ -32,4 +32,7 @@ module plain {
 
   /// @view state
   def label = if (n == 0) "zero" else "more"
+
+  /// @view group
+  pure def kind = "counter"
 }
