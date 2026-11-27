@@ -86,11 +86,24 @@ pub struct Charted<'a> {
     pub chart: Option<&'a str>,
 }
 
-fn model(charted: &Charted<'_>) -> String {
-    let section = &charted.section;
+/// A model's section with the lines of its fenced block written already, for
+/// [`report_with_details`].
+#[derive(Clone, Copy, Debug)]
+pub struct Detailed<'a> {
+    /// The section and its chart.
+    pub charted: Charted<'a>,
+    /// The lines of the fenced block, in place of the path to each broken rule and each
+    /// finding of the outcome. `None` prints those.
+    pub detail: Option<&'a [String]>,
+}
+
+fn model(detailed: &Detailed<'_>) -> String {
+    let section = &detailed.charted.section;
     let mut blocks = vec![format!("## {}", prose(section.name)), result_line(section)];
-    blocks.extend(charted.chart.map(str::to_owned));
-    let detail = detail_lines(section.outcome);
+    blocks.extend(detailed.charted.chart.map(str::to_owned));
+    let detail = detailed
+        .detail
+        .map_or_else(|| detail_lines(section.outcome), <[String]>::to_vec);
     if !detail.is_empty() {
         blocks.push(fenced(&detail));
     }
@@ -154,6 +167,24 @@ pub fn report_with_limit(
 #[must_use]
 pub fn report_with_charts(
     sections: &[Charted<'_>],
+    unreadable: &[Unreadable<'_>],
+    changes: Option<&RuleChanges<'_>>,
+) -> String {
+    let detailed: Vec<Detailed<'_>> = sections
+        .iter()
+        .map(|charted| Detailed {
+            charted: *charted,
+            detail: None,
+        })
+        .collect();
+    report_with_details(&detailed, unreadable, changes)
+}
+
+/// [`report_with_charts`] with the fenced block of some models written by the caller, as one
+/// that knows which broken rules were expected to break words them.
+#[must_use]
+pub fn report_with_details(
+    sections: &[Detailed<'_>],
     unreadable: &[Unreadable<'_>],
     changes: Option<&RuleChanges<'_>>,
 ) -> String {

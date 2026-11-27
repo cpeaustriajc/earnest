@@ -1,8 +1,9 @@
+use crate::marks::{Kind, not_a_boolean};
 use crate::reading::Readable;
 use crate::workers::run_each;
 use earnest_chart::{chart_outline, chart_with_limit, detail_lines_in, one_line, path_lines_in};
 use earnest_check::{EVERY_EXPECTED_FOUND, Limits, Outcome, Status as Judged, Verdict, explore};
-use earnest_ir::Model;
+use earnest_ir::{Fault, Model};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::num::NonZeroUsize;
@@ -63,6 +64,7 @@ pub(crate) enum Stops {
 pub(crate) struct Expecting<'a> {
     pub(crate) search: Search<'a>,
     pub(crate) expected: &'a [String],
+    pub(crate) reachable: &'a [String],
     pub(crate) stops: Stops,
 }
 
@@ -73,6 +75,7 @@ pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Grap
         .map(|search| Expecting {
             search: *search,
             expected: &[],
+            reachable: &[],
             stops: Stops::AtTheEnd,
         })
         .collect();
@@ -222,6 +225,7 @@ pub(crate) fn explore_expecting(
         };
         let elapsed = began.elapsed();
         judge(&mut outcome, expecting.expected);
+        name_the_mark_of_a_rule_that_is_not_a_boolean(&mut outcome, expecting);
         let chart = match graphs {
             Graphs::Charted { max_arrows } => outcome
                 .outline
@@ -391,6 +395,28 @@ pub(crate) fn milliseconds(elapsed: Duration) -> u64 {
     u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
 }
 
+fn name_the_mark_of_a_rule_that_is_not_a_boolean(outcome: &mut Outcome, expecting: &Expecting<'_>) {
+    let does_not = format!(" {} in this state", Fault::NotBoolean.describe());
+    for finding in &mut outcome.findings {
+        let Some(name) = finding
+            .message
+            .strip_prefix("the rule `")
+            .and_then(|rest| rest.strip_suffix(does_not.as_str()))
+            .and_then(|rest| rest.strip_suffix('`'))
+        else {
+            continue;
+        };
+        let kind = if expecting.reachable.iter().any(|each| each == name) {
+            Kind::Reachable
+        } else if expecting.expected.iter().any(|each| each == name) {
+            Kind::Broken
+        } else {
+            Kind::Holds
+        };
+        finding.message = not_a_boolean(name, kind);
+    }
+}
+
 pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String> {
     let model = &readable.model;
     let searched: Searched = serde_json::to_value(&ran.outcome)
@@ -440,6 +466,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             &ran.outcome,
             (&readable.expected, &readable.reachable),
             model,
+            ExpectedPaths::LeftOut,
         ),
         position: readable.position,
     })
@@ -449,8 +476,8 @@ pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool
     expected.iter().any(|name| name == whole_of(&rule.id))
 }
 
-fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
-    let mut lines = vec![format!("reached  {}", one_line(name))];
+fn with_its_path(head: String, name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
+    let mut lines = vec![head];
     let path = outcome
         .rules
         .iter()
@@ -466,10 +493,18 @@ fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
     lines
 }
 
-fn detail_of(
+/// Whether the path to a counterexample that was expected is printed under its line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpectedPaths {
+    LeftOut,
+    Printed,
+}
+
+pub(crate) fn detail_of(
     outcome: &Outcome,
     (expected, reachable): (&[String], &[String]),
     model: &Model,
+    paths: ExpectedPaths,
 ) -> Vec<String> {
     let notation = model.symbols.notation();
     if expected.is_empty() {
@@ -480,9 +515,17 @@ fn detail_of(
         let is_reachable = reachable.contains(name);
         match group_verdict(name, outcome) {
             Some(Verdict::Broken) if is_reachable => {
-                lines.extend(reached_lines(name, outcome, model));
+                let head = format!("reached  {}", one_line(name));
+                lines.extend(with_its_path(head, name, outcome, model));
             }
-            Some(Verdict::Broken) => lines.push(format!("broken  {}  (expected)", one_line(name))),
+            Some(Verdict::Broken) => {
+                let head = format!("broken  {}  (expected)", one_line(name));
+                if paths == ExpectedPaths::Printed {
+                    lines.extend(with_its_path(head, name, outcome, model));
+                } else {
+                    lines.push(head);
+                }
+            }
             Some(Verdict::Holds) if is_reachable => {
                 lines.push(format!("never reached  {}", one_line(name)));
             }

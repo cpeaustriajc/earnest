@@ -24,8 +24,8 @@ pub use changes::{
 pub use markdown::one_line;
 pub use mermaid::{chart, chart_outline, chart_with_limit};
 pub use report::{
-    Charted, Section, Unreadable, report, report_with_charts, report_with_limit,
-    rule_changes_section, skipped_section,
+    Charted, Detailed, Section, Unreadable, report, report_with_charts, report_with_details,
+    report_with_limit, rule_changes_section, skipped_section,
 };
 pub use select::ARROW_LIMIT;
 pub use text::{detail_lines, detail_lines_in, path_lines, path_lines_in};

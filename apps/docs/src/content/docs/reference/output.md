@@ -312,6 +312,7 @@ rule changes since origin/main
 `earnest report` prints Markdown formatted for a pull request body:
 
 - One section per model, and per setup of a model, with its result line, Mermaid statechart, the shortest path to each broken rule, and the path and `why` line of each broken rule about runs and each broken witness.
+- In a Quint check, a property marked `/// @check broken` or `/// @check reachable` is worded as `earnest verify` words it: `broken  <id>  (expected)` and `reached  <id>`, each with its path, `holds  <id>  a counterexample was expected` and `never reached  <id>`. So a check that fails only through its marks names them.
 - An `Unreadable files` section naming every unreadable file and its problems.
 - A `Skipped files` section listing skipped test files that use the library.
 - A `Files that declare no model` section listing skipped Rust files that use the library without declaring a model.

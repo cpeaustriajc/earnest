@@ -826,11 +826,18 @@ fn id_of<'a>(ids: &'a [String], name: &str) -> Option<&'a String> {
     })
 }
 
-fn expected_ids(job: &Job, model: &earnest_ir::Model) -> Result<Vec<String>, Problem> {
+fn expected_ids(
+    job: &Job,
+    model: &earnest_ir::Model,
+    unplayed: &[String],
+) -> Result<Vec<String>, Problem> {
     let ids = whole_ids(model);
     let mut expected: Vec<String> = Vec::with_capacity(job.expected.len());
     for name in &job.expected {
         let Some(found) = id_of(&ids, name) else {
+            if id_of(unplayed, name).is_some() {
+                continue;
+            }
             return Err(Problem::new(
                 &job.shown,
                 TOP_OF_FILE,
@@ -955,7 +962,7 @@ fn marked_checks(
             files.push(unreadable_of(&shown, module, problems));
         }
         jobs.extend(found.plans.into_iter().map(|plan| job_of(candidate, plan)));
-        if checks == 0 && refused == 0 && candidate.named {
+        if checks == 0 && refused == 0 && !found.module_marked && candidate.named {
             files.push(not_a_model(&candidate.shown));
         }
     }
@@ -1035,7 +1042,7 @@ fn runs_not_played(
 fn read_check(
     job: &Job,
     compiled: Result<String, Problem>,
-    runs: &Runs,
+    (runs, unplayed): (&Runs, &[String]),
 ) -> Result<Compiled, Vec<Located>> {
     let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
     let (json, views) = without_labels(job, &json)?;
@@ -1046,8 +1053,8 @@ fn read_check(
     };
     let mut model = model.map_err(|found| at_marks(job, &views, found))?;
     job.model_name().clone_into(&mut model.name);
-    let expected =
-        expected_ids(job, &model).map_err(|problem| vec![Located::new(problem, None, None)])?;
+    let expected = expected_ids(job, &model, unplayed)
+        .map_err(|problem| vec![Located::new(problem, None, None)])?;
     let reachable = as_marked(job, &mut model);
     Ok(Compiled {
         json,
@@ -1213,7 +1220,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                 (Ok((json, false)), Some(found)) => compiled_runs(found, job, json, unplayed),
                 _ => job.check.runs.clone(),
             };
-            read_check(job, compiled.map(|(json, _)| json), &runs)
+            read_check(job, compiled.map(|(json, _)| json), (&runs, unplayed))
         })
         .collect();
     for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
