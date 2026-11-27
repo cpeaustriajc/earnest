@@ -6074,14 +6074,28 @@ that thread; `ulimit -s` sets the stack).
 | `and {}`, `or {}` | 1,999 / 2,000 | judged | judged | judged |
 | `val` chain | 1,997 / 1,998 | judged | judged | judged |
 | `implies` | 999 / 1,000 | judged | judged | judged |
-| `0 + ... + x` | 3,997 / 3,998 (Quint's tree) | judged | judged | judged up to 3,761; past it the drop of the model overflows after the verdict |
+| `0 + ... + x` | 3,997 / 3,998 (Quint's tree) | judged | judged | judged up to 3,783; past it the drop of the model overflows after the verdict |
 | `Set(`, records | refused from 1,998 / 1,999 by the type-node guard; 500 judged | judged at 500 | - | judged at 500 |
 | lambdas | 999 / 1,000 | 300 judged; 999 over 15 minutes | - | 300 judged |
 | `compiled.json`, nested `not` | 4,000 / 4,001 (the bracket scan) | judged | judged | judged |
 
+Judged by hand, not held by a test: the 21 files `generate.py --slow` adds, on the final code of
+#95 (`33ac7bce`). Each is judged as Quint judges it (`holds` holds, `broken` broken at `x = 3`,
+4 states) in release on the normal threads and at 1 MiB of system stack, and in debug at 1 MiB;
+`confirm --quint` with Quint 0.33.1 and its TLC backend.
+
+| Files | Release, normal / 1 MiB | Debug, 1 MiB | `confirm --quint` |
+| --- | --- | --- | --- |
+| `and {}`, `or {}`, if, else-if, `implies` at 300 and 500 | 0.5 to 2.1 s | 2.4 to 8.9 s | `same` at 300 for if, else-if and `implies`; otherwise `cannot`: Quint stops in the TLA+ parser of its `verify` (`error: error`) |
+| `not(`, `0 + ... + x` at 500 | 0.3 / 0.7 s | 1.9 / 2.7 s | `cannot`, as above |
+| `val` chain at 500 | 0.6 s | 2.5 s | `cannot`: Quint's parse overflows (`RangeError`) |
+| `Set(` at 300 / 500 | 6.2 / 28 s | 25 / 102 s | not run: Quint compiles them in 81 / 370 s |
+| records at 100 / 300 / 500 | 1.4 / 27 / 118 s | 6.5 / 150 / 682 s | `same` at 100; not run past it (Quint compiles records 300 in 573 s) |
+| lambdas at 100 / 300 / 500 | 1.1 / 29 / 160 s | 12 / 324 / 1,622 s | `same` at 100; not run past it |
+
 - The one abort left: in a debug build, when earnest can't start its large thread so the command
   runs on the system's stack, and that stack is 1 MiB (Linux and macOS give 8 MiB), one expression
-  chained more than 3,761 long overflows in the drop of `earnest_ir::Model` at the end of
+  chained more than 3,783 long overflows in the drop of `earnest_ir::Model` at the end of
   `verify`. A released build reads its bounds at 1 MiB. Before the hops the command's thread at
   the system's stack held 1,129 (debug, 8 MiB) and 829 (release, 1 MiB).
 - Time: the front end's type inference grows faster than the depth of a type. Release: `Set` 300 in
