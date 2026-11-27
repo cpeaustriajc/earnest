@@ -4782,3 +4782,307 @@ After merging `claude/lucid-brown-f5xvr8` at `4b9d3a0` (the fifth pass's first f
 `eventually.rs`; its test reads compiled JSON, so nothing to move): `cargo fmt --check`, clippy,
 `just lint-library` clean; `cargo test --locked` 2217 passed, 0 failed; `just docs` `Complete!`;
 `just same-answers` 0 differences. The real-Quint runs above were made at `17b1c8a`, before it.
+
+## What earnest reads of Quint's output (#83)
+
+This section lists which parts of Quint's three JSON outputs earnest reads. A part earnest never
+reads need not be produced by the front end of #82. Labels are the ones used above: **[ran]**
+(run with Quint `0.33.1` on `setups/clock.qnt`, `setups/readsetup.qnt`, `imports/types.qnt`,
+`imports/setups.qnt`), **[read]** (in earnest's source or in `dist/src`).
+
+Paths: `app/` is `apps/earnest/src/`, `quint/` is `crates/earnest_quint/src/`. Lines are of the
+tree this section was written on.
+
+### The answer in five lines
+
+- The `types` table is asked for in two calls, both in the `fieldNames` operator
+  (`quint/data.rs:623` and `quint/data.rs:640`). Nothing else reads a type from the table.
+- Two more decisions use a type written in the source: a `var`'s `typeAnnotation.kind`
+  (`quint/scan.rs:7`, `quint/model.rs:296`). That is syntax plus alias inlining, not inference.
+- Of 323 `.qnt` files in the repository, 6 write `fieldNames`: `readsetup.qnt`, three copies of the
+  `reads` model, and the reader's fixtures `values.qnt` and `openfields.qnt`.
+- The reader takes 82 of the 95 operators that Quint's signature tables name. The 13 it lacks are
+  listed below.
+- The clone of Quint's repository works from this container, tag `v0.33.1` included.
+
+### How earnest starts Quint
+
+| Call | Where | Arguments |
+|---|---|---|
+| `quint parse` | `app/quint.rs:742` (`parsed`) | `parse <file> --out <o> --source-map <m>`, `app/quint.rs:767` |
+| `quint typecheck` | `app/typecheck.rs:9` (`typechecked`) | `typecheck <file> --out <o>`, `app/typecheck.rs:27` |
+| `quint compile` | `app/quint.rs:464` (`compile`), arguments at `app/quint.rs:362`, run at `app/quint.rs:492` | `compile --target json --main M --init I --step S [--invariant a,b] [--temporal t] <file>`, read from stdout |
+
+The marks (`app/marks.rs`) and the plan (`app/plan.rs`) read no JSON. They ask `Places` for
+`kind_of`, `qualifier_of`, `doc_of` and `spot_of` (`app/places.rs:483`, `:487`, `:495`, `:571`;
+used at `app/plan.rs:66`, `:430`, `:437`).
+
+Quint's text also matters, not only its JSON:
+
+- `app/quint.rs:417` (`quint_place`) reads the first stderr line shaped `at <file>.qnt:<line>:<col>`
+  to place a compile error. Lines there are 1-based.
+- `app/quint.rs:699` (`parse_failed`) reads `errors[0].explanation` and
+  `errors[0].locs[0].{source, start.line, start.col}` from the `--out` file of a failed parse.
+  Those are 0-based and earnest adds 1 (`app/quint.rs:733`).
+- Exit status: non-zero from `parse`, `typecheck` or `compile` is a refusal
+  (`app/quint.rs:785`, `app/typecheck.rs:35`, `app/quint.rs:505`).
+- `--version` text, for the cache key (`app/quint.rs:334`).
+
+### Keys read, per output
+
+"Written" is what Quint `0.33.1` writes [ran]. "Read" is what earnest uses [read]. A key that
+flows through as opaque JSON is marked **opaque**.
+
+#### `quint parse --out` and `--source-map`
+
+Top level, written (5): `stage`, `warnings`, `modules`, `table`, `errors`. Read (1 on success): `modules`
+(`app/places.rs:205`). `errors` is read only when the run failed (`app/quint.rs:699`). Never read:
+`stage`, `warnings`, `table`.
+
+| Key | Written | Read where and for what |
+|---|---|---|
+| `modules[].name` | yes | `app/places.rs:118`: module names for the marks and for `--main` |
+| `modules[].id` | yes | `app/places.rs:119`: finds the file of a module in the map |
+| `modules[].doc` | module doc | `app/places.rs:120`: the doc line with `@check` |
+| `modules[].declarations` | yes | `app/places.rs:128` |
+| declaration `id` | all | `app/places.rs:129`, `:219`, `:234`: key of every side table |
+| declaration `kind` | all | `app/places.rs:130`, `:248` (`kinds`): `var`, `const`, `def`, `import`, `export`, `instance` |
+| declaration `name` | named kinds | `app/places.rs:141`: the names a module declares |
+| declaration `qualifier` | `def` | `app/places.rs:245` (`qualifiers`), `app/places.rs:724`: `val`, `action`, `run`, `temporal`, `pureval` |
+| declaration `doc` | `def` with `///` | `app/places.rs:246` (`docs`): marks of a definition |
+| declaration `protoName` | `import`, `export`, `instance` | `app/places.rs:131`, `:146` |
+| declaration `qualifiedName` | `as` imports, instances | `app/places.rs:136`, `:147` |
+| declaration `defName` | `import`, `export` | `app/places.rs:137`: `*` or one name |
+| declaration `expr.kind` | `def` | `app/places.rs:227`: `lambda` means the definition takes parameters |
+| declaration `expr.id` | `def` | `app/places.rs:236`: the span of the written expression |
+| declaration `expr` (whole) | `def` | **opaque**: hashed by `meaning_of`, `app/changes_quint.rs:121`, with every `id` left out and bound names renamed (`app/changes_quint.rs:80`). Every key under `expr` changes the hash. |
+
+Declaration keys written but never read (7): `depth`, `typeAnnotation`, `type`, `assumption`,
+`fromSource`, `identityOverride`, `overrides`. Declaration keys read: 9 of the 16 Quint writes.
+`modules[]`: 4 written, 4 read.
+
+Source map, written (2): `sourceIndex`, `map`. Both read (`app/places.rs:188`, `:194`).
+`sourceIndex` maps a file index to a path. `map[id]` is
+`[fileIndex, {line, col, index}, {line, col, index}]`. Read: `fileIndex` (`app/places.rs:171`, `spot`),
+`start.line`, `start.col` (`:178`, `:179`), `start.index` and `end.index` (`:166`, `:167`, `span`). Not
+read: `end.line`, `end.col`.
+
+Order: the declarations of a module come in an order that is not the source order
+[ran, `doc.qnt` in the scratch folder: `assume`, `typedef`, `var`, then `init`, `step`, `inv`].
+`app/places.rs:128` keeps the order it is given.
+
+#### `quint typecheck --out`
+
+Top level, written (7): `stage`, `warnings`, `modules`, `table`, `types`, `effects`, `errors`.
+Read (5): `errors` (must be empty) and `stage` (must be `typechecking`) at `quint/setup.rs:221`,
+then the data: `modules`, `table`, `types` (`quint/setup.rs:228`, `:231`, `:234`). Never read:
+`warnings`, `effects`.
+
+`Typechecked::setup` (`quint/setup.rs`) builds the flattened module that `quint compile` would
+give, so it reads declarations and expressions in detail and copies the rest on as **opaque**
+JSON into a compile-shaped result (`quint/setup.rs:1119`).
+
+| Key | Read where and for what |
+|---|---|
+| `id` everywhere | `quint/setup.rs:109` (`most_id`): the next free id for ids earnest invents |
+| module `name`, `declarations` | `quint/setup.rs:83`, `:249` |
+| declaration `kind` | `quint/setup.rs:84`, `:338`, `:378`, `:550` |
+| `protoName`, `qualifiedName`, `defName` | `quint/setup.rs:59`, `:92`, `:328`: which import or instance a name comes from |
+| `overrides` (list of `[param, expr]`) | `quint/setup.rs:427`, `:1010`: the values an instance gives its constants |
+| declaration `name`, `qualifier`, `typeAnnotation`, `expr`, `assumption` | `quint/setup.rs:662`, `:921`, `:746`, `:750`, `:1048` |
+| `importedFrom`, `hidden` | `quint/setup.rs:785` read, `:753` dropped |
+| typedef `name`, `type` | `quint/setup.rs:386`, `:686`: alias inlining |
+| table entry `id`, `kind`, `depth`, `name`, `shadowing` | `quint/setup.rs:796`, `:797`, `:798`, `:824`, `:889` |
+| expression `kind`, `id`, `name`, `opcode`, `args`, `params`, `opdef`, `expr` | `quint/setup.rs:844` to `:906` |
+| `types[id]` | `quint/setup.rs:692` (`keep_type`): kept for ids of `fieldNames` arguments (`:854`) and of every copied `var` (`:748`). Passed on whole, **opaque**, after alias inlining of its `type` (`:694`). |
+
+Table entries written but never read: `namespaces`, `typeAnnotation`, `expr` (the table repeats
+declarations). `types[id]` keys written: `type`, `typeVariables`, `rowVariables`; only `type` is
+passed on.
+
+#### `quint compile --target json`
+
+Top level, written (8): `stage`, `warnings`, `modules`, `table`, `types`, `effects`, `errors`, `main`.
+Read (6): `stage` (`quint/lib.rs:43`, a probe that this file is compiled Quint), `main`, `modules`,
+`table`, `types`, `errors` (only whether it is empty, `quint/model.rs:706`). The shapes are in
+`quint/json.rs`. Never read: `warnings`, `effects`.
+
+| Key | Where | Use |
+|---|---|---|
+| `modules[].name` | `quint/json.rs:57`, `quint/model.rs:709` | the module named `main` |
+| `modules[].declarations` | `quint/json.rs:58` | all declarations of the main module |
+| `modules[].id`, `modules[].doc` | not read | |
+| declaration `kind` | `quint/json.rs:78` | `var`, `const`, `def`, `assume`, `typedef`; any other kind is `Other` and refused (`quint/scan.rs:47`) |
+| `var`: `id`, `name`, `typeAnnotation.kind` | `quint/json.rs:80` | state layout; `bool` gives `Domain::Bool` (`quint/model.rs:296`); the kind must be one of ten (`quint/scan.rs:9`) |
+| `const`: `name` | `quint/json.rs:86` | refused, `quint/scan.rs:39` |
+| `def`: `id`, `name`, `qualifier`, `expr` | `quint/json.rs:99` | everything |
+| `assume`: `name`, `assumption` | `quint/json.rs:89` | `assumption` is read as an expression and checked for truth (`quint/model.rs:613`, `:617`) |
+| `typedef` | `quint/json.rs:93` | no key read |
+| table key (id as text) | `quint/reader.rs:359`, `:378` | lookup of a `name` or `app` id |
+| table entry `kind`, `id` | `quint/json.rs:63` | `kind` is matched on `var`, `const`, `def`, anything else (`quint/reader.rs:673`); `id` finds the definition |
+| table entry `name`, `qualifier` | `quint/json.rs:66`, `quint/model.rs:446` | the names of the `run` definitions |
+| `types[id].type.kind` | `quint/json.rs:34` | `rec` only matters (`quint/data.rs:123`) |
+| `types[id].type.fields.kind`, `.fields[].fieldName`, `.other.kind` | `quint/json.rs:41`, `:50` | `row`, field names, `empty` (`quint/data.rs:121`) |
+
+Compile table entries written but never read: `depth`, `hidden`, `importedFrom`, `namespaces`,
+`typeAnnotation`, `expr`. Declaration keys written but never read: `depth`, `hidden`,
+`importedFrom`, `typeAnnotation` on `def`. `types[id]` keys never read: `typeVariables`,
+`rowVariables`, and every type kind but `rec`/`row`/`empty`.
+
+Names that are not in the table: `Bool`, `Nat`, `Int` are taken as built-in sets when the
+`name` id is missing from `table` (`quint/reader.rs:406`). The front end must leave them out of
+the table.
+
+Names the reader looks for in a compile: `q::init`, `q::step`, `q::inv`, `q::temporalProps`
+(`quint/model.rs:19` to `:22`). `quint compile` writes them from `--init`, `--step`,
+`--invariant` and `--temporal` [ran: `Small` gives `q::init`, `q::step`, `q::inv`, an `and` of the
+invariants].
+
+Expression kinds read (`quint/json.rs:114`): `int` (`value`), `bool` (`value`), `str` (`value`),
+`name` (`id`, `name`), `app` (`id`, `opcode`, `args`), `lambda` (`params[].id/name`, `expr`), `let`
+(`opdef`, `expr`). Quint's IR has these seven and no more [read, `dist/src/ir/quintIr.d.ts`].
+`lambda.qualifier` and the ids of `lambda` and `let` are not read.
+
+### Every place a type is asked for
+
+| # | Where | Asked | What is decided | Syntax alone? | Run-time value? |
+|---|---|---|---|---|---|
+| 1 | `quint/data.rs:620`, `:623` (`field_names`) | `types[id of the argument of fieldNames]`, closed record (`kind` `rec`, `row` with `other` `empty`) | the field names of `r.fieldNames()`, folded into a constant `Set` | Yes when the argument is a `Rec` literal (`quint/data.rs:638`) | Yes in Quint. Earnest's IR has no field-names operator (`earnest_ir/src/lib.rs:142`, no such `Op`), so it folds at read time. |
+| 2 | `quint/data.rs:639` to `:642` | `types[id of the variable]`, when the argument is a state variable | the same | Yes: the declared `var x: {a: int, ...}`, after alias inlining (`quint/setup.rs:682`) | Yes, same limit |
+| 3 | `quint/data.rs:648` | none: `constant()` folds the argument | the same, for an argument that is a constant | Not a type | Not a type |
+| 4 | `quint/data.rs:650` | none | refuses `fieldNames` of an open record, such as a definition parameter without a record type (`quint/reads_tests.rs:103`) | | |
+| 5 | `quint/scan.rs:7`, `:36` | `var` `typeAnnotation.kind` | refuses a var whose kind is not `int`, `bool`, `str`, `rec`, `row`, `set`, `fun`, `list`, `tup`, `sum` | Yes, it is the written type. A written alias (`kind` `const`) is refused unless inlined (`quint/setup.rs:682`; `compile` inlines it). | |
+| 6 | `quint/model.rs:296` | `var` `typeAnnotation.kind == "bool"` | `Domain::Bool` for the variable | Yes, same | Partly: the first value would show it, but the domain is needed before |
+| 7 | `quint/setup.rs:692`, `:748`, `:854` | `types[id]` for copied vars and `fieldNames` arguments | carries the type into the module built from `typecheck` | | |
+
+So: two reader calls use the table, one operator. The result is a set of strings that is a
+constant of the model. Rows 5 and 6 need the written type of a variable and alias inlining. No
+place needs the type of an expression that Quint inferred, other than the argument of
+`fieldNames`. For that argument the reader already falls back to the syntax (a literal, a
+variable's written type, a constant) and refuses the rest. The case a fallback cannot cover is an
+argument whose type Quint knows by inference and whose value is not constant at read time, for
+example `f(x).fieldNames()` where `f` returns a record. That case is refused today when the type
+is open and taken when Quint infers a closed record. [inferred: not run; no sample has it.]
+
+The reader does not read a type for: variants (`variant`, `matchVariant` use the record fields
+`tag` and `value`, `quint/data.rs:7`), tuples (`item`, `Tup` as records with `_1`, `_2`,
+`quint/notation.rs:13`), `Nat` and `Int` (taken by name, `quint/data.rs:103`), integer or
+boolean operators, or any `const`, `param` or `def` type.
+
+### Expression kinds and operators
+
+Quint's three tables name 95 operators other than the sets `Bool`, `Int`, `Nat`
+[ran: the keys of `getSignatures()` in `dist/src/effects/builtinSignatures.js`, which is a
+superset of `dist/src/types/builtinSignatures.js`]. `builtin.qnt` defines 75 of them; the other
+20 are variadic or special and are typed in code (`Rec`, `Tup`, `Set`, `List`, `Map`, `and`, `or`,
+`actionAll`, `actionAny`, `field`, `item`, `with`, `variant`, `matchVariant`, `tuples`, `fieldNames`,
+`foldr`, `q::lastTrace`, `q::test`, `q::testOnce`).
+
+The reader takes 82 (`quint/builtins.rs:19`, `quint/data.rs:45`, `quint/runs.rs:17`,
+`quint/temporal.rs:843`, `quint/reader.rs:710`):
+
+- `quint/builtins.rs:19` (23): `not assert iuminus iadd isub imul idiv imod ilt ilte igt igte eq neq
+  and or implies iff ite actionAll actionAny assign oneOf to`.
+- `quint/data.rs:45` (`data_builtin`; `to` is also in `builtin`): `Rec field with Tup item tuples variant matchVariant
+  Set List Map contains in union intersect exclude subseteq size filter exists forall select map
+  fold foldl flatten powerset isFinite get keys put set setBy mapBy setToMap append concat head
+  tail length nth indices getOnlyElement fieldNames foldr replaceAt slice range ipow`.
+- `quint/runs.rs:17`, inside a `run` only: `then reps expect fail`.
+- `quint/temporal.rs:843`, in a temporal property only: `always eventually leadsTo weakFair`, in
+  the shapes `quint/temporal.rs` lists.
+- `quint/reader.rs:710`: `q::debug(msg, v)`, read as `v`.
+
+The 13 the reader lacks, each refused with its name (`quint/builtins.rs:50`, `:77`):
+
+| Operator | Reader says |
+|---|---|
+| `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate` | not read, with what to write instead (`quint/builtins.rs:50`) |
+| `next`, `orKeep`, `mustChange`, `enabled`, `strongFair` | temporal, not read yet (`quint/builtins.rs:77`, `quint/temporal.rs:12`) |
+| `q::test`, `q::testOnce` | not mapped (`quint/runs.rs:16`, `quint/builtins.rs:88`) |
+| `q::lastTrace` | not handled, not named in the reader |
+
+Operators the front end must write because the reader takes them but Quint writes from syntax:
+`Rec`, `Tup`, `field`, `item`, `with`, `variant`, `matchVariant`, `tuples`, `iuminus`, `assign`,
+`ite`, `and`, `or`, `actionAll`, `actionAny` (parse phase, `dist/src/parsing/ToIrListener.js`).
+The generated names `q::init`, `q::step`, `q::inv`, `q::temporalProps` come from `compile`
+(`quint/model.rs:19`).
+
+### Quint's error codes, by pass
+
+All from `dist/src/` [read]. A pass is where the error is raised; the codes are the ones that
+`grep QNT` finds.
+
+| Pass | Code | Meaning |
+|---|---|---|
+| Parse, grammar actions (`generated/QuintParser.js`) | QNT006 | `=` where `==` was meant (`:2497`) |
+| | QNT008 | a qualified name, or a reserved word, where an identifier is wanted (`:3734`, `:3801`) |
+| | QNT009 | `(` for a type application, `[` is wanted (`:1847`) |
+| Parse, `parsing/parseErrors.js` | QNT007 | type name not capitalised |
+| | QNT012 | `...` twice in a record |
+| | QNT014 | unbound type variables |
+| | QNT015 | `->` map type written the old way |
+| | QNT016 | the same field or tag defined twice |
+| Source resolution, `parsing/quintParserFrontend.js` | QNT013 | an imported file could not be loaded (`:186`) |
+| | QNT408 | two imports that differ only in case (`:174`) |
+| | QNT101 | two modules of one name (`:238`) |
+| | QNT405 | import of an unknown module (`:256`) |
+| | QNT098 | cyclic imports (`:277`) |
+| Names, `names/collector.js`, `resolver.js`, `importErrors.js` | QNT101 | a name defined twice in a module (`collector.js:279`) |
+| | QNT102 | a module defined twice (`collector.js:39`) |
+| | QNT404 | a name not found (`resolver.js:138`, `importErrors.js:32`) |
+| | QNT405 | a module not found (`importErrors.js:24`) |
+| | QNT406 | an instance parameter not found, or not a constant (`importErrors.js:40`, `:48`) |
+| | QNT407 | an import or export of a module inside itself (`importErrors.js:16`) |
+| Toposort, `parsing/quintParserFrontend.js` | QNT099 | cyclic definitions (`:307`) |
+| Types, `quintAnalyzer.js:83` | QNT000 | every type error (unify, row, arity) and every effect error: they carry no code of their own |
+| Effects and modes | QNT200 | a mode error: an action where a `val`, `pure def` or `temporal` is wanted (`effects/modeChecker.js:91`, `:100`) |
+| | QNT201 | an instance override that is not pure (`:124`) |
+| | QNT202 | two updates of one variable (`effects/MultipleUpdatesChecker.js:42`) |
+| | QNT203 to QNT206 | `nondet` misuse (`effects/NondetChecker.js:48`, `:62`, `:78`, `:92`) |
+| Flattening, `flattening/` | none | no code; an internal `Error` is thrown on a name that fails to resolve (`fullFlattener.js:90`, `flattener.js:90`) |
+| Elsewhere | QNT409 | TLA+ output only (`ir/initToPredicate.js:116`) |
+| | QNT405 | `--main` not a module (`cliReporting.js:250`) |
+| | QNT500 to QNT517, QNT600 | run-time and Rust evaluator, not used by earnest |
+
+`quint compile` runs all passes up to flattening. `quint typecheck` stops after the effects and
+modes. `quint parse` stops after toposort.
+
+### Where Quint's language is defined, with no network
+
+In the installed `@informalsystems/quint@0.33.1` [read]:
+
+| What | File under `node_modules/@informalsystems/quint/dist/src/` | Lines |
+|---|---|---|
+| Grammar (as a generated parser; no `.g4` ships) | `generated/QuintParser.js`, `QuintLexer.js` | 8466 |
+| From the parse tree to the IR | `parsing/ToIrListener.js` | 1404 |
+| Parse phases and errors | `parsing/quintParserFrontend.js`, `parseErrors.js` | 408, 73 |
+| Built-in operators in Quint | `builtin.qnt` (1168 lines, with doc comments) | |
+| Name collector and resolver | `names/collector.js`, `resolver.js`, `base.js`, `importErrors.js`, `unshadower.js` | 284, 145, 177, 49, 79 |
+| Type checker | `types/constraintGenerator.js`, `constraintSolver.js`, `specialConstraints.js`, `substitutions.js`, `builtinSignatures.js`, `typeApplicationResolution.js`, `aliasInliner.js`, `parser.js` | about 1600 in all |
+| Effect checker | `effects/inferrer.js`, `base.js`, `builtinSignatures.js`, `modeChecker.js`, `MultipleUpdatesChecker.js`, `NondetChecker.js` | about 1900 in all |
+| Flattener | `flattening/flattener.js`, `fullFlattener.js`, `instanceFlattener.js` | 161, 93, 126 |
+| IR | `ir/quintIr.d.ts` (the shapes) | |
+
+The package has no manual and no `.g4` file. `reflection.proto` is in `dist/src/` and is not a
+grammar.
+
+Quint's repository [ran, from this container]:
+
+- `git clone --depth 1 https://github.com/informalsystems/quint` worked. It gives the head of
+  `main`, which is `0.34.0`, not `0.33.1`.
+- `git fetch --depth 1 origin tag v0.33.1` worked too. At that tag:
+  `quint/src/generated/Quint.g4` (380 lines) and `docs/content/docs/lang.md` (2057 lines, the
+  language manual). The head's grammar differs from the tag's by 24 diff lines; `builtin.qnt` is
+  the same at both.
+- So a builder with GitHub reachable can read the grammar and the manual at the tag. A builder
+  with no network has only the package, which has the generated parser and no manual. The manual
+  and the `.g4` file are not committed here (rule 3 of #82).
+
+### Recommendation for slice 3
+
+Build what the reader needs, not Quint's type inference. Reason: the reader takes a type from the table in one operator, `fieldNames`, and a written type from `var` annotations.
+- Build two things: the declared type of a `var` with aliases inlined (`quint/setup.rs:682`), and the field names of a closed record. That covers rows 1, 2, 5 and 6 above. Quint's inference (`types/` about 1600 lines, `effects/` about 1900) is not needed for them.
+- Models earnest would then take that Quint refuses: a type error (QNT000, for example `x' = true` with `x: int` [ran]), a mode error (QNT200, QNT201), two updates of one variable (QNT202), a misused `nondet` (QNT203 to QNT206).
+- Say so in the docs, and keep `earnest confirm --quint` (#73) as the check for them.
+- Rule 2 of #82 asks that Quint's refusals be earnest's. If the owner keeps that rule, make full inference a later slice 3b, apart from the reader: it changes no output the reader uses.
+- Write one sample first: `f(x).fieldNames()` where `f` returns a record. It is the one path that needs inferred types, and no sample has it.
