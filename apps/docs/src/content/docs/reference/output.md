@@ -165,7 +165,7 @@ Field meanings:
 
 ## Rule changes (`--base`)
 
-With `--base <git ref>`, `earnest verify` and `earnest report` also read each model file at that commit and compare its rules against the current working tree.
+With `--base <git ref>`, `earnest verify` and `earnest report` also read each model file and each `.qnt` file at that commit and compare its rules against the current working tree.
 
 Text output adds a section before the summary line:
 
@@ -230,9 +230,51 @@ Additional rules for `--base`:
 - A part is listed when what it says changed, not when the model under it changed. An edit of an action's `when` or `changes`, of a field's declaration or initial value, or of an action that is not fair lists nothing for a witness, setup or rule about runs that is otherwise the same. `earnest verify` judges each of them again on the new model and fails when one no longer holds. For example, a witness that plays `turn` is not listed when `turn` gets a stricter `when`, though it may now be `broken`; a rule about runs is `changed` when `turn` becomes fair. An edit of a setup's values lists the setup once, as `changed`, and not each witness that names it.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
 - Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
-- Files unreadable at the base commit cannot be diffed; a warning is printed to stderr.
+- A file unreadable at the base commit can't be compared. It is named on a line of its own after the changes, in the text and in the report, and the section then never says `none` alone, so it can't be read as "nothing changed". The same warning goes to stderr:
+
+  ```text
+  rule changes since origin/main
+    not compared  src/cart.model.ts  unreadable at origin/main
+  ```
+
+  JSON output adds `notCompared` beside `ruleChanges`, only when something was not compared: `[{ "file": "src/cart.model.ts", "reason": "unreadable" }]`. A Quint check that was not compared alone has `"model": "Bad"` too (see [Quint checks](#quint-checks)).
+- The rule changes say what each rule now says, not why a verdict changed: an edit of the model under a rule can change the rule's verdict and list nothing. The results of `earnest verify` give the verdicts.
 - With `--model <name>`, removed models matching `<name>` are still reported even if the model no longer exists in the working tree; exit `2` occurs only when neither the working tree nor `--base` contains `<name>`.
 - With `--rule <id>`, every change of each model where some run lists `<id>` is reported, including a witness of a setup. A rule, rule about runs or witness `<id>` that exists only at `--base` is still reported as `removed`; exit `2` occurs only when neither the working tree nor `--base` contains `<id>`.
+
+### Quint checks
+
+A [Quint check](/reference/quint/#checks-marked-in-the-model) is listed as its module, and its rules are the properties and runs it judges. They are listed after the rules of the native models:
+
+```text
+rule changes since origin/main
+  added      Small.atTop  "The clock shows the limit."  specs/clock.qnt
+  changed    Small.belowLimit  specs/clock.qnt
+    was  "The time reaches the limit, so it is not always below it."  broken: time < Limit
+    now  "The time reaches the limit, so it is not always below it."  broken: time <= Limit
+  removed    Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+```
+
+- The id is the name the check sees, as the result lists it. A run has the kind `witness`. A property or a run with no sentence has the sentence the result gives it, as ``The Quint invariant `inRange` holds``.
+- `holds` is the definition's source with each run of white space as one space, after `broken: ` or `reachable: ` when it is marked so.
+- A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison, and each lambda's parameters and each name local to a block (`{ val t = n + 1 t > 0 }`) are numbered by their place, so a reformatted file, a comment, a renamed parameter or a renamed local lists nothing. An edit of a helper or of the model under a rule lists nothing either, even when it changes the rule's verdict: a `val` the rule reads, the constant an instance gives (`import Spec(N = 3)`), `init` or `step`.
+- Every rule of a check in a `.qnt` file the base does not have is `added`. Every rule of a check the working tree no longer has is `removed`: a file only the base has, a check removed from its file, and a check that is unreadable now, as a native file that became unreadable lists its rules.
+- The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base starts no `quint` for the base. Any other file starts `quint parse` once, and the result is cached for the next run against the same commit.
+- A file that can't be read at the base is `not compared`, with its reason. The reasons in JSON, and the words of the text line, are:
+
+  | `reason` | Text | When |
+  |---|---|---|
+  | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
+  | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
+  | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
+  | `marks` | `its marks are unreadable at <base>: <line>:<column> <problem>` | a mark is unreadable at the base, as `earnest verify` would report it there |
+
+- The base is judged as `earnest verify` would judge it: every check it would judge there is compared, and only what it would not is `not compared`.
+  - A check whose own marks are unreadable at the base, which `earnest verify` would not judge there, is `not compared` alone, after the file: `` not compared  specs/a.qnt  Bad  its marks are unreadable at HEAD: 10:1 the doc comment of `Bad` names `nosuch`, which the module does not see ``, and `"model": "Bad"` in JSON.
+  - An unreadable mark that belongs to no check, such as `/// @View state` above a `val`, leaves every check of the file compared, and the file is `not compared` for that mark alone: `` not compared  m.qnt  its marks are unreadable at HEAD: 18:1 the doc comment holds `@View state`, which is not a mark ``.
+  - The line gives the first problem, by its place in the base's file, cut at the message's first colon, and `, and 2 more` when there are others. JSON gives it whole in `problem`: `{ "file": "m.qnt", "line": 18, "column": 1, "message": "...", "more": 0 }`.
+- A file reached under two spellings, as `earnest verify --base HEAD specs ./specs`, is compared once, by its real path, and so is a `.qnt` file reached through a link: git's link at the base is not read.
+- `--model` and `--rule` narrow the checks as they narrow native models: `--rule belowSix` lists every change of each check that judges `belowSix`, at the working tree or at the base.
 
 ## Statecharts and PR reports
 
@@ -240,13 +282,30 @@ Additional rules for `--base`:
 
 `earnest chart` prints a fenced `mermaid` code block containing a `stateDiagram-v2` diagram.
 
-- States and arrows use labels from the model's view (`m.view` in TypeScript, `#[view]` in Rust). A Rust model and a TypeScript twin with the same view produce identical chart text.
+- States and arrows use labels from the model's view (`m.view` in TypeScript, `#[view]` in Rust, `/// @view state` and `/// @view group` on a `val` in Quint, which label states and their boxes but not arrows: see [Chart labels](/reference/quint/#chart-labels)). A Rust model and a TypeScript twin with the same view produce identical chart text.
 - States that break a rule receive the class `broken`.
 - A chart draws at most `20` arrows by default (override with `--max-arrows <n>`, minimum `1`).
 - When a model exceeds the arrow cap, `earnest chart` keeps paths to broken states first and prints a note counting omitted states and arrows:
   - A box represents every state sharing its label; the note counts the underlying states in omitted boxes, and one arrow between two boxes counts once regardless of how many actions share it.
   - If the shortest path to a broken state exceeds the arrow cap, the chart draws the prefix of that path and notes: `Not shown: 5 of 26 states and 5 of 25 arrows. A broken state lies beyond what is shown.`
   - If one or more broken states are drawn and others are omitted, the note adds `Another broken state lies beyond what is shown.` (or `<n> more broken states lie beyond what is shown.`).
+- After the paths to broken states, the chart spends what is left of the cap on the premises of the rules, one at a time in the order the result lists the rules. For each, it draws the shortest path to the nearest box where the premise holds, counted from the start states. That path is drawn whole or not at all: a path longer than what is left takes no arrow, and the next premise is tried. A premise whose nearest box is already drawn, or is a start state, costs no arrow. Paths to broken states are still drawn as far as the cap allows. The rest of the cap goes to the states nearest the start.
+- A rule's premise is:
+  - for a rule whose condition is an implication, its left side: `!a || b` in TypeScript and Rust, `a ? b : true` in TypeScript, `if a { b } else { true }` in Rust, each also inside a helper, and `a implies b` in Quint. With several negations before the last `||`, as in `!a || !b || c`, the premise is all of them: `a && b`. Any other condition, such as `!(a && b)` or `a !== 1 || b`, has no premise.
+  - for an eventually rule with `after`, the nearest box where `after` holds, where the rule starts. From that box, the chart also draws the shortest path to the nearest box where `reaches` holds, which may lead back through boxes nearer the start. When no box where `reaches` holds can be reached from it, only the start is drawn. An `after` that holds in no reachable state gives the rule no premise.
+  - for an eventually rule without `after`, the nearest box where `reaches` holds.
+- A property marked `/// @check reachable` needs no premise: the state that reaches it breaks its rule, so its path is drawn with the broken states. Witnesses and runs add no premise.
+- When a rule has a premise that holds in a reachable state, the chart ends with one more line, after a blank line, with one sentence per rule:
+
+  | Rule | Sentence |
+  |---|---|
+  | Implication | ``The premise of `cornered` first holds in `x = 5, y = 5`.`` |
+  | Eventually rule with `after` | ``` `settles` starts in `busy`; what it must reach holds in `idle`.``` |
+  | The same box for both | ``` `settles` starts in `idle`, where what it must reach holds too.``` |
+  | No box of `reaches` after the start | ``` `settles` starts in `busy`.``` |
+  | Eventually rule without `after` | ``What `grows` must reach first holds in `v = 3`.`` |
+
+  `beyond what is shown` takes the place of `in` and the box when the path did not fit. A box drawn in a group is named with its group first, as in ``in `server up` / `an order paid` ``, since the same label can stand in two groups. These sentences say where conditions hold, not whether the rule holds: a broken eventually rule gets the same sentence. A box stands for every state with its label and group, so each sentence is about some state of the box it names, not all of them; a part of a label that could not be worked out is drawn, and named, as `?`. A label or group longer than 80 characters is cut to 80 with `…` in this line, each on its own; the chart keeps both whole. A chart of a model with no premise has no such line.
 
 ### `earnest report`
 

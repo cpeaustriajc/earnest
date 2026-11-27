@@ -1,3 +1,5 @@
+use crate::view_marks::is_view_line;
+
 const MARK: &str = "@check";
 const BROKEN: &str = "broken";
 const REACHABLE: &str = "reachable";
@@ -146,7 +148,7 @@ pub(crate) fn read_doc(doc: &str) -> Doc {
             read.wrong.push((line, miscased_mark(trimmed)));
         } else if is_unspaced(trimmed) {
             read.wrong.push((line, unspaced_mark(trimmed)));
-        } else if !trimmed.is_empty() {
+        } else if !trimmed.is_empty() && !is_view_line(trimmed) {
             read.sentence.push((line, trimmed.to_owned()));
         }
     }

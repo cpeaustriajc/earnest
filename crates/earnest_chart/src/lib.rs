@@ -17,11 +17,15 @@ mod report;
 mod select;
 mod text;
 
-pub use changes::{ChangeKind, ChangedPart, RuleChange, RuleChanges, RuleText, rule_change_lines};
+pub use changes::{
+    ChangeKind, ChangedPart, NotCompared, RuleChange, RuleChanges, RuleText, rule_change_lines,
+    rule_change_lines_noting,
+};
 pub use markdown::one_line;
 pub use mermaid::{chart, chart_outline, chart_with_limit};
 pub use report::{
-    Charted, Section, Unreadable, report, report_with_charts, report_with_limit, skipped_section,
+    Charted, Section, Unreadable, report, report_with_charts, report_with_limit,
+    rule_changes_section, skipped_section,
 };
 pub use select::ARROW_LIMIT;
 pub use text::{detail_lines, detail_lines_in, path_lines, path_lines_in};

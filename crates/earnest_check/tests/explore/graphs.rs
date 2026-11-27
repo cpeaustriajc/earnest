@@ -154,6 +154,7 @@ fn a_view_label_merges_the_states_that_share_it() {
         broken: vec!["neverOne".to_owned()],
         outside: Vec::new(),
         states: 2,
+        premises: Vec::new(),
     };
     let high = Node {
         label: "band high".to_owned(),

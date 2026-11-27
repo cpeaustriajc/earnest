@@ -3,6 +3,7 @@
 mod arguments;
 mod cache;
 mod changes;
+mod changes_quint;
 mod checks;
 mod commands;
 mod confirm;
@@ -22,6 +23,7 @@ mod select;
 mod sources;
 mod typecheck;
 mod verify;
+mod view_marks;
 mod workers;
 
 use arguments::{Arguments, Command};

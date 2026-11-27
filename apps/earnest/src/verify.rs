@@ -218,6 +218,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
         since: compared.as_ref().map(|(base, compared)| Since {
             base,
             changes: &compared.changes,
+            not_compared: &compared.not_compared,
         }),
     };
     if arguments.json {

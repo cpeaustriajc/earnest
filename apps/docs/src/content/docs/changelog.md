@@ -5,6 +5,44 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: charts draw the states the rules are about
+
+A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
+
+## November 2026: Quint chart labels marked in the model
+
+A Quint model's chart labelled each state with every variable, `base = Set(1), server = Set(1), screen = Set(), phase = Map(...), ...`. Mark a `val` with `/// @view state` to label each state with its value, and a `val` with `/// @view group` to label the box the state is drawn in:
+
+```quint
+/// @view state
+val seen = if (screen.size() > 0) "some shown" else if (base.size() > 0) "placed" else "nothing placed"
+/// @view group
+val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
+```
+
+- A text prints without quotes, and any other value as Quint's REPL writes it. States with the same label and group are drawn as one box.
+- A check uses the labels it sees, its own and those its imports bring, as it sees marked properties. A label of the check's own module wins over imported ones, so one setup can label its chart its own way while another takes the spec's; two imported labels of one kind, as from two instances of one spec, and no label of its own make the check `unreadable`. The labels change no verdict, state count or result line, and `confirm` and `earnest tla` leave them out.
+- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, `@View` in another letter case, `// @view` or `/** @view */` above a declaration, a second `@view` in one doc comment, `@view` on anything but a `val` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read or that `quint compile` fails on, and a label no check that searches sees. A label is never judged as an invariant.
+
+## November 2026: `--base` lists the rule changes of Quint checks
+
+`earnest verify --base origin/main` said `rule changes since origin/main` and `none` for a `.qnt` model, even one the base did not have. It now compares each check marked `/// @check` with the same file at the base:
+
+```text
+rule changes since origin/main
+  added      Small.inRange  "The time stays between zero and the limit."  specs/clock.qnt
+  added      Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+```
+
+- Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
+- A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
+- The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
+- A file that can't be read at the base, native or Quint, is named on a `not compared` line under `rule changes since <base>`, with why, and in a new `notCompared` key in JSON, so the section no longer says `none` for it. A check whose marks are unreadable at the base is named alone, and the other checks of its file are compared; a mark that belongs to no check, such as a `/// @View` typo, is named with its line and column, and every check is compared. The stderr warning stays.
+- A folder given twice under two spellings no longer lists the rules of its files as `removed`, for native and Quint models alike.
+- `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
+
+See [Rule changes](/reference/output/#quint-checks).
+
 ## November 2026: a mark in another case or in a plain comment is unreadable
 
 `/// @Check`, `/// @CHECK`, and a `//` or `/* */` comment that starts with `@check` directly above a module, a `val`, a `temporal` definition or a run, are `unreadable` at their line, where they were ignored with no message. A `@check` elsewhere in a comment stays ignored.
