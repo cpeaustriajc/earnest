@@ -58,3 +58,18 @@ fn a_match_quint_reads_as_a_call_of_a_name_is_refused_rather_than_read_another_w
         "Quint refuses it with QNT008: {problem}"
     );
 }
+
+#[test]
+fn the_two_files_known_to_be_read_where_quint_reads_a_keyword_before_a_parenthesis_as_a_name_are_still_read()
+ {
+    let known = [
+        "module G{val w0 def f()def g=val l59877=def l59878={{false}}implies(if(w0)f else{()})val l59880=val l59881={\"s\"}()and(def l59882()f)val v1}",
+        "module G{var y:int val w0 val w1 def g=nondet l59412=nondet l59413={y}-if(w0)w0 else{w1}match match and({()}){_=>y}[if(\"s\")w1 else false]{_=>match{1}{_=>false}}}",
+    ];
+    for text in known {
+        assert!(
+            read("/m/a.qnt", |_| Some(text.to_owned())).is_ok(),
+            "Quint refuses it with QNT008; the README lists it as read, so a change here moves that count: {text}"
+        );
+    }
+}

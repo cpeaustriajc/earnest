@@ -206,9 +206,22 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
             let mut points: Vec<usize> = doubtful.iter().map(|doubt| doubt.at).collect();
             points.sort_unstable();
             points.dedup();
+            let declaration_of = |point: usize| {
+                doubtful
+                    .iter()
+                    .filter(|doubt| doubt.at == point)
+                    .map(|doubt| doubt.declaration)
+                    .try_fold(None, |reach: Option<Span>, declaration| {
+                        let (start, end) = declaration?;
+                        Some(Some(reach.map_or((start, end), |(first, last)| {
+                            (first.min(start), last.max(end))
+                        })))
+                    })
+                    .flatten()
+            };
             if let Some(&point) = points
                 .iter()
-                .find(|&&point| reads_with_a_name_at(tokens, source, point))
+                .find(|&&point| reads_with_a_name_at(tokens, source, point, declaration_of(point)))
             {
                 let value = doubtful
                     .iter()
@@ -225,12 +238,51 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
     }
 }
 
-fn reads_with_a_name_at(tokens: &[Token], source: usize, doubt: usize) -> bool {
+fn reads_with_a_name_at(
+    tokens: &[Token],
+    source: usize,
+    doubt: usize,
+    declaration: Option<Span>,
+) -> bool {
+    if let Some((start, end)) = declaration {
+        let mut ids = Ids::default();
+        let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+        parser.at = start;
+        let mut read = true;
+        while read && parser.at < end {
+            read = parser.documented_declaration().is_ok();
+        }
+        if !read || parser.too_deep.is_some() || parser.exhausted.is_some() {
+            return false;
+        }
+        if parser.at == end {
+            return named_only(parser.reported.as_ref(), doubt);
+        }
+    }
     let mut ids = Ids::default();
-    let mut parser = Parser {
+    let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+    let outcome = parser.file();
+    outcome.is_ok()
+        && parser.too_deep.is_none()
+        && parser.exhausted.is_none()
+        && named_only(parser.reported.as_ref(), doubt)
+}
+
+fn named_only(reported: Option<&Reported>, doubt: usize) -> bool {
+    reported
+        .is_some_and(|reported| reported.token == doubt + 1 && reported.problem.code == "QNT008")
+}
+
+fn forced_parser<'a>(
+    tokens: &'a [Token],
+    ids: &'a mut Ids,
+    source: usize,
+    doubt: usize,
+) -> Parser<'a> {
+    Parser {
         tokens,
         at: 0,
-        ids: &mut ids,
+        ids,
         source,
         declarations: Vec::new(),
         modules: Vec::new(),
@@ -248,14 +300,7 @@ fn reads_with_a_name_at(tokens: &[Token], source: usize, doubt: usize) -> bool {
         stops: Vec::new(),
         forced: Some(doubt),
         doubtful: Vec::new(),
-    };
-    let outcome = parser.file();
-    outcome.is_ok()
-        && parser.too_deep.is_none()
-        && parser.exhausted.is_none()
-        && parser.reported.is_some_and(|reported| {
-            reported.token == doubt + 1 && reported.problem.code == "QNT008"
-        })
+    }
 }
 
 fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported {
@@ -316,6 +361,7 @@ struct Parser<'a> {
 struct Doubt {
     at: usize,
     value: Option<Span>,
+    declaration: Option<Span>,
 }
 
 struct Mark {
@@ -601,8 +647,24 @@ impl Parser<'_> {
         if self.forced == Some(at) {
             return true;
         }
-        self.doubtful.push(Doubt { at, value: None });
+        self.doubtful.push(Doubt {
+            at,
+            value: None,
+            declaration: None,
+        });
         false
+    }
+
+    fn may_be_called(&self, open: usize) -> bool {
+        let Some(close) = self.matching_paren(open) else {
+            return true;
+        };
+        if self.kind_at(close + 1) != Kind::LeftBrace {
+            return true;
+        }
+        let first = close + 2;
+        let case_label = self.is_identifier(first) && self.kind_at(first + 1) == Kind::LeftParen;
+        !(self.kind_at(first) == Kind::Pipe || case_label)
     }
 
     fn definition_value(&mut self, within: Within) -> Result<Json, Reported> {
@@ -807,7 +869,13 @@ impl Parser<'_> {
             if self.kind() == Kind::End {
                 return self.unexpected("'}' or a declaration");
             }
+            let declaration = self.at;
+            let recorded = self.doubtful.len();
             self.documented_declaration()?;
+            let end = self.at;
+            for doubt in self.doubtful.iter_mut().skip(recorded) {
+                doubt.declaration.get_or_insert((declaration, end));
+            }
         }
         self.advance();
         let module_id = self.placed(self.span(start));
@@ -1883,7 +1951,11 @@ impl Parser<'_> {
                     None => self.plain_name(start),
                 }
             }
-            Kind::Match if self.kind_at(self.at + 1) == Kind::LeftParen && self.doubts(self.at) => {
+            Kind::Match
+                if self.kind_at(self.at + 1) == Kind::LeftParen
+                    && self.may_be_called(self.at + 1)
+                    && self.doubts(self.at) =>
+            {
                 self.named(start)
             }
             Kind::Match if self.reads_keyword(self.at) => {

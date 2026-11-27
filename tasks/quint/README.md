@@ -4984,9 +4984,11 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    `module Broken { val x = (1, }` (test `a_syntax_error_in_an_imported_file_is_unreadable_rather_than_repaired`).
 2. **More than 20,000 attempts. Stricter than Quint.** The retries below are capped per file
    (`SEARCHES` in `parser.rs`); a file that reaches the cap is refused as `unreadable`, never read
-   the way the search stood. Before #93 real files used at most 7 attempts (the repository's 397)
-   and 26 (Quint's 196); this was not counted again after the search below changed, but both
-   corpora still read whole. Smallest file Quint accepts that reaches it, fifteen nested `let`s
+   the way the search stood. Counted again on #93 (release build, every file): the repository's
+   559 `.qnt` files need at most 6 attempts (`tests/samples/lets.qnt`; 7 before #93's search) and
+   Quint's 196 at most 7 (`evaluator/fixtures/jmt/grug_ics23.qnt`; 14 before). The cap refuses
+   none of them. The earlier "7 and 26" was counted another way and is not reproduced. Smallest
+   file Quint accepts that reaches the cap, fifteen nested `let`s
    whose bodies start with `-` (nine before #93):
    `module A { val v = val a = ... val a = 1 -1 ... -1 }`, `val a = ` and `-1` fifteen times each
    (test `a_file_that_needs_more_attempts_than_the_cap_is_refused_rather_than_guessed`).
@@ -5013,10 +5015,32 @@ way. Every place it knowingly differs, with the direction and the smallest file 
      definition's value, from 2:19 to before 2:37, in parentheses". Done, both read it with the
      same tree (test
      `a_keyword_that_quints_grammar_can_also_read_as_a_name_is_refused_with_the_value_to_put_in_parentheses`).
-   - **What it costs.** The repository's samples and Quint's own repository at `v0.33.1` (196
-     files, cloned in the container) lose no file. Of the generated files Quint accepts, it refuses
-     175 of 40,355 (0.43%). Following the message, 170 of those 175 read with Quint's tree; the
-     other 5 then name a second keyword further on.
+   - **What it costs in files.** The repository's samples and Quint's own repository at `v0.33.1`
+     (196 files, cloned in the container) lose no file. Of the generated files Quint accepts, it
+     refuses 175 of 40,355 (0.43%). Following the message, 170 of those 175 read with Quint's
+     tree; the other 5 then name a second keyword further on. Two of the generated files Quint
+     refuses are still read (below); a test keeps them listed.
+   - **What it costs in time.** A keyword is a doubt only where a name could stand. A `match`
+     whose parenthesized scrutinee is followed by `{ |` or `{ Label(` can't be a call, because
+     those braces are no expression. The second reading is parsed only over the declarations
+     whose parsing reached the keyword, not the whole file. If it ends them elsewhere, the whole
+     file is parsed instead. On the 72,800 generated files this refuses and reads exactly what a
+     whole-file second reading does. Release build, best of 9 runs, `read` of the file and its
+     imports:
+
+     | File | KB | `a12afb38` ms | `2989f60e` ms | now ms | attempts `a12afb38` / now | second readings `2989f60e` / now |
+     | --- | --- | --- | --- | --- | --- | --- |
+     | Quint `evaluator/fixtures/jmt/test/apply_simple_test.qnt` | 27.9 | 60.6 | 96.8 | 59.5 | 4 / 2 | 5 / 0 |
+     | Quint `evaluator/fixtures/jmt/apply_fancy.qnt` | 17.6 | 30.8 | 65.2 | 31.7 | 4 / 2 | 5 / 0 |
+     | Quint `examples/cosmos/ics20/ics20.qnt` | 29.4 | 25.0 | 25.5 | 24.9 | 2 / 1 | 0 / 0 |
+     | Quint `examples/cosmos/ics23/ics23.qnt` | 28.9 | 11.9 | 12.1 | 11.6 | 13 / 7 | 0 / 0 |
+     | Quint `examples/cosmos/lightclient/Lightclient.qnt` | 22.6 | 11.4 | 10.9 | 11.4 | 8 / 5 | 0 / 0 |
+     | `tasks/break_it/models/quint_first/fold_seeded/fold_seeded.qnt`, the repository's largest | 8.9 | 7.4 | 7.6 | 7.6 | 0 / 0 | 0 / 0 |
+
+     The 15 largest files of each repository were measured. The other 24 change by less than half
+     a millisecond, and a run of 30 puts the larger swings of single runs within 0.4 ms. Over all
+     755 files of both corpora, 3 second readings are parsed in all.
+
    - Generated files, in the container only. The one-line generator writes 1 to 3 values, each
      nesting `val`, `def`, `pure val`, `nondet` and destructurings among every operator, calls of
      `and`, `or`, `implies`, `Set` and `List`, `and {`/`or {` lists, `match`, `if`, tuples,
