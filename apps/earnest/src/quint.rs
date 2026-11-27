@@ -688,34 +688,54 @@ fn compiled_once(
         .collect()
 }
 
-/// The check read from what was compiled for it, with the runs `quint test` would not play.
+/// A check read, or why not, and the runs `quint test` would not play in it.
+type ReadCheck = (Result<Compiled, Vec<Located>>, Vec<String>);
+
+/// Each check read from what was compiled for it, with the runs `quint test` would not play.
 /// The JSON is walked as deep as the file is nested, so this runs on a large stack, also on the
-/// command's thread, whatever stack that one has.
+/// command's thread, whatever stack that one has: one thread for all the checks, not one each.
 fn read_compiled(
+    checks: &[Job],
+    compiled: Vec<Result<(String, bool), Problem>>,
+    places: &HashMap<PathBuf, Places>,
+) -> Vec<ReadCheck> {
+    let read = move || {
+        checks
+            .iter()
+            .zip(compiled)
+            .map(|(job, compiled)| read_one(job, compiled, places.get(&job.real)))
+            .collect()
+    };
+    on_large_stack(stack_of_this_worker().unwrap_or(0), read).unwrap_or_else(|problem| {
+        checks
+            .iter()
+            .map(|job| {
+                let refused = Problem::new(&job.shown, TOP_OF_FILE, READER, &problem.message);
+                (Err(vec![Located::new(refused, None, None)]), Vec::new())
+            })
+            .collect()
+    })
+}
+
+fn read_one(
     job: &Job,
     compiled: Result<(String, bool), Problem>,
     found: Option<&Places>,
-) -> (Result<Compiled, Vec<Located>>, Vec<String>) {
-    let read = move || {
-        let mut unplayed = match (&compiled, found) {
-            (Ok((json, false)), Some(found))
-                if matches!(job.check.runs, Runs::Tests | Runs::TestsAnd(_)) =>
-            {
-                found.runs_not_played(&job.check.main, json)
-            }
-            _ => Vec::new(),
-        };
-        let runs = match (&compiled, found) {
-            (Ok((json, false)), Some(found)) => compiled_runs(found, job, json, &mut unplayed),
-            _ => job.check.runs.clone(),
-        };
-        let read = read_check(job, compiled.map(|(json, _)| json), (&runs, &unplayed));
-        (read, unplayed)
+) -> ReadCheck {
+    let mut unplayed = match (&compiled, found) {
+        (Ok((json, false)), Some(found))
+            if matches!(job.check.runs, Runs::Tests | Runs::TestsAnd(_)) =>
+        {
+            found.runs_not_played(&job.check.main, json)
+        }
+        _ => Vec::new(),
     };
-    on_large_stack(stack_of_this_worker().unwrap_or(0), read).unwrap_or_else(|problem| {
-        let refused = Problem::new(&job.shown, TOP_OF_FILE, READER, &problem.message);
-        (Err(vec![Located::new(refused, None, None)]), Vec::new())
-    })
+    let runs = match (&compiled, found) {
+        (Ok((json, false)), Some(found)) => compiled_runs(found, job, json, &mut unplayed),
+        _ => job.check.runs.clone(),
+    };
+    let read = read_check(job, compiled.map(|(json, _)| json), (&runs, &unplayed));
+    (read, unplayed)
 }
 
 fn read_check(
@@ -867,10 +887,8 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
         .filter_map(|((file, ..), read)| Some((file, read?)))
         .collect();
     let compiled = compiled_all(&checks, &refusals, (&typechecked, &places), jobs);
-    let (read, not_played): (Vec<_>, Vec<_>) = checks
-        .iter()
-        .zip(compiled)
-        .map(|(job, compiled)| read_compiled(job, compiled, places.get(&job.real)))
+    let (read, not_played): (Vec<_>, Vec<_>) = read_compiled(&checks, compiled, &places)
+        .into_iter()
         .unzip();
     for ((job, read), runs_not_played) in checks.iter().zip(read).zip(not_played) {
         files.push(match read {
