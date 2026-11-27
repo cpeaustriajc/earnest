@@ -231,3 +231,53 @@ fn a_chain_of_twenty_thousand_method_calls_is_refused_by_the_tree_s_bound_in_sec
         started.elapsed()
     );
 }
+
+fn peak_resident_kib() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .unwrap_or_default()
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))
+        .and_then(|rest| rest.trim().trim_end_matches(" kB").trim().parse().ok())
+        .unwrap_or(0)
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+#[ignore = "types a match of 2,500 cases alone in its process: cargo test --release -p earnest_quint_syntax --test parse depth::a_match_of_two -- --ignored --exact depth::a_match_of_two_thousand_five_hundred_cases_is_refused_before_its_types_fill_the_memory"]
+fn a_match_of_two_thousand_five_hundred_cases_is_refused_before_its_types_fill_the_memory() {
+    let variants: Vec<String> = (0..2_500).map(|at| format!("V{at}")).collect();
+    let cases: Vec<String> = (0..2_500).map(|at| format!("| V{at} => {at}")).collect();
+    let text = module(&format!(
+        "  type T = {}\n  val v = match V0 {{ {} }}",
+        variants.join(" | "),
+        cases.join(" ")
+    ));
+    let parsed = read_text(&text).expect("read");
+    let problem = parsed.typecheck().expect_err("refused");
+    assert_eq!(problem.code, "unreadable", "{problem}");
+    assert!(
+        problem
+            .message
+            .starts_with("the types of this file hold more than 1600000 type nodes")
+            && problem
+                .message
+                .ends_with("this is earnest's guard on memory, not a rule of Quint's"),
+        "{}",
+        problem.message
+    );
+    let target = earnest_quint_syntax::Target {
+        main: "deep".to_owned(),
+        init: "init".to_owned(),
+        step: "step".to_owned(),
+        invariant: None,
+        temporal: None,
+    };
+    let compiled = parsed.compile(&target).map(drop).expect_err("refused");
+    assert_eq!(
+        compiled.message, problem.message,
+        "compile refuses it alike"
+    );
+    let peak = peak_resident_kib();
+    println!("refused at a peak of {} MiB resident", peak / 1024);
+    assert!(peak < 2 * 1024 * 1024, "{peak} KiB");
+}

@@ -62,7 +62,16 @@ pub(crate) struct TypeResults {
     pub(crate) rounds: usize,
     /// The deepest nesting of applications of a substitution.
     pub(crate) depth: usize,
+    /// The most type nodes the types inference gave ids held at once, counted as the types
+    /// table holds them.
+    pub(crate) nodes: usize,
+    /// The bound on type nodes, when inference stopped for passing it.
+    pub(crate) too_large: Option<usize>,
 }
+
+/// The most type nodes the types of one file may hold: earnest's guard on memory, which stops
+/// all type work before the table outgrows a few GiB. Quint 0.33.1 has no such bound.
+pub(crate) const TYPE_NODE_LIMIT: usize = 1_600_000;
 
 fn raised(id: u64, error: &ErrorTree) -> Raised {
     Raised {
@@ -116,6 +125,17 @@ fn analyze(
     modules: &[&[Json]],
     previous: BTreeMap<u64, Scheme>,
 ) -> TypeResults {
+    analyze_within(table, modules, previous, TYPE_NODE_LIMIT)
+}
+
+/// [`analyze`], stopping all type work once the types given ids hold more than `node_limit`
+/// type nodes.
+pub(crate) fn analyze_within(
+    table: Vec<(u64, Json)>,
+    modules: &[&[Json]],
+    previous: BTreeMap<u64, Scheme>,
+    node_limit: usize,
+) -> TypeResults {
     substitution::start_counting_rounds();
     let mut lookup = Table::default();
     for (id, entry) in table {
@@ -133,6 +153,7 @@ fn analyze(
         modules_resolved.push((declarations, resolver.errors.entries.len()));
     }
     let mut inferrer = Inferrer::with_types(&context, previous);
+    inferrer.node_limit = node_limit;
     let mut results = TypeResults {
         table: Json::Null,
         printed: BTreeMap::new(),
@@ -151,6 +172,8 @@ fn analyze(
         crash: None,
         rounds: 0,
         depth: 0,
+        nodes: 0,
+        too_large: None,
     };
     let (mut seen_errors, mut seen_applications) = (0, 0);
     for (index, (declarations, applications)) in modules_resolved.iter().enumerate() {
@@ -163,6 +186,13 @@ fn analyze(
             results.application_errors.push((index, raised(*id, error)));
         }
         seen_applications = *applications;
+    }
+    results.nodes = inferrer.most_nodes;
+    if inferrer.most_nodes > node_limit {
+        results.too_large = Some(node_limit);
+        results.crash = Some((format!("more than {node_limit} type nodes"), None));
+        results.table = Json::Object(Vec::new());
+        return results;
     }
     results.rounds = substitution::most_rounds();
     results.depth = substitution::deepest();
@@ -220,7 +250,7 @@ pub(crate) fn types_of_added(
     analyze(table, &[declarations], previous)
 }
 
-fn declarations(module: &Json) -> &[Json] {
+pub(crate) fn declarations(module: &Json) -> &[Json] {
     match module.get("declarations") {
         Some(Json::List(declarations)) => declarations,
         _ => &[],
@@ -396,6 +426,17 @@ impl Parsed {
 }
 
 fn first_problem(ids: &Ids, results: &TypeResults) -> Option<Problem> {
+    if let Some(limit) = results.too_large {
+        return Some(placed(
+            ids,
+            "unreadable",
+            format!(
+                "the types of this file hold more than {limit} type nodes ({} counted when type work stopped), more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's",
+                results.nodes
+            ),
+            None,
+        ));
+    }
     if let Some((message, id)) = &results.crash {
         return Some(placed(
             ids,

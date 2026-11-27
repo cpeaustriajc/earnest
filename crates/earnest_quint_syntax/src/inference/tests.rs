@@ -40,6 +40,7 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
     samples(&base, Path::new("crates"), &mut found);
     let mut compared = 0;
     let mut most_rounds = 0;
+    let mut most_nodes = 0;
     for sample in found {
         let path = PathBuf::from(format!("{}.types.json", recorded.join(&sample).display()));
         let Some(fixture) = fs::read_to_string(path)
@@ -65,6 +66,7 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
         }
         let ours = types_of(&parsed);
         most_rounds = most_rounds.max(ours.rounds);
+        most_nodes = most_nodes.max(ours.nodes);
         for (id, at) in types {
             let id: u64 = id.parse().expect("an id");
             let theirs = &printed[index(at)];
@@ -86,7 +88,11 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
         }
     }
     println!(
-        "{compared} types printed as Quint prints them; a substitution settled in at most {most_rounds} rounds"
+        "{compared} types printed as Quint prints them; a substitution settled in at most {most_rounds} rounds; the largest table holds {most_nodes} type nodes"
+    );
+    assert!(
+        most_nodes * 10 < crate::inference::TYPE_NODE_LIMIT,
+        "the bound on type nodes is ten times above what the samples need: {most_nodes}"
     );
     assert!(
         most_rounds * 10 < crate::inference::substitution::ROUND_LIMIT,
@@ -124,5 +130,49 @@ fn unification_deeper_than_its_bound_stops_all_type_work() {
         past.ok(),
         Some((false, true, true)),
         "one level past it stops"
+    );
+}
+
+fn small_parsed() -> crate::files::Parsed {
+    read("small.qnt", |_| {
+        Some(
+            "module small {\n  type T = A | B | C\n  val v = match A { | A => 1 | B => 2 | C => 3 }\n}\n"
+                .to_owned(),
+        )
+    })
+    .expect("read")
+}
+
+fn analyzed_within(parsed: &crate::files::Parsed, limit: usize) -> crate::inference::TypeResults {
+    let modules: Vec<&[Json]> = parsed
+        .modules()
+        .iter()
+        .map(crate::inference::declarations)
+        .collect();
+    crate::inference::analyze_within(
+        parsed.table_in_order(),
+        &modules,
+        std::collections::BTreeMap::new(),
+        limit,
+    )
+}
+
+#[test]
+fn type_work_stops_once_the_types_hold_more_type_nodes_than_the_bound() {
+    let parsed = small_parsed();
+    let counted = analyzed_within(&parsed, usize::MAX).nodes;
+    assert!(counted > 0, "the sample's types have nodes");
+    let within = analyzed_within(&parsed, counted);
+    assert_eq!(within.too_large, None, "a bound of exactly the count holds");
+    assert!(within.crash.is_none(), "and nothing stops");
+    let past = analyzed_within(&parsed, counted - 1);
+    assert_eq!(
+        past.too_large,
+        Some(counted - 1),
+        "one node fewer stops type work"
+    );
+    assert!(
+        past.crash.is_some(),
+        "as a crash, so every pass refuses the file"
     );
 }
