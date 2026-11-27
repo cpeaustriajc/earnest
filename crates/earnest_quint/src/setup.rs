@@ -1,4 +1,5 @@
 use crate::Runs;
+use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, HashSet};
 
@@ -230,7 +231,11 @@ impl Typechecked {
     /// reported errors.
     #[must_use]
     pub fn read(source: &str) -> Option<Self> {
-        let value: Value = serde_json::from_str(&crate::json::exact(source)).ok()?;
+        let exact = crate::json::exact(source);
+        let mut reader = serde_json::Deserializer::from_str(&exact);
+        reader.disable_recursion_limit();
+        let value = Value::deserialize(&mut reader).ok()?;
+        reader.end().ok()?;
         if !list(&value, "errors").is_empty() || text(&value, "stage") != Some("typechecking") {
             return None;
         }
