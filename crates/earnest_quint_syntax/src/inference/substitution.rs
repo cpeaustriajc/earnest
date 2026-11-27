@@ -199,14 +199,6 @@ fn applied_list(substitutions: &[Substitution], items: &[Value], any: &mut bool)
     )
 }
 
-fn rebuilt(written: &Value, keys: &[&str], any: bool, fields: Vec<(&str, Value)>) -> Option<Value> {
-    if any || !has_exactly(written, keys) {
-        Some(Value::object(fields))
-    } else {
-        None
-    }
-}
-
 fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
     let id = written.get("id").clone();
     let kind = written.get("kind").clone();
@@ -226,17 +218,14 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 written.get("res"),
                 &mut any,
             );
-            rebuilt(
-                written,
-                &["kind", "args", "res", "id"],
-                any,
-                vec![
+            (any || !has_exactly(written, &["kind", "args", "res", "id"])).then(|| {
+                Value::object(vec![
                     ("kind", kind),
                     ("args", arguments),
                     ("res", result),
                     ("id", id),
-                ],
-            )
+                ])
+            })
         }
         "list" | "set" => {
             let element = kept(
@@ -244,12 +233,8 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 written.get("elem"),
                 &mut any,
             );
-            rebuilt(
-                written,
-                &["kind", "elem", "id"],
-                any,
-                vec![("kind", kind), ("elem", element), ("id", id)],
-            )
+            (any || !has_exactly(written, &["kind", "elem", "id"]))
+                .then(|| Value::object(vec![("kind", kind), ("elem", element), ("id", id)]))
         }
         "fun" => {
             let argument = kept(
@@ -262,17 +247,14 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 written.get("res"),
                 &mut any,
             );
-            rebuilt(
-                written,
-                &["kind", "arg", "res", "id"],
-                any,
-                vec![
+            (any || !has_exactly(written, &["kind", "arg", "res", "id"])).then(|| {
+                Value::object(vec![
                     ("kind", kind),
                     ("arg", argument),
                     ("res", result),
                     ("id", id),
-                ],
-            )
+                ])
+            })
         }
         "tup" | "rec" => {
             let fields = kept(
@@ -280,12 +262,8 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 written.get("fields"),
                 &mut any,
             );
-            rebuilt(
-                written,
-                &["kind", "fields", "id"],
-                any,
-                vec![("kind", kind), ("fields", fields), ("id", id)],
-            )
+            (any || !has_exactly(written, &["kind", "fields", "id"]))
+                .then(|| Value::object(vec![("kind", kind), ("fields", fields), ("id", id)]))
         }
         "sum" => {
             let fields = kept(
