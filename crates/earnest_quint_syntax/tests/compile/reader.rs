@@ -18,6 +18,12 @@ fn checked(path: &str, source: &str) -> String {
 
 #[test]
 fn the_reader_reads_each_flattened_output_that_is_quint_s_byte_for_byte() {
+    if crate::ran_on_a_stack_of(
+        earnest_check::WORKER_STACK,
+        the_reader_reads_each_flattened_output_that_is_quint_s_byte_for_byte,
+    ) {
+        return;
+    }
     let recorded = listed(&fixtures()).expect("the recordings are read");
     let mut read = 0;
     let mut searched = 0;

@@ -113,7 +113,7 @@ fn unification_deeper_than_its_bound_stops_all_type_work() {
     use crate::inference::substitution::{
         UNIFY_LIMIT, start_counting_rounds, stopped, too_deep_to_unify,
     };
-    let within = crate::stack::on_large_stack(|| {
+    let within = crate::stack::on_own_large_stack(|| {
         start_counting_rounds();
         (nested(UNIFY_LIMIT), stopped())
     });
@@ -122,7 +122,7 @@ fn unification_deeper_than_its_bound_stops_all_type_work() {
         Some((true, false)),
         "the bound itself is within it"
     );
-    let past = crate::stack::on_large_stack(|| {
+    let past = crate::stack::on_own_large_stack(|| {
         start_counting_rounds();
         (nested(UNIFY_LIMIT + 1), stopped(), too_deep_to_unify())
     });

@@ -2,6 +2,7 @@ use crate::changes_quint::meaning_of;
 use crate::quint::shown_in_folder;
 use earnest_diagnostics::Problem;
 use earnest_quint::{Located, Runs};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -178,10 +179,20 @@ fn spot(entry: &Value) -> Option<(String, u32, u32)> {
     Some((file, line, column))
 }
 
+/// The JSON the front end wrote, read with no limit on its nesting: the front end refuses a file
+/// nested deeper than its own bounds before it writes any.
+fn from_front_end(text: &str) -> Option<Value> {
+    let mut reader = serde_json::Deserializer::from_str(text);
+    reader.disable_recursion_limit();
+    let value = Value::deserialize(&mut reader).ok()?;
+    reader.end().ok()?;
+    Some(value)
+}
+
 impl Places {
     pub(crate) fn from_quint(parsed: &str, map: &str) -> Option<Self> {
-        let parsed: Value = serde_json::from_str(parsed).ok()?;
-        let map: Value = serde_json::from_str(map).ok()?;
+        let parsed = from_front_end(parsed)?;
+        let map = from_front_end(map)?;
         let files = map
             .get("sourceIndex")?
             .as_object()?
@@ -707,7 +718,7 @@ impl Places {
 }
 
 fn runs_held(main: &str, compiled: &str) -> Vec<String> {
-    let Ok(compiled) = serde_json::from_str::<Value>(compiled) else {
+    let Some(compiled) = from_front_end(compiled) else {
         return Vec::new();
     };
     compiled

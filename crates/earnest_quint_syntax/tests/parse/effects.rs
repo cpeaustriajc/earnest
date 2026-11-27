@@ -286,6 +286,12 @@ fn report(counted: &Tally, total: usize, corpus: &str) -> String {
 
 #[test]
 fn every_sample_in_the_repository_has_the_effects_quint_typecheck_writes() {
+    if crate::ran_on_a_stack_of(
+        earnest_quint_syntax::STACK_NEEDED,
+        every_sample_in_the_repository_has_the_effects_quint_typecheck_writes,
+    ) {
+        return;
+    }
     let base = root();
     let mut found = Vec::new();
     samples(&base, Path::new("tasks"), &mut found);

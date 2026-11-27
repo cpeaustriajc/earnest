@@ -1,8 +1,10 @@
 use crate::discovery::{Found, Language, Text};
-use crate::quint::QuintCheck;
+use crate::quint::{QuintCheck, READER};
+use crate::workers::stack_of_this_worker;
 use earnest_ast::{Draft, Reading};
-use earnest_diagnostics::Problem;
+use earnest_diagnostics::{Place, Problem};
 use earnest_ir::Model;
+use earnest_quint_syntax::on_large_stack;
 use earnest_semantic::lower;
 use syn::{Attribute, ImplItem, Item, Type};
 
@@ -215,7 +217,18 @@ fn understand(reading: Reading) -> Content {
 }
 
 fn quint(path: String, source: String) -> ModelFile {
-    let (declared, content) = match earnest_quint::read(&path, &source) {
+    let read = on_large_stack(stack_of_this_worker().unwrap_or(0), || {
+        earnest_quint::read(&path, &source)
+    })
+    .unwrap_or_else(|refused| {
+        Err(vec![Problem::new(
+            &path,
+            Place { line: 1, column: 1 },
+            READER,
+            &refused.message,
+        )])
+    });
+    let (declared, content) = match read {
         Ok(model) => (
             vec![Declared {
                 name: model.name.clone(),

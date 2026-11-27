@@ -32,6 +32,7 @@ mod view;
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{Code, Expr, Frame, Model};
 use earnest_value::{Notation, Quint, Value};
+use serde::Deserialize;
 
 pub use setup::{Setup, Typechecked};
 pub use view::{Labelled, Views, split_views};
@@ -148,6 +149,7 @@ pub fn read_located(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<
         source,
         runs,
         (model::Wanted::Search, &Views::default()),
+        Written::ByHand,
     )
 }
 
@@ -166,7 +168,13 @@ pub fn read_viewed(
     runs: &Runs,
     views: &Views,
 ) -> Result<Model, Vec<Located>> {
-    read_wanted(path, source, runs, (model::Wanted::Search, views))
+    read_wanted(
+        path,
+        source,
+        runs,
+        (model::Wanted::Search, views),
+        Written::ByFrontEnd,
+    )
 }
 
 /// Reads the compiled Quint module in `source` as [`read_located`] does, for a check that
@@ -178,7 +186,72 @@ pub fn read_viewed(
 ///
 /// The problems of [`read_located`].
 pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Located>> {
-    read_wanted(path, source, runs, (model::Wanted::Runs, &Views::default()))
+    read_wanted(
+        path,
+        source,
+        runs,
+        (model::Wanted::Runs, &Views::default()),
+        Written::ByFrontEnd,
+    )
+}
+
+/// How deep expressions may nest in a compiled module a person gives earnest: as deep as in a
+/// `.qnt` file that earnest reads itself, counted as its front end counts them.
+const TREE_DEPTH: usize = 4_000;
+
+/// How deep `{` and `[` may nest in such a module: two for each level of an expression (an
+/// `app` and its `args`), and room for the module, its declarations and a definition around
+/// them.
+const MOST_NESTED: usize = 2 * TREE_DEPTH + 8;
+
+/// Where the first `{` or `[` of `json` nested deeper than [`MOST_NESTED`] is, found with no
+/// recursion and no parse. Given the file's own text, not [`json::exact`]'s, whose quotes around
+/// a long number would move the column.
+fn too_deep(json: &str) -> Option<Place> {
+    let mut depth: usize = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    let (mut line, mut column): (u32, u32) = (1, 0);
+    for byte in json.bytes() {
+        if byte & 0xC0 != 0x80 {
+            column = column.saturating_add(1);
+        }
+        if in_string {
+            match (escaped, byte) {
+                (true, _) => escaped = false,
+                (false, b'\\') => escaped = true,
+                (false, b'"') => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth += 1;
+                if depth > MOST_NESTED {
+                    return Some(Place { line, column });
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            b'\n' => {
+                line = line.saturating_add(1);
+                column = 0;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Who wrote the JSON a reader is given.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Written {
+    /// The front end, for a `.qnt` file: it refused a file nested deeper than its bounds before
+    /// it wrote any, so the JSON is read with no limit on its nesting.
+    ByFrontEnd,
+    /// A person, as a `compiled.json` file, with no front end before it.
+    ByHand,
 }
 
 fn read_wanted(
@@ -186,8 +259,31 @@ fn read_wanted(
     source: &str,
     runs: &Runs,
     wanted: (model::Wanted, &Views),
+    written: Written,
 ) -> Result<Model, Vec<Located>> {
-    let compiled: json::Compiled = serde_json::from_str(&json::exact(source)).map_err(|error| {
+    let exact = json::exact(source);
+    if written == Written::ByHand
+        && let Some(at) = too_deep(source)
+    {
+        return Err(vec![Located::new(
+            Problem::new(
+                path,
+                at,
+                "the JSON",
+                &format!(
+                    "the JSON is nested more than {MOST_NESTED} deep here, deeper than earnest \
+                     reads: a compiled module's expressions may nest up to {TREE_DEPTH} deep"
+                ),
+            ),
+            None,
+            None,
+        )]);
+    }
+    let mut reader = serde_json::Deserializer::from_str(&exact);
+    reader.disable_recursion_limit();
+    let compiled = json::Compiled::deserialize(&mut reader)
+        .and_then(|compiled| reader.end().map(|()| compiled));
+    let compiled: json::Compiled = compiled.map_err(|error| {
         vec![Located::new(
             Problem::new(
                 path,

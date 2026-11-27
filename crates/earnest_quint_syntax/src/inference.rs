@@ -295,7 +295,7 @@ impl Parsed {
     /// Quint's type checker throws on this file, with the exception's message, at the place of
     /// the type it was simplifying when that is known and at `line` 0 otherwise.
     pub fn types(&self) -> Result<Json, Problem> {
-        crate::stack::on_large_stack(|| self.types_here())?
+        crate::stack::on_own_large_stack(|| self.types_here())?
     }
 
     fn types_here(&self) -> Result<Json, Problem> {
@@ -322,7 +322,7 @@ impl Parsed {
         types: &Json,
         declarations: &[Json],
     ) -> Result<Json, Problem> {
-        crate::stack::on_large_stack(|| {
+        crate::stack::on_own_large_stack(|| {
             let results = types_of_added(table.to_vec(), types, declarations);
             first_problem(self.ids(), &results).map_or(Ok(results.table), Err)
         })?
@@ -346,7 +346,7 @@ impl Parsed {
     /// nondet passes, in the order Quint lists them, at the place Quint gives; `unreadable` where
     /// Quint's type or effect passes throw.
     pub fn typecheck(&self) -> Result<Json, Problem> {
-        crate::stack::on_large_stack(|| self.typecheck_here())?
+        crate::stack::on_own_large_stack(|| self.typecheck_here())?
     }
 
     pub(crate) fn typecheck_here(&self) -> Result<Json, Problem> {

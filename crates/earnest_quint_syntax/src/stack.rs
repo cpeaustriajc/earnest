@@ -59,9 +59,29 @@ fn not_started(error: &std::io::Error) -> Problem {
     }
 }
 
-/// Runs `work` on a thread with a stack of [`STACK_NEEDED`] bytes, or on this thread when it is one
-/// already. A panic of `work` is passed on as it is.
-pub(crate) fn on_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
+/// Runs `work`, which recurses as deep as a `.qnt` file is nested but is not one of the crate's
+/// entries (a caller's walk of the JSON the crate wrote, say), on a stack of at least
+/// [`STACK_NEEDED`] bytes. [`on_a_stack_of`] only declares the stack of the caller's thread and
+/// never starts one; this starts one when it must. The caller states, as for [`on_a_stack_of`],
+/// that its thread was started with `bytes` of stack: when that is at least [`STACK_NEEDED`], or
+/// when the call is inside [`on_a_stack_of`] with enough bytes or inside another such thread,
+/// `work` runs inline and no thread is started, so a worker of 256 MiB starts none per file.
+/// Otherwise `work` runs on a thread of [`STACK_NEEDED`] bytes started for it. A panic of `work`
+/// is passed on as it is.
+///
+/// # Errors
+///
+/// When the system refuses the thread, the problem that says what to do (fewer `--jobs`, or a
+/// higher `ulimit -v`); never a panic.
+pub fn on_large_stack<T: Send>(
+    bytes: usize,
+    work: impl FnOnce() -> T + Send,
+) -> Result<T, Problem> {
+    on_a_stack_of(bytes, || on_stack_of(STACK_NEEDED, work))
+}
+
+/// [`on_large_stack`] for the crate's own entries, which run inline only inside a large stack.
+pub(crate) fn on_own_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
     on_stack_of(STACK_NEEDED, work)
 }
 
@@ -82,7 +102,7 @@ fn on_stack_of<T: Send>(stack: usize, work: impl FnOnce() -> T + Send) -> Result
     })
 }
 
-/// Runs `work` on a large stack as [`on_large_stack`] does, with `load` kept on this thread:
+/// Runs `work` on a large stack as [`on_own_large_stack`] does, with `load` kept on this thread:
 /// `work` is given a loader that asks this thread for each file and waits for its text.
 pub(crate) fn reading_on_large_stack<T: Send>(
     mut load: impl FnMut(&str) -> Option<String>,
@@ -115,10 +135,10 @@ pub(crate) fn reading_on_large_stack<T: Send>(
     })
 }
 
-/// What `work` builds, built on a large stack as [`on_large_stack`] runs it, or on this thread
+/// What `work` builds, built on a large stack as [`on_own_large_stack`] runs it, or on this thread
 /// when no thread can be started.
 pub(crate) fn built_on_large_stack<T: Send>(work: impl Fn() -> T + Sync) -> T {
-    on_large_stack(&work).unwrap_or_else(|_| work())
+    on_own_large_stack(&work).unwrap_or_else(|_| work())
 }
 
 #[cfg(test)]

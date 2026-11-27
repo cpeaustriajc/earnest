@@ -184,6 +184,12 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 #[test]
 fn every_sample_in_the_repository_has_the_types_quint_typecheck_writes() {
+    if crate::ran_on_a_stack_of(
+        earnest_quint_syntax::STACK_NEEDED,
+        every_sample_in_the_repository_has_the_types_quint_typecheck_writes,
+    ) {
+        return;
+    }
     let base = root();
     let mut found = Vec::new();
     samples(&base, Path::new("tasks"), &mut found);

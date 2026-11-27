@@ -11,6 +11,18 @@ struct Tally {
     differences: Vec<String>,
 }
 
+/// A comparing thread, on a stack as large as the crate's own: it compares and drops the outputs
+/// as deep as the checks are nested.
+fn spawn_large<'scope, T: Send + 'scope>(
+    scope: &'scope thread::Scope<'scope, '_>,
+    work: impl FnOnce() -> T + Send + 'scope,
+) -> thread::ScopedJoinHandle<'scope, T> {
+    thread::Builder::new()
+        .stack_size(earnest_quint_syntax::STACK_NEEDED)
+        .spawn_scoped(scope, work)
+        .expect("a comparing thread starts")
+}
+
 fn every(folder: &Path, base: &Path) -> Tally {
     let recorded = listed(folder).expect("the recordings are read");
     let mut tally = Tally {
@@ -23,7 +35,7 @@ fn every(folder: &Path, base: &Path) -> Tally {
     let mut outcomes: Vec<(usize, Result<Outcome, String>)> = thread::scope(|scope| {
         let workers: Vec<_> = (0..threads)
             .map(|_| {
-                scope.spawn(|| {
+                spawn_large(scope, || {
                     let mut found = Vec::new();
                     loop {
                         let at = next.fetch_add(1, Ordering::Relaxed);
@@ -65,6 +77,12 @@ fn said(tally: &Tally) -> String {
 
 #[test]
 fn every_check_of_the_repository_flattens_as_quint_compile_writes_it() {
+    if crate::ran_on_a_stack_of(
+        earnest_quint_syntax::STACK_NEEDED,
+        every_check_of_the_repository_flattens_as_quint_compile_writes_it,
+    ) {
+        return;
+    }
     let tally = every(&fixtures(), &root());
     println!("{}", said(&tally));
     assert!(

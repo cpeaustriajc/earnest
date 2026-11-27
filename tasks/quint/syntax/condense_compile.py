@@ -1,6 +1,8 @@
 import json
 import os
 import sys
+
+sys.setrecursionlimit(1_000_000)
 from collections import defaultdict
 
 SMALLEST_SHARED = 24
