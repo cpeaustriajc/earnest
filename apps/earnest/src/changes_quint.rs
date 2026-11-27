@@ -7,7 +7,7 @@ use crate::checks::CHECKS_FILE;
 use crate::discovery::{discover, is_skipped_folder};
 use crate::places::Places;
 use crate::plan::{Plan, planned};
-use crate::quint::{cache_path, parsed, quint_text};
+use crate::quint::{cache_path, parsed, quint_text, shown_in_folder};
 use earnest_diagnostics::Problem;
 use earnest_quint::Runs;
 use serde_json::{Map, Value};
@@ -15,9 +15,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::{Component, Path, PathBuf};
+use std::process::{self, Stdio};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const QUINT_EXTENSION: &str = "qnt";
 const KIND: &str = "kind";
@@ -34,6 +35,11 @@ const QUALIFIED: &str = "::";
 const BLOB: &str = "blob";
 const BASE_TREE: &str = "base";
 const LINK: &str = "120000";
+const CREATE_TRIES: usize = 3;
+const IMPORT_FROM: &str = "import ... from '";
+const NOT_LOADED: &str = "': could not load";
+const READ_OUTSIDE: &str =
+    "the file imports a file from outside the repository, so it is not read at the base";
 
 fn bound_name(position: usize) -> String {
     format!("{BOUND}{position}")
@@ -498,7 +504,71 @@ fn files_listed(output: &std::process::Output) -> Vec<&str> {
         .collect()
 }
 
-fn write_tree(top: &Path, commit: &str) -> Option<PathBuf> {
+fn without_dots(path: &Path) -> PathBuf {
+    let mut kept = PathBuf::new();
+    for part in path.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                kept.pop();
+            }
+            other => kept.push(other),
+        }
+    }
+    kept
+}
+
+fn copy_name(index: usize) -> String {
+    let moment = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    format!("{BASE_TREE}-{}-{moment}-{index}", process::id())
+}
+
+struct BaseCopy {
+    folder: PathBuf,
+    real: PathBuf,
+    made: Vec<PathBuf>,
+}
+
+impl BaseCopy {
+    fn new(index: usize) -> Option<Self> {
+        let folder = cache_path(&copy_name(index));
+        let made: Vec<PathBuf> = folder
+            .ancestors()
+            .skip(1)
+            .take_while(|each| !each.as_os_str().is_empty() && !each.exists())
+            .map(Path::to_path_buf)
+            .collect();
+        for _ in 0..CREATE_TRIES {
+            let parent_ready = folder
+                .parent()
+                .is_none_or(|parent| fs::create_dir_all(parent).is_ok());
+            if parent_ready && fs::create_dir(&folder).is_ok() {
+                return Some(Self {
+                    real: real(&folder),
+                    folder,
+                    made,
+                });
+            }
+        }
+        None
+    }
+}
+
+impl Drop for BaseCopy {
+    fn drop(&mut self) {
+        if fs::remove_dir_all(&self.folder).is_ok() {
+            for each in &self.made {
+                if fs::remove_dir(each).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn write_tree(top: &Path, commit: &str, index: usize) -> Option<BaseCopy> {
     let listed = git(top)
         .args(["ls-tree", "-r", "-z", "--full-tree"])
         .arg(commit)
@@ -513,31 +583,95 @@ fn write_tree(top: &Path, commit: &str) -> Option<PathBuf> {
         .map(str::to_owned)
         .collect();
     let contents = blobs(top, commit, &names)?;
-    let top_text = top.to_string_lossy();
-    let folder = cache_path(&format!(
-        "{BASE_TREE}-{:016x}",
-        fingerprint_of(&[top_text.as_bytes(), commit.as_bytes()])
-    ));
+    let copy = BaseCopy::new(index)?;
     for (name, content) in names.iter().zip(&contents) {
-        let target = folder.join(name);
-        if fs::read(&target).ok().as_ref() == Some(content) {
-            continue;
-        }
+        let target = copy.folder.join(name);
         fs::create_dir_all(target.parent()?).ok()?;
         fs::write(&target, content).ok()?;
     }
-    fs::create_dir_all(&folder).ok()?;
-    Some(real(&folder))
+    Some(copy)
 }
 
 struct BaseTree {
     top: PathBuf,
-    folder: Option<PathBuf>,
+    copy: Option<BaseCopy>,
 }
 
 struct Reader<'a> {
     base: &'a str,
     trees: Vec<BaseTree>,
+}
+
+struct Copied<'a> {
+    top: &'a Path,
+    tree: &'a Path,
+    file: &'a Path,
+    shown: &'a str,
+}
+
+fn whole(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+impl Copied<'_> {
+    fn in_repository(&self, named: &str) -> String {
+        real(&whole(Path::new(named)))
+            .strip_prefix(self.tree)
+            .map_or_else(
+                |_| named.to_owned(),
+                |inside| shown_in_folder(&self.top.join(inside), self.file, self.shown),
+            )
+    }
+
+    fn outside_import(&self, problem: &Problem) -> Option<String> {
+        let from = problem
+            .message
+            .split_once(IMPORT_FROM)?
+            .1
+            .split_once(NOT_LOADED)?
+            .0;
+        let importing = real(&whole(Path::new(&problem.file)));
+        let target = without_dots(
+            &importing
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .join(format!("{from}.{QUINT_EXTENSION}")),
+        );
+        let outside = importing.starts_with(self.tree) && !target.starts_with(self.tree);
+        outside.then(|| {
+            format!(
+                "the file it imports from '{from}' is outside the repository, so it is not read \
+                 at the base: {}",
+                problem.message
+            )
+        })
+    }
+
+    fn first(&self, problem: &Problem) -> FirstProblem {
+        FirstProblem {
+            file: self.in_repository(&problem.file),
+            line: problem.line,
+            column: problem.column,
+            message: self
+                .outside_import(problem)
+                .unwrap_or_else(|| problem.message.clone()),
+            more: 0,
+        }
+    }
+
+    fn read_outside(&self, places: &Places) -> Option<FirstProblem> {
+        places
+            .files_read()
+            .iter()
+            .any(|read| !real(&whole(Path::new(read))).starts_with(self.tree))
+            .then(|| FirstProblem {
+                file: self.shown.to_owned(),
+                line: 1,
+                column: 1,
+                message: READ_OUTSIDE.to_owned(),
+                more: 0,
+            })
+    }
 }
 
 impl Reader<'_> {
@@ -550,7 +684,7 @@ impl Reader<'_> {
         )
         .map(|top| real(Path::new(&top)))?;
         if let Some(known) = self.trees.iter().find(|tree| tree.top == top) {
-            return Some((top, known.folder.clone()?));
+            return Some((top, known.copy.as_ref()?.real.clone()));
         }
         let commit = text_of(
             &git(&top)
@@ -559,20 +693,41 @@ impl Reader<'_> {
                 .output()
                 .ok()?,
         );
-        let folder = commit.and_then(|commit| write_tree(&top, &commit));
+        let copy = commit.and_then(|commit| write_tree(&top, &commit, self.trees.len()));
+        let tree = copy.as_ref().map(|copy| copy.real.clone());
         self.trees.push(BaseTree {
             top: top.clone(),
-            folder: folder.clone(),
+            copy,
         });
-        Some((top, folder?))
+        Some((top, tree?))
     }
 
-    fn checks_at_base(&mut self, folder: &Path, below: &Path, shown: &str) -> Result<Side, Why> {
-        let (top, tree) = self.tree_holding(folder).ok_or(Why::Unreadable)?;
-        let inside = folder.strip_prefix(&top).map_err(|_| Why::Unreadable)?;
+    fn checks_at_base(
+        &mut self,
+        folder: &Path,
+        below: &Path,
+        shown: &str,
+    ) -> Result<Side, Option<FirstProblem>> {
+        let (top, tree) = self.tree_holding(folder).ok_or(None)?;
+        let inside = folder.strip_prefix(&top).map_err(|_| None)?;
         let file = real(&tree.join(inside).join(below));
-        let places = parsed(&file, &file.to_string_lossy()).map_err(|_| Why::Unreadable)?;
-        Ok(checks_in(&places, &file, shown))
+        let in_repository = top.join(inside).join(below);
+        let copied = Copied {
+            top: &top,
+            tree: &tree,
+            file: &in_repository,
+            shown,
+        };
+        let places = parsed(&file, &file.to_string_lossy())
+            .map_err(|problem| Some(copied.first(&problem)))?;
+        if let Some(outside) = copied.read_outside(&places) {
+            return Err(Some(outside));
+        }
+        let mut side = checks_in(&places, &file, shown);
+        for (_, problem) in &mut side.problems {
+            problem.file = copied.in_repository(&problem.file);
+        }
+        Ok(side)
     }
 }
 
@@ -689,12 +844,18 @@ fn unread_now(file: &str, old: &Side, unread: &[String], compare: &Compare<'_>) 
 fn compared_at_base(
     compare: &Compare<'_>,
     file: &str,
-    at_base: Result<Side, Why>,
+    at_base: Result<Side, Option<FirstProblem>>,
     now: Option<(&[Judging], &[String])>,
 ) -> (Vec<Difference>, Vec<NotRead>) {
     let old = match at_base {
         Ok(old) => old,
-        Err(why) => return (Vec::new(), vec![NotRead::file(file.to_owned(), why)]),
+        Err(problem) => {
+            let unread = NotRead {
+                problem,
+                ..NotRead::file(file.to_owned(), Why::Unreadable)
+            };
+            return (Vec::new(), vec![unread]);
+        }
     };
     let Some((now, unread)) = now else {
         let selected = old.checks.iter().any(|was| selects(compare, was));
