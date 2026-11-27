@@ -208,3 +208,26 @@ fn a_chain_of_eight_thousand_aliases_is_compiled_in_under_two_seconds_where_quin
         started.elapsed()
     );
 }
+
+#[test]
+fn a_chain_of_twenty_thousand_method_calls_is_refused_by_the_tree_s_bound_in_seconds() {
+    let text = module(&format!(
+        "  val v = Set(1){}",
+        ".union(Set(1))".repeat(20_000)
+    ));
+    let started = Instant::now();
+    let problem = read_text(&text).expect_err("refused");
+    assert_eq!(
+        refusal(&problem),
+        (
+            "unreadable",
+            "expressions or types here are nested more than 4000 deep in Quint's tree, deeper than earnest reads"
+        ),
+        "the tree's bound"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(20),
+        "{:?}",
+        started.elapsed()
+    );
+}

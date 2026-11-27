@@ -1565,21 +1565,26 @@ impl Parser<'_> {
         }
         let name = self.text(self.span(name_start));
         if self.kind() == Kind::LeftParen && self.goes_on(self.at) {
-            let receiver = callee.clone();
             let call = |parser: &mut Self| {
                 parser.advance();
-                let mut args = vec![receiver];
-                if parser.kind() != Kind::RightParen {
-                    args.extend(parser.arguments()?);
-                }
+                let args = if parser.kind() == Kind::RightParen {
+                    Vec::new()
+                } else {
+                    parser.arguments()?
+                };
                 parser.expect(Kind::RightParen, ")")?;
-                Ok(parser.application(parser.span(start), &name, args))
+                Ok(args)
             };
-            if fallback == Fallback::Not {
-                return call(self);
-            }
-            if let Some(called) = self.contest(call, self.at, Self::parenthesized_here)? {
-                return Ok(called);
+            let called = if fallback == Fallback::Not {
+                Some(call(self)?)
+            } else {
+                self.contest(call, self.at, Self::parenthesized_here)?
+            };
+            if let Some(args) = called {
+                let mut all = Vec::with_capacity(args.len() + 1);
+                all.push(callee);
+                all.extend(args);
+                return Ok(self.application(self.span(start), &name, all));
             }
         }
         let span = self.span(start);
