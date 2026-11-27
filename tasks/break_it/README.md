@@ -3172,3 +3172,143 @@ file of four entries (`models` not committed: two entries of one module, a `runs
 not ending in `Test`, expressions with and without `name`, `expectCounterexample` of a temporal
 property in parts and of an expression) give the states and property verdicts of 6dceb43 (9, 9,
 16 and 16 states); the runs differ only as the message says they will.
+
+### The report of a check failed by its marks names no reason and calls the met marks `broken`
+
+`models/quint_sixth/report_marks/report_marks.qnt`: `x` counts from 0 to 3; `belowTwo = x < 2` and
+`belowNine = x < 9` are marked `@check broken`, `atFive = x == 5` and `atOne = x == 1` `@check
+reachable`. `quint verify --backend tlc --invariant belowNine` says `[ok]`, `--invariant
+belowTwo` `[violation]`. `earnest verify` says it all: `fail  reportMarks  4 states`, `broken
+belowTwo  (expected)`, `holds  belowNine  a counterexample was expected`, `never reached  atFive`,
+`reached  atOne` with its path. `earnest report` prints `**fail**`, then only `broken  belowTwo
+"The counter passes two."` and `broken  atOne`, each with a path, and the chart draws the states
+`x = 1` to `x = 3` as broken. A pull request body so says the check failed because two rules broke,
+which are the two marks that were met, and never names `belowNine` or `atFive`, the two that failed
+it. The docs say the path of a met expectation "is in the JSON and in `earnest report`", and of
+the report "the shortest path to each broken rule": the paths are there, but the lines that tell a
+met mark from a broken rule, and the unmet marks, are not. Right result: the report says what
+`earnest verify` says, `(expected)`, `reached`, `holds … a counterexample was expected` and
+`never reached`. Test:
+`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`.
+
+### A run marked `@check broken` that a compiled check can't play makes the check unreadable
+
+`models/quint_sixth/broken_run_one_name/broken_run_one_name.qnt`: `Spec` has `val small = x < 5`,
+`run badRun = init.then(step).expect(x == 2)` marked `/// @check broken`, and `run fineTest`;
+`/// @check small module One` imports `Spec.badRun`, `Spec.fineTest`, `Spec.init`, `Spec.step`
+and `Spec.small`, one name each, a shape earnest compiles. `quint verify --backend tlc --main One
+--invariant small` says `[ok]`; `quint test --main One` plays `fineTest` (`ok`). With the run
+marked plain `/// @check`, earnest says what the docs say: `unfinished  One  3 states … (runs not
+played: fineTest, badRun: …)` with `small` judged. Marked `@check broken`, it says `unreadable
+broken_run_one_name.qnt  One` and ``broken_run_one_name.qnt:1:1  `badRun`  the module `One` has no
+property `badRun` to judge``: the mark of a run is read as that of a property, at line 1 rather
+than at the mark, and `small` is not judged. The docs: "A marked or named run the compiled module
+does not hold is one of those runs, and the check's properties are still judged." Nothing passes
+that should not, but a project whose setups import names one by one loses every check that sees a
+known-failing run. Naming the run in `One`'s doc, `/// @check broken badRun`, does the same; `/// @check
+badRun` there gives `unfinished`. Right result: `unfinished`, `small` holds, `badRun` and `fineTest` not played.
+Test:
+`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`.
+
+### Marks and legal Quint that are refused or ignored
+
+Marked *likely* where a project is likely to write it, *unclear* where the message does not say what
+is wrong or what to write instead.
+
+| Written | What earnest does |
+|---|---|
+| a bad mark (`@check:`, `@checked`, `@check holds`, `@check broken.`, `@check p1 is judged here`, a second mark on a definition) in a file whose module is marked | the file is `unreadable`, and the first problem is ``no module of the Quint file is checked: a module is checked when its doc comment holds the mark `/// @check` …`` at line 1, before the right problem at the mark (*unclear*: the module is marked; the line reads as if it were not). With `@Check`, `/** @check */` or `// @check` instead, the other checks of the file run and only the mark is a problem |
+| `/// @check p1,` at the end of a module's doc, or followed by a blank `///` line (*likely* when a list is edited) | ``the doc comment holds `@check p1,`, which is not a mark the checker knows`` (*unclear*: the docs say the message "says the comma made the list go on") |
+| `/// @check p1, p1` | ``names `p1` under two marks`` (one mark, a name twice) |
+| `/// @check` on a `val` that is not boolean, `pure val K = 3` | judged, and a `fault`: ``the rule `K` uses a value of the wrong kind in this state`` under a start state; the check fails (*unclear*: nothing says the mark is on a non-boolean) |
+| `/// @check P::small` in a module that imports `Spec.*` and `Spec as P` | ``names `P::small`, which the module does not see``; Quint compiles `--invariant P::small` there, and its TLC run then stops with `current state is not a legal state` |
+| a mark through `import Spec.badRun` (one name) | see the finding above for `@check broken`; with `@check` the check is `unfinished`, as the docs say |
+| `/// The value stays small. @check`, `/// - @check`, ``/// `@check` `` | a sentence, as the docs say ("a doc line is a mark only when it starts with …") |
+
+`//// @check` is a mark: `quint parse` hands it over as the doc ` @check`. A blank line between a
+`/// @check` and its `val` keeps the mark, as `quint parse` keeps the doc. A tab or two spaces after
+`///` or after `@check` are read.
+
+### Attacked and found correct
+
+- Marks through imports, each against `quint compile`/`quint test --main` (models not committed):
+  a marked `val` and a `/// @check` run of a spec seen through `import Spec(N = 2).* from`, `as S
+  from`, `as S` with `export S.*`, two instances `P` and `R` (judged as `P::small` and `R::small`,
+  once each), `import Plain.*` and `import Plain as Q` with runs of their own, and a spec beside
+  another imported under a name: the same properties judged and the same `…Test` runs played as
+  `quint test --main`, with the marked run beside them; `export A.*` through a middle module with
+  a mark two levels down (judged in both checks that see it, the runs listed as not played); a
+  marked `val` of a module that no check sees (``no check sees it, so it is never judged``); marks
+  on an `assume`, an `export`, a `pure def` with parameters (each `unreadable` at the mark); a
+  marked `pure val` and `def` with no parameters (judged).
+- Kinds: `@check broken` on a run that passes (`holds  passesTest  a counterexample was
+  expected`, `fail`), on one that fails, on runs not ending in `Test`; a setup's doc that says
+  `broken` or `reachable` for a property the spec marks `@check` (the doc wins, each setup on its
+  own: `One` and `Three` of one spec); `--rule` of each property and run there, cached and fresh;
+  `@check reachable` that is never reached (`never reached`, `fail`), reached at the start;
+  a fault in a `broken`-marked rule (the search goes on to every state and reports the
+  fault); `@check broken` on `always(P)`, on an `always` in two parts (the stop comes once both
+  parts are broken).
+- The leftover-file message, followed by hand where it is right, against 6dceb43: see the finding.
+- Result wording (#74): sentences over several doc lines, quoted text, a blank doc line and
+  indentation (JSON `says` joins the lines), `(part 1 of 2)`, a check of runs with no state field,
+  `fault` beside `unknown`, in text and JSON.
+- `confirm --quint`: `same` on a check whose marks are all `reachable` (reached at the start, later
+  and never: Quint is given each as an invariant, and the verdicts are compared the right way),
+  on broken-marked runs, on setups whose doc overrides the spec's marks; `cannot` on a run of
+  90 000 choices with one failing (`quint test` passes after 10 000 samples, earnest breaks it) and
+  on `export S.*` of an instance (Quint stops, `The constant parameter N is not assigned`).
+- Charts (#80): a group label of `y` and a state label that faults where `x = 1` (`?`, one box per
+  group), the premise note of an implication (``first holds in `0` / `pos` ``: `x = 2, y = 0`,
+  the nearest), of `leadsTo` and of `always(p implies eventually q)` (the start and the reached
+  box are real states at the shortest depth), with `--max-arrows 4` and 50.
+- `--base` on `.qnt` files: a mark from `@check` to `@check broken` and to `@check reachable`
+  (`changed`, `was … now  reachable: x < 3`), a reworded sentence (`reworded` in each check that
+  sees it), a renamed property (`removed` and `added`), a property
+  edited in an imported file (`changed` in the check), a file new since the base
+  (`added`), a file unreadable at the base (`not compared  bad.qnt  unreadable at HEAD`), a mark
+  removed (`removed` in each check).
+- The cache: a mark edited in an imported file, a new mark there, a run's `expect` edited, a
+  module's sentence added: each run checked again and gave the fresh answer.
+
+### A seeded random comparison
+
+The fifth pass's generator, `models/quint_fifth/random/generate.py`, with its output marked in one
+of three ways chosen by the seed: `/// @check` above each invariant and temporal property (63
+seeds), every property named in the module's doc, `/// @check inv0, inv1, t0, …` (82), or each
+property one way or the other (65). Seeds 2 to 211 (210 models, 2 to 252 states, 9 571 in all),
+each with `quint verify --backend tlc` (one run for the count and one for each property, against
+four Apalache servers on their own ports) and `quint test --backend typescript --match 'Test$'`,
+and earnest with `--jobs 1 --no-cache`, `--jobs 4 --no-cache` and then cached: 210 state counts,
+420 invariant verdicts, 1 050 temporal verdicts (a property in parts broken when one part is) and
+420 runs, every one Quint's, and the three earnest runs equal. About 50 minutes.
+
+### The project models, marked
+
+The fifth pass's project model with its unmarked setups marked: `three` (`/// @check mutex,
+holderKnown, bounded, served, drains` and `/// @check broken neverTwoGrants, everyoneIdle`), `two`
+(four names and `/// @check reachable neverTwoGrants`), `witness` (`/// @check broken wrongTest`),
+`threeG` with `gHolds` moved to `/// @check broken V::gHolds`, and `twoG`: 314, 179, 0, 2243 and 388
+states; `confirm --quint` (1 min 34 s) and `confirm --tlc` with the `v1.8.0` jar (1 min 9 s)
+`same` on all five; `--jobs 1`, `--jobs 4` and cached give equal JSON, paths included. The fourth
+pass's project model as committed (four checks, 0 to 2733 states): `same` with both options (2 min
+4 s and 1 min 16 s), and equal JSON with one job, four and cached.
+
+### Usability notes
+
+- `earnest confirm --tlc rc.qnt`, with the model where the jar goes, prints `differs` and
+  ``TLC says unknown (Error: Could not find or load main class tlc2.TLC)`` for every rule: a jar
+  that is not TLC's is a `cannot`, not a difference.
+- `confirm --quint` of a check of runs only prints `0 states`, where `earnest verify` prints no
+  state field for it.
+- In `--base`, a property marked `@check reachable` gets the made-up sentence ``The Quint
+  invariant `helper` holds``, which says the reverse of the mark (the known item about made-up
+  sentences).
+- The chart of a check paints the states of met `broken` and `reachable` marks as broken boxes, so
+  a check that passes can have a red chart.
+
+### Not covered
+
+Windows. Apalache's own checking. Quint's Rust evaluator. `quint test` samples beyond the one
+shape above. `@view` on native models. A `confirm --tlc` sweep of the seeds (done for the
+projects only).

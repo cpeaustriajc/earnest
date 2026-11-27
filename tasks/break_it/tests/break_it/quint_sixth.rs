@@ -57,7 +57,7 @@ fn is_recorded_output(name: &str) -> bool {
                 .is_some_and(|extension| extension == "json"))
 }
 
-fn verified(case: &str, arguments: &[&str]) -> Value {
+fn ran(case: &str, arguments: &[&str]) -> (String, String) {
     let folder = TempDir::new().expect("a temporary folder can be made");
     let fake = folder.path().join("fake");
     fs::create_dir_all(&fake).expect("the fake's folder can be made");
@@ -82,19 +82,23 @@ fn verified(case: &str, arguments: &[&str]) -> Value {
             .unwrap_or_else(|error| panic!("{name} can't be copied: {error}"));
     }
     let output = Command::new(binary())
-        .args(["verify", "--json", "--no-cache", "."])
         .args(arguments)
         .env("EARNEST_QUINT", &program)
         .current_dir(folder.path())
         .output()
         .expect("earnest starts");
-    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
-        panic!(
-            "earnest verify prints JSON ({error}):\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-    })
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+fn verified(case: &str, arguments: &[&str]) -> Value {
+    let mut all = vec!["verify", "--json", "--no-cache", "."];
+    all.extend_from_slice(arguments);
+    let (stdout, stderr) = ran(case, &all);
+    serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("earnest verify prints JSON ({error}):\n{stdout}\n{stderr}"))
 }
 
 fn model<'a>(report: &'a Value, name: &str) -> &'a Value {
@@ -172,5 +176,62 @@ fn the_leftover_file_message_does_not_add_a_second_step_to_a_copy_that_has_one()
          `[QNT101] Conflicting definitions found for name 'step' in module 'BigR'`, where the \
          checks file gave a check of 4 states that passes on 6dceb43. The copy's `step` must be \
          replaced, not added to\n{message}"
+    );
+}
+
+#[test]
+fn the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken() {
+    let (verify, _) = ran("report_marks", &["verify", "--no-cache", "."]);
+    assert!(
+        verify.contains("holds  belowNine  a counterexample was expected")
+            && verify.contains("never reached  atFive"),
+        "`earnest verify` says why the check fails\n{verify}"
+    );
+    let (report, stderr) = ran("report_marks", &["report", "."]);
+    assert!(
+        report.contains("**fail**"),
+        "the report gives the check's status\n{report}\n{stderr}"
+    );
+    assert!(
+        report.contains("belowNine") && report.contains("atFive"),
+        "the check fails only because `belowNine` (marked `@check broken`) holds, as `quint verify \
+         --backend tlc --invariant belowNine` says (`[ok]`), and `atFive` (marked `@check \
+         reachable`) is never reached; the report must name them, as `earnest verify` does, or a \
+         pull request body says `fail` with no reason\n{report}"
+    );
+    assert!(
+        !report.contains("broken  atOne\n") && !report.contains("broken  belowTwo  \""),
+        "`atOne` was reached and `belowTwo` broke as marked: both are what the marks ask for, which \
+         `earnest verify` prints as `reached  atOne` and `broken  belowTwo  (expected)`. Printed \
+         as a plain `broken` under a `fail`, they read as the rules that failed the check\n{report}"
+    );
+}
+
+#[test]
+fn a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged()
+ {
+    let report = verified("broken_run_one_name", &[]);
+    let checked = model(&report, "One");
+    assert_eq!(
+        (&checked["status"], &rule(checked, "small")["verdict"]),
+        (&Value::from("unfinished"), &Value::from("holds")),
+        "`One` imports `Spec.badRun`, `Spec.fineTest`, `init`, `step` and `small` one name at a \
+         time, so it is compiled and holds none of `Spec`'s runs. `quint verify --backend tlc \
+         --main One --invariant small` says `[ok]`; with `badRun` marked `@check` the check is \
+         `unfinished` with `runs not played: fineTest, badRun`. The docs: \"A marked or named run \
+         the compiled module does not hold is one of those runs, and the check's properties are \
+         still judged\". Marked `@check broken`, the run is read as a property `One` lacks (`the \
+         module `One` has no property `badRun` to judge`, at line 1) and nothing is judged\n\
+         {report:#}"
+    );
+    let not_played: Vec<&str> = checked["runsNotPlayed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        not_played.contains(&"badRun") && not_played.contains(&"fineTest"),
+        "both runs are named as not played, as with a plain `@check` on `badRun`\n{report:#}"
     );
 }
