@@ -135,11 +135,7 @@ fn the_record_a_call_gives_has_its_field_names_in_the_types_the_reader_reads() {
     field_names_arguments(compiled.main_module(), &mut arguments);
     assert!(arguments.len() >= 5, "{arguments:?}");
     for (opcode, id) in &arguments {
-        let scheme = compiled
-            .types()
-            .get(id)
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let scheme = compiled.types().get(id).map_or_default(ToString::to_string);
         assert!(scheme.contains("\"rec\""), "{opcode} {id}: {scheme}");
     }
 }
@@ -155,8 +151,7 @@ fn field_names_arguments(value: &Json, found: &mut Vec<(String, String)>) {
                 let named = argument
                     .get("opcode")
                     .or_else(|| argument.get("name"))
-                    .map(ToString::to_string)
-                    .unwrap_or_default();
+                    .map_or_default(ToString::to_string);
                 found.push((named, id.to_string()));
             }
             for (_, inner) in fields {
