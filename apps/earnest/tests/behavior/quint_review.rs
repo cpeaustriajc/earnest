@@ -131,10 +131,15 @@ impl Quint {
     fn without_expectations(&self, set: &str) {
         let entries = fs::read_dir(self.sandbox.path().join(set)).expect("the set is there");
         for entry in entries.filter_map(Result::ok) {
-            let name = format!("{set}/{}", entry.file_name().to_string_lossy());
-            if !name.ends_with(".qnt") {
+            if entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("qnt")
+            {
                 continue;
             }
+            let name = format!("{set}/{}", entry.file_name().to_string_lossy());
             let text = self.sandbox.read(&name);
             self.sandbox.write(
                 &name,
