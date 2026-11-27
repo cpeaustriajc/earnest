@@ -164,7 +164,7 @@ impl Parsed {
     /// flattener stops with "Internal error while flattening", that error with Quint's text
     /// under the code `QNT000`.
     pub fn compile(&self, target: &Target) -> Result<Compiled, Problem> {
-        crate::stack::on_large_stack(|| self.compile_here(target))?
+        crate::stack::on_own_large_stack(|| self.compile_here(target))?
     }
 
     fn compile_here(&self, target: &Target) -> Result<Compiled, Problem> {

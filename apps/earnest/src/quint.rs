@@ -471,18 +471,16 @@ pub(crate) fn parsed(real_file: &Path, shown: &str) -> Result<Places, Problem> {
     if !Path::new(shown).is_file() {
         return Err(not_parsed());
     }
-    with_front_end(|| {
-        on_large_stack(|| {
-            let parsed =
-                front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
-            Places::from_quint(
-                &parsed.output().to_string(),
-                &parsed.source_map().to_string(),
-            )
-            .ok_or_else(not_parsed)
-        })
-        .unwrap_or_else(|problem| Err(parse_failed(shown, real_file, &problem)))
+    on_large_stack(stack_of_this_worker().unwrap_or(0), || {
+        let parsed =
+            front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
+        Places::from_quint(
+            &parsed.output().to_string(),
+            &parsed.source_map().to_string(),
+        )
+        .ok_or_else(not_parsed)
     })
+    .unwrap_or_else(|problem| Err(parse_failed(shown, real_file, &problem)))
 }
 
 pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
@@ -712,7 +710,7 @@ fn read_compiled(
         let read = read_check(job, compiled.map(|(json, _)| json), (&runs, &unplayed));
         (read, unplayed)
     };
-    with_front_end(|| on_large_stack(read)).unwrap_or_else(|problem| {
+    on_large_stack(stack_of_this_worker().unwrap_or(0), read).unwrap_or_else(|problem| {
         let refused = Problem::new(&job.shown, TOP_OF_FILE, READER, &problem.message);
         (Err(vec![Located::new(refused, None, None)]), Vec::new())
     })
