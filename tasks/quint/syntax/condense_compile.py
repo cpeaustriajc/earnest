@@ -4,6 +4,7 @@ import sys
 from collections import defaultdict
 
 SMALLEST_SHARED = 24
+HASHED = [] if os.environ.get("KEEP") == "all" else ["table", "types", "effects"]
 
 
 def compact(value):
@@ -34,6 +35,13 @@ def decoded(value, pool):
     if isinstance(value, list):
         return [decoded(item, pool) for item in value]
     return value
+
+
+def fnv(written):
+    value = 0xCBF29CE484222325
+    for byte in written.encode("utf-8"):
+        value = ((value ^ byte) * 0x100000001B3) % (1 << 64)
+    return f"{value:016x}"
 
 
 def first_error(text):
@@ -71,8 +79,13 @@ def main():
                 continue
             if compact(output) != stdout:
                 sys.exit(f"{args}: Quint's stdout is not the compact JSON of what it holds")
-            entry = {"args": args, "output": encoded(output, pool, index)}
-            if decoded(entry["output"], pool) != output:
+            keys = [[key, len(compact(value).encode("utf-8")), fnv(compact(value))] for key, value in output.items()]
+            rebuilt = "{" + ",".join(f"{compact(key)}:{compact(value)}" for key, value in output.items()) + "}"
+            if rebuilt != stdout:
+                sys.exit(f"{args}: Quint's stdout is not its keys' texts joined")
+            kept = {key: value for key, value in output.items() if key not in HASHED}
+            entry = {"args": args, "keys": keys, "output": encoded(kept, pool, index)}
+            if decoded(entry["output"], pool) != kept:
                 sys.exit(f"{args}: the condensed recording does not give back Quint's")
             written.append(entry)
         target = os.path.join(out, file + ".compile.json")

@@ -48,6 +48,38 @@ pub(crate) fn check_of(name: &str, line: &str) -> Result<Check, String> {
 pub(crate) struct Recorded {
     pub(crate) check: Check,
     pub(crate) quint: Result<Json, String>,
+    pub(crate) keys: Vec<(String, usize, String)>,
+}
+
+const SEE_THE_PATH: &str = "to see the first path that differs, record this check in full: put \
+    its `args` line in a file, run `KEEP=all QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint \
+    tasks/quint/syntax/record_compile.sh <folder> <file>`, then `QUINT_COMPILED=<folder> cargo test -p \
+    earnest_quint_syntax --test compile every_check_of_a_folder -- --ignored --nocapture`; a \
+    difference in `types` or `effects` is also named by the typecheck test of the same file";
+
+fn fnv(written: &str) -> String {
+    let mut value: u64 = 0xCBF2_9CE4_8422_2325;
+    for byte in written.bytes() {
+        value = (value ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3);
+    }
+    format!("{value:016x}")
+}
+
+fn keys_of(recorded: &Json) -> Vec<(String, usize, String)> {
+    let Some(Json::List(keys)) = recorded.get("keys") else {
+        return Vec::new();
+    };
+    keys.iter()
+        .filter_map(|key| match key {
+            Json::List(parts) => match parts.as_slice() {
+                [Json::Text(name), Json::Number(length), Json::Text(hash)] => {
+                    Some((name.clone(), length.parse().ok()?, hash.clone()))
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
 }
 
 fn decoded(value: &Json, pool: &[Json]) -> Result<Json, String> {
@@ -119,7 +151,8 @@ pub(crate) fn listed(folder: &Path) -> Result<Vec<Recorded>, String> {
                 (None, Some(Json::Text(error))) => Err(error.clone()),
                 _ => return Err(format!("{args}: neither output nor error")),
             };
-            listed.push(Recorded { check, quint });
+            let keys = keys_of(each);
+            listed.push(Recorded { check, quint, keys });
         }
     }
     Ok(listed)
@@ -229,11 +262,33 @@ pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, Stri
     };
     let ours = ours.map_err(|problem| format!("refused: {problem}"))?;
     let output = ours.output();
-    if let Some(found) = first_difference(&output, theirs, "") {
-        return Err(found);
+    let Json::Object(fields) = &output else {
+        return Err("our output is not an object".to_owned());
+    };
+    let our_keys: Vec<&str> = fields.iter().map(|(key, _)| key.as_str()).collect();
+    let their_keys: Vec<&str> = recorded
+        .keys
+        .iter()
+        .map(|(key, _, _)| key.as_str())
+        .collect();
+    if our_keys != their_keys {
+        return Err(format!(
+            "the keys of the output are {our_keys:?}, Quint's {their_keys:?}"
+        ));
     }
-    if output.to_string() != theirs.to_string() {
-        return Err("equal key by key, and not as text".to_owned());
+    for ((key, value), (_, length, hash)) in fields.iter().zip(&recorded.keys) {
+        if let Some(their_value) = theirs.get(key)
+            && let Some(found) = first_difference(value, their_value, &format!(".{key}"))
+        {
+            return Err(found);
+        }
+        let written = value.to_string();
+        if written.len() != *length || fnv(&written) != *hash {
+            return Err(format!(
+                "{key} differs from Quint's as text: {} bytes against Quint's {length}; {SEE_THE_PATH}",
+                written.len()
+            ));
+        }
     }
     Ok(Outcome::Equal)
 }

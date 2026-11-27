@@ -5682,16 +5682,25 @@ drop runs; only `--target tlaplus` does.
   `extra_checks.txt`.
 - `record_compile.sh <out> <lists>...` runs Quint 0.33.1 on each and `condense_compile.py` stores,
   per `.qnt` file, `<file>.compile.json` under `tests/quint/`: each check's arguments and either
-  its whole output or the first error line. It checks when recording that Quint's stdout is the
-  compact JSON of what it holds and that the condensed file gives it back. Subtrees are stored
-  once per file: 17 MB in 171 files, against about 130 MB as Quint writes them.
-- The test (`tests/compile/`) compares the crate's whole output with Quint's key by key, naming
-  the first path that differs, then as text. A check Quint refuses must be refused with Quint's
+  either its output or the first error line. Of the output, `table`, `types` and `effects` are
+  kept as their length in bytes and FNV-1a hash, and every other key in full (the main module
+  most of all, so a difference there is named by its path), with the order of all keys. It
+  checks when recording that Quint's stdout is the compact JSON of what it holds, that it is its
+  keys' texts joined, and that the condensed file gives back what it keeps. Subtrees are stored
+  once per file: 3.3 MB in 171 files (17 MB with the three keys in full, about 130 MB as Quint
+  writes them); the crate's `tests/` came from 38 MB to 25 MB. `KEEP=all` records the three keys
+  in full, for a person who wants the path of a difference a hash only reports: the failing
+  test says what to run.
+- The test (`tests/compile/`) compares the crate's whole output with Quint's: the order of the
+  keys, each key kept in full key by key, naming the first path that differs, and every key's
+  text by its length and hash. A check Quint refuses must be refused with Quint's
   code and message (a syntax error by its code alone, since the crate's syntax messages are its
   own; a flattener crash by its message, which Quint gives no code). Then earnest's reader
-  (`earnest_quint::read`, searched by `earnest_check::explore` to 20,000 states) is given Quint's
-  recording and the crate's output: the outcomes (status, states, every rule's verdict and path)
-  must be equal.
+  (`earnest_quint::read`, searched by `earnest_check::explore` to 20,000 states) is given each
+  output equal to Quint's byte for byte, so the model it builds is the one Quint's recording
+  gives. Before the fixtures kept hashes, at `b95c0e7`, the reader was given both, Quint's
+  recording and the crate's output, and the outcomes (status, states, every rule's verdict and
+  path) were equal on all 315.
 
 To record again (the tests need no Node):
 
@@ -5709,7 +5718,7 @@ tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint cra
 | --- | --- | --- | --- |
 | Every check earnest compiles under `tasks/` (`checks.txt`), on the tree merged with `claude/lucid-brown-f5xvr8` at `29b9446` | 256 | 246 | 10 refused by both with Quint's code and message: 4 `init` not found, 2 `Internal error while flattening`, 2 `QNT203` (`quintrefuses/refused.qnt`), 2 `QNT000` type errors (`typed/illtyped.qnt`) |
 | The 17 shapes, every name tried; every module of `tasks/quint/imports/` and of the samples; what a check adds (`extra_checks.txt`) | 283 | 69 | 214 refused by both, each with Quint's code and message: names a shape does not see (`QNT404`), modules with no `init`, the two flattener crashes, `QNT202` (`two_routes.qnt`) |
-| The reader, on each of the 315 equal | 315 | 315 | 263 searched with the same outcome, 52 unreadable both ways with the same problems |
+| The reader, on each of the 315 equal | 315 | 315 | 263 searched, 52 unreadable; at `b95c0e7`, given Quint's recording too, the same outcome on all 315 |
 | Quint's repository at `v0.33.1`, in the container only: each module with `action init` and `action step` (`corpus_checks.py`), `--main M` | 108 modules in 93 of the 196 files | 106, `types` and `effects` included | 2 refused by both with Quint's message: `adr006before.qnt` (a syntax error, `QNT000`) and `two_phase_commit_modules.qnt` (`Internal error while flattening`) |
 
 The command for the last row: `python3 -I tasks/quint/syntax/corpus_checks.py <quint> > <list>`,
