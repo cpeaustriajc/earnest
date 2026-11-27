@@ -307,6 +307,7 @@ val seen =
 | two | any number | nothing: the check is `unreadable`, and the message names both |
 
   So one setup of a spec can label its chart its own way while another takes the spec's labels. A module brought by more than one import of one instance, as `import Spec.*` beside `import Spec as P` and `export P.*`, brings one label; two instances of one spec bring two.
+- A label is a `val`, `pure val`, `def` or `pure def` with no parameters, which Quint treats alike: each is a value. A `def` label in a spec leaves its setups built from `quint typecheck`, as a `val` does.
 - A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives each label to `quint compile` after the check's invariants as an equality of the label with itself, `--invariant "inRange,seen == seen,retried == retried"`, so that the compiled module keeps the labels' definitions. Quint writes `and(inRange, eq(seen, seen), eq(retried, retried))`, which is well typed for a label of any type and true in every state, and which `quint typecheck` accepts. Earnest takes each `eq(name, name)` out of the compiled JSON again before it reads the invariants, leaving every other byte, numbers among them, as Quint wrote it, and refuses the check when the invariants do not end with those equalities. A setup built from `quint typecheck` gets its labels as the same equalities, and stays built from the typecheck, so its imported runs are still played.
 - A check that plays only runs searches nothing and draws no chart, so it uses no label. `confirm --quint`, `confirm --tlc` and `earnest tla` leave the labels out.
 - A `val` may carry both a `@check` and a `@view` mark: the property is judged, and the chart shows `true` or `false`. The lines of the doc comment other than the marks are the rule's sentence. A `val` holds at most one `@view` mark.
@@ -315,7 +316,7 @@ val seen =
   - anything after the word, such as `@view state, phase`;
   - `///@view state` with no space after the slashes, which `quint parse` hands over as `view state`: earnest reads the `///@` in the source line;
   - a second `@view` mark in one doc comment;
-  - `@view` on anything but a `val` with no parameters: a `def` (the message says to write a `val`), a definition with parameters, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
+  - `@view` on anything but a `val`, `pure val`, `def` or `pure def` with no parameters: a definition with parameters, a `nondet`, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
   - a check with two `@view state` definitions of its own, or none of its own and two it imports, and the same for `@view group`: the message names them;
   - `@view` in another letter case, as `/// @View state`, and `@view` in a comment that `quint parse` does not hand over, `// @view state` or `/** @view state */`, on the lines directly above a declaration: the message shows `/// @view state`. A doc line is a mark only when it starts with `@view` or `@check`, so a misspelling such as `/// @vew state` is read as a sentence, and the chart keeps the labels it had;
   - a label that reads a variable that `init`, `step` and the checked properties do not read, since the search does not hold that variable;
