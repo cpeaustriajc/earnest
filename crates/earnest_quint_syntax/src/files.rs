@@ -30,6 +30,10 @@ impl Parsed {
     /// definition it names, with `depth`, and `importedFrom`, `hidden`, `namespaces` and
     /// `shadowing` where Quint sets them. Keys are the ids as text, in numeric order.
     pub fn table(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.table_here())
+    }
+
+    fn table_here(&self) -> Json {
         Json::Object(
             self.table
                 .iter()
@@ -40,6 +44,10 @@ impl Parsed {
 
     /// The whole of what `quint parse --out` writes for a file it accepts.
     pub fn output(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.output_here())
+    }
+
+    fn output_here(&self) -> Json {
         Json::object(vec![
             ("stage", Json::text("parsing")),
             ("warnings", Json::List(Vec::new())),

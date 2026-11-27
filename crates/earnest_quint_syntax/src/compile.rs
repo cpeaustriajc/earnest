@@ -41,13 +41,15 @@ pub struct Compiled {
     effects: Json,
 }
 
+static NULL: Json = Json::Null;
+
 impl Compiled {
     /// The main module, flattened: what `quint compile` writes under `modules`.
     pub fn main_module(&self) -> &Json {
         self.modules
             .iter()
             .find(|module| text(module, "name") == self.main)
-            .unwrap_or(&Json::Null)
+            .unwrap_or(&NULL)
     }
 
     /// Every module Quint flattened, in its order, the main one among them. The type and effect
@@ -59,6 +61,10 @@ impl Compiled {
     /// The `table` `quint compile` writes: every name of every flattened module, keys in
     /// numeric order.
     pub fn table(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.table_here())
+    }
+
+    fn table_here(&self) -> Json {
         self.table.to_json()
     }
 
@@ -83,6 +89,10 @@ impl Compiled {
 
     /// The whole of what `quint compile --target json` writes to stdout.
     pub fn output(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.output_here())
+    }
+
+    fn output_here(&self) -> Json {
         Json::object(vec![
             ("stage", Json::text("compiling")),
             ("warnings", Json::List(Vec::new())),

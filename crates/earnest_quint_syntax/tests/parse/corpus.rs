@@ -193,8 +193,9 @@ pub(crate) fn quint_output(phases: &Json, parse: &Json) -> Result<Json, String> 
         .map(|(module, order)| sorted_module(module, order, &depth))
         .collect::<Result<_, _>>()?;
     let mut index = HashMap::new();
-    nodes(phases.get("modules").unwrap_or(&Json::Null), &mut index);
-    let table = decoded(parse.get("table").unwrap_or(&Json::Null), &index)?;
+    let null = Json::Null;
+    nodes(phases.get("modules").unwrap_or(&null), &mut index);
+    let table = decoded(parse.get("table").unwrap_or(&null), &index)?;
     let key = |name: &str| parse.get(name).cloned().unwrap_or(Json::Null);
     Ok(Json::Object(vec![
         ("stage".to_owned(), key("stage")),
@@ -221,7 +222,8 @@ fn first_place(error: &Json) -> Option<(usize, usize)> {
 }
 
 fn same_name_refusal(ours: Result<Problem, String>, errors: &[Json]) -> Result<(), String> {
-    let first = errors.first().unwrap_or(&Json::Null);
+    let null = Json::Null;
+    let first = errors.first().unwrap_or(&null);
     let explanation = explanation_of(first);
     let place = first_place(first).or_else(|| {
         errors

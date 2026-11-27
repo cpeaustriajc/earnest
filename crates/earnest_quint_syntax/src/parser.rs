@@ -329,15 +329,13 @@ fn is_unit_type(value: &Json) -> bool {
             == Some(&Json::text("empty"))
 }
 
-fn attach_doc(declaration: Json, doc: &str) -> Json {
-    match declaration {
-        Json::Object(fields) => {
-            let mut documented = vec![("doc".to_owned(), Json::text(doc))];
-            documented.extend(fields);
-            Json::Object(documented)
-        }
-        other => other,
+fn attach_doc(mut declaration: Json, doc: &str) -> Json {
+    if let Json::Object(fields) = &mut declaration {
+        let mut documented = vec![("doc".to_owned(), Json::text(doc))];
+        documented.append(fields);
+        *fields = documented;
     }
+    declaration
 }
 
 fn doc_text(tokens: &[Token]) -> String {

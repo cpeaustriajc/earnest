@@ -688,15 +688,14 @@ fn an_added_definition_s_mode_error_is_dropped_as_quint_compile_drops_it() {
         ("qualifier", Json::Text("val".to_owned())),
         ("expr", assignment),
     ]);
-    let Json::Object(mut entries) = table else {
+    let mut table = table;
+    let Json::Object(entries) = &mut table else {
         panic!("the table is an object");
     };
     entries.push(("90000".to_owned(), variable.clone()));
     entries.push(("90003".to_owned(), definition.clone()));
     assert!(
-        parsed
-            .analyze_added(&Json::Object(entries), &[definition])
-            .is_ok(),
+        parsed.analyze_added(&table, &[definition]).is_ok(),
         "quint compile --invariant \"x' = 1\" is not refused"
     );
 }

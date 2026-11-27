@@ -72,3 +72,9 @@ pub(crate) fn reading_on_large_stack<T: Send>(
             .map_err(|payload| panic::resume_unwind(payload))
     })
 }
+
+/// What `work` builds, built on a large stack as [`on_large_stack`] runs it, or on this thread
+/// when no thread can be started.
+pub(crate) fn built_on_large_stack<T: Send>(work: impl Fn() -> T + Sync) -> T {
+    on_large_stack(&work).unwrap_or_else(|_| work())
+}
