@@ -84,6 +84,13 @@ fn violated(states: u64) -> String {
     )
 }
 
+const TOP: (&str, &str) = ("floor < 3, floor' = floor + 1", "floor < 5, floor' = floor + 1");
+
+const FOLD: (&str, &str) = (
+    "  action step = any { up, down }",
+    "  pure def total(s: Set[int]): int = s.fold(0, (a, b) => a + b)\n  action step = any { up, down }",
+);
+
 struct Quint {
     sandbox: Sandbox,
 }
@@ -138,6 +145,15 @@ impl Quint {
             "\n  ranges\n    1) emptyTest failed after 1 test(s)\n\n  1 failed\nerror: Tests failed\n",
         );
         quint
+    }
+
+    fn changed_by_hand(&self, edits: &[(&str, &str)]) {
+        let mut text = self.sandbox.read("specs/confirm.qnt");
+        for (written, changed) in edits {
+            assert!(text.contains(written), "`{written}` is in `lift`");
+            text = text.replacen(written, changed, 1);
+        }
+        self.sandbox.write("specs/confirm.qnt", &text);
     }
 
     fn answer(&self, key: &str, said: &str) {
@@ -262,33 +278,7 @@ fn another_verdict_or_count_from_quint_verify_differs() {
 fn a_compiled_model_changed_by_hand_differs_from_what_quint_reads_in_the_qnt_file() {
     let quint = Quint::new();
     quint.confirm("lift").exits(0);
-    let cache = quint.sandbox.path().join(".earnest/quint");
-    let compiled: Vec<PathBuf> = fs::read_dir(&cache)
-        .expect("the compiled JSON is cached")
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            !path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with("places-"))
-        })
-        .filter(|path| {
-            fs::read_to_string(path).is_ok_and(|text| text.contains("\"name\":\"lift\""))
-        })
-        .collect();
-    assert_eq!(
-        compiled.len(),
-        1,
-        "one compiled JSON of `lift`: {compiled:?}"
-    );
-    let text = fs::read_to_string(&compiled[0]).expect("the cache can be read");
-    let top = r#"{"id":8,"kind":"int","value":3}"#;
-    assert!(text.contains(top), "the bound of `up` is in the JSON");
-    fs::write(
-        &compiled[0],
-        text.replace(top, r#"{"id":8,"kind":"int","value":5}"#),
-    )
-    .expect("the cache can be written");
+    quint.changed_by_hand(&[TOP]);
     let run = quint.confirm("lift");
     run.exits(1);
     let lines: Vec<&str> = run.stdout.lines().collect();
@@ -691,43 +681,13 @@ fn quint_given_by_a_relative_path_runs_for_confirm_as_it_runs_for_verify() {
 
 fn a_difference_in_lift_compiled_as(fixture: &str) -> Run {
     let quint = Quint::new();
-    quint.sandbox.write(
-        "fake/compiled/lift.json",
-        &fs::read_to_string(
-            repository()
-                .join("tasks/quint/confirm/fixtures")
-                .join(fixture),
-        )
-        .expect("the compiled `lift` can be read"),
-    );
+    let beside: &[(&str, &str)] = if fixture == "lift-with-fold.json" {
+        &[TOP, FOLD]
+    } else {
+        &[TOP]
+    };
     quint.confirm("lift").exits(0);
-    let cache = quint.sandbox.path().join(".earnest/quint");
-    let compiled: Vec<PathBuf> = fs::read_dir(&cache)
-        .expect("the compiled JSON is cached")
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            !path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with("places-"))
-        })
-        .filter(|path| {
-            fs::read_to_string(path).is_ok_and(|text| text.contains("\"name\":\"lift\""))
-        })
-        .collect();
-    assert_eq!(
-        compiled.len(),
-        1,
-        "one compiled JSON of `lift`: {compiled:?}"
-    );
-    let text = fs::read_to_string(&compiled[0]).expect("the cache can be read");
-    let top = r#"{"id":8,"kind":"int","value":3}"#;
-    assert!(text.contains(top), "the bound of `up` is in the JSON");
-    fs::write(
-        &compiled[0],
-        text.replace(top, r#"{"id":8,"kind":"int","value":5}"#),
-    )
-    .expect("the cache can be written");
+    quint.changed_by_hand(beside);
     quint.confirm("lift")
 }
 

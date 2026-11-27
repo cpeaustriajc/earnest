@@ -4,7 +4,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
 
 use crate::support::{Run, Sandbox, find_model, model, repository};
 
@@ -607,12 +606,11 @@ fn a_compiled_json_named_on_the_command_line_needs_no_quint() {
 fn two_unreadable_checks_of_one_file_are_told_apart_by_their_module() {
     let quint = Quint::new();
     quint.with_check("models", "wide", "counter");
-    for main in ["counter", "wide"] {
-        quint.sandbox.write(
-            &format!("fake/fails/{main}"),
-            "error: name resolution failed\n",
-        );
-    }
+    let source = quint.sandbox.read("models/counter.qnt");
+    quint.sandbox.write(
+        "models/counter.qnt",
+        &source.replace("count < 4", "count < true"),
+    );
     let run = quint.earnest(&["verify"]);
     run.exits(1);
     let headers: Vec<&str> = run
@@ -785,32 +783,18 @@ fn a_pick_among_every_integer_is_reported_at_its_line_in_the_quint_file() {
         fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
     };
-    quint
-        .sandbox
-        .write("fake/compiled/allNumbers.json", &fixture("allnumbers.json"));
-    for name in ["allnumbers.parse.json", "allnumbers.sourcemap.json"] {
-        quint
-            .sandbox
-            .write(&format!("fake/parsed/{name}"), &fixture(name));
-    }
-    quint
-        .sandbox
-        .write("models/allnumbers.qnt", &fixture("allnumbers.qnt"));
-    let mut parsed: Value =
-        serde_json::from_str(&fixture("allnumbers.parse.json")).expect("the parse fixture is JSON");
-    for module in parsed["modules"].as_array_mut().into_iter().flatten() {
-        if module["name"] == "allNumbers" {
-            module["doc"] = Value::from("@check");
-            if let Some(declarations) = module["declarations"].as_array_mut() {
-                declarations.push(serde_json::json!({
-                    "id": 999_999, "kind": "def", "name": "ok", "qualifier": "val", "doc": "@check"
-                }));
-            }
-        }
-    }
-    quint
-        .sandbox
-        .write("fake/parsed/allnumbers.parse.json", &parsed.to_string());
+    let source = fixture("allnumbers.qnt");
+    let (opening, rest) = source
+        .split_once('\n')
+        .expect("the module opens on the first line");
+    let body = rest
+        .trim_end()
+        .strip_suffix('}')
+        .expect("the module closes on the last line");
+    quint.sandbox.write(
+        "models/allnumbers.qnt",
+        &format!("/// @check ok\n{opening}{body}  val ok = true\n}}\n"),
+    );
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
     assert_eq!(

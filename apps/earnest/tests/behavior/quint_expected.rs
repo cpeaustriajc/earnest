@@ -4,7 +4,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use serde_json::Value;
 
 use crate::support::{Run, Sandbox, model, repository, rule, without_timings};
 
@@ -104,43 +103,27 @@ impl Quint {
 
     fn mark(&self, module: &str, marks: &[(&str, &str)]) {
         assert!(MODULES.contains(&module), "{module} is a sample");
-        let mut parsed: Value = serde_json::from_str(&sample(&format!("{module}.parse.json")))
-            .expect("the parse fixture is JSON");
-        let doc_of = |name: &str| {
-            marks
+        let opening = format!("module {module} {{");
+        let mut lines: Vec<String> = Vec::new();
+        for line in sample(&format!("{module}.qnt")).lines() {
+            let declared = line.split_whitespace().nth(1);
+            if line == opening {
+                lines.push("/// @check".to_owned());
+            } else if let Some((_, mark)) = marks
                 .iter()
-                .find(|(marked, _)| *marked == name)
-                .map(|(_, mark)| Value::from(*mark))
-        };
-        for each in parsed["modules"].as_array_mut().into_iter().flatten() {
-            if each["name"] == module {
-                each["doc"] = Value::from("@check");
+                .find(|(name, _)| declared == Some(*name) && line.contains(" = "))
+            {
+                lines.push(format!("  /// {mark}"));
             }
-            for declaration in each["declarations"].as_array_mut().into_iter().flatten() {
-                if let Some(doc) = declaration["name"].as_str().and_then(doc_of) {
-                    declaration["doc"] = doc;
-                }
-            }
+            lines.push(line.to_owned());
         }
-        self.sandbox.write(
-            &format!("fake/parsed/{module}.parse.json"),
-            &parsed.to_string(),
-        );
-        self.sandbox.write(
-            &format!("fake/parsed/{module}.sourcemap.json"),
-            &sample(&format!("{module}.sourcemap.json")),
-        );
         let written: Vec<String> = marks
             .iter()
             .map(|(name, mark)| format!("{name} {mark}"))
             .collect();
         self.sandbox.write(
             &format!("models/{module}.qnt"),
-            &format!(
-                "{}// marked: {}\n",
-                sample(&format!("{module}.qnt")),
-                written.join(", ")
-            ),
+            &format!("{}\n// marked: {}\n", lines.join("\n"), written.join(", ")),
         );
     }
 
