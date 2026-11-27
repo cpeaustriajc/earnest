@@ -375,7 +375,11 @@ fn every_file_of_quint_s_repository_reads_as_quint_parse_writes_it() {
         unrecorded,
         refused_by_names,
     } = tally(&found, &recorded, &base);
-    different.extend(unrecorded.iter().map(|file| format!("{file}: {NOT_RECORDED}")));
+    different.extend(
+        unrecorded
+            .iter()
+            .map(|file| format!("{file}: {NOT_RECORDED}")),
+    );
     println!(
         "{} of {} files of Quint's repository equal to the whole of quint parse 0.33.1; {refused_by_names} of them refused by its name phases, each at Quint's place",
         found.len() - different.len(),
