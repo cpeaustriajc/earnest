@@ -70,16 +70,6 @@ case "$1" in
 esac
 "##;
 
-const FAILED_COMPILE: &str = "
- Error [QNT404]: Name 'y' not found
-
-  at FILE:4:22
-  4:   action step = x' = y + 1
-                          ^
-
-error: parsing failed
-";
-
 fn checks(name: &str) -> String {
     let path = repository().join("tasks/quint/checks").join(name);
     fs::read_to_string(&path)
@@ -201,7 +191,7 @@ fn message_of(report: &serde_json::Value) -> String {
 fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_checked() {
     let quint = Quint::new();
     quint.with_check("models", "counter", "counter");
-    quint.with_check("models", "temporal", "dead");
+    quint.with_check("models", "dead", "dead");
     let run = quint.earnest(&["verify"]);
     run.exits(1);
     assert_eq!(
@@ -238,10 +228,41 @@ fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_check
     );
     assert_eq!(
         ids(model(&report, "dead")),
-        ["ok", "later", "sooner"],
-        "and with its invariant and both temporal properties\n{report}"
+        ["ok"],
+        "and with its one invariant\n{report}"
     );
     assert_eq!(report["summary"]["models"], 2, "{report}");
+}
+
+#[test]
+fn a_marked_check_with_temporal_properties_judges_each_as_quint_compiles_them() {
+    let quint = Quint::new();
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "temporal", "dead");
+    let run = quint.earnest(&["verify"]);
+    run.exits(1);
+    assert_eq!(
+        run.model_line("dead")[..3],
+        ["fail", "dead", "4 states"],
+        "{run}"
+    );
+    assert_eq!(run.model_line("dead")[4], "3 rules, 0 runs", "{run}");
+    let broken: Vec<String> = run
+        .detail("dead")
+        .iter()
+        .filter_map(|line| line.strip_prefix("broken  ").map(str::to_owned))
+        .collect();
+    assert_eq!(
+        broken,
+        ["later", "sooner"],
+        "as the build before the switch prints with Quint 0.33.1's compile of `--invariant ok \
+         --temporal later,sooner`\n{run}"
+    );
+    assert_eq!(
+        run.summary_line(),
+        "2 models: 0 pass, 2 fail, 0 unfinished",
+        "{run}"
+    );
 }
 
 #[test]
@@ -282,12 +303,16 @@ fn an_unchanged_check_comes_from_the_cache_and_an_edit_checks_only_its_folder_ag
 #[test]
 fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
     let quint = Quint::new();
-    quint.with_check("models", "inrange", "counter");
+    quint.with_check("models", "counter", "counter");
     quint.with_check("models", "dead", "dead");
-    let dead = quint.sandbox.path().join("models/dead.qnt");
+    let dead = quint.sandbox.read("models/dead.qnt");
     quint.sandbox.write(
-        "fake/fails/dead",
-        &FAILED_COMPILE.replace("FILE", &dead.to_string_lossy()),
+        "models/dead.qnt",
+        &dead.replacen(
+            "var a: int\n\n  action init = a' = 0",
+            "var a: int\n  action init = a' = 0 + true",
+            1,
+        ),
     );
     let run = quint.earnest(&["verify", "--json"]);
     run.exits(1);
@@ -304,8 +329,8 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
     );
     assert_eq!(
         message_of(&report),
-        "Error [QNT404]: Name 'y' not found",
-        "Quint's own first error line"
+        "Error [QNT000]: Couldn't unify int and bool",
+        "the first line Quint 0.33.1 prints for this file"
     );
     assert!(
         find_model(&report, "counter").is_some(),
@@ -316,6 +341,57 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
         text.summary_line(),
         "2 models: 0 pass, 1 fail, 0 unfinished, 1 unreadable",
         "{text}"
+    );
+}
+
+#[test]
+fn a_name_not_found_is_refused_by_the_parse_at_its_place_and_nothing_is_compiled() {
+    let quint = Quint::new();
+    quint.with_check("models", "counter", "counter");
+    quint.with_check("models", "dead", "dead");
+    let dead = quint.sandbox.read("models/dead.qnt");
+    quint.sandbox.write(
+        "models/dead.qnt",
+        &dead.replacen(
+            "var a: int\n\n  action init = a' = 0",
+            "var a: int\n  action init = a' = y + 1",
+            1,
+        ),
+    );
+    let run = quint.earnest(&["verify", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    assert_eq!(
+        problems(&report),
+        [(
+            "models/dead.qnt".to_owned(),
+            4,
+            22,
+            "`quint parse`".to_owned()
+        )],
+        "{report}"
+    );
+    assert_eq!(
+        message_of(&report),
+        "[QNT404] Name 'y' not found",
+        "as `quint parse` explains it"
+    );
+    assert!(
+        find_model(&report, "dead").is_none() && find_model(&report, "counter").is_some(),
+        "the file is refused before its check is compiled, and the other is checked: {report}"
+    );
+}
+
+#[test]
+fn a_counter_marked_with_one_invariant_passes() {
+    let quint = Quint::new();
+    quint.with_check("models", "inrange", "counter");
+    let run = quint.earnest(&["verify"]);
+    run.exits(0);
+    assert_eq!(
+        run.model_line("counter")[..3],
+        ["pass", "counter", "12 states"],
+        "`inRange` alone holds, as the build before the switch prints with Quint 0.33.1\n{run}"
     );
 }
 
