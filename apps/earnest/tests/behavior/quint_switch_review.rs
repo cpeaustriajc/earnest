@@ -110,12 +110,12 @@ fn a_qnt_file_whose_name_is_not_utf8_is_refused_with_the_message_and_place_of_th
             Some("specs/caf\u{fffd}.qnt"),
             Some(1),
             Some(1),
-            Some("`quint parse`"),
+            Some("parsing as Quint"),
             Some("the Quint file can't be parsed"),
         ),
         "the build before the switch, with Quint 0.33.1, printed:\n\
          unreadable  specs/caf\u{fffd}.qnt\n  \
-         specs/caf\u{fffd}.qnt:1:1  `quint parse`  the Quint file can't be parsed\n{run}"
+         specs/caf\u{fffd}.qnt:1:1  parsing as Quint  the Quint file can't be parsed\n{run}"
     );
 }
 
@@ -157,7 +157,7 @@ module A {
         (5, 55, "[QNT000]".to_owned()),
         "the build before the switch, with Quint 0.33.1, printed:\n\
          unreadable  specs/a.qnt\n  \
-         specs/a.qnt:5:55  `quint parse`  [QNT000] no viable alternative at input '+}}'\n\
+         specs/a.qnt:5:55  parsing as Quint  [QNT000] no viable alternative at input '+}}'\n\
          where the switched build places it at 5:46, the start of `x' = v +`\n{run}"
     );
 }
@@ -187,7 +187,7 @@ module A {
         (8, 3, "[QNT000]".to_owned()),
         "the build before the switch, with Quint 0.33.1, printed:\n\
          unreadable  specs/a.qnt\n  \
-         specs/a.qnt:8:3  `quint parse`  [QNT000] no viable alternative at input '+}}'\n\
+         specs/a.qnt:8:3  parsing as Quint  [QNT000] no viable alternative at input '+}}'\n\
          where the switched build prints 7:5 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
     );
 }
@@ -217,7 +217,7 @@ module A {
         (9, 3, "[QNT000]".to_owned()),
         "the build before the switch, with Quint 0.33.1, printed:\n\
          unreadable  specs/a.qnt\n  \
-         specs/a.qnt:9:3  `quint parse`  [QNT000] extraneous input '/// @check\\n' expecting {{'{{', 'val', ...}}\n\
+         specs/a.qnt:9:3  parsing as Quint  [QNT000] extraneous input '/// @check\\n' expecting {{'{{', 'val', ...}}\n\
          where the switched build prints 7:3 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
     );
 }
@@ -259,7 +259,7 @@ module A {{
         took < Duration::from_mins(1) && stdout.starts_with("unreadable  specs/a.qnt"),
         "the build before the switch, with Quint 0.33.1, printed in 7 s:\n\
          unreadable  specs/a.qnt\n  \
-         specs/a.qnt:1:1  `quint parse`  the Quint file can't be parsed\n\
+         specs/a.qnt:1:1  parsing as Quint  the Quint file can't be parsed\n\
          the switched build took {took:?} and printed:\n{stdout}"
     );
 }

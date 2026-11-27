@@ -100,7 +100,7 @@ fn a_default_step_that_is_a_val_is_refused_with_the_argument_error_quint_prints(
             "specs/a.qnt".to_owned(),
             1,
             1,
-            "`quint compile --main a`".to_owned(),
+            "compiling `a` as Quint".to_owned(),
             "error: [QNT501] default --step action name 'step' is used by a val declaration"
                 .to_owned()
         )],
@@ -120,7 +120,7 @@ fn a_type_error_is_refused_at_its_place_with_the_first_line_quint_prints() {
             "specs/b.qnt".to_owned(),
             5,
             22,
-            "`quint compile --main b`".to_owned(),
+            "compiling `b` as Quint".to_owned(),
             "Error [QNT000]: Couldn't unify int and bool".to_owned()
         )],
         "Quint 0.33.1 prints this line first, and the place under it\n{run}"
@@ -142,7 +142,7 @@ fn a_name_not_found_is_refused_by_the_parse_at_its_place() {
             "specs/b.qnt".to_owned(),
             5,
             22,
-            "`quint parse`".to_owned(),
+            "parsing as Quint".to_owned(),
             "[QNT404] Name 'y' not found".to_owned()
         )],
         "as `quint parse` explains it\n{run}"
@@ -393,7 +393,7 @@ fn an_import_of_a_file_that_is_not_there_is_refused_as_quint_refuses_it() {
             "specs/a.qnt".to_owned(),
             3,
             3,
-            "`quint parse`".to_owned(),
+            "parsing as Quint".to_owned(),
             "[QNT013] import ... from './nothere': could not load".to_owned()
         )],
         "as Quint 0.33.1 prints it, with the file as shown\n{run}"

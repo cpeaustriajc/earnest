@@ -27,7 +27,7 @@ const CACHE: &str = "quint";
 const HERE: &str = ".";
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
 const QUALIFIED: &str = "::";
-const PARSE: &str = "`quint parse`";
+const PARSE: &str = "parsing as Quint";
 const NOT_PARSED: &str = "the Quint file can't be parsed";
 const NOT_READ: &str = "unreadable";
 /// The feature of a problem the reading of a compiled module meets outside the reader itself,
@@ -278,7 +278,7 @@ fn compile_failed(job: &Job, problem: &earnest_quint_syntax::Problem) -> Problem
     Problem::new(
         &file,
         place,
-        &format!("`quint compile --main {}`", job.check.main),
+        &format!("compiling `{}` as Quint", job.check.main),
         &said,
     )
 }
@@ -322,10 +322,10 @@ fn unbuilt(job: &Job, problem: Problem) -> Problem {
     let check = &job.check;
     Problem {
         message: format!(
-            "the check lists only runs, and the module `{}` sees no `{}` and `{}` that `quint \
-             compile` takes, nor does it import a module that has an `init` and a `step`: name \
-             in the check an `init` and a `step` the module sees, such as `A::init` of an \
-             `import Spec as A`. Quint said: {}",
+            "the check lists only runs, and the module `{}` sees no `{}` and `{}`, which compiling \
+             it as Quint needs, nor does it import a module that has an `init` and a `step`: \
+             name in the check an `init` and a `step` the module sees, such as `A::init` of an \
+             `import Spec as A`. Quint's message: {}",
             check.main, check.init, check.step, problem.message
         ),
         ..problem
@@ -374,7 +374,12 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
     Err(unbuilt(
         job,
         first.unwrap_or_else(|| {
-            Problem::new(&job.shown, TOP_OF_FILE, "`quint`", "nothing was compiled")
+            Problem::new(
+                &job.shown,
+                TOP_OF_FILE,
+                &format!("compiling `{}` as Quint", check.main),
+                "nothing was compiled",
+            )
         }),
     ))
 }
@@ -412,7 +417,7 @@ fn not_built(
     found: Option<&Places>,
 ) -> Option<String> {
     let Some(typechecked) = typechecked else {
-        return Some("`quint typecheck` gave nothing to build the check from".to_owned());
+        return Some("typechecking as Quint gave nothing to build the check from".to_owned());
     };
     let (id, written) = typechecked.not_built(&job.check.main)?;
     let at =
@@ -426,7 +431,7 @@ fn not_built(
                 )
             });
     Some(format!(
-        "the checker does not build `{written}`{at} from `quint typecheck`"
+        "the checker does not build `{written}`{at} from the file typechecked as Quint"
     ))
 }
 
@@ -680,10 +685,14 @@ fn compiled_once(
         .zip(alike)
         .map(|(built, at)| match built {
             Some(done) => done,
-            None => once
-                .get(at)
-                .cloned()
-                .unwrap_or_else(|| Err(Problem::new("", TOP_OF_FILE, "`quint`", "no compile ran"))),
+            None => once.get(at).cloned().unwrap_or_else(|| {
+                Err(Problem::new(
+                    "",
+                    TOP_OF_FILE,
+                    "compiling as Quint",
+                    "no compile ran",
+                ))
+            }),
         })
         .collect()
 }

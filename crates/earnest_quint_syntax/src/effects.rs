@@ -966,7 +966,10 @@ impl crate::files::Parsed {
         let analysis =
             analyze(modules, table, &type_of).map_err(|inference::Crash(why)| crate::Problem {
                 code: "unreadable".to_owned(),
-                message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
+                message: format!(
+                    "Quint 0.33.1 stops with an internal error here when it typechecks the \
+                     file: {why}"
+                ),
                 source: self.main_source().to_owned(),
                 line: 1,
                 column: 1,
@@ -1002,7 +1005,9 @@ impl crate::files::Parsed {
     fn analyze_added_here(&self, table: &Json, definitions: &[Json]) -> Result<(), crate::Problem> {
         let crashed = |inference::Crash(why)| crate::Problem {
             code: "unreadable".to_owned(),
-            message: format!("quint compile 0.33.1 stops with an internal error here: {why}"),
+            message: format!(
+                "Quint 0.33.1 stops with an internal error here when it compiles the file: {why}"
+            ),
             source: self.main_source().to_owned(),
             line: 1,
             column: 1,
