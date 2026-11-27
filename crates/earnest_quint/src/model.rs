@@ -472,7 +472,7 @@ fn written_twice(declarations: &[Declaration], main: &str) -> Option<Refusal> {
         Some(refusal(
             &format!("`{first}`"),
             &format!(
-                "`quint compile --main {main}` writes this variable twice under one id, as \
+                "compiling `{main}` as Quint writes this variable twice under one id, as \
                  `{first}` and `{second}`, so the compiled module is not one Quint means: Quint's \
                  own TLC run (`quint verify --backend tlc`) stops on it too, while `quint test` \
                  plays the module. Quint compiles it so when another module of the file brings \
