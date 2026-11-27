@@ -13,4 +13,5 @@ for file in "$@"; do
   "$quint" parse "$file" --out "$target.parse.json" --source-map "$target.map.json" > /dev/null 2>&1 || true
   python3 -I "$here/condense.py" "$root" "$target.phases.json" "$target.parse.json" "$target.map.json"
   rm "$target.map.json"
+  "$here/record_types.sh" "$out" "$file"
 done

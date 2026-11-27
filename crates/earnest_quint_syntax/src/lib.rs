@@ -19,6 +19,7 @@
 
 mod files;
 mod ids;
+mod inference;
 mod json;
 mod lexer;
 mod names;

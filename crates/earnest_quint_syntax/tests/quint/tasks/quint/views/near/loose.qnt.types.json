@@ -1,0 +1,1 @@
+{"schemes":[{"typeVariables":[],"rowVariables":[],"type":{"kind":"int"}},{"typeVariables":[],"rowVariables":[],"type":{"kind":"set","elem":{"kind":"int"},"id":3}}],"types":{"1":0,"2":1,"3":0,"4":0},"errors":[],"typecheck":["[QNT206] 'nondet' can only be used inside actions, not at the top level"]}

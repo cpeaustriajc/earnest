@@ -5,3 +5,4 @@ mod corpus;
 mod docs;
 mod names;
 mod refusals;
+mod types;
