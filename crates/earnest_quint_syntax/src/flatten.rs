@@ -1163,7 +1163,7 @@ pub(crate) struct Flat {
 pub(crate) fn flatten_modules(
     modules: &[Json],
     table: &Table,
-    types: &Json,
+    mut types: Json,
     ids: &mut Ids,
 ) -> Result<Flat, String> {
     let mut copies = Vec::new();
@@ -1174,22 +1174,13 @@ pub(crate) fn flatten_modules(
         .collect();
     let (inlined, mut flat_table) = inline_aliases(&unique, &table);
     let aliases = Inliner::of(&table);
-    let types = match types {
-        Json::Object(schemes) => Json::Object(
-            schemes
-                .iter()
-                .map(|(id, scheme)| {
-                    let mut scheme = scheme.clone();
-                    if let Some(written) = scheme.get("type") {
-                        let inlined = inline_type(&aliases, written);
-                        put(&mut scheme, "type", inlined);
-                    }
-                    (id.clone(), scheme)
-                })
-                .collect(),
-        ),
-        other => other.clone(),
-    };
+    if let Json::Object(schemes) = &mut types {
+        for (_, scheme) in schemes {
+            if let Some(written) = field_mut(scheme, "type") {
+                inline_in_place(&aliases, written);
+            }
+        }
+    }
     let mut state = Modules {
         aliases: inlined
             .iter()
