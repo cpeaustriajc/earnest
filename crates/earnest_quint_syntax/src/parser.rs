@@ -129,7 +129,7 @@ impl Within {
 
 #[derive(Clone, Copy)]
 enum Unfollowed {
-    Taken,
+    TakenBeyond(usize),
     Refused,
 }
 
@@ -409,7 +409,12 @@ impl Parser<'_> {
     }
 
     fn unexpected<T>(&self, expected: &str) -> Result<T, Reported> {
-        let shown = self.token(self.at).text.clone();
+        let shown = self
+            .token(self.at)
+            .text
+            .trim_end_matches(['\r', '\n'])
+            .replace('\r', "\\r")
+            .replace('\n', "\\n");
         Err(self.failure(format!("unexpected '{shown}', expected {expected}")))
     }
 
@@ -2189,10 +2194,14 @@ impl Parser<'_> {
             }
             self.rewind(mark);
             self.stops.push(candidate);
-            if self.let_parts(mark.candidates).is_ok() {
+            let reached = self.reached.replace(0);
+            let tried = self.let_parts(mark.candidates);
+            let reach = self.reached.get().max(self.at);
+            self.reached.set(reached.max(self.reached.get()));
+            if tried.is_ok() {
                 if self.can_follow() {
                     following.push(candidate);
-                } else {
+                } else if matches!(unfollowed, Unfollowed::TakenBeyond(failed) if reach >= failed) {
                     parsing = parsing.or(Some(candidate));
                 }
             }
@@ -2200,7 +2209,7 @@ impl Parser<'_> {
         self.rewind(mark);
         let chosen = match (following.as_slice(), unfollowed) {
             ([first, ..], _) => *first,
-            ([], Unfollowed::Taken) => parsing?,
+            ([], Unfollowed::TakenBeyond(_)) => parsing?,
             ([], Unfollowed::Refused) => return None,
         };
         self.stops.push(chosen);
@@ -2226,7 +2235,11 @@ impl Parser<'_> {
                 }
             }
             Err((failure, candidates)) => {
-                let Some(parts) = self.choose(&mark, candidates.clone(), Unfollowed::Taken) else {
+                let Some(parts) = self.choose(
+                    &mark,
+                    candidates.clone(),
+                    Unfollowed::TakenBeyond(failure.token),
+                ) else {
                     self.rewind(&mark);
                     self.candidates.extend(candidates);
                     return Err(*failure);
