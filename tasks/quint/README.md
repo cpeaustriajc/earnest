@@ -5577,7 +5577,7 @@ used by one of them.
 | `QNT000` `Can't bind e to E: cyclical binding` | unification | yes; no file found where the type checker does not refuse it first | |
 | `QNT000` `Can't unify different types of effects` | unification | yes (a constant typed by a plain alias of an operator type gets the pure effect; found by the review) | `refused/effects_different_kinds_of_effect.qnt` |
 | `Can't unify <kind> ... and <kind> ...` | concrete unification | not needed: two different kinds always coexist, so it is never raised | |
-| `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; no file found that reaches them | |
+| `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; the second review reached `Unexpected arrow found in operator result` | `review/typing/instance_crash_after_mode_error.qnt` |
 | `Arrow effect after substitution should be an arrow`, `Error applying fresh names substitution`, `Impossible: all cases should be covered`, `Unexpected error while formatting effect scheme` | thrown | can't happen: the substitutions they guard never fail | |
 
 Each `QNT000` text is the whole error tree, with every unification tried and the expressions in
@@ -5585,11 +5585,15 @@ Quint's printing.
 
 ### Where the crate knowingly does other than Quint's effect passes
 
-- The analysis stops at the first module with an error, where Quint goes on: the first error is
-  the same, and a refused file has no table (accepted: earnest reports one problem).
-- A file on which `quint typecheck` throws is refused as `unreadable`, where Quint stops with a
-  stack trace. For the type checker's crash: `tests/samples/matching.qnt`. For the effect passes'
-  throws: no file found.
+- Only the first error is reported, where Quint lists them all (accepted: earnest reports one
+  problem). The analysis runs every module, as Quint does, so a pass that throws in a later module
+  is reached: until the second review it stopped at the first module with an error, and refused
+  `review/typing/instance_crash_after_mode_error.qnt` with the earlier module's `QNT200`.
+- A file on which `quint typecheck` throws, in any pass of any module, is refused as `unreadable`,
+  whatever errors were collected before, where Quint stops with a stack trace and writes nothing.
+  For the type checker: `tests/samples/matching.qnt`. For the effect passes (the mode checker's
+  `Unexpected arrow found in operator result` on an instance override that returns an operator):
+  `review/typing/instance_crash_after_mode_error.qnt`.
 
 ### Where Quint looks wrong, and what the crate does
 
