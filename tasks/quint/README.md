@@ -5387,7 +5387,11 @@ recordings and compares ours with it, path by path and then as text:
 `every_sample_has_the_whole_output_of_quint_typecheck_or_its_first_error`: 372 of the 520 files
 under `tasks/` and `crates/` with the whole output equal, 83 refused with Quint's first error at
 Quint's place, the 2 where Quint throws refused as `unreadable`, 63 refused by the parse and name
-phases, 0 differ. `the_first_error_across_quint_s_passes_is_the_one_quint_reports_first` pins
+phases, 0 differ. On Quint's 196 files at `v0.33.1`, in the container only
+(`every_file_of_quint_s_repository_has_the_whole_output_of_quint_typecheck`, recorded with
+`RECORD_ROOT=<clone> record.sh`): 172 with the whole output equal, 5 refused with Quint's first
+error, 19 refused by the parse and name phases, 0 differ.
+`the_first_error_across_quint_s_passes_is_the_one_quint_reports_first` pins
 three: QNT205 printing the type of a `nondet` body, a type error before a mode error, and an
 effect error before a type application error.
 
