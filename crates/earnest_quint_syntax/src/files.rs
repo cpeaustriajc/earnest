@@ -71,7 +71,11 @@ struct Pending {
 ///
 /// The first problem Quint reports for the file, when it refuses it: a syntax error, an error
 /// its parser reports (such as a type name in lowercase), an import it can't load, a cyclic
-/// import, two modules of one name or an import of a module no file has. A syntax error in an
+/// import, two modules of one name or an import of a module no file has; then the first error
+/// of its name phases, at the place Quint gives it: a name not found (`QNT404`), two definitions
+/// of one name (`QNT101`), a cycle of declarations (`QNT099`), an instance's override that is
+/// not a constant (`QNT406`), a module and an import's name that clash (`QNT102`), an export of
+/// the module itself (`QNT407`) or of an unknown module (`QNT405`). A syntax error in an
 /// imported file is refused too, under the code `unreadable`: Quint ignores it there and reads
 /// on in a tree its parser repaired, which is not reproduced.
 pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<Parsed, Problem> {

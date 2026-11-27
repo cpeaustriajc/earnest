@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT102] Module with name 'Later' was already defined","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_module_twice.qnt","start":{"line":8,"col":0,"index":69},"end":{"line":10,"col":31,"index":100}}]}],"order":[[2],[4],[6]],"depth":{},"table":{"2":{"$":2,"+":[["depth",0]]}}}
