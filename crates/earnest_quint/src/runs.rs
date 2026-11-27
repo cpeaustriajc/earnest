@@ -38,9 +38,17 @@ enum Place {
     Inside,
 }
 
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum First {
+    #[default]
+    NotRead,
+    Read,
+    Asserted,
+}
+
 #[derive(Default)]
 struct Drawn {
-    started: bool,
+    first: First,
     starts: Option<Vec<Vec<Value>>>,
     start: Option<Expr>,
     steps: Vec<Step>,
@@ -338,6 +346,7 @@ impl<'a> Run<'_, 'a> {
                 let can_be_false = self.walk(first, Place::Inside, drawn)?;
                 match drawn.steps.last_mut() {
                     Some(step) if can_be_false => step.refused = true,
+                    _ if drawn.first == First::Asserted => {}
                     _ => drawn.must_not_finish = true,
                 }
                 Ok(false)
@@ -476,27 +485,28 @@ impl<'a> Run<'_, 'a> {
             let why = format!("{}, in the run `{}`", refused.why, self.name);
             Refusal { why, ..refused }.within(self.name)
         })?;
-        let slots = paths
-            .iter()
-            .flat_map(|path| &path.choices)
-            .map(|choice| choice.slot.saturating_add(1))
-            .fold(self.reader.slots, usize::max);
         let falls = match &starts {
-            Some(found) if !found.is_empty() => {
-                let members: Vec<usize> = (0..paths.len()).collect();
-                let mut frame = crate::frame(&[], slots);
-                let mut bound = Vec::new();
-                falls_for(&paths, &members, &mut frame, &mut bound).unwrap_or_default()
-            }
+            Some(found) if !found.is_empty() => self.first_falls(&paths),
             _ => Vec::new(),
         };
         Ok((starts, falls))
     }
 
+    fn first_falls(&self, paths: &[Path]) -> Vec<(String, Value)> {
+        let slots = paths
+            .iter()
+            .flat_map(|path| &path.choices)
+            .map(|choice| choice.slot.saturating_add(1))
+            .fold(self.reader.slots, usize::max);
+        let members: Vec<usize> = (0..paths.len()).collect();
+        let mut frame = crate::frame(&[], slots);
+        falls_for(paths, &members, &mut frame, &mut Vec::new()).unwrap_or_default()
+    }
+
     fn leaf(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
         drawn.ends_false = place == Place::Last;
-        if !drawn.started {
-            drawn.started = true;
+        if drawn.first == First::NotRead {
+            drawn.first = First::Read;
             if self.is_init(expr) {
                 if let Some(field) = &self.differs {
                     return self.refuse_at(
@@ -507,10 +517,19 @@ impl<'a> Run<'_, 'a> {
                          the run with an action that assigns it",
                     );
                 }
+                self.reader.in_init = true;
+                let paths = self.reader.paths(expr);
+                self.reader.in_init = false;
+                if let Ok(paths) = paths {
+                    drawn.start_falls = self.first_falls(&paths);
+                }
                 return Ok(false);
             }
             let (starts, falls) = self.first_states(expr)?;
             drawn.ends_false &= starts.is_some();
+            if starts.is_none() {
+                drawn.first = First::Asserted;
+            }
             drawn.starts = Some(starts.unwrap_or_default());
             drawn.start_falls = falls;
             return Ok(false);
@@ -640,7 +659,12 @@ fn falls_for(
         let falls = if retried { every } else { first.is_some() };
         match first {
             Some(found) if falls => {
-                fell.get_or_insert(found);
+                if fell
+                    .as_ref()
+                    .is_none_or(|kept: &Vec<_>| kept.len() < found.len())
+                {
+                    fell = Some(found);
+                }
             }
             _ => return None,
         }

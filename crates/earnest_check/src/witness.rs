@@ -65,7 +65,6 @@ struct Ends {
 }
 
 struct Course<'a> {
-    sampled: bool,
     start_falls: &'a [(String, Value)],
     skips: bool,
     last_false: bool,
@@ -81,7 +80,6 @@ struct Course<'a> {
 impl<'a> Course<'a> {
     fn of_witness(witness: &'a Witness, model: &'a Model) -> Self {
         Self {
-            sampled: false,
             start_falls: &[],
             skips: false,
             last_false: false,
@@ -119,7 +117,6 @@ impl<'a> Course<'a> {
             _ => (false, false),
         };
         Self {
-            sampled: true,
             start_falls: &plan.start_falls,
             skips,
             last_false,
@@ -347,7 +344,7 @@ impl Player<'_, '_> {
                 &format!("the assertion of step {number}"),
             )?;
         }
-        let (mut moves, fell) = if course.sampled {
+        let (mut moves, fell) = if course.witness_expects.is_none() {
             let members: Vec<usize> = (0..leg.choices.len()).collect();
             let mut moves = Vec::new();
             let mut bound = Vec::new();
@@ -435,9 +432,9 @@ impl Player<'_, '_> {
         Ok(())
     }
 
-    fn moved<'l>(
+    fn moved(
         &mut self,
-        (action, input): (&'l Action, &[Value]),
+        (action, input): (&Action, &[Value]),
         (number, state, path): (usize, &[Value], &Path),
     ) -> Result<Option<Vec<Value>>, Stop> {
         self.counted()?;
@@ -523,8 +520,7 @@ impl Player<'_, '_> {
             return Ok(action
                 .inputs
                 .get(depth)
-                .map(|input| input.values.clone())
-                .unwrap_or_default());
+                .map_or_else(Vec::new, |input| input.values.clone()));
         };
         let mut frame = Frame::new(state, action.slots);
         for (input, value) in action.inputs.iter().zip(bound) {
@@ -622,7 +618,12 @@ impl Player<'_, '_> {
             let falls = first.is_some() && (all_fell || !retried);
             match first {
                 Some(found) if falls => {
-                    fell.get_or_insert(found);
+                    if fell
+                        .as_ref()
+                        .is_none_or(|kept: &Fell| kept.picked.len() < found.picked.len())
+                    {
+                        fell = Some(found);
+                    }
                 }
                 _ => every = false,
             }
