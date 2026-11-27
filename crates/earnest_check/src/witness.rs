@@ -1,7 +1,9 @@
 use crate::explore::{Search, Starts};
 use crate::outcome::{Change, Named, Path, RuleKind, RuleOutcome, Step, Verdict};
 use crate::picks::{combinations_of, sets_for, sets_of};
-use earnest_ir::{Action, Code, Falls, Fault, Field, Frame, Model, Pick, Plan, Script, Witness};
+use earnest_ir::{
+    Action, Code, Falls, Fault, Field, Frame, Model, Pick, Plan, RETRIED_BELOW, Script, Witness,
+};
 use earnest_value::Value;
 use rustc_hash::FxHashSet;
 
@@ -9,6 +11,8 @@ const MOST_BRANCHES: usize = 100_000;
 const FIRST_CANNOT_HAPPEN: &str =
     "the run's first action can't happen: it gives no state to start from";
 const NONE_GETS_THROUGH: &str = "no value the run's `nondet`s pick gets the run through";
+const NOT_RETRIED: &str =
+    "and `quint test` tries no other value of a `nondet` over 100 values or more";
 
 enum Ended {
     Held,
@@ -41,6 +45,19 @@ struct Leg<'a> {
     refused: bool,
 }
 
+struct Move<'a> {
+    alternative: usize,
+    order: Vec<usize>,
+    action: &'a Action,
+    input: Vec<Value>,
+    after: Vec<Value>,
+}
+
+struct Fell {
+    id: String,
+    picked: Vec<(String, Value)>,
+}
+
 #[derive(Default)]
 struct Ends {
     through: bool,
@@ -48,6 +65,8 @@ struct Ends {
 }
 
 struct Course<'a> {
+    sampled: bool,
+    start_falls: &'a [(String, Value)],
     skips: bool,
     last_false: bool,
     fields: &'a [Field],
@@ -62,6 +81,8 @@ struct Course<'a> {
 impl<'a> Course<'a> {
     fn of_witness(witness: &'a Witness, model: &'a Model) -> Self {
         Self {
+            sampled: false,
+            start_falls: &[],
             skips: false,
             last_false: false,
             fields: &model.fields,
@@ -98,6 +119,8 @@ impl<'a> Course<'a> {
             _ => (false, false),
         };
         Self {
+            sampled: true,
+            start_falls: &plan.start_falls,
             skips,
             last_false,
             fields: if script.fields.is_empty() {
@@ -324,14 +347,120 @@ impl Player<'_, '_> {
                 &format!("the assertion of step {number}"),
             )?;
         }
-        let mut happened = false;
-        for choice in &leg.choices {
-            let Some(action) = choice.action else {
+        let (mut moves, fell) = if course.sampled {
+            let members: Vec<usize> = (0..leg.choices.len()).collect();
+            let mut moves = Vec::new();
+            let mut bound = Vec::new();
+            let fell = self.sampled(
+                (leg, number, state, &*path),
+                &members,
+                (&mut bound, &mut Vec::new()),
+                &mut moves,
+            )?;
+            moves.sort_by(|one, other| {
+                (one.alternative, &one.order).cmp(&(other.alternative, &other.order))
+            });
+            (moves, fell)
+        } else {
+            (self.listed((leg, number, state, &*path))?, None)
+        };
+        if moves.is_empty() {
+            self.none_happened(number, leg, path)?;
+            self.held.insert(seen);
+            return Ok(());
+        }
+        if let Some(fell) = fell.filter(|_| !leg.refused) {
+            self.sampled_fall(number, &fell, path)?;
+        }
+        for Move {
+            action,
+            input,
+            after,
+            ..
+        } in moves.drain(..)
+        {
+            let id = &action.id;
+            path.steps.push(self.taken((action, &input), state, &after));
+            if leg.refused {
+                self.fall(
+                    path,
+                    format!(
+                        "step {number}, `{id}`, can happen here, and the run's `fail()` \
+                         expects it can't"
+                    ),
+                )?;
+                path.steps.pop();
+                continue;
+            }
+            if let Some(name) = self.outside(&after) {
                 return Err(Stop::Broken(
                     path.clone(),
-                    format!("step {number} is no action of the model"),
+                    format!(
+                        "step {number}, `{id}`, takes the field `{name}` out of the values it declares"
+                    ),
                 ));
-            };
+            }
+            if let Some(expect) = leg.expect {
+                self.check(
+                    expect,
+                    &after,
+                    path,
+                    &format!("what the run expects after step {number}"),
+                )?;
+            }
+            self.walk(done.saturating_add(1), &after, path)?;
+            path.steps.pop();
+        }
+        self.held.insert(seen);
+        Ok(())
+    }
+
+    fn sampled_fall(&mut self, number: usize, fell: &Fell, path: &Path) -> Result<(), Stop> {
+        let picked = self.search.picked(&fell.picked);
+        let why = format!(
+            "with {picked}, step {number}, `{}`, can't happen here, {NOT_RETRIED}",
+            fell.id
+        );
+        if !self.course.last_false || number < self.course.legs.len() {
+            return Err(Stop::Broken(path.clone(), why));
+        }
+        self.fall(path, why)
+    }
+
+    fn counted(&mut self) -> Result<(), Stop> {
+        self.played = self.played.saturating_add(1);
+        if self.played > MOST_BRANCHES {
+            return Err(Stop::TooManyBranches);
+        }
+        Ok(())
+    }
+
+    fn moved<'l>(
+        &mut self,
+        (action, input): (&'l Action, &[Value]),
+        (number, state, path): (usize, &[Value], &Path),
+    ) -> Result<Option<Vec<Value>>, Stop> {
+        self.counted()?;
+        match Search::take(action, input, state) {
+            Taken::Moved(after) => Ok(Some(after)),
+            Taken::Refused => Ok(None),
+            Taken::Faulted(part, fault) => {
+                let (id, fault) = (&action.id, fault.describe());
+                Err(Stop::Broken(
+                    path.clone(),
+                    format!("step {number}: the {part} of the action `{id}` {fault} here"),
+                ))
+            }
+        }
+    }
+
+    fn listed<'l>(
+        &mut self,
+        (leg, number, state, path): (&Leg<'l>, usize, &[Value], &Path),
+    ) -> Result<Vec<Move<'l>>, Stop> {
+        let mut moves = Vec::new();
+        for (alternative, choice) in leg.choices.iter().enumerate() {
+            let action = Self::action_of(choice, number, path)?;
             let id = &action.id;
             let inputs = match &choice.sets {
                 Some(sets) => match combinations_of(action, sets, state) {
@@ -352,59 +481,162 @@ impl Player<'_, '_> {
                 None => every_input(action, choice.input).ok_or(Stop::TooManyBranches)?,
             };
             for input in inputs {
-                self.played = self.played.saturating_add(1);
-                if self.played > MOST_BRANCHES {
-                    return Err(Stop::TooManyBranches);
+                if let Some(after) = self.moved((action, &input), (number, state, path))? {
+                    moves.push(Move {
+                        alternative,
+                        order: Vec::new(),
+                        action,
+                        input,
+                        after,
+                    });
                 }
-                let after = match Search::take(action, &input, state) {
-                    Taken::Moved(after) => after,
-                    Taken::Refused => continue,
-                    Taken::Faulted(part, fault) => {
-                        let fault = fault.describe();
-                        return Err(Stop::Broken(
-                            path.clone(),
-                            format!("step {number}: the {part} of the action `{id}` {fault} here"),
-                        ));
-                    }
-                };
-                happened = true;
-                path.steps.push(self.taken((action, &input), state, &after));
-                if leg.refused {
-                    self.fall(
-                        path,
-                        format!(
-                            "step {number}, `{id}`, can happen here, and the run's `fail()` \
-                             expects it can't"
-                        ),
-                    )?;
-                    path.steps.pop();
-                    continue;
-                }
-                if let Some(name) = self.outside(&after) {
-                    return Err(Stop::Broken(
-                        path.clone(),
-                        format!(
-                            "step {number}, `{id}`, takes the field `{name}` out of the values it declares"
-                        ),
-                    ));
-                }
-                if let Some(expect) = leg.expect {
-                    self.check(
-                        expect,
-                        &after,
-                        path,
-                        &format!("what the run expects after step {number}"),
-                    )?;
-                }
-                self.walk(done.saturating_add(1), &after, path)?;
-                path.steps.pop();
             }
         }
-        if !happened {
-            self.none_happened(number, leg, path)?;
+        Ok(moves)
+    }
+
+    fn action_of<'l>(
+        choice: &Alternative<'l>,
+        number: usize,
+        path: &Path,
+    ) -> Result<&'l Action, Stop> {
+        choice.action.ok_or_else(|| {
+            Stop::Broken(
+                path.clone(),
+                format!("step {number} is no action of the model"),
+            )
+        })
+    }
+
+    fn values_of(
+        (choice, action): (&Alternative<'_>, &Action),
+        depth: usize,
+        (number, state, path): (usize, &[Value], &Path),
+        bound: &[Value],
+    ) -> Result<Vec<Value>, Stop> {
+        let set = choice
+            .sets
+            .as_ref()
+            .and_then(|sets| sets.get(depth))
+            .and_then(Option::as_ref);
+        let Some(set) = set else {
+            return Ok(action
+                .inputs
+                .get(depth)
+                .map(|input| input.values.clone())
+                .unwrap_or_default());
+        };
+        let mut frame = Frame::new(state, action.slots);
+        for (input, value) in action.inputs.iter().zip(bound) {
+            frame.put(input.slot, value.clone());
         }
-        self.held.insert(seen);
-        Ok(())
+        let fault = match set.eval(&mut frame) {
+            Ok(Value::Set(items)) => return Ok(items.iter().cloned().collect()),
+            Ok(_) => Fault::WrongKind,
+            Err(fault) => fault,
+        };
+        let (id, fault) = (&action.id, fault.describe());
+        Err(Stop::Broken(
+            path.clone(),
+            format!("step {number}: the set the action `{id}` picks from {fault} here"),
+        ))
+    }
+
+    fn sampled<'l>(
+        &mut self,
+        (leg, number, state, path): (&Leg<'l>, usize, &[Value], &Path),
+        members: &[usize],
+        (bound, order): (&mut Vec<Value>, &mut Vec<usize>),
+        moves: &mut Vec<Move<'l>>,
+    ) -> Result<Option<Fell>, Stop> {
+        let depth = bound.len();
+        let (mut fell, mut every) = (None, true);
+        let mut groups: Vec<(usize, Vec<Value>, Vec<usize>)> = Vec::new();
+        for member in members {
+            let Some(choice) = leg.choices.get(*member) else {
+                continue;
+            };
+            let action = Self::action_of(choice, number, path)?;
+            let Some(input) = action.inputs.get(depth) else {
+                match self.moved((action, bound), (number, state, path))? {
+                    Some(after) => {
+                        every = false;
+                        moves.push(Move {
+                            alternative: *member,
+                            order: order.clone(),
+                            action,
+                            input: bound.clone(),
+                            after,
+                        });
+                    }
+                    None => {
+                        fell.get_or_insert_with(|| Fell {
+                            id: action.id.clone(),
+                            picked: Self::named(action, bound),
+                        });
+                    }
+                }
+                continue;
+            };
+            let values = Self::values_of((choice, action), depth, (number, state, path), bound)?;
+            match groups
+                .iter_mut()
+                .find(|(slot, listed, _)| *slot == input.slot && *listed == values)
+            {
+                Some((.., found)) => found.push(*member),
+                None => groups.push((input.slot, values, vec![*member])),
+            }
+        }
+        for (_, values, group) in groups {
+            let first_action = group
+                .first()
+                .and_then(|member| leg.choices.get(*member))
+                .and_then(|choice| choice.action);
+            let retried = values.len() < RETRIED_BELOW;
+            let mut first = None;
+            let mut all_fell = true;
+            if values.is_empty() {
+                first = first_action.map(|action| Fell {
+                    id: action.id.clone(),
+                    picked: Self::named(action, bound),
+                });
+            }
+            for (position, value) in values.into_iter().enumerate() {
+                bound.push(value);
+                order.push(position);
+                let under = self.sampled(
+                    (leg, number, state, path),
+                    &group,
+                    (&mut *bound, &mut *order),
+                    moves,
+                );
+                bound.pop();
+                order.pop();
+                match under? {
+                    Some(found) => {
+                        first.get_or_insert(found);
+                    }
+                    None => all_fell = false,
+                }
+            }
+            let falls = first.is_some() && (all_fell || !retried);
+            match first {
+                Some(found) if falls => {
+                    fell.get_or_insert(found);
+                }
+                _ => every = false,
+            }
+        }
+        Ok(if every { fell } else { None })
+    }
+
+    fn named(action: &Action, bound: &[Value]) -> Vec<(String, Value)> {
+        action
+            .inputs
+            .iter()
+            .zip(bound)
+            .map(|(input, value)| (input.name.clone(), value.clone()))
+            .collect()
     }
 }
 
@@ -481,6 +713,20 @@ impl Search<'_> {
             Some(listed) => Box::new(listed.iter().cloned()),
             None => Box::new(Starts::of(self.model)),
         };
+        if !course.start_falls.is_empty() && !course.must_not_finish {
+            let path = Path {
+                start: Vec::new(),
+                steps: Vec::new(),
+            };
+            let why = format!(
+                "with {}, the run's first action can't happen, {NOT_RETRIED}",
+                self.picked(course.start_falls)
+            );
+            if !(course.skips && course.last_false && course.legs.is_empty()) {
+                return Ended::Broken(path, why);
+            }
+            ends.fell.get_or_insert((path, why));
+        }
         let mut started = false;
         for (played, start) in starts.enumerate() {
             if played >= most {
@@ -534,15 +780,19 @@ impl Search<'_> {
         Ended::Held
     }
 
-    fn with_chosen(&self, chosen: &[(String, Value)], why: &str) -> String {
-        if chosen.is_empty() {
-            return why.to_owned();
-        }
+    fn picked(&self, chosen: &[(String, Value)]) -> String {
         let chosen: Vec<String> = chosen
             .iter()
             .map(|(name, value)| format!("`{name}` = {}", self.shown(value).text))
             .collect();
-        format!("with {}: {why}", chosen.join(", "))
+        chosen.join(", ")
+    }
+
+    fn with_chosen(&self, chosen: &[(String, Value)], why: &str) -> String {
+        if chosen.is_empty() {
+            return why.to_owned();
+        }
+        format!("with {}: {why}", self.picked(chosen))
     }
 
     fn play_script(&self, number: usize, script: &Script) -> Ended {

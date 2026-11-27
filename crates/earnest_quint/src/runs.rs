@@ -4,10 +4,13 @@ use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
 use crate::reader::{
-    Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run, refusal,
+    Path, Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run,
+    refusal,
 };
 use crate::starts::{Asserts, start_states};
-use earnest_ir::{Action, Expr, Falls, Field, Pick, Plan, Script, Stage};
+use earnest_ir::{
+    Action, Expr, Falls, Field, Pick, Plan, RETRIED_BELOW, Script, Stage, eval, truth,
+};
 use earnest_value::{Domain, Value};
 use std::collections::BTreeSet;
 
@@ -16,11 +19,11 @@ const DECLARED_ON: u32 = 1;
 const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
 const MOST_ALIASES: usize = 100;
-const RETRIED_BELOW: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
 const CHAINS: [&str; 4] = ["then", "reps", "expect", "fail"];
 
 type Helper<'a> = (&'a Def, &'a [Param], &'a Quint, &'a [Quint]);
+type FirstStates = (Option<Vec<Vec<Value>>>, Vec<(String, Value)>);
 
 struct Step {
     choices: Vec<usize>,
@@ -43,6 +46,7 @@ struct Drawn {
     steps: Vec<Step>,
     must_not_finish: bool,
     ends_false: bool,
+    start_falls: Vec<(String, Value)>,
 }
 
 pub(crate) struct Variables<'v> {
@@ -194,6 +198,7 @@ impl<'a> Run<'_, 'a> {
             steps: Vec::new(),
             must_not_finish: false,
             falls: self.falls(),
+            start_falls: Vec::new(),
         }
     }
 
@@ -287,6 +292,7 @@ impl<'a> Run<'_, 'a> {
                 .collect(),
             must_not_finish: drawn.must_not_finish,
             falls: self.falls(),
+            start_falls: drawn.start_falls,
         };
         if let Falls::Retried { last_step, .. } = &mut plan.falls {
             *last_step = drawn.ends_false;
@@ -419,7 +425,7 @@ impl<'a> Run<'_, 'a> {
         }
     }
 
-    fn first_states(&mut self, expr: &'a Quint) -> Read<Option<Vec<Vec<Value>>>> {
+    fn first_states(&mut self, expr: &'a Quint) -> Read<FirstStates> {
         let first = self.action_name(expr);
         self.reader.in_init = true;
         let paths = self.reader.paths(expr);
@@ -460,7 +466,7 @@ impl<'a> Run<'_, 'a> {
                 );
             }
         }
-        start_states(
+        let starts = start_states(
             (&paths, &first),
             &self.fields,
             self.reader.slots,
@@ -469,7 +475,22 @@ impl<'a> Run<'_, 'a> {
         .map_err(|refused| {
             let why = format!("{}, in the run `{}`", refused.why, self.name);
             Refusal { why, ..refused }.within(self.name)
-        })
+        })?;
+        let slots = paths
+            .iter()
+            .flat_map(|path| &path.choices)
+            .map(|choice| choice.slot.saturating_add(1))
+            .fold(self.reader.slots, usize::max);
+        let falls = match &starts {
+            Some(found) if !found.is_empty() => {
+                let members: Vec<usize> = (0..paths.len()).collect();
+                let mut frame = crate::frame(&[], slots);
+                let mut bound = Vec::new();
+                falls_for(&paths, &members, &mut frame, &mut bound).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        };
+        Ok((starts, falls))
     }
 
     fn leaf(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
@@ -488,9 +509,10 @@ impl<'a> Run<'_, 'a> {
                 }
                 return Ok(false);
             }
-            let starts = self.first_states(expr)?;
+            let (starts, falls) = self.first_states(expr)?;
             drawn.ends_false &= starts.is_some();
             drawn.starts = Some(starts.unwrap_or_default());
+            drawn.start_falls = falls;
             return Ok(false);
         }
         if drawn.steps.len() >= MOST_STEPS {
@@ -545,6 +567,85 @@ impl<'a> Run<'_, 'a> {
         });
         Ok(true)
     }
+}
+
+fn values_of(path: &Path, depth: usize, frame: &mut earnest_ir::Frame<'_>) -> Option<Vec<Value>> {
+    let choice = path.choices.get(depth)?;
+    let Some(set) = &choice.from else {
+        return Some(choice.values.clone());
+    };
+    match eval(set, frame).ok()? {
+        Value::Set(items) => Some(items.iter().cloned().collect()),
+        _ => None,
+    }
+}
+
+fn falls_for(
+    paths: &[Path],
+    members: &[usize],
+    frame: &mut earnest_ir::Frame<'_>,
+    bound: &mut Vec<(String, Value)>,
+) -> Option<Vec<(String, Value)>> {
+    let depth = bound.len();
+    let mut fell = None;
+    let mut groups: Vec<(usize, Vec<Value>, Vec<usize>)> = Vec::new();
+    for member in members {
+        let path = paths.get(*member)?;
+        let Some(choice) = path.choices.get(depth) else {
+            let mut holds = true;
+            for guard in &path.guards {
+                match truth(guard, frame) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        holds = false;
+                        break;
+                    }
+                    Err(_) => return None,
+                }
+            }
+            if holds {
+                return None;
+            }
+            fell.get_or_insert_with(|| bound.clone());
+            continue;
+        };
+        let values = values_of(path, depth, frame)?;
+        match groups
+            .iter_mut()
+            .find(|(slot, listed, _)| *slot == choice.slot && *listed == values)
+        {
+            Some((.., found)) => found.push(*member),
+            None => groups.push((choice.slot, values, vec![*member])),
+        }
+    }
+    for (slot, values, group) in groups {
+        let name = paths.get(*group.first()?)?.choices.get(depth)?.name.clone();
+        let retried = values.len() < RETRIED_BELOW;
+        let (mut first, mut every) = (None, true);
+        if values.is_empty() {
+            first = Some(bound.clone());
+        }
+        for value in values {
+            frame.put(slot, value.clone());
+            bound.push((name.clone(), value));
+            let under = falls_for(paths, &group, frame, bound);
+            bound.pop();
+            match under {
+                Some(found) => {
+                    first.get_or_insert(found);
+                }
+                None => every = false,
+            }
+        }
+        let falls = if retried { every } else { first.is_some() };
+        match first {
+            Some(found) if falls => {
+                fell.get_or_insert(found);
+            }
+            _ => return None,
+        }
+    }
+    fell
 }
 
 fn own_fields(run: &mut Run<'_, '_>, touched: &[&(u64, String, Domain)]) -> Vec<Field> {
