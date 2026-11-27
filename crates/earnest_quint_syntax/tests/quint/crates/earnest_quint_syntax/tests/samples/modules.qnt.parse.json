@@ -1,1 +1,1 @@
-{"errors":[],"order":[[2,4],[8,10]],"depth":{"2":0,"4":0}}
+{"stage":"parsing","warnings":[],"errors":[],"order":[[2,4],[8,10]],"depth":{"2":0,"4":0},"table":{"7":{"$":2,"+":[["depth",0],["importedFrom",{"$":8}],["hidden",true],["namespaces",["B","User"]]]},"9":{"$":2,"+":[["depth",0],["importedFrom",{"$":8}],["hidden",true],["namespaces",["B","User"]]]},"10":{"$":10,"+":[["depth",0]]}}}

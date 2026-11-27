@@ -1008,7 +1008,14 @@ impl Parser<'_> {
             let made = app(
                 variant_id,
                 "variant",
-                vec![label, name_expr(wrapped_id, &param_name)],
+                vec![
+                    label,
+                    Json::object(vec![
+                        ("kind", Json::text("name")),
+                        ("name", Json::text(&param_name)),
+                        ("id", id(wrapped_id)),
+                    ]),
+                ],
             );
             let annotation = Json::object(vec![
                 ("kind", Json::text("oper")),
@@ -1806,12 +1813,19 @@ impl Parser<'_> {
             let eliminator_id = self.placed(span);
             let param_id = self.placed(span);
             args.push(literal(label_id, "str", Json::Text(label)));
-            args.push(lambda(
-                eliminator_id,
-                vec![param(param_id, &binding)],
-                "def",
-                body,
-            ));
+            args.push(Json::object(vec![
+                ("id", id(eliminator_id)),
+                ("kind", Json::text("lambda")),
+                ("qualifier", Json::text("def")),
+                ("expr", body),
+                (
+                    "params",
+                    Json::List(vec![Json::object(vec![
+                        ("name", Json::text(&binding)),
+                        ("id", id(param_id)),
+                    ])]),
+                ),
+            ]));
         }
         Ok(app(match_id, "matchVariant", args))
     }
