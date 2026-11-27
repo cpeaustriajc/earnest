@@ -1,5 +1,5 @@
 use crate::markdown::one_line;
-use crate::text::quoted;
+use crate::text::{made_up_name, quoted};
 
 /// How a rule differs between the base commit and the working tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -96,12 +96,16 @@ pub struct RuleChanges<'a> {
     pub changes: &'a [RuleChange<'a>],
 }
 
+fn said(says: &str) -> String {
+    if made_up_name(says) {
+        String::new()
+    } else {
+        format!("  {}", quoted(says))
+    }
+}
+
 fn side(name: &str, text: RuleText<'_>) -> String {
-    format!(
-        "    {name}  {}  {}",
-        quoted(text.says),
-        one_line(text.holds)
-    )
+    format!("    {name}{}  {}", said(text.says), one_line(text.holds))
 }
 
 /// The rule-changes section the text output documents: the line `rule changes since <base>`,
@@ -138,7 +142,7 @@ pub fn rule_change_lines(changes: &RuleChanges<'_>) -> Vec<String> {
         };
         let file = one_line(each.file);
         if let Some(text) = only {
-            lines.push(format!("{head}  {}  {file}", quoted(text.says)));
+            lines.push(format!("{head}{}  {file}", said(text.says)));
             continue;
         }
         lines.push(format!("{head}  {file}"));

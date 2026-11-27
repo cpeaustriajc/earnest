@@ -294,12 +294,33 @@ fn a_quint_file_the_base_does_not_have_lists_every_rule_and_run_of_its_checks_as
     report.exits(0);
     assert!(
         report.stdout.contains("## Rule changes")
-            && report.stdout.contains(
-                "  added      Large.belowSix  \"The Quint invariant `belowSix` holds\"  \
-                 specs/clock.qnt\n"
-            ),
-        "the report lists them too, a rule with no sentence by the sentence the results give \
-         it\n{report}"
+            && report
+                .stdout
+                .contains("  added      Large.belowSix  specs/clock.qnt\n"),
+        "the report lists them too, and a rule with no sentence of its own with no quoted \
+         sentence, as the results print it\n{report}"
+    );
+    let below_six = json["ruleChanges"]
+        .as_array()
+        .and_then(|changes| changes.iter().find(|change| change["id"] == "belowSix"))
+        .cloned()
+        .unwrap_or_default();
+    let judged = json["models"]
+        .as_array()
+        .and_then(|models| models.iter().find(|model| model["name"] == "Large"))
+        .and_then(|model| model["rules"].as_array())
+        .and_then(|rules| rules.iter().find(|rule| rule["id"] == "belowSix"))
+        .cloned()
+        .unwrap_or_default();
+    assert_eq!(
+        below_six["now"]["says"], judged["says"],
+        "its `says` is the one the result JSON gives it: {below_six} {judged}"
+    );
+    assert_eq!(below_six["now"]["says"], "Quint invariant `belowSix`");
+    assert_eq!(
+        json["ruleChanges"][4]["now"]["says"], "Quint run `tickTest`",
+        "{}",
+        json["ruleChanges"][4]
     );
 }
 
@@ -858,5 +879,170 @@ fn several_unreadable_marks_of_one_check_name_the_first_and_count_the_others() {
                 && said.ends_with(", and 1 more")
         ),
         "{run}"
+    );
+}
+
+const SHOP: &str = "/// @check
+module Shop {
+  var n: int
+  var paid: bool
+  var shipped: bool
+  action init = all { n' = 0, paid' = false, shipped' = false }
+  action order = all { n < 3, n' = n + 1, paid' = false, shipped' = false }
+  action pay = all { n > 0, not(paid), paid' = true, n' = n, shipped' = shipped }
+  action ship = all { paid, not(shipped), shipped' = true, n' = n, paid' = paid }
+  action step = any { order, pay, ship }
+  /// @view state
+  val st = if (shipped) \"shipped\" else if (paid) \"paid\" else if (n > 0) \"ordered\" else \"empty\"
+  /// @view group
+  val grp = if (n >= 2) \"busy\" else \"quiet\"
+  /// @check
+  /// Shipping needs payment.
+  val shipNeedsPay = shipped implies paid
+  /// @check
+  val payNeedsOrder = paid implies n > 0
+  /// @check reachable
+  val canShip = shipped and n == 3
+  /// @check broken
+  val neverBusy = n < 2
+  /// @check
+  temporal paidLeadsToShip = always(paid implies eventually(shipped))
+  /// @check
+  val tooMany = n < 3
+}
+";
+
+#[test]
+fn a_check_unreadable_now_is_not_compared_and_its_base_rules_are_not_removed() {
+    let repo = Repo::committed(&[("m.qnt", SHOP)]);
+    repo.write(
+        "m.qnt",
+        &SHOP
+            .replacen(
+                "/// @check\nmodule Shop",
+                "/// @check nosuchname\nmodule Shop",
+                1,
+            )
+            .replace(
+                "  /// @check\n  /// Shipping",
+                "  /// @view state\n  /// @check\n  /// Shipping",
+            ),
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        section(&run),
+        [fields("  not compared  m.qnt  Shop  unreadable now")],
+        "`Shop` is in its file and this build can't read it now, so none of its six rules is \
+         removed\n{run}"
+    );
+    assert!(
+        !run.stderr.contains("rule changes are not listed"),
+        "the run already says why it is unreadable\n{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(json["ruleChanges"], json!([]));
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "m.qnt", "model": "Shop", "reason": "unreadableNow" }])
+    );
+    let report = repo.earnest(&["report", "--base", "HEAD"]);
+    assert!(
+        report
+            .stdout
+            .contains("rule changes since HEAD\n  not compared  m.qnt  Shop  unreadable now\n"),
+        "{report}"
+    );
+}
+
+#[test]
+fn one_check_unreadable_now_leaves_the_others_of_its_file_compared() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "/// @check\n/// The clock that counts",
+        "/// @check nosuchname\n/// The clock that counts",
+    );
+    repo.edit(CLOCK, "val belowSix = time < 6", "val belowSix = time < 7");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        heads(&run),
+        listed(&[
+            ("changed", "Large.belowSix"),
+            ("not compared", "specs/clock.qnt"),
+        ]),
+        "{run}"
+    );
+    assert_eq!(
+        section(&run)[3],
+        fields("  not compared  specs/clock.qnt  Small  unreadable now"),
+        "{run}"
+    );
+    let large = repo.earnest(&["verify", "--base", "HEAD", "--model", "Large"]);
+    assert_eq!(
+        heads(&large),
+        listed(&[("changed", "Large.belowSix")]),
+        "`--model` leaves out the check it does not name\n{large}"
+    );
+}
+
+#[test]
+fn a_quint_file_that_no_longer_parses_is_not_compared() {
+    let repo = with_clock();
+    repo.edit(CLOCK, "module Small {", "module Small {{");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        section(&run),
+        [fields("  not compared  specs/clock.qnt  unreadable now")],
+        "{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "specs/clock.qnt", "reason": "unreadableNow" }])
+    );
+}
+
+#[test]
+fn a_native_file_unreadable_now_is_not_compared_and_one_deleted_lists_its_rules_as_removed() {
+    let counter = repository().join("tasks/conformance/models/counter.model.ts");
+    let counter = fs::read_to_string(&counter).expect("the fixture can be read");
+    let repo = Repo::committed(&[("kept.model.ts", &counter), ("gone.model.ts", &counter)]);
+    repo.write("kept.model.ts", UNREAD_TANK);
+    repo.remove("gone.model.ts");
+    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        section(&run),
+        [
+            fields(
+                "  removed    Counter.bounded  \"The count is never above three\"  gone.model.ts"
+            ),
+            fields("  removed    Counter.even  \"Twice the count is even\"  gone.model.ts"),
+            fields("  not compared  kept.model.ts  unreadable now"),
+        ],
+        "{run}"
+    );
+    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{ "file": "kept.model.ts", "reason": "unreadableNow" }])
+    );
+}
+
+#[test]
+fn a_check_whose_mark_was_taken_off_lists_its_rules_as_removed() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "/// @check\n/// The clock that counts",
+        "/// The clock that counts",
+    );
+    let run = repo.earnest(&["verify", "--base", "HEAD", "--model", "Small"]);
+    assert_eq!(
+        heads(&run),
+        SMALL_RULES
+            .iter()
+            .map(|rule| ("removed".to_owned(), (*rule).to_owned()))
+            .collect::<Vec<_>>(),
+        "`Small` is no longer a check, which this build reads\n{run}"
     );
 }

@@ -206,7 +206,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
     if let Some(error) = selected.unmatched
         && compared
             .as_ref()
-            .is_none_or(|(_, compared)| compared.changes.is_empty())
+            .is_none_or(|(_, compared)| compared.lists_nothing())
     {
         return Err(refusing(&skipped, &no_model, model, rule, error));
     }

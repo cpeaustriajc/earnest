@@ -313,7 +313,7 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
     if let Some(error) = selected.unmatched
         && compared
             .as_ref()
-            .is_none_or(|(_, compared)| compared.changes.is_empty())
+            .is_none_or(|(_, compared)| compared.lists_nothing())
     {
         return Err(error);
     }
