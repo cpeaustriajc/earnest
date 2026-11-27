@@ -14,3 +14,8 @@ fn a_tupled_lambda_of_one_name_is_refused_as_quint_refuses_it() {
 fn set_applied_to_two_types_is_read_as_quint_s_phases_read_it() {
     assert_eq!(as_quint_reads("set_applied_to_two"), Ok(()));
 }
+
+#[test]
+fn an_import_from_an_empty_path_is_read_as_an_import_without_a_path() {
+    assert_eq!(as_quint_reads("import_from_empty_path"), Ok(()));
+}
