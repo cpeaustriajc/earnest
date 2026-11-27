@@ -5917,6 +5917,10 @@ build unless said otherwise. Quint is Quint 0.33.1's CLI on the same files.
   the repository holds 25,250 nodes, in Quint's repository 74,688 (`evaluator/fixtures/jmt/test/
   test_all.qnt`), and in the deep samples 504,011 (`records_500`). Sharing the type, which a later
   issue does, removes the cause.
+- These bounds are the crate's. Through the CLI, a file with more than about 57 levels of operator
+  nesting is refused earlier, with "the Quint file can't be parsed", by the CLI's own reading of
+  the JSON (most likely serde_json's depth limit of 128); that is a ticket of its own. The deep
+  samples prove the crate, not the CLI.
 - Where Quint overflows and earnest reads within its bounds (a sum of 1,000 terms, a `Set` 1,000
   deep, chains of 4,000 to 20,000 aliases), Quint 0.33.1 gives no verdict; `confirm --quint` says
   `cannot`.
@@ -5943,7 +5947,7 @@ are `quint typecheck` and `quint compile`; `-` where not measured.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `type` aliases, each the one before | 4,000 / 8,000 / 20,000 | 0.07 / 0.15 / 0.56 s | 0.47 / 0.68 / 2.2 s | 80 / 150 / 368 MB | overflows / overflows | - | fixed: unified in a loop, inlined once per alias |
 | `val x_i = Set(x_{i-1})` | 100 / 400 | 0.04 / 0.66 s | 0.15 / 2.5 s | 38 / 473 MB | - | - | fixed (was 35 s at 400): aliases inlined in place; the rest is the output's square |
-| `val` chain, `pure def` chain | 8,000 each | 1.6 s (defs) | 2.0 s (vals), 7.1 s (defs) | 1.0 GB (defs) | - | - | linear |
+| `val` chain, `pure def` chain | 8,000 / 20,000 each | vals 0.87 s (20,000); defs 1.6 / 3.2 s | vals 2.0 / 4.2 s; defs 7.1 / 12.6 s | vals 774 MB, defs 1.0 / 2.1 GB (20,000) | - | - | linear (the CLI took 222 s and 338 s at 20,000 before these fixes) |
 | modules, each importing the one before | 500 / 1,000 | 0.06 / 0.12 s | 13 / 58 s | 426 MB / 1.6 GB | - | 98 s / - | fixed (was 413 s at 500): flattened modules resolved once |
 | modules importing and exporting the one before | 200 / 500 | 0.01 / 0.03 s | 17 / 358 s | 75 / 425 MB | 4 s (500) | 618 s (500) | as Quint's flattener, cubic; faster than Quint |
 | instances, each of the one before | 50 / 100 | 0.01 / 0.02 s | 0.85 / 8.5 s | 44 / 169 MB | - | 3.1 / 10.9 s | fixed (was 30 s at 100) |
