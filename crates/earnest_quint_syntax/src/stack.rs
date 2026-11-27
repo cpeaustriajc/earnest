@@ -47,8 +47,13 @@ fn not_started(error: &std::io::Error) -> Problem {
 }
 
 /// Runs `work` on a thread with a stack of [`STACK_NEEDED`] bytes, or on this thread when it is one
-/// already. A panic of `work` is passed on as it is.
-pub(crate) fn on_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
+/// already: inside [`on_a_stack_of`] with enough bytes. A panic of `work` is passed on as it is.
+/// The CLI runs on it what walks the JSON the crate wrote, as deep as the file is nested.
+///
+/// # Errors
+///
+/// A problem that says what to do, when the system refuses the thread.
+pub fn on_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
     on_stack_of(STACK_NEEDED, work)
 }
 

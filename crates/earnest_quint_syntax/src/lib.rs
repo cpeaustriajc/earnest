@@ -44,4 +44,4 @@ pub use files::{Parsed, read};
 pub use inference::types_with_copies;
 pub use json::Json;
 pub use problem::Problem;
-pub use stack::{STACK_NEEDED, on_a_stack_of};
+pub use stack::{STACK_NEEDED, on_a_stack_of, on_large_stack};
