@@ -2,11 +2,12 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
+base="${RECORD_BASE:-$root}"
 out="$1"
 shift
 quint="$QUINT_PACKAGE/../../.bin/quint"
 for file in "$@"; do
-  relative="$(realpath --relative-to="$root" "$file")"
+  relative="$(realpath --relative-to="$base" "$file")"
   target="$out/$relative"
   mkdir -p "$(dirname "$target")"
   rm -f "$target.types.json" "$target.typecheck.json" "$target.inferred.json"
