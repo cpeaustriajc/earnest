@@ -353,34 +353,36 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 #[test]
 fn every_sample_in_the_repository_reads_as_quint_parse_writes_it() {
-    let base = root();
-    let mut found = Vec::new();
-    samples(&base, Path::new("tasks"), &mut found);
-    samples(&base, Path::new("crates"), &mut found);
-    found.sort();
-    let Tally {
-        different,
-        unrecorded,
-        refused_by_names,
-    } = tally(&found, &recorded(), &base);
-    assert!(
-        unrecorded.is_empty(),
-        "{} samples have no recording of Quint's parse. Record them: {RECORD_COMMAND}\n{}",
-        unrecorded.len(),
-        unrecorded.join("\n")
-    );
-    println!(
-        "{} of {} samples equal to the whole of quint parse 0.33.1, with Quint's own ids; {refused_by_names} of them refused by its name phases, each at Quint's place",
-        found.len() - different.len(),
-        found.len()
-    );
-    assert!(
-        different.is_empty(),
-        "{} of {} differ:\n{}",
-        different.len(),
-        found.len(),
-        different.join("\n")
-    );
+    crate::on_a_large_stack(|| {
+        let base = root();
+        let mut found = Vec::new();
+        samples(&base, Path::new("tasks"), &mut found);
+        samples(&base, Path::new("crates"), &mut found);
+        found.sort();
+        let Tally {
+            different,
+            unrecorded,
+            refused_by_names,
+        } = tally(&found, &recorded(), &base);
+        assert!(
+            unrecorded.is_empty(),
+            "{} samples have no recording of Quint's parse. Record them: {RECORD_COMMAND}\n{}",
+            unrecorded.len(),
+            unrecorded.join("\n")
+        );
+        println!(
+            "{} of {} samples equal to the whole of quint parse 0.33.1, with Quint's own ids; {refused_by_names} of them refused by its name phases, each at Quint's place",
+            found.len() - different.len(),
+            found.len()
+        );
+        assert!(
+            different.is_empty(),
+            "{} of {} differ:\n{}",
+            different.len(),
+            found.len(),
+            different.join("\n")
+        );
+    });
 }
 
 #[test]
