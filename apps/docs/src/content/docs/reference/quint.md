@@ -510,23 +510,46 @@ Each run is played over its own variables: the ones it reaches through its actio
     why    what the run expects after step 1 is false here
 ```
 
-A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`.
+A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`, or is that action alone after a `nondet` at its top, where the value is skipped (see [below](#a-nondet-at-the-top-of-a-run)).
 
 Earnest reads these run operators as `quint test` judges them:
 
 | Operator | What earnest does |
 |---|---|
-| `A.then(B)` | `B` is the next step. A step that can't happen breaks the run |
+| `A.then(B)` | `B` is the next step. A step that can't happen breaks the run, but for the last step after a `nondet` at the top of the run, where the value is skipped |
 | `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
 | `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
 | `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step. In the run's first action, or as the whole run (`run t = assert(f(1) == 2)`), a false `P` breaks the run, as `quint test` fails it |
 | a condition with no step, such as `run t = f(1) == 1` | The run holds when the condition is true and is broken when it is false |
-| `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
+| `nondet` and `val` at the top of the run | Each value of the `nondet` is played, and a value the run is false for is skipped, as below; a `val` is a constant |
 | a run's name | That run, played in place |
 | a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |
 
-A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. A `nondet` at the top of a run is judged the same way by both: the run must pass for every value, and `quint test` fails the run on the first value it samples that breaks it.
+A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses.
+
+### A `nondet` at the top of a run
+
+Quint plays a `nondet` at the top of a run as it plays one in a step: where the run is false for the value it picked, it tries the next value, and where the run ends in an error, it stops and fails the run. Earnest plays every combination of the values and judges them the same way. For each combination, the run is:
+
+- **false**, and skipped, where its last step can't happen (the last part of a `then` chain, or its only action), where it ends in `A.fail()` and `A` gets through, or where it is a condition that is false, such as `nondet n = S.oneOf() n > 2` for `n` = 1, or picks from an empty set.
+- **an error**, which breaks the run with the values and the path, where a step in the middle of a chain can't happen (the first part of a `then`, Quint's QNT513), where a round of `reps` can't happen (the last one too), where the action of an `expect` can't happen or its condition is false (QNT508), and on a false `assert`.
+
+The run holds when no combination ends in an error and at least one gets it through. It is broken when one ends in an error, or when every one is false, with ``the run is false for every value its `nondet`s pick, or can be, so `quint test` fails it`` after the first false one:
+
+```text
+  broken  allFalseTest
+    start  no state: the first action gives none
+    why    with `n` = 1: the run's first action can't happen: it gives no state to start from; the run is false for every value its `nondet`s pick, or can be, so `quint test` fails it
+```
+
+So `nondet n = Set(1, 2, 3).oneOf() init.then(all { n < 3, x' = n })` holds, as `quint test` passes it: `n` = 3 is skipped. With the same guard on the first action and a `then(step)` after it, the run is broken with `n` = 3, as `quint test` fails it with QNT513. A `nondet` inside another tries its values for each value of the outer one.
+
+Where a step picks a value of its own, as in `init.then(pick).then(last)`, Quint samples that value, so for one combination some samples can get the run through and others leave it false. Earnest takes the strict side, so that it never says `holds` where a sample of `quint test` can fail: the run holds only when no choice anywhere ends in an error and some combination gets the run through whatever the steps pick. A combination that gets through only for some picks is skipped, as a false one is.
+
+Quint tries the other values only of a set of fewer than 100 values (its `QUINT_RETRY_NONDET_SMALLER_THAN`). Over a larger set it keeps the first value it picked, so there a value the run is false for breaks it, with ``the run is false here, and `quint test` tries no other value of a `nondet` over 100 values or more``. Quint counts the values of each part of a set of tuples, maps or records apiece, so it retries `tuples(1.to(20), 1.to(20))`, of 400 values; earnest goes by the number of values in the whole set and so breaks such a run where one value is false, which is the strict side again.
+
+A run with no `nondet` at its top is false where `quint test` fails it, so a false run and an error both break it, as before.
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 

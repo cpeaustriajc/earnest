@@ -353,7 +353,8 @@ fn parts<'a>(
     reader.in_init = false;
     let starts = starting.and_then(|starting| {
         kept(
-            start_states((&starting, "`init`"), names, reader.slots, Asserts::Refuse),
+            start_states((&starting, "`init`"), names, reader.slots, Asserts::Refuse)
+                .map(Option::unwrap_or_default),
             &mut refused,
         )
     });

@@ -5,6 +5,16 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: a `nondet` at the top of a Quint run skips a value the run is false for
+
+A run that starts with a `nondet` was `broken` when any value did not get it through, such as `nondet n = Set(1, 2, 3).oneOf() init.then(all { n < 3, x' = n })` with ``with `n` = 3: step 1 … can't happen here``. `quint test` passes it: where the run is false for the value it picked, it tries the next one. Earnest now judges it the same way:
+
+- **Skipped:** a value for which the run's last step or only action can't happen, its `A.fail()` gets through, or its condition is false.
+- **Broken, as before:** a value that ends in an error, such as a step in the middle of a chain or a round of `reps` that can't happen, a false `expect` or a false `assert`, and a run that is false for every value. So `init.then(all { n < 3, x' = n }).then(step)` is still `broken`, as `quint test` fails it.
+- **Where Quint samples:** a run whose steps pick values of their own holds only when some value of its `nondet` gets it through whatever the steps pick, so earnest never says `holds` where a sample of `quint test` can fail. Over a set of 100 values or more, Quint tries no other value, and a false one still breaks the run.
+
+Runs with no `nondet` at their top, and TypeScript and Rust models, are unchanged. See [A `nondet` at the top of a run](/reference/quint/#a-nondet-at-the-top-of-a-run).
+
 ## November 2026: Quint runs and assumptions judged as Quint judges them
 
 Where earnest and Quint gave different answers on the same `.qnt` file, earnest now gives Quint's:
