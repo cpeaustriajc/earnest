@@ -1,5 +1,6 @@
 use crate::compared::{Outcome, compared, compiled, fixtures, listed, root};
-use earnest_check::{Limits, explore};
+use earnest_check::{Limits, WORKER_STACK, explore};
+use std::thread;
 
 const MOST_STATES: usize = 20_000;
 
@@ -18,6 +19,18 @@ fn checked(path: &str, source: &str) -> String {
 
 #[test]
 fn the_reader_reads_each_flattened_output_that_is_quint_s_byte_for_byte() {
+    // The CLI reads and searches each check on a worker of this stack; the deep samples need it.
+    thread::scope(|scope| {
+        thread::Builder::new()
+            .stack_size(WORKER_STACK)
+            .spawn_scoped(scope, every_output_is_read)
+            .expect("the reading thread starts")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    });
+}
+
+fn every_output_is_read() {
     let recorded = listed(&fixtures()).expect("the recordings are read");
     let mut read = 0;
     let mut searched = 0;

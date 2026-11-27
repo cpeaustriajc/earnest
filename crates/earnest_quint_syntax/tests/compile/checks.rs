@@ -11,7 +11,20 @@ struct Tally {
     differences: Vec<String>,
 }
 
+/// [`every_here`] on a stack as large as the crate's own: the recordings are read, compared and
+/// dropped as deep as the checks are nested.
 fn every(folder: &Path, base: &Path) -> Tally {
+    thread::scope(|scope| {
+        thread::Builder::new()
+            .stack_size(earnest_quint_syntax::STACK_NEEDED)
+            .spawn_scoped(scope, || every_here(folder, base))
+            .expect("the comparing thread starts")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
+fn every_here(folder: &Path, base: &Path) -> Tally {
     let recorded = listed(folder).expect("the recordings are read");
     let mut tally = Tally {
         equal: 0,
@@ -23,16 +36,21 @@ fn every(folder: &Path, base: &Path) -> Tally {
     let mut outcomes: Vec<(usize, Result<Outcome, String>)> = thread::scope(|scope| {
         let workers: Vec<_> = (0..threads)
             .map(|_| {
-                scope.spawn(|| {
-                    let mut found = Vec::new();
-                    loop {
-                        let at = next.fetch_add(1, Ordering::Relaxed);
-                        let Some(each) = recorded.get(at) else {
-                            break found;
-                        };
-                        found.push((at, compared(each, base)));
-                    }
-                })
+                // The comparison walks the output as deep as the check is nested, as the crate's
+                // own passes do, so on a stack as large as theirs.
+                thread::Builder::new()
+                    .stack_size(earnest_quint_syntax::STACK_NEEDED)
+                    .spawn_scoped(scope, || {
+                        let mut found = Vec::new();
+                        loop {
+                            let at = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(each) = recorded.get(at) else {
+                                break found;
+                            };
+                            found.push((at, compared(each, base)));
+                        }
+                    })
+                    .expect("a comparing thread starts")
             })
             .collect();
         workers
