@@ -1,0 +1,1 @@
+{"errors":[{"explanation":"[QNT012] ... may be used once in { ...record, <fields> }","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/two_spreads.qnt","start":{"line":2,"col":10,"index":46},"end":{"line":2,"col":23,"index":59}}]}],"order":[[4,12]],"depth":{}}

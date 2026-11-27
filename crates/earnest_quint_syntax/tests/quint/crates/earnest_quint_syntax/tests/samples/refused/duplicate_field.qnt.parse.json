@@ -1,0 +1,1 @@
+{"errors":[{"explanation":"[QNT016] Field a cannot be defined more than once","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/duplicate_field.qnt","start":{"line":1,"col":10,"index":27},"end":{"line":1,"col":23,"index":40}}]}],"order":[[7]],"depth":{}}

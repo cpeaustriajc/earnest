@@ -15,6 +15,7 @@ const ALIAS: &str = "V";
 const EVERY: &str = ".*";
 const INDENT: &str = "      ";
 const WRITTEN: &str = "property";
+const BINDERS: [&str; 3] = ["val", "def", "nondet"];
 
 #[derive(Debug, Default)]
 struct Entry {
@@ -264,6 +265,213 @@ fn referred(name: &str, main: &str, copy: &Copy, places: &Places) -> String {
     }
 }
 
+fn is_a_start(each: char) -> bool {
+    each.is_alphabetic() || each == '_'
+}
+
+fn is_a_part(each: char) -> bool {
+    each.is_alphanumeric() || each == '_'
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Piece {
+    Name,
+    Text,
+    Other,
+}
+
+fn pieces(text: &str) -> Vec<(Piece, String)> {
+    let letters: Vec<char> = text.chars().collect();
+    let mut found = Vec::new();
+    let mut at = 0_usize;
+    while let Some(first) = letters.get(at).copied() {
+        let start = at;
+        let piece = if first == '"' {
+            at = at.saturating_add(1);
+            while letters.get(at).is_some_and(|each| *each != '"') {
+                at = at.saturating_add(1);
+            }
+            at = at.saturating_add(1);
+            Piece::Text
+        } else if is_a_start(first) {
+            loop {
+                while letters.get(at).copied().is_some_and(is_a_part) {
+                    at = at.saturating_add(1);
+                }
+                let qualified = letters.get(at) == Some(&':')
+                    && letters.get(at.saturating_add(1)) == Some(&':')
+                    && letters
+                        .get(at.saturating_add(2))
+                        .copied()
+                        .is_some_and(is_a_start);
+                if !qualified {
+                    break;
+                }
+                at = at.saturating_add(2);
+            }
+            Piece::Name
+        } else {
+            at = at.saturating_add(1);
+            Piece::Other
+        };
+        let end = at.min(letters.len());
+        found.push((
+            piece,
+            letters.get(start..end).unwrap_or_default().iter().collect(),
+        ));
+    }
+    found
+}
+
+fn is_blank(piece: &(Piece, String)) -> bool {
+    piece.0 == Piece::Other && piece.1.trim().is_empty()
+}
+
+fn before(pieces: &[(Piece, String)], position: usize) -> Option<usize> {
+    (0..position)
+        .rev()
+        .find(|each| pieces.get(*each).is_some_and(|piece| !is_blank(piece)))
+}
+
+fn after(pieces: &[(Piece, String)], position: usize) -> Option<usize> {
+    (position.saturating_add(1)..pieces.len())
+        .find(|each| pieces.get(*each).is_some_and(|piece| !is_blank(piece)))
+}
+
+fn is(pieces: &[(Piece, String)], position: Option<usize>, text: &str) -> bool {
+    position
+        .and_then(|position| pieces.get(position))
+        .is_some_and(|piece| piece.0 != Piece::Text && piece.1 == text)
+}
+
+fn bound(pieces: &[(Piece, String)]) -> Vec<String> {
+    let mut names = Vec::new();
+    for (position, piece) in pieces.iter().enumerate() {
+        if piece.0 == Piece::Name
+            && BINDERS.contains(&piece.1.as_str())
+            && let Some((Piece::Name, name)) =
+                after(pieces, position).and_then(|next| pieces.get(next))
+        {
+            names.push(name.clone());
+        }
+        if !(is(pieces, Some(position), "=") && is(pieces, Some(position.saturating_add(1)), ">")) {
+            continue;
+        }
+        let Some(last) = before(pieces, position) else {
+            continue;
+        };
+        if !is(pieces, Some(last), ")") {
+            if let Some((Piece::Name, name)) = pieces.get(last) {
+                names.push(name.clone());
+            }
+            continue;
+        }
+        let mut depth = 0_usize;
+        for each in (0..=last).rev() {
+            if is(pieces, Some(each), ")") {
+                depth = depth.saturating_add(1);
+            } else if is(pieces, Some(each), "(") {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            } else if let Some((Piece::Name, name)) = pieces.get(each) {
+                names.push(name.clone());
+            }
+        }
+    }
+    names
+}
+
+fn labels(pieces: &[(Piece, String)], position: usize) -> bool {
+    let next = after(pieces, position);
+    is(pieces, next, ":") && !is(pieces, next.map(|next| next.saturating_add(1)), ":")
+}
+
+fn written_with(expression: &str, renamed: &dyn Fn(&str) -> String) -> String {
+    let pieces = pieces(expression);
+    let bound = bound(&pieces);
+    let mut text = String::with_capacity(expression.len());
+    for (position, (piece, written)) in pieces.iter().enumerate() {
+        let free = *piece == Piece::Name
+            && !bound.contains(written)
+            && !is(&pieces, before(&pieces, position), ".")
+            && !is(&pieces, before(&pieces, position), "|")
+            && !labels(&pieces, position);
+        if free {
+            text.push_str(&renamed(written));
+        } else {
+            text.push_str(written);
+        }
+    }
+    text
+}
+
+struct Copied<'a> {
+    entry: &'a Entry,
+    places: &'a Places,
+    copy: &'a Copy,
+    wrapped: &'a str,
+}
+
+fn copied(to: &Copied<'_>, lines: &[String]) -> String {
+    let Copied {
+        entry,
+        places,
+        copy,
+        wrapped,
+    } = *to;
+    let refer = |name: &String| referred(name, &entry.main, copy, places);
+    let actions = [("init", &entry.init), ("step", &entry.step)];
+    let chosen: Vec<(&str, String)> = actions
+        .iter()
+        .filter(|(action, chosen)| refer(chosen) != *action)
+        .map(|(action, chosen)| (*action, format!("action {action} = {}", refer(chosen))))
+        .collect();
+    let (replaced, added): (Vec<_>, Vec<_>) = chosen
+        .into_iter()
+        .partition(|(action, _)| places.declares(&entry.main, action));
+    let defines: Vec<String> = added
+        .into_iter()
+        .map(|(_, line)| line)
+        .chain(entry.written.iter().map(|(name, is)| {
+            format!(
+                "val {name} = {}",
+                written_with(is, &|each| refer(&each.to_owned()))
+            )
+        }))
+        .collect();
+    let mut text = format!(
+        "add a copy of the module `{}` to `{}`, named `{wrapped}`, in which each of these \
+         imports is written as here, each name it gives is written after the name of its \
+         import, as `V::init`, and nothing else changes:\n{}",
+        entry.main,
+        entry.file,
+        block(&copy.imports)
+    );
+    for (action, line) in replaced {
+        let _ = write!(
+            text,
+            "\n{INDENT}then write this line in the copy in place of its own `action \
+             {action}`:\n{}",
+            block(&[line])
+        );
+    }
+    if !defines.is_empty() {
+        let _ = write!(
+            text,
+            "\n{INDENT}then add these lines to the copy:\n{}",
+            block(&defines)
+        );
+    }
+    let _ = write!(
+        text,
+        "\n{INDENT}and write these lines above `module {wrapped}`:\n{}",
+        block(lines)
+    );
+    text
+}
+
 fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> String {
     let wrapped = entry
         .name
@@ -285,38 +493,15 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
     let mut lines = marks_for(&holds, &broken);
     let actions = [("init", &entry.init), ("step", &entry.step)];
     if copy.own {
-        let defines: Vec<String> = actions
-            .iter()
-            .filter(|(action, chosen)| refer(chosen) != *action)
-            .map(|(action, chosen)| format!("action {action} = {}", refer(chosen)))
-            .chain(
-                entry
-                    .written
-                    .iter()
-                    .map(|(name, is)| format!("val {name} = {is}")),
-            )
-            .collect();
-        let mut text = format!(
-            "add a copy of the module `{}` to `{}`, named `{wrapped}`, in which each of these \
-             imports is written as here, each name it gives is written after the name of its \
-             import, as `V::init`, and nothing else changes:\n{}",
-            entry.main,
-            entry.file,
-            block(&copy.imports)
+        return copied(
+            &Copied {
+                entry,
+                places,
+                copy: &copy,
+                wrapped: &wrapped,
+            },
+            &lines,
         );
-        if !defines.is_empty() {
-            let _ = write!(
-                text,
-                "\n{INDENT}then add these lines to the copy:\n{}",
-                block(&defines)
-            );
-        }
-        let _ = write!(
-            text,
-            "\n{INDENT}and write these lines above `module {wrapped}`:\n{}",
-            block(&lines)
-        );
-        return text;
     }
     lines.push(format!("module {wrapped} {{"));
     let imports = if copy.imports.is_empty() {
@@ -342,11 +527,20 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
     for (action, chosen) in actions {
         lines.push(format!("  action {action} = {}", named(chosen)));
     }
+    let seen = |name: &str| {
+        if !bare {
+            refer(&name.to_owned())
+        } else if places.sees(&entry.main, name) {
+            format!("{ALIAS}{QUALIFIED}{name}")
+        } else {
+            name.to_owned()
+        }
+    };
     lines.extend(
         entry
             .written
             .iter()
-            .map(|(name, is)| format!("  val {name} = {is}")),
+            .map(|(name, is)| format!("  val {name} = {}", written_with(is, &seen))),
     );
     lines.push("}".to_owned());
     format!(
@@ -464,4 +658,57 @@ pub(crate) fn migration(checks: &Path, places: &HashMap<PathBuf, Places>) -> Str
         let _ = write!(text, "\n{line}");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::written_with;
+
+    fn under_v(expression: &str) -> String {
+        written_with(expression, &|name| {
+            if ["x", "seen", "rec", "limit", "Busy", "Idle"].contains(&name) {
+                format!("V::{name}")
+            } else {
+                name.to_owned()
+            }
+        })
+    }
+
+    #[test]
+    fn a_name_the_import_gives_is_written_after_the_import_s_name() {
+        assert_eq!(under_v("x <= 2 and local"), "V::x <= 2 and local");
+        assert_eq!(under_v("rec.kind != Busy(7)"), "V::rec.kind != V::Busy(7)");
+    }
+
+    #[test]
+    fn a_name_bound_in_the_expression_is_left_as_written() {
+        assert_eq!(
+            under_v("seen.forall(x => x <= limit)"),
+            "V::seen.forall(x => x <= V::limit)"
+        );
+        assert_eq!(
+            under_v("seen.fold(0, (x, each) => x + each) <= 9"),
+            "V::seen.fold(0, (x, each) => x + each) <= 9"
+        );
+        assert_eq!(
+            under_v("{ val limit = seen.size() limit <= 3 }"),
+            "{ val limit = V::seen.size() limit <= 3 }"
+        );
+    }
+
+    #[test]
+    fn a_field_a_record_label_a_text_and_a_qualified_name_are_left_as_written() {
+        assert_eq!(
+            under_v("{ x: x, kind: rec.kind }.x == S::x or \"x\" == \"seen\""),
+            "{ x: V::x, kind: V::rec.kind }.x == S::x or \"x\" == \"seen\""
+        );
+    }
+
+    #[test]
+    fn the_label_of_a_match_branch_is_left_as_written() {
+        assert_eq!(
+            under_v("match rec.kind { | Idle => x >= 0 | Busy(n) => n <= x }"),
+            "match V::rec.kind { | Idle => V::x >= 0 | Busy(n) => n <= V::x }"
+        );
+    }
 }

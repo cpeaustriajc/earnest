@@ -3116,3 +3116,59 @@ evaluator. The checks file itself (being replaced by marks in the `.qnt` file, #
 fixtures with it. Integers past 32 bits, which TLC holds otherwise (listed in the docs). A
 `quint test` sample that misses a failing choice: not reachable within earnest's limit of 1,000
 choices for a run.
+
+## Sixth Quint pass
+
+An adversarial pass over what was merged since the fifth pass: marks read from the `.qnt` file
+(#72), the wording of result lines (#74), `earnest confirm --quint` on marked checks (#73), and
+chart labels, arrows to each rule's premise and `--base` on `.qnt` files (#80), made on commit
+6a70175 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_sixth.rs` and its files in `models/quint_sixth/`: each `.qnt` beside the JSON
+Quint wrote for it, to a file (`quint parse --out parse.json --source-map sourcemap.json`, the
+source map's file name made relative; `quint compile --target json --main M` as
+`compile.M.json`), which the tests serve through a fake `quint`, so they need no Node. The oracles
+are those of the fifth pass: `quint verify --backend tlc` (Apalache 0.62.4) and `quint test
+--backend typescript`; the checks file is compared with the build of 6dceb43, the last commit that
+reads it.
+
+### A check whose only marks are `@check reachable` stops early and counts part of the model
+
+`models/quint_sixth/reachable_only/reachable_only.qnt`: `x` counts from 0 to 10 and stays there;
+the one property is `/// @check reachable val two = x == 2`. `quint verify --backend tlc --main
+reachableOnly reachable_only.qnt` prints `11 distinct states found` and `[ok]`. Earnest prints
+`pass  reachableOnly  4 states  0 ms  1 rule, 0 runs  (every expected counterexample was found)`
+and the path to `x = 2`; the JSON has `"states": 4` and that `reason`. `confirm --quint` says
+`same  11 states`, since confirm always searches every state. The docs stop a search early only
+"when every property the check judges is marked `broken` and is an invariant, or a temporal
+property that earnest reads as one", and say "a check whose module sees an `init` and a `step`, by
+those names, searches every reachable state". A reached state is no counterexample, so the
+reason is false as well. A check with one `broken` and one `reachable` mark stops the same way (5
+of 11 states, the same counter with `val three = x == 3` marked `reachable`), and so does `--rule`
+naming a `reachable` mark, which prints the same reason. Cause: `apps/earnest/src/run.rs` gives
+`stop_once_broken` every expected name, `reachable` ones among them. Right result: 11 states and
+no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test:
+`a_check_whose_only_mark_is_reachable_searches_every_state_as_the_docs_say`.
+
+### The leftover-file message gives lines that `quint parse` refuses for a copied setup
+
+`models/quint_sixth/leftover/`: `Spec` (constant `N`, `init`, `start`, `step`, `stepR`), `Small`
+(`import Spec(N = 2).*` and a `val` of its own) and `Big` (`import Spec(N = 3) as S` with its own
+`init`, `step` and `stepR`), and an `earnest.quint.json` of two entries: `SmallR` (`main` `Small`,
+`init` `start`, the invariant `{ "name": "atMostTwo", "is": "x <= 2" }`) and `BigR` (`main` `Big`,
+`step` `stepR`, the invariant `"S::x <= 3"`). On 6dceb43 the file gives `pass  SmallR  2 states`
+and `pass  BigR  4 states`. The message says, for each, to add a copy of the module:
+
+- for `SmallR`, a copy whose import is `import Spec(N = 2) as V`, with `action init = V::start`,
+  `action step = V::step` and `val atMostTwo = x <= 2`. In the copy `x` is `V::x`: `quint parse`
+  stops with `[QNT404] Name 'x' not found`. Test:
+  `the_leftover_file_message_writes_an_expression_of_a_copied_setup_in_the_copy_s_names`.
+- for `BigR`, a copy of `Big` with `action step = stepR` added. `Big` has `action step = S::step`,
+  so the copy has two: `[QNT101] Conflicting definitions found for name 'step' in module 'BigR'`.
+  Test: `the_leftover_file_message_does_not_add_a_second_step_to_a_copy_that_has_one`.
+
+The docs: "the message lists the lines to add to a copy of the module instead of a module to
+paste". With both lines written by hand (`V::x`, the step replaced) the four checks of a larger
+file of four entries (`models` not committed: two entries of one module, a `runs` list, a run
+not ending in `Test`, expressions with and without `name`, `expectCounterexample` of a temporal
+property in parts and of an expression) give the states and property verdicts of 6dceb43 (9, 9,
+16 and 16 states); the runs differ only as the message says they will.
