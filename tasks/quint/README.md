@@ -5149,7 +5149,7 @@ To record again: as for slice 1 (`record.sh`). Generated programs:
 | --- | --- | --- | --- |
 | Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 406 | 406 | the whole output, as text; 16 refused by the name phases and 34 by phases 1 and 2, each with Quint's first code, place and text |
 | Quint's repository at `v0.33.1`, in the container only | 196 | 196 | 177 accepted, all equal as text; 11 refused by phases 1 and 2; the 8 its name phases refuse are refused with the same code, place and text: `builtin.qnt` (`QNT101` built-in `Nat`), `_0100cyclicDefs` and `_0101noRecursion` (`QNT099`), `_1011nameOutOfScope`, `_1012unknownType`, `_1013unknownTypeLetIn` (`QNT404`), `_1014conflictingNames` (`QNT101`), `_1016nonConstOverride` (`QNT406`) |
-| GENERATED |
+| 300 generated programs that stress names (`generate_names.py <folder> 300 1`: shadowing chains in lambdas, `let`s and local `def`s, a name by an import and by an export, every import form, instances three deep with constants, names used before their definition, now and then a cycle, a missing name or a conflict), in the container only | 300 | 300 | 133 accepted, all equal as text; 167 refused by the name phases, each with Quint's first code, place and text: `QNT101` 95 (mostly a name bound twice at one depth), `QNT099` 42, `QNT404` 30 |
 
 The command for the two last rows: `QUINT_EXAMPLES=<folder of .qnt> QUINT_EXAMPLES_RECORDED=<folder
 of their recordings> cargo test -p earnest_quint_syntax every_file_of -- --include-ignored
