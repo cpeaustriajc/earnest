@@ -4,9 +4,9 @@ one that is broken, both reading the deep expression. Run from anywhere:
 
     python3 tasks/quint/deep/generate.py [--slow] [folder] [depth...]
 
-With no arguments it writes the samples kept in the repository, in this folder: every shape at
-100, 300 and 500, except the slow shapes, at 100 only. Other depths are for measuring, and go to
-another folder.
+With no arguments it writes the samples kept in the repository, in this folder (see
+KEPT_PAST_100); with --slow, every shape at 100, 300 and 500. Other depths are for measuring,
+and go to another folder.
 """
 
 import argparse
@@ -14,18 +14,31 @@ import pathlib
 
 KEPT = (100, 300, 500)
 
-# Shapes whose type is as deep as the expression. Each costs minutes past 100 deep, so the
-# repository keeps them at 100 only: earnest's type inference in a debug build (the corpus tests
-# of earnest_quint_syntax read every .qnt file) takes 24 s for sets_300, 142 s for records_300
-# and over 300 s for lambdas_300, and Quint 0.33.1 needs 81 s and 370 s to compile sets_300 and
-# sets_500, 573 s for records_300, about 30 minutes to record lambdas_300 and over 30 minutes
-# to compile lambdas_999.
-SLOW = ("sets", "records", "lambdas")
+# Every file costs time in each debug `cargo test` (the corpus tests of earnest_quint_syntax
+# parse, typecheck, compile and search every .qnt file of the repository) and to record with
+# Quint 0.33.1. The repository keeps the files that cost little: every shape at 100 but
+# records and lambdas, and nots, sums and parens past 100. `earnest verify` in a debug build:
+# ifs, implies, ands, ors and elseifs cost 3 to 4 s at 300 and 6 to 9 s at 500; records_100
+# 7 s and lambdas_100 12 s; sets 24 s at 300, records 142 s at 300 and lambdas over 300 s at
+# 300, as earnest's type inference grows with the depth of a type. Quint 0.33.1 compiles
+# sets_300 in 81 s, sets_500 in 370 s and records_300 in 573 s, takes about 30 minutes to
+# record lambdas_300, and over 30 minutes to compile lambdas_999.
+KEPT_PAST_100 = {"nots": (300, 500), "sums": (300, 500), "parens": (300, 500), "lets": (300,)}
+LEFT_AT_100 = ("records", "lambdas")
 
-# Shapes and depths Quint 0.33.1's own `quint compile` overflows on (RangeError: Maximum call
-# stack size exceeded), so the corpus tests have nothing of Quint's to compare them with, though
-# earnest reads them: written with --slow only, and judged by hand.
+# Shapes and depths Quint 0.33.1's own `quint parse` and `quint compile` overflow on
+# (RangeError: Maximum call stack size exceeded), so the corpus tests have nothing of Quint's to
+# compare them with, though earnest reads them: judged by hand.
 QUINT_OVERFLOWS = (("lets", 500),)
+
+
+def kept(shape, depth):
+    """Whether the repository keeps `shape` at `depth` (see KEPT_PAST_100)."""
+    if (shape, depth) in QUINT_OVERFLOWS:
+        return False
+    if depth == 100:
+        return shape not in LEFT_AT_100
+    return depth in KEPT_PAST_100.get(shape, ())
 
 # x goes 0, 1, 2, 3, 0, ...: a property "<= 3" holds, "<= 2" is broken at x = 2 or 3.
 HEADER = """/// @check
@@ -134,9 +147,9 @@ def main():
     arguments.add_argument(
         "--slow",
         action="store_true",
-        help=f"also write {', '.join(SLOW)} past 100 deep, minutes each for earnest's debug type "
-        "inference and for Quint 0.33.1 to record (see SLOW in this file), and the files Quint "
-        "0.33.1 overflows on (see QUINT_OVERFLOWS)",
+        help="also write the files the repository leaves out: seconds to minutes each in every debug "
+        "cargo test and to record with Quint 0.33.1 (the numbers are at KEPT_PAST_100 in this "
+        "file), and the files Quint 0.33.1 overflows on (QUINT_OVERFLOWS)",
     )
     arguments.add_argument("folder", nargs="?", type=pathlib.Path, default=here)
     arguments.add_argument("depths", nargs="*", type=int)
@@ -145,8 +158,7 @@ def main():
     asked.folder.mkdir(parents=True, exist_ok=True)
     for depth in depths:
         for shape, definitions, holds, broken in shapes(depth):
-            left_out = (shape in SLOW and depth > 100) or (shape, depth) in QUINT_OVERFLOWS
-            if left_out and not asked.slow and not asked.depths:
+            if not kept(shape, depth) and not asked.slow and not asked.depths:
                 continue
             name = f"{shape}_{depth}"
             (asked.folder / f"{name}.qnt").write_text(model(name, definitions, holds, broken))
