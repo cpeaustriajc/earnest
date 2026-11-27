@@ -256,15 +256,25 @@ fn fault_refusal(fault: Fault) -> Refusal {
     )
 }
 
-/// [`constant`] for a run that is one condition: a false `assert` in it gives `false`, as
-/// `quint test` fails the run.
-pub(crate) fn constant_of_a_run(expr: &Expr, slots: usize) -> Read<Option<Value>> {
+/// What a run that is one condition comes to when the file is read.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Settled {
+    /// Its value.
+    Value(Value),
+    /// A false `assert` in it, which `quint test` fails the run on at once: an error, not a
+    /// false run that another value of a `nondet` could still make true.
+    Asserted,
+}
+
+/// [`constant`] for a run that is one condition, which keeps a false `assert` apart from a
+/// false condition.
+pub(crate) fn constant_of_a_run(expr: &Expr, slots: usize) -> Read<Option<Settled>> {
     if reads_state(expr, &[]) {
         return Ok(None);
     }
     match eval(expr, &mut crate::frame(&[], slots)) {
-        Ok(value) => Ok(Some(value)),
-        Err(Fault::Asserted) => Ok(Some(Value::Bool(false))),
+        Ok(value) => Ok(Some(Settled::Value(value))),
+        Err(Fault::Asserted) => Ok(Some(Settled::Asserted)),
         Err(fault) => Err(fault_refusal(fault)),
     }
 }
@@ -1146,10 +1156,12 @@ impl<'a> Reader<'a> {
         {
             let ends = self.arguments(args)?;
             let mut numbers = Vec::with_capacity(2);
+            let mut past_64_bits = false;
             for each in &ends {
                 match constant(each, self.slots)? {
                     Some(Value::Int(number)) => numbers.push(number),
-                    Some(Value::Big(_)) | None => {
+                    Some(Value::Big(_)) => past_64_bits = true,
+                    None => {
                         return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
                     }
                     Some(_) => {
@@ -1157,21 +1169,23 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            let [lo, hi] = numbers.as_slice() else {
-                return self.refuse("`to`", "a range without both ends");
-            };
-            let domain = Domain::Int { lo: *lo, hi: *hi };
-            if domain.count() > MOST_VALUES_LISTED {
-                return self.refuse(
-                    &feature,
-                    &format!(
-                        "a range of more than {MOST_VALUES_LISTED} values, more than the checker \
-                         tries in one step: pick from a smaller range"
-                    ),
-                );
+            if !past_64_bits {
+                let [lo, hi] = numbers.as_slice() else {
+                    return self.refuse("`to`", "a range without both ends");
+                };
+                let domain = Domain::Int { lo: *lo, hi: *hi };
+                if domain.count() > MOST_VALUES_LISTED {
+                    return self.refuse(
+                        &feature,
+                        &format!(
+                            "a range of more than {MOST_VALUES_LISTED} values, more than the \
+                             checker tries in one step: pick from a smaller range"
+                        ),
+                    );
+                }
+                let values = domain.values();
+                return Ok(Picked::Listed(domain, values));
             }
-            let values = domain.values();
-            return Ok(Picked::Listed(domain, values));
         }
         let set = self.pure(source)?;
         match constant(&set, self.slots)? {

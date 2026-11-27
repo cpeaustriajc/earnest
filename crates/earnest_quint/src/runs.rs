@@ -4,8 +4,8 @@ use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
 use crate::reader::{
-    Path, Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run,
-    refusal,
+    Path, Picked, READ_BEFORE_SET, Read, Reader, Refusal, Settled, all_of, constant,
+    constant_of_a_run, refusal,
 };
 use crate::starts::{Asserts, start_states};
 use earnest_ir::{
@@ -266,10 +266,17 @@ impl<'a> Run<'_, 'a> {
             }
             _ => {
                 let holds = self.reader.pure(expr)?;
+                let starts = self.init.is_none().then(|| vec![Vec::new()]);
                 match constant_of_a_run(&holds, self.reader.slots)? {
-                    Some(Value::Bool(holds)) => self.push(Plan {
+                    Some(Settled::Value(Value::Bool(holds))) => self.push(Plan {
                         must_not_finish: !holds,
-                        starts: self.init.is_none().then(|| vec![Vec::new()]),
+                        starts,
+                        ..self.without_steps(chosen)
+                    }),
+                    Some(Settled::Asserted) => self.push(Plan {
+                        must_not_finish: true,
+                        starts,
+                        falls: Falls::Breaks,
                         ..self.without_steps(chosen)
                     }),
                     _ => self.refuse(
