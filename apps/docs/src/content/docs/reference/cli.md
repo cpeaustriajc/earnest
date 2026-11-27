@@ -3,7 +3,7 @@ title: CLI and model discovery
 description: Run earnest subcommands, pass flags, interpret exit codes, and control which files count as models.
 ---
 
-`earnest` checks models in one process with no network and no setup. No Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then ([Quint models](/reference/quint/)). It writes only to `.earnest/` in the directory where it runs.
+`earnest` checks models in one process with no network and no setup. No Java and no Node: earnest reads `.qnt` files itself ([Quint models](/reference/quint/)), and only `earnest confirm --quint` starts the project's `quint`. It writes only to `.earnest/` in the directory where it runs.
 
 ## Commands
 

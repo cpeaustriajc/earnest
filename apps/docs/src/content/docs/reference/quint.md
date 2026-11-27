@@ -1,9 +1,9 @@
 ---
 title: Quint models
-description: Mark the modules and properties of a Quint model with /// @check, check every .qnt file with earnest verify, and see how earnest finds and runs quint and caches what it reads.
+description: Mark the modules and properties of a Quint model with /// @check, check every .qnt file with earnest verify, and see how earnest reads a .qnt file as Quint 0.33.1 reads it, with no Quint and no Node.
 ---
 
-`earnest verify` checks the Quint modules (`.qnt`) marked `/// @check` in a folder: each property marked the same way, and each run whose name ends in `Test`. It starts the project's own `quint` to read the files, then searches every reachable state as it does for a TypeScript or Rust model. No other file says what to check. Nothing else in earnest starts Node.
+`earnest verify` checks the Quint modules (`.qnt`) marked `/// @check` in a folder: each property marked the same way, and each run whose name ends in `Test`. Earnest reads the files itself, as Quint 0.33.1 reads them, then searches every reachable state as it does for a TypeScript or Rust model. No other file says what to check. `earnest verify` starts no `quint` and no Node; only [`earnest confirm --quint`](#confirming-a-check-with-quint) does.
 
 ## Checks marked in the model
 
@@ -335,33 +335,19 @@ val seen =
 | `earnest verify specs/clock.qnt` | The marked modules of `clock.qnt` |
 | `earnest verify compiled/small.json` | The JSON `quint compile --target json` wrote, read with no Node |
 
-A `.qnt` file named on the command line with no marked module is `unreadable`, and the problem says how to mark one. Every `.qnt` file is parsed once, for its marks; a file with no marked module costs one `quint parse`.
+A `.qnt` file named on the command line with no marked module is `unreadable`, and the problem says how to mark one. Every `.qnt` file is parsed once, for its marks; a file with no marked module costs one parse.
 
 Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting with `.` are skipped, as for other model files.
 
-## How `quint` is found
+## How earnest reads a `.qnt` file
 
-Earnest never installs or downloads anything. It takes the first of:
+Earnest reads a `.qnt` file with a Quint front end of its own, which writes in memory what Quint 0.33.1's `quint parse`, `quint typecheck` and `quint compile --target json` write, and reads that as it read Quint's output. No `quint` and no Node are needed, and none is started. A project that pins another version of Quint gets Quint 0.33.1's reading from `earnest verify`; [`earnest confirm --quint`](#confirming-a-check-with-quint) runs the project's own Quint, so a difference shows there. A file Quint 0.33.1 refuses is `unreadable` with Quint's code, line and column. The few places where earnest knowingly reads otherwise than Quint, each stricter, are listed in [`tasks/quint/README.md`](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/README.md).
 
-1. The program named by the environment variable `EARNEST_QUINT`.
-2. `node_modules/.bin/quint` in the folder of the `.qnt` file or the nearest folder above it.
-3. `quint` on `PATH`.
+Below, each step is named by the `quint` command whose output earnest makes.
 
-When none is found, each check is `unreadable` with ``` `quint` was not found: install it with `npm install --save-dev @informalsystems/quint`, or set `EARNEST_QUINT` ```, and `earnest verify` exits `1`. Quint 0.33.1 is the version earnest is tested with.
+First, earnest reads each listed `.qnt` file once, as `quint parse specs/clock.qnt --out ... --source-map ...` would, to learn which files the module reads and where each definition is.
 
-## What earnest runs
-
-First, earnest runs `quint parse` once for each listed `.qnt` file, to learn which files the module reads and where each definition is:
-
-```sh
-quint parse specs/clock.qnt --out .earnest/quint/... --source-map .earnest/quint/...
-```
-
-Then, for each file with a check of a setup module, or a check of runs only whose module declares no `init` or no `step` of its own, it runs `quint typecheck` once, whatever the number of checks in the file. A setup module instantiates a spec, with `.*` or under a name (`as C`):
-
-```sh
-quint typecheck specs/clock.qnt --out .earnest/quint/...
-```
+Then, for each file with a check of a setup module, or a check of runs only whose module declares no `init` or no `step` of its own, it typechecks the file once, as `quint typecheck specs/clock.qnt --out ...` would, whatever the number of checks in the file. A setup module instantiates a spec, with `.*` or under a name (`as C`):
 
 ```quint
 module Small {
@@ -370,7 +356,7 @@ module Small {
 }
 ```
 
-For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so `quint` is never asked for one, and its module may also declare variables of its own and import a spec with variables plainly (`import Spec as Main`, `import Spec.*`, with or without `from`), with no instance at all. The runs of a spec imported plainly are played too, as `quint test` plays them (`Main::specTest`, printed `specTest`). No compile runs. Earnest builds a setup module made of any of these:
+For such a check, earnest builds from what `quint typecheck` wrote the module that `quint compile --main Small` would give. It takes the definitions of `Clock` that the check reaches, under the names Quint gives them (`Small::Clock::time`), with each constant replaced by the expression the import gives it. It adds the definitions of `Small` and the check's `init`, `step`, invariants and temporal properties. A check of runs only gets no `init` or `step` when the module lacks either, so the compile is never asked for one, and its module may also declare variables of its own and import a spec with variables plainly (`import Spec as Main`, `import Spec.*`, with or without `from`), with no instance at all. The runs of a spec imported plainly are played too, as `quint test` plays them (`Main::specTest`, printed `specTest`). No compile runs. Earnest builds a setup module made of any of these:
 
 | In the setup module | Example | Names |
 |---|---|---|
@@ -385,19 +371,19 @@ For such a check, earnest builds from what `quint typecheck` wrote the module th
 
 The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one `quint parse` and one `quint typecheck` per file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time. That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file:
+A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
 ```
 
-Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. A check with [chart labels](#chart-labels) lists the `@view state` and then the `@view group` definition at the end of `--invariant`, each as `name == name`, and of the module built from `quint typecheck`, so that the compiled module keeps them; earnest takes them out of the invariants before it reads the JSON. Earnest reads the JSON from the standard output: `--out` writes the modules before they are flattened.
+Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. A check with [chart labels](#chart-labels) lists the `@view state` and then the `@view group` definition at the end of `--invariant`, each as `name == name`, and of the module built from `quint typecheck`, so that the compiled module keeps them; earnest takes them out of the invariants before it reads the JSON. The JSON is what `quint compile` writes to the standard output: `--out` writes the modules before they are flattened.
 
-A compile that fails makes its check `unreadable` with Quint's first error line, at the line and column Quint gives:
+A file that does not parse, or names something that is not there, is `unreadable` at the place `quint parse` gives, with its code: ``specs/clock.qnt:4:22  `quint parse`  [QNT404] Name 'y' not found``. A compile that fails makes its check `unreadable` with the first error line Quint prints, at the line and column Quint gives:
 
 ```text
 unreadable  specs/clock.qnt  Small
-  specs/clock.qnt:4:22  `quint compile --main Small`  Error [QNT404]: Name 'y' not found
+  specs/clock.qnt:4:22  `quint compile --main Small`  Error [QNT000]: Couldn't unify int and bool
 ```
 
 When the reader refuses a construct of a compiled module, the source map from `quint parse` gives its line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
@@ -656,6 +642,16 @@ cannot   As  16 states  fail  (Quint)
 
 Neither is a proof. `same` says that two programs gave the same state count and the same verdicts on this model, with these constants. A fault that both programs share, or one that changes nothing on this model, is not found.
 
+### How `quint` is found
+
+`earnest confirm --quint` is the one command that starts Quint. Earnest never installs or downloads anything. It takes the first of:
+
+1. The program named by the environment variable `EARNEST_QUINT`.
+2. `node_modules/.bin/quint` in the folder of the `.qnt` file or the nearest folder above it.
+3. `quint` on `PATH`.
+
+When none is found, the check prints `not compared`, with ``` `quint` was not found: install it with `npm install --save-dev @informalsystems/quint`, or set `EARNEST_QUINT` ``` under it. Quint 0.33.1 is the version earnest is tested with.
+
 ### The jobs it starts
 
 For each check that searches, earnest starts one `quint verify --backend tlc` with every invariant and temporal property of the check, in `.earnest/confirm/quint/`:
@@ -674,6 +670,7 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 
 | Case | Reason printed |
 |---|---|
+| No `quint` is found, [as above](#how-quint-is-found) | ``` `quint` was not found: install it with ... ``` |
 | Java is not on `PATH` | `Java was not found on PATH, and quint verify --backend tlc needs it ...` |
 | `quint` stops with an error, such as Quint 0.33.1 on `import X as A` inside an instantiated spec | `Quint stopped:` and Quint's error |
 | The model declares, or the search computes, a number outside 32 bits, such as `2^64` | TLC's integers hold 32 bits; when Quint's TLC run stops on the number, `Quint stopped: TLC can't handle a number this big.` |
@@ -689,19 +686,15 @@ Only what the check reaches counts: a `range` or a `fold` in another module of t
 
 ## The cache
 
-Earnest keeps what `quint` wrote under `.earnest/quint/`, so a second run with nothing changed starts no Node process:
+Earnest keeps nothing of Quint's: each run reads the `.qnt` files again, in memory, which takes milliseconds. A `.earnest/quint/` folder left by an older build, which kept what `quint` wrote, is no longer read and can be deleted; earnest leaves it alone, except the `base-<hash>/` copies below.
 
-- A compiled module is reused while the text of `quint --version`, the check's module, its marked invariants and temporal properties, its chart labels, and every `.qnt` file the module reads are the same. The files read are the ones `quint parse` lists, imports from other folders among them, so editing any of them, a mark among them, compiles the check again. Adding, editing or removing a `@view` mark changes the file, so the next run parses it and compiles the check again, once. When `quint parse` fails, the `.qnt` files below the folder of the file stand in for them.
-- The text of `quint --version` is kept for the program's real path, size and modification time, so a new version of Quint compiles everything again. A wrapper script that starts another `quint` is not looked into: after you change what it starts, touch the script, or point `EARNEST_QUINT` at the program itself.
-- What `quint parse` gave, the marks among it, is reused while `quint --version` and every file it lists are the same, and only by a build compiled from the same sources as the build that kept it: the entry holds what earnest read from the parse, not Quint's own output. The compiled and typechecked JSON are Quint's output as written, so any build reads them. Editing a mark reads the file again.
-- What `quint typecheck` gave is reused on the same terms, once per file. The modules built from it are built again on each run, which takes no Node.
 - With `--base <git ref>`, a `.qnt` file that differs from the base, or whose imported files do, is read at the base with one `quint parse` of a copy of the base's `.qnt` files, kept under `.earnest/quint/base-<hash>/`. That parse is reused on the same terms, so a second run against the same commit starts no Node process for the base. A file that is the same at the base and now, imports included, is not parsed at the base at all. See [Rule changes](/reference/output/#quint-checks) for what is listed.
 
-The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose marks, sentences and chart labels among them, are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again but does not compile again.
+The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose marks, sentences and chart labels among them, are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again.
 
 ## Compiled JSON
 
-`earnest verify` still reads a module compiled beforehand, and then needs no Node at all:
+`earnest verify` also reads a module compiled beforehand with Quint:
 
 ```sh
 quint compile --target json --main counter --invariant inRange,tooBig counter.qnt > counter.json

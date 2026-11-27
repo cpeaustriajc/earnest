@@ -5,6 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `earnest verify` reads `.qnt` files with no Quint and no Node
+
+`earnest verify`, `earnest changes` and `earnest chart` read a `.qnt` file themselves, as Quint 0.33.1 reads it, where they started the project's `quint` (Node) for `quint parse`, `quint typecheck` and `quint compile`. The verdicts, state counts, runs and printed lines are the same as with Quint 0.33.1 on every Quint sample in the repository.
+
+- **No install:** a project with neither Quint nor Node installed gets the same verdicts. A first run of a small model takes about 9 MB of memory and 20 ms, where starting Node took about 105 MB and a second.
+- **Quint's errors:** a file Quint 0.33.1 refuses is `unreadable` with Quint's code, line and column. A syntax error is in earnest's own words; the few other places where earnest reads otherwise, each by refusing a file, are listed in [How earnest reads a `.qnt` file](/reference/quint/#how-earnest-reads-a-qnt-file).
+- **`confirm --quint`:** it is the one command that starts the project's `quint`, found as before; with none it prints `not compared` and how to install it.
+- **Nothing kept:** `.earnest/quint/` no longer holds Quint's output, and the Quint version is no longer part of any key. A folder left by an older build can be deleted. With `--base`, a base that can't be read no longer has the reason `quintNotFound`.
+
 ## November 2026: Quint integers have no size limit
 
 A Quint `int` has no size, and `quint test` and `quint run` compute with integers of any size. Earnest stopped at 64 bits: a number past them was a fault (`computes a number too large to hold`), and a literal past them made the check `unreadable`. Both are now checked:

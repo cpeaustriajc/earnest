@@ -5771,3 +5771,46 @@ set to `undefined`, and the import of the module that exported it sets it again,
 place (`exported_and_used.qnt`, found by the review of `5008154`). That is the one key the
 flattener sets to `undefined` that a later pass sets again, and the crate keeps its place with a
 marker (`flatten::CLEARED`) that the table and the written output leave out.
+
+## Quint front end, slice 5: the switch (#91): report
+
+`earnest verify` (and `earnest changes`, `earnest chart`) on a `.qnt` file now takes from
+`crates/earnest_quint_syntax`, in memory, what it took from the project's `quint`: the parse
+and its source map where it ran `quint parse`, the typecheck of the setups it builds where it ran
+`quint typecheck`, and the flattened module of a check where it ran `quint compile --target
+json`. Each is handed over as the JSON text Quint writes, so the reader, `setup.rs`, the marks,
+the places and the plan read exactly what they read before, and an integer literal past 64 bits
+reaches `json::exact` with every digit. Nothing after those places changed, and the same checks
+are built from the typecheck and the same compiled as before.
+
+Removed with it: the program lookup on this path (it moved to `confirm_quint.rs`, the one place
+that still starts Quint), the Quint version in every key, the kept parse, typecheck and compile
+output under `.earnest/quint/`, the scratch files, and the reason `quintNotFound` of `--base`.
+A compiled `.json` named on the command line is still read as before.
+
+### What a user can now meet that they couldn't before
+
+- A project with no Quint and no Node gets verdicts, where every check was `unreadable` with
+  `` `quint` was not found ``. `earnest confirm --quint` with no Quint prints `not compared` and
+  how to install it.
+- A project whose `quint` is another version than 0.33.1 gets 0.33.1's reading from `verify`,
+  where it got its own Quint's; `confirm --quint` still runs its own Quint, so a difference shows
+  there.
+- A syntax error is in earnest's words with Quint's code, line and column, not in the words of
+  Quint's parser generator.
+- The other differences listed in #82, each a refusal: a syntax error in an imported file; a file
+  that needs more than 20,000 attempts to read; nested `val`/`def`/`nondet` on one line whose body
+  starts with `-`, `[`, `(` or a keyword; a file on which Quint's own passes throw, `unreadable` in
+  earnest's words where Quint printed a stack.
+- A second run of an unchanged file reads it again in memory: 19 ms and 9 MB on
+  `tasks/quint/checks/counter/counter.qnt`, where a run that reused what `quint` kept took 8 ms.
+
+### What was checked
+
+- The reference is `183d76b` built in release, with Quint 0.33.1 from npm on its path. Both were
+  run on every `.qnt` file of `tasks/quint` and `tasks/break_it/models/quint_*` (286 files),
+  each alone and every folder holding one whole (121 folders), with `--json` and as text, at
+  `--jobs 1` and `--jobs 4`: 1,628 runs each, 0 differences in the output, times taken out. No
+  sample changed because of a difference listed in #82.
+- `strace -f -e trace=execve` of `earnest verify counter.qnt`: one `execve`, earnest's own; the
+  reference makes three pairs of `quint` and `node`.
