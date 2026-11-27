@@ -1120,7 +1120,7 @@ impl<'t> Filler<'t> {
         let labels = check
             .labels
             .iter()
-            .map(|name| self.named(name, &["val", "pureval"]))
+            .map(|name| self.named(name, &["val", "pureval", "def", "puredef"]))
             .collect::<Fill<Vec<_>>>()?;
         if !labels.is_empty() {
             self.labelled_invariants(&invariants, &labels)?;
