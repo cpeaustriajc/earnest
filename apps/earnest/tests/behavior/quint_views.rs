@@ -720,6 +720,13 @@ fn a_label_of_the_checks_own_module_wins_over_the_labels_it_imports() {
     for name in ["Inherits", "Overrides", "Chooses", "Once"] {
         assert_eq!(model(&report, name)["status"], "pass", "{name}: {report}");
     }
+    for name in ["Inherits", "Overrides"] {
+        let found = model(&report, name);
+        assert!(
+            found.get("runsNotPlayed").is_none() && rule(found, "tickTest")["kind"] == "witness",
+            "{name} is built from the typecheck, so it plays the spec's `tickTest`: {report}"
+        );
+    }
     let chart = |name: &str| {
         let run = quint.earnest(&["chart", "override", "--model", name]);
         (states_drawn(&run.stdout), groups_drawn(&run.stdout))

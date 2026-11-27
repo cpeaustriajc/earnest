@@ -688,7 +688,7 @@ Only what the check reaches counts: a `range` or a `fold` in another module of t
 
 Earnest keeps nothing of Quint's: each run reads the `.qnt` files again, in memory, which takes milliseconds. A `.earnest/quint/` folder left by an older build, which kept what `quint` wrote, is no longer read and can be deleted; earnest leaves it alone, except the `base-<hash>/` copies below.
 
-- With `--base <git ref>`, a `.qnt` file that differs from the base, or whose imported files do, is read at the base with one `quint parse` of a copy of the base's `.qnt` files, kept under `.earnest/quint/base-<hash>/`. That parse is reused on the same terms, so a second run against the same commit starts no Node process for the base. A file that is the same at the base and now, imports included, is not parsed at the base at all. See [Rule changes](/reference/output/#quint-checks) for what is listed.
+- With `--base <git ref>`, a `.qnt` file that differs from the base, or whose imported files do, is read at the base from a copy of the base's `.qnt` files, kept under `.earnest/quint/base-<hash>/`. The copy is made once for a commit and read on each run. A file that is the same at the base and now, imports included, is not read at the base at all. See [Rule changes](/reference/output/#quint-checks) for what is listed.
 
 The [result cache](/reference/cli/#caching) works on top: a check whose compiled JSON and whose marks, sentences and chart labels among them, are unchanged is served from it and its line ends with `(cached)`. `--no-cache` checks every model again.
 

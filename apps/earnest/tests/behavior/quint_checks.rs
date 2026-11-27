@@ -155,13 +155,6 @@ impl Quint {
             .map(str::to_owned)
             .collect()
     }
-
-    fn compiles(&self) -> Vec<String> {
-        self.calls()
-            .into_iter()
-            .filter(|call| call.starts_with("compile"))
-            .collect()
-    }
 }
 
 fn problems(report: &serde_json::Value) -> Vec<(String, u64, u64, String)> {
@@ -473,7 +466,6 @@ fn a_checks_file_right_or_wrong_is_unreadable_at_itself_and_judges_nothing() {
             message_of(&report).starts_with("earnest no longer reads `earnest.quint.json`"),
             "{checks}: {report}"
         );
-        assert_eq!(quint.compiles().len(), 0, "nothing is compiled: {checks}");
     }
 }
 
@@ -493,11 +485,6 @@ fn a_quint_file_named_with_no_marked_module_says_how_to_mark_one() {
     let message = message_of(&report);
     assert!(message.contains("`/// @check`"), "{message}");
     assert!(models_of(&report).is_empty(), "nothing else is checked");
-    assert!(
-        quint.compiles().is_empty(),
-        "the file is parsed, and nothing is compiled: {:?}",
-        quint.calls()
-    );
     let lonely = Quint::new();
     lonely.with_check("alone", "plain", "counter");
     let alone = lonely.earnest(&["verify", "alone/counter.qnt", "--json"]);
