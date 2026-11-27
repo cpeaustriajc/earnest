@@ -189,6 +189,16 @@ impl Repo {
             .filter(|name| name.starts_with("base-"))
             .collect()
     }
+
+    fn earnest_leaving_no_copy(&self, arguments: &[&str]) -> Run {
+        let run = self.earnest(arguments);
+        assert!(
+            self.base_copies().is_empty(),
+            "the copy of the base is removed when the run ends: {:?}\n{run}",
+            self.base_copies()
+        );
+        run
+    }
 }
 
 fn with_clock() -> Repo {
@@ -456,21 +466,164 @@ fn warned_and_not_listed(run: &Run, file: &str) {
 fn a_base_that_does_not_parse_is_warned_of() {
     let repo = Repo::committed(&[(CLOCK, "module Clock {\n")]);
     repo.write(CLOCK, &original("clock.qnt"));
-    let run = repo.earnest(&["verify", "--base", "HEAD"]);
+    let run = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
     run.exits(0);
     warned_and_not_listed(&run, CLOCK);
     assert_eq!(
         section(&run),
         [fields(
-            "  not compared  specs/clock.qnt  unreadable at HEAD"
+            "  not compared  specs/clock.qnt  unreadable at HEAD: 2:1 [QNT000] unexpected '<EOF>', \
+             expected '}' or a declaration"
         )],
         "the section names the file it could not compare, and does not say `none`\n{run}"
     );
-    let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
+    let json = repo
+        .earnest_leaving_no_copy(&["verify", "--base", "HEAD", "--json"])
+        .json();
     assert_eq!(json["ruleChanges"], json!([]));
     assert_eq!(
         json["notCompared"],
-        json!([{ "file": "specs/clock.qnt", "reason": "unreadable" }])
+        json!([{
+            "file": "specs/clock.qnt",
+            "reason": "unreadable",
+            "problem": {
+                "file": "specs/clock.qnt",
+                "line": 2,
+                "column": 1,
+                "message": "[QNT000] unexpected '<EOF>', expected '}' or a declaration",
+                "more": 0,
+            },
+        }])
+    );
+}
+
+#[test]
+fn a_base_with_a_syntax_error_names_its_place_and_message_in_the_text_the_json_and_the_report() {
+    let repo = Repo::committed(&[(
+        CLOCK,
+        &original("clock.qnt").replace("module Small {", "module Small {{"),
+    )]);
+    repo.write(CLOCK, &original("clock.qnt"));
+    let line = "rule changes since HEAD\n  not compared  specs/clock.qnt  unreadable at HEAD: \
+                26:15 [QNT000] unexpected '{', expected a declaration\n";
+    let run = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert!(run.stdout.contains(line), "{run}");
+    warned_and_not_listed(&run, CLOCK);
+    let json = repo
+        .earnest_leaving_no_copy(&["verify", "--base", "HEAD", "--json"])
+        .json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{
+            "file": "specs/clock.qnt",
+            "reason": "unreadable",
+            "problem": {
+                "file": "specs/clock.qnt",
+                "line": 26,
+                "column": 15,
+                "message": "[QNT000] unexpected '{', expected a declaration",
+                "more": 0,
+            },
+        }])
+    );
+    let report = repo.earnest_leaving_no_copy(&["report", "--base", "HEAD"]);
+    report.exits(0);
+    assert!(
+        report
+            .stdout
+            .contains(&format!("## Rule changes\n\n```text\n{line}```")),
+        "{report}"
+    );
+}
+
+fn with_lamp_whose_base_imports(import: &str, switch_at_base: &str) -> Repo {
+    let repo = Repo::committed(&[
+        (
+            "specs/lamp.qnt",
+            &original("lamp.qnt").replace("\"./switch\"", import),
+        ),
+        ("specs/switch.qnt", switch_at_base),
+    ]);
+    repo.write("specs/lamp.qnt", &original("lamp.qnt"));
+    repo.write("specs/switch.qnt", &original("switch.qnt"));
+    repo
+}
+
+#[test]
+fn a_base_whose_imported_file_has_the_syntax_error_names_that_file() {
+    let repo = with_lamp_whose_base_imports(
+        "\"./switch\"",
+        &original("switch.qnt").replace("not(on)", "not(on"),
+    );
+    let run = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(
+        section(&run),
+        [
+            fields(
+                "  not compared  specs/lamp.qnt  unreadable at HEAD: specs/switch.qnt:4:41 the \
+                 imported file has a syntax error (unexpected '(', expected a declaration)"
+            ),
+            fields(
+                "  not compared  specs/switch.qnt  unreadable at HEAD: 4:41 [QNT000] unexpected \
+                 '(', expected a declaration"
+            ),
+        ],
+        "the file is named by its path in the repository, not in the copy of the base\n{run}"
+    );
+    let json = repo
+        .earnest_leaving_no_copy(&["verify", "--base", "HEAD", "--json"])
+        .json();
+    assert_eq!(
+        json["notCompared"][0]["problem"],
+        json!({
+            "file": "specs/switch.qnt",
+            "line": 4,
+            "column": 41,
+            "message": "the imported file has a syntax error (unexpected '(', expected a \
+                        declaration): Quint ignores it here and reads a repaired tree, which \
+                        earnest does not reproduce",
+            "more": 0,
+        }),
+        "{json}"
+    );
+}
+
+#[test]
+fn a_base_importing_from_outside_the_repository_is_unreadable_and_says_so() {
+    let repo = with_lamp_whose_base_imports("\"../../shared/switch\"", &original("switch.qnt"));
+    repo.sandbox
+        .write("shared/switch.qnt", &original("switch.qnt"));
+    let run = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    run.exits(0);
+    assert_eq!(
+        section(&run),
+        [fields(
+            "  not compared  specs/lamp.qnt  unreadable at HEAD: 4:3 the file it imports from \
+             '../../shared/switch' is outside the repository, so it is not read at the base"
+        )],
+        "the file outside the repository is not read, though it is there\n{run}"
+    );
+    warned_and_not_listed(&run, "specs/lamp.qnt");
+    let json = repo
+        .earnest_leaving_no_copy(&["verify", "--base", "HEAD", "--json"])
+        .json();
+    assert_eq!(
+        json["notCompared"],
+        json!([{
+            "file": "specs/lamp.qnt",
+            "reason": "unreadable",
+            "problem": {
+                "file": "specs/lamp.qnt",
+                "line": 4,
+                "column": 3,
+                "message": "the file it imports from '../../shared/switch' is outside the \
+                            repository, so it is not read at the base: [QNT013] import ... from \
+                            '../../shared/switch': could not load",
+                "more": 0,
+            },
+        }])
     );
 }
 
@@ -590,19 +743,71 @@ fn a_file_as_the_base_has_it_is_not_read_at_the_base() {
         repo.base_copies()
     );
     repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
-    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
+    let first = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    first.exits(0);
+    assert_eq!(section(&first), [fields("  none")], "{first}");
+    let second = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
     assert_eq!(
-        repo.base_copies().len(),
-        1,
-        "the file changed, so the base's files are copied once and read: {:?}",
-        repo.base_copies()
+        (section(&second), &second.stderr),
+        (section(&first), &first.stderr),
+        "the file changed, so the base's files are copied for each run and read"
     );
-    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
-    assert_eq!(repo.base_copies().len(), 1, "{:?}", repo.base_copies());
     assert!(
         repo.calls().is_empty(),
         "no `quint` is started: {:?}",
         repo.calls()
+    );
+}
+
+#[test]
+fn no_copy_of_the_base_is_left_after_a_run_that_compared_one_that_did_not_or_one_that_failed() {
+    let repo = with_clock();
+    repo.edit(
+        CLOCK,
+        "val belowLimit = time < Limit",
+        "val belowLimit = time <= Limit",
+    );
+    let compared = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD", "--model", "Small"]);
+    compared.exits(1);
+    assert_eq!(
+        heads(&compared),
+        listed(&[("changed", "Small.belowLimit")]),
+        "the property marked broken holds now, so the run fails\n{compared}"
+    );
+    repo.write("specs/broken.qnt", "module Broken {\n");
+    repo.git(&["add", "--all"]);
+    repo.git(&["commit", "--quiet", "--message", "broken"]);
+    repo.write("specs/broken.qnt", "module Broken {}\n");
+    let not_compared = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    assert!(
+        section(&not_compared)
+            .iter()
+            .any(|line| line[..2] == ["not compared", "specs/broken.qnt"]),
+        "{not_compared}"
+    );
+    let failed = repo.earnest_leaving_no_copy(&["verify", "--base", "nosuch"]);
+    assert_ne!(failed.code, Some(0), "{failed}");
+}
+
+#[test]
+fn a_leftover_folder_of_an_older_copy_changes_nothing() {
+    let repo = with_clock();
+    repo.edit(CLOCK, "val belowSix = time < 6", "val belowSix = time < 7");
+    let before = repo.earnest_leaving_no_copy(&["verify", "--base", "HEAD"]);
+    repo.write(
+        ".earnest/quint/base-deadbeef/specs/clock.qnt",
+        &original("clock.qnt").replace("val belowSix = time < 6", "val belowSix = time < 8"),
+    );
+    let after = repo.earnest(&["verify", "--base", "HEAD"]);
+    assert_eq!(
+        (section(&after), &after.stderr),
+        (section(&before), &before.stderr),
+        "a folder this run did not make is not read"
+    );
+    assert_eq!(
+        repo.base_copies(),
+        ["base-deadbeef"],
+        "a folder this run did not make is not removed"
     );
 }
 
