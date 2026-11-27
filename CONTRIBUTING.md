@@ -30,8 +30,11 @@ The repository follows the workspace layout used by oxc: one crate per concern, 
 | `tasks/benchmark` | Speed and instruction-count benchmarks with hand-derived state counts |
 | `tasks/break_it` | Adversarial regression suite and optional TLC / `tla-rs` tests |
 | `tasks/models` | Models of earnest's own internals (`pool`, `cache`, `outcome`) |
+| `tasks/quint` | Quint models (`.qnt`) with fixtures recorded from Quint 0.33.1. `samples/` holds one small sample per shape real projects write |
 
 Data flows one way: a reader parses a file into an AST, `earnest_semantic` lowers it into a checked model, `earnest_check` explores reachable states, and a writer formats the output. A crate depends only on earlier crates in that pipeline. Each crate has its own `README.md`, inherits workspace lints and metadata, keeps unit tests beside the code, and puts public API tests in `tests/`.
+
+A report of a Quint shape that earnest refuses or misreads is fixed together with a sample of that shape: in `tasks/quint/samples/`, or in `tasks/quint/shapes/` when the shape is how one module brings in another. Record its fixtures with `record.py` beside it, from Quint 0.33.1, and the test suite reads the sample on every run.
 
 ## Running checks
 

@@ -4782,3 +4782,115 @@ After merging `claude/lucid-brown-f5xvr8` at `4b9d3a0` (the fifth pass's first f
 `eventually.rs`; its test reads compiled JSON, so nothing to move): `cargo fmt --check`, clippy,
 `just lint-library` clean; `cargo test --locked` 2217 passed, 0 failed; `just docs` `Complete!`;
 `just same-answers` 0 differences. The real-Quint runs above were made at `17b1c8a`, before it.
+
+## Shapes real projects write (issue #76)
+
+The list of shapes comes from Quint's own public examples, not from a private project. Corpus:
+`git clone --depth 1 https://github.com/informalsystems/quint` at `95141d4` (2026-11-23), its
+`examples/` folder, 77 `.qnt` files; Quint `0.33.1` from npm. The clone worked. No file of Quint's
+is in this repository, and no sample is a renamed copy of one: each is written small, about a
+made-up subject, in the shape.
+
+`samples/count.py` holds one regular expression per shape and counts the example files whose
+text it matches, and checks that the regular expression matches the sample named for the shape:
+`python3 -I count.py <folder of examples>`. A count is the number of files with the shape, out of
+77, and is as exact as the expression is.
+
+| Shape | Examples | Covered by |
+|---|---|---|
+| One module with vars, `init`, `step` and an invariant | 49 | `models/counter.qnt` |
+| Several modules in one file | 31 | `setups/clock.qnt` |
+| A types module imported by a spec (`import types.* from`) | 6 | `review/typesmodule/light.qnt` |
+| A spec with constants | 31 | `setups/clock.qnt` |
+| A setup module `import M(C = v).*` | 16 | `setups/lamp.qnt` |
+| An instance under a name, `import M(C = v) as A`, then `A::name` | 5 | `first/TwoInstances.qnt` |
+| Modules with their own variables joined by `import M as A` | 2 | new: `samples/parts.qnt` |
+| `import M.* from` another file | 14 | `shapes/from.qnt` |
+| `export` | 4 | `shapes/export.qnt` |
+| `assume` on constants | 13 | `review/specassume/specassume.qnt` |
+| A library of `pure def` and `pure val` | 44 | `setups/pure.qnt` |
+| `init` picks a start with `nondet` | 6 | `models/starts.qnt` |
+| `step` is `any { ... }` of guarded actions | 35 | `setups/lamp.qnt` |
+| A helper action with arguments, fed by `nondet` picks | 34 | `setups/clock.qnt` |
+| `match` on a sum type | 17 | `review/sumtype/sumtype.qnt` |
+| A sum type with a payload (`Taken(Mark) \| Free`) | 17 | new: `samples/board.qnt` |
+| A pure transition function that returns a record result | 8 | new: `samples/ledger.qnt` |
+| A map of maps | 5 | new: `samples/board.qnt` |
+| A set of records as a pool | 11 | new: `samples/pool.qnt` |
+| A list state grown with `append` | 13 | `setups/readsetup.qnt` |
+| A start or a pick from `powerset`, `setOfMaps` or `tuples` | 15 | new: `samples/pool.qnt` |
+| A record updated with `with` | 6 | `setups/readsetup.qnt` |
+| A map updated with `set` or `setBy` | 29 | new: `samples/ledger.qnt` |
+| A per-process map over `1.to(N)` with a `forall` invariant | 9 | new: `samples/ring.qnt` |
+| `fold` over a set or a map in a `val` | 22 | `models/bank.qnt` |
+| A temporal property without fairness | 7 | `setups/clock.qnt` |
+| A temporal property under `weakFair` or `strongFair` | 9 | `setups/clock.qnt` |
+| A run `init.then(...).expect(...)` | 3 | `setups/runs.qnt` |
+| A run that must fail, `.fail()` | 5 | `models/runs_ints.qnt` |
+| A run with arguments, called by other runs | 5 | `first/Helpers.qnt` |
+| Runs of pure definitions alone: no `var`, no `init`, `all { assert(...) }` | 4 | new: `samples/tally.qnt`, `samples/tallyfails.qnt` |
+
+30 shapes found, 21 already covered by a sample, 9 added in 7 files: `parts`, `board`, `ledger`,
+`pool`, `ring`, `tally` and `tallyfails`. The marks
+(`/// @check`, `broken`, `reachable`) are earnest's, so no example has them; every sample is marked
+and the covered shapes' samples keep theirs.
+
+### The new samples
+
+Each sample is a marked module of a few lines that checks in under a millisecond. The recorded
+answers are in `samples/fixtures/expected.json`: the state count of `quint verify --backend tlc`,
+a verdict for each invariant or temporal property, and the verdict of each run of `quint test`.
+
+```sh
+cargo build --release --locked -p earnest-cli
+export EARNEST_QUINT=$(pwd)/node_modules/.bin/quint
+target/release/earnest confirm --quint tasks/quint/samples
+```
+
+```text
+same     board  35 states  pass  (Quint)
+same     ledger  15 states  pass  (Quint)
+same     house  8 states  pass  (Quint)
+same     pool  9 states  pass  (Quint)
+same     Two  8 states  pass  (Quint)
+same     tally  0 states  pass  (Quint)
+unreadable  tasks/quint/samples/tallyfails.qnt  tallyfails
+  tasks/quint/samples/tallyfails.qnt:7:7  an action written in place  a condition of an action written in place finds an `assert` false, which `quint run` stops on as an error and TLC reads as a guard that disables the action, in the run `wrongTest`
+```
+
+| Sample | Check | States | Properties | Runs |
+|---|---|---|---|---|
+| `ledger.qnt` | `ledger` | 15 | `conserved`, `noDebt` hold; `someoneEmpty` reached | 2 |
+| `board.qnt` | `board` | 35 | `xNeverBehind` holds; `xHasTwo` reached | 1 |
+| `parts.qnt` | `house` | 8 | `tickBound` holds; `neverLit` breaks, expected | 2, one a run with an argument |
+| `pool.qnt` | `pool` | 9 | `notBoth` holds; `allDone` reached | 1 |
+| `ring.qnt` | `Two` (`ring` with `N = 2`) | 8 | `mutex` holds, `moves` holds under `weakFair(step, phase)` | 1 |
+| `tally.qnt` | `tally` | none | none | 2 |
+| `tallyfails.qnt` | `tallyfails` | none | none | 1, marked `broken` |
+
+### What earnest could not read
+
+`tallyfails.qnt` is `unreadable` at the line above. It is a pure run, `run wrongTest = all {
+assert(total([1, 2]) == 4) }`, marked `/// @check broken`: `quint test` fails it, as the mark says,
+and earnest refuses to judge it, because it reads an `assert` that is false as the guard of an
+action written in place. Its test,
+`quint_samples.rs`, asserts the line. Everything else reads, through the `.qnt` files and through
+the compiled JSON, and agrees with Quint.
+
+### Recording the fixtures
+
+`samples/record.py` runs the real Quint on each sample and writes `samples/fixtures/`: what
+`quint parse`, `typecheck` and `compile --main M --init init --step step --invariant ...` give,
+which `quint_samples.rs` serves from a fake `quint`, and `expected.json`. Run it from
+`tasks/quint/samples` with `EARNEST_QUINT` set to Quint and `EARNEST` set to a built `earnest`.
+Quint's `compile --out file` writes a JSON that earnest does not read for `board` and `parts`
+(`a variable whose type is const`, `a declaration the reader does not know`) while the same
+compile on stdout reads, so `record.py` writes stdout to the file.
+
+### The tests
+
+- `quint_samples.rs` verifies the folder with the fake `quint` and compares each check's state
+  count and verdicts with `expected.json`, so a sample that stops reading fails; it also fails
+  when a sample has no recording or a recording no sample.
+- `kept_tests.rs` reads every compiled fixture of the folder with `read`, as it does for the
+  fixtures of the shapes before it.
