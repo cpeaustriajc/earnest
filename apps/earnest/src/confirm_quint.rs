@@ -532,7 +532,11 @@ fn searched(
     found
 }
 
-fn played(checked: &Checked, runner: &Runner<'_>, reasons: &[String]) -> Vec<Difference> {
+fn played(
+    checked: &Checked,
+    runner: &Runner<'_>,
+    reasons_of: &dyn Fn(&str) -> Vec<String>,
+) -> Vec<Difference> {
     let ours: Vec<&RuleResult> = checked
         .result
         .rules
@@ -593,7 +597,7 @@ fn played(checked: &Checked, runner: &Runner<'_>, reasons: &[String]) -> Vec<Dif
         } else if rule.verdict == BROKEN && run.samples > 1 {
             cannot(said, SAMPLED)
         } else {
-            unless(said, reasons)
+            unless(said, &reasons_of(&rule.id))
         });
     }
     found.extend(left_over(checked, runner, &ours, &theirs, &claimed));
@@ -694,10 +698,15 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
     };
     let differ = where_backends_differ(asked.compiled, quint);
     let mut reasons = asked.beyond_tlc.clone();
-    reasons.extend(differ.search);
+    reasons.extend(differ.search.iter().cloned());
     reasons.extend(ours_cut_short(checked));
-    let mut run_reasons = differ.runs;
-    run_reasons.extend(ours_cut_short(checked));
+    let cut_short = ours_cut_short(checked);
+    let run_reasons = |run: &str| -> Vec<String> {
+        let mut reasons = differ.runs.clone();
+        reasons.extend(differ.of_run(run));
+        reasons.extend(cut_short.iter().cloned());
+        reasons
+    };
     let mut found = Vec::new();
     if quint.searches {
         let (properties, unmatched) = properties(checked, quint, asked.expected);
