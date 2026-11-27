@@ -4955,11 +4955,11 @@ find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earn
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 385 | 385 | 332 samples of the repository and 53 of the crate's own, 34 of them refused |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 397 | 395 | 332 samples of the repository and 65 of the crate's own (12 from the review of #84), 39 of them refused; the other 2 (`Set[int, str]`, `List[a, b]`) are equal on phases 1 and 2 and refused by `quint parse`'s name phase, as Quint refuses them |
 | Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place |
-| 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1084 | 63 Quint accepts: all equal; 1136 Quint refuses: 1041 at Quint's line and column, 95 elsewhere; 20 more refused only by Quint's name phases |
-| 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 666 | 225 Quint accepts: all equal; 575 Quint refuses: 441 at Quint's place, 134 elsewhere, none read |
-| 1000 more from another seed, generated after the fix below, in the container only | 1000 | 871 | 307 Quint accepts: 306 equal, 1 we refuse; 693 Quint refuses: 565 at Quint's place, 126 elsewhere, 2 we read (before the fix: 865 equal, 1 refused, 13 read, 1 tree different) |
+| 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1088 | 63 Quint accepts: all equal; 1136 Quint refuses: 1045 at Quint's line and column, 91 elsewhere; 20 more refused only by Quint's name phases |
+| 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 670 | 225 Quint accepts: all equal; 575 Quint refuses: 445 at Quint's place, 130 elsewhere, none read |
+| 1000 more from another seed, generated after the fix below, in the container only | 1000 | 875 | 307 Quint accepts: 306 equal, 1 we refuse; 693 Quint refuses: 569 at Quint's place, 122 elsewhere, 2 we read (before the fix: 865 equal, 1 refused, 13 read, 1 tree different) |
 
 The command for the two last rows and Quint's repository: `QUINT_EXAMPLES=<folder of .qnt>
 QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax every_file_of
@@ -4982,6 +4982,15 @@ What differs, with the reason:
   `module G{val v2=match def l=val l=true[_000]-1{_=>({x1F})}}`; the smallest Quint refuses (`QNT008`)
   and the crate reads: `module G{val v1=val{g}={...{false},f:()}-{()}val v2=or{{()},}val v4=match(){_=>{true}}}`.
   `tests/samples/ambiguous/` holds four that are now equal.
+- Where a call, an index or `and {`/`or {` fails to parse, Quint reads the shorter alternative only
+  when that reading gets at least as far; otherwise it reports the error inside. The crate does the
+  same, and a lexer error before the farthest token any of these attempts reached comes before the
+  parser's error. Two mutated files still differ: their lexer error is an unterminated string at
+  the end of the file, which Quint's lookahead for a `match` 37 and 75 lines earlier reached and
+  the crate's attempt did not.
+- The retries are capped at 20,000 attempts per file (`SEARCHES` in `parser.rs`), after which the
+  first error stands. One mutated file needed the cap; no real or generated file Quint accepts
+  comes near it.
 - A syntax error in an imported file: Quint ignores it in phases 1 and 2 and reads on in a tree its
   parser repaired. The crate refuses the import as `unreadable`, naming the imported file's own
   error. This is the one place earnest is stricter than Quint on purpose (decided on #84), and it
@@ -5028,11 +5037,17 @@ What differs, with the reason:
 - `Map[a, b]` is the function type and the error `QNT015`; `T(a)` as a type is `QNT009`; a type
   name in lowercase is `QNT007`; an unbound type variable is `QNT014`; a qualified name where a
   plain one is needed is `QNT008`; a reserved word as a name is `QNT008`.
-- A doc comment is each `///` line without its first four characters and its newline, the lines
+- A doc comment is each `///` line without its first four UTF-16 units and its newline (so
+  `///🙂 doc` keeps half of the emoji, which Quint writes as U+FFFD), the lines
   joined by newlines, no doc when that is empty: `///@check` is `check`, a blank `///` after a line
   ends the doc with a newline, `//` and `/* */` give nothing. On a sum type it lands on the last
   constructor; on a destructuring, on the last name.
-- An instance's `.*` sets `identityOverride: true`.
+- An instance's `.*` sets `identityOverride: true`. An import or instance `from ""` keeps
+  `fromSource: ""` and is read as if it had no `from`.
+- `Set[a, b]` and `List[a, b]` are type applications of `Set` and `List` (refused later by the name
+  phase); `Set[a]` and `List[a]` are the set and list types. `type T = A(int, str)` is not a sum
+  type: it is the alias `A(int, str)`, refused with `QNT009`.
+- `((x)) => e` with one name is not a lambda: the tuple form needs two names or more.
 - Integers lose their `_` and hex is written in decimal, of any size; strings are raw (no escapes).
 - A tuple type's fields are named `"0"`, `"1"`, ...; the type `()` has fields `{ kind: "empty" }`,
   unlike `Tup()`'s unit row; `a => b` is an `oper` of one argument.

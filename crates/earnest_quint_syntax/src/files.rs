@@ -76,6 +76,9 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
             let Some(Json::Text(from)) = declaration.get("fromSource") else {
                 continue;
             };
+            if from.is_empty() {
+                continue;
+            }
             let importing = trail.last().map_or("", String::as_str);
             let target = normalize(&format!("{}/{from}.qnt", parent(importing)));
             let lower = target.to_lowercase();
@@ -152,10 +155,10 @@ fn first_problem(
     let index = ids.source(source);
     let lexical = lexed.problems.first();
     match parse(&lexed.tokens, ids, index) {
-        Err(Reported { problem, token }) => {
+        Err(Reported { problem, seen, .. }) => {
             let next_start = lexed
                 .tokens
-                .get(token + 1)
+                .get(seen + 1)
                 .map_or(usize::MAX, |next| next.start);
             let first = match lexical {
                 Some((at, lexical)) if *at < next_start => lexical.clone(),
