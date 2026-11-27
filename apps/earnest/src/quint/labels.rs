@@ -8,8 +8,12 @@ pub(super) fn labelled(job: &Job) -> Check {
     let mut check = job.check.clone();
     check
         .invariants
-        .extend(job.labels.names().map(str::to_owned));
+        .extend(job.labels.names().map(|name| format!("{name} == {name}")));
     check
+}
+
+pub(super) fn label_names(job: &Job) -> Vec<String> {
+    job.labels.names().map(str::to_owned).collect()
 }
 
 fn names(job: &Job) -> String {
@@ -108,9 +112,9 @@ pub(super) fn blamed(
                     Ok(_) => Err(at_label(
                         job,
                         &format!(
-                            "`quint compile --main {}` fails when the chart label {} follows the \
-                             invariants, and compiles the check without it, so the label is \
-                             not one Quint takes there. Quint said: {}",
+                            "`quint compile --main {}` fails when it is asked to keep the chart \
+                             label {}, written `name == name` after the invariants, and compiles \
+                             the check without it. Quint said: {}",
                             job.check.main,
                             names(job),
                             problem.message

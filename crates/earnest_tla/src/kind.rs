@@ -34,7 +34,7 @@ impl Kind {
         match value {
             Value::Null => Self::optional(Self::Unknown),
             Value::Bool(_) => Self::Bool,
-            Value::Int(_) => Self::Int,
+            Value::Int(_) | Value::Big(_) => Self::Int,
             Value::Str(_) => Self::Text,
             Value::Record(fields) => Self::Record(
                 fields

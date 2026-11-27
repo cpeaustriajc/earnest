@@ -143,6 +143,7 @@ pub struct Setup<'c> {
     invariants: &'c [String],
     temporal: &'c [String],
     runs: &'c Runs,
+    labels: &'c [String],
 }
 
 impl Setup<'_> {
@@ -168,7 +169,19 @@ impl<'c> Setup<'c> {
             invariants,
             temporal,
             runs,
+            labels: &[],
         }
+    }
+
+    /// The same check with the chart labels it was asked for: each `val` named in `labels`, as
+    /// the module sees it, ends the invariants as `name == name`, after every invariant, as
+    /// `quint compile --invariant "inv,name == name"` writes it. The equality is true in every
+    /// state and well typed for a value of any type, so the module keeps the label's
+    /// definition and its invariants judge nothing more. [`crate::split_views`] takes it out
+    /// again.
+    #[must_use]
+    pub const fn with_labels(self, labels: &'c [String]) -> Self {
+        Self { labels, ..self }
     }
 }
 
@@ -217,7 +230,7 @@ impl Typechecked {
     /// reported errors.
     #[must_use]
     pub fn read(source: &str) -> Option<Self> {
-        let value: Value = serde_json::from_str(source).ok()?;
+        let value: Value = serde_json::from_str(&crate::json::exact(source)).ok()?;
         if !list(&value, "errors").is_empty() || text(&value, "stage") != Some("typechecking") {
             return None;
         }
@@ -985,6 +998,32 @@ impl<'t> Filler<'t> {
         Some(())
     }
 
+    fn name_of(&mut self, (within, raw, shown, kind): &Target) -> Fill<Value> {
+        self.reach(*raw, *within)?;
+        let target = self.id_in(*within, *raw);
+        let id = self.fresh();
+        self.entries
+            .insert(id.to_string(), json!({ "kind": kind, "id": target }));
+        Some(json!({ "id": id, "kind": "name", "name": shown }))
+    }
+
+    fn labelled_invariants(&mut self, listed: &[Target], labels: &[Target]) -> Fill<()> {
+        let mut args = Vec::with_capacity(listed.len().saturating_add(labels.len()));
+        for each in listed {
+            args.push(self.name_of(each)?);
+        }
+        for each in labels {
+            let both = [self.name_of(each)?, self.name_of(each)?];
+            args.push(json!({ "id": self.fresh(), "kind": "app", "opcode": "eq", "args": both }));
+        }
+        let expr = json!({ "id": self.fresh(), "kind": "app", "opcode": "and", "args": args });
+        let id = self.fresh();
+        self.push(
+            json!({ "id": id, "kind": "def", "name": "q::inv", "qualifier": "val", "expr": expr }),
+        );
+        Some(())
+    }
+
     fn played(&self, runs: &Runs) -> Vec<(usize, u64)> {
         let mut found = Vec::new();
         for (position, each) in self.instances.iter().enumerate() {
@@ -1065,7 +1104,14 @@ impl<'t> Filler<'t> {
             self.special(("q::init", "action"), &[init])?;
             self.special(("q::step", "action"), &[step])?;
         }
-        if !invariants.is_empty() {
+        let labels = check
+            .labels
+            .iter()
+            .map(|name| self.named(name, &["val", "pureval", "def", "puredef"]))
+            .collect::<Fill<Vec<_>>>()?;
+        if !labels.is_empty() {
+            self.labelled_invariants(&invariants, &labels)?;
+        } else if !invariants.is_empty() {
             self.special(("q::inv", "val"), &invariants)?;
         }
         if !temporal.is_empty() {

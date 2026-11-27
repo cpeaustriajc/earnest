@@ -284,7 +284,7 @@ stateDiagram-v2
 - A text prints without quotes. Any other value prints as in [How values print](#how-values-print): `(Red, 0)` for a tuple, `{ retried: 1 }` for a record.
 - States with the same label and the same group are drawn as one box, so a label that leaves out a part of the state merges the states that differ only there. A box is drawn as broken when any of its states breaks a rule, and as an end when any of them is one.
 - A chart draws 20 arrows unless `--max-arrows` says otherwise, and the boxes those arrows reach. A label that merges many states may still need more: pass `--max-arrows 50` to see every box of a small chart.
-- A label that faults in a state, by earnest's own rules for integers (a `/` or `%` by a number below 1 or of a negative number, an overflow) or `getOnlyElement` of a set that is not of one item, prints `?` for that state, and every such state of one group shares one `?` box. `earnest verify` is not affected: a label is evaluated only to draw the chart.
+- A label that faults in a state, by earnest's own rules for integers (a `/` or `%` by a number below 1 or of a negative number) or `getOnlyElement` of a set that is not of one item, prints `?` for that state, and every such state of one group shares one `?` box. `earnest verify` is not affected: a label is evaluated only to draw the chart.
 - Quint has no way to join texts or to write a number as text, so a label is either a record or a tuple of the parts to show, or an `if` or `match` that gives a text:
 
 ```quint
@@ -308,7 +308,8 @@ val seen =
 | two | any number | nothing: the check is `unreadable`, and the message names both |
 
   So one setup of a spec can label its chart its own way while another takes the spec's labels. A module brought by more than one import of one instance, as `import Spec.*` beside `import Spec as P` and `export P.*`, brings one label; two instances of one spec bring two.
-- A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives the labels to `quint compile` after the check's invariants, so that it keeps their definitions, and takes them out of the compiled JSON again before it reads the invariants, leaving every other byte, numbers among them, as Quint wrote it. Quint 0.33.1 takes a text or a record there: it checks that each name exists and does not check the type of the `and` it writes from the list. A setup built from `quint typecheck` is built with its labels the same way, and stays built from the typecheck, so its imported runs are still played.
+- A label is a `val`, `pure val`, `def` or `pure def` with no parameters, which Quint treats alike: each is a value. A `def` label in a spec leaves its setups built from `quint typecheck`, as a `val` does.
+- A label never changes what is checked: the verdicts, the state count, the variables searched and the result line are the same with and without the marks. Earnest gives each label to `quint compile` after the check's invariants as an equality of the label with itself, `--invariant "inRange,seen == seen,retried == retried"`, so that the compiled module keeps the labels' definitions. Quint writes `and(inRange, eq(seen, seen), eq(retried, retried))`, which is well typed for a label of any type and true in every state, and which `quint typecheck` accepts. Earnest takes each `eq(name, name)` out of the compiled JSON again before it reads the invariants, leaving every other byte, numbers among them, as Quint wrote it, and refuses the check when the invariants do not end with those equalities. A setup built from `quint typecheck` gets its labels as the same equalities, and stays built from the typecheck, so its imported runs are still played.
 - A check that plays only runs searches nothing and draws no chart, so it uses no label. `confirm --quint`, `confirm --tlc` and `earnest tla` leave the labels out.
 - A `val` may carry both a `@check` and a `@view` mark: the property is judged, and the chart shows `true` or `false`. The lines of the doc comment other than the marks are the rule's sentence. A `val` holds at most one `@view` mark.
 - Each of these is `unreadable`, at the line of the mark:
@@ -316,15 +317,15 @@ val seen =
   - anything after the word, such as `@view state, phase`;
   - `///@view state` with no space after the slashes, which `quint parse` hands over as `view state`: earnest reads the `///@` in the source line;
   - a second `@view` mark in one doc comment;
-  - `@view` on anything but a `val` with no parameters: a `def` (the message says to write a `val`), a definition with parameters, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
+  - `@view` on anything but a `val`, `pure val`, `def` or `pure def` with no parameters: a definition with parameters, a `nondet`, an `action`, a `temporal` definition, a `run`, a `var`, a `const`, or a module;
   - a check with two `@view state` definitions of its own, or none of its own and two it imports, and the same for `@view group`: the message names them;
   - `@view` in another letter case, as `/// @View state`, and `@view` in a comment that `quint parse` does not hand over, `// @view state` or `/** @view state */`, on the lines directly above a declaration: the message shows `/// @view state`. A doc line is a mark only when it starts with `@view` or `@check`, so a misspelling such as `/// @vew state` is read as a sentence, and the chart keeps the labels it had;
   - a label that reads a variable that `init`, `step` and the checked properties do not read, since the search does not hold that variable;
   - a label the reader can't read, such as one that uses `chooseSome`: the message is the reader's own, and says what to write;
   - a `@view` definition that no check that searches sees;
-  - a label that `quint compile` fails on when it follows the invariants, while the check compiles without it: the message gives Quint's error;
+  - a check that `quint compile` fails on when it is asked to keep a label as `name == name`, while it compiles without the label: the message gives Quint's error;
   - a label with which a setup can't be built from `quint typecheck` while it can without it;
-  - a compiled module whose invariants do not end with the labels the check was compiled with. A label is never judged as an invariant.
+  - a compiled module whose invariants do not end with `eq(name, name)` for each label the check was compiled with. A label is never judged as an invariant.
 
 ## Which `.qnt` files are checked
 
@@ -390,7 +391,7 @@ A spec imported whole with `import Spec.*` is built as `quint compile` writes it
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
 ```
 
-Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. A check with [chart labels](#chart-labels) lists the `@view state` and then the `@view group` definition at the end of `--invariant`, and of the module built from `quint typecheck`, so that the compiled module keeps them; earnest takes them out of the invariants before it reads the JSON. Earnest reads the JSON from the standard output: `--out` writes the modules before they are flattened.
+Several invariants or temporal properties are joined by commas. `--invariant` and `--temporal` are left out when the list is empty. A check with [chart labels](#chart-labels) lists the `@view state` and then the `@view group` definition at the end of `--invariant`, each as `name == name`, and of the module built from `quint typecheck`, so that the compiled module keeps them; earnest takes them out of the invariants before it reads the JSON. Earnest reads the JSON from the standard output: `--out` writes the modules before they are flattened.
 
 A compile that fails makes its check `unreadable` with Quint's first error line, at the line and column Quint gives:
 
@@ -413,6 +414,14 @@ unreadable  specs/problems.qnt  problems
 ## What is read today
 
 The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
+
+An integer has no size limit, as in `quint test` and `quint run`: sums, products, powers, comparisons, the ends of a range, map keys, set items, paths, the chart, the JSON and `earnest tla` all keep every digit, and a literal past 64 bits is read as written. `assert(2^70 > 2^64)` holds, and a counter that passes `9223372036854775807` goes on to `9223372036854775808`. A model whose numbers fit in 64 bits is searched as fast as before; a number past them is held in a form of its own only where one appears. Three things still stop a check:
+
+- `/` and `%` with a negative number or a divisor below 1 are a fault, since Quint's backends disagree there (`quint test` gives `(-7) / 2 == -3`, Quint's TLC run `-4`).
+- A power whose exponent is past 32 bits, such as `2^(2^32)`, is a fault (`computes a number too large to hold`).
+- The caps that keep a search finite: a range of more than 1,000,000 numbers built in an expression, a `nondet` over more than 1,000,000 values and `powerset` of 20 items or more.
+
+A TypeScript model keeps JavaScript's safe integers and a Rust model its integer types; see [TypeScript models](/reference/typescript/) and [Rust models](/reference/rust/). TLC holds 32 bits, so `earnest confirm` says `cannot` for a model past them ([When it prints `cannot`](#when-it-prints-cannot)).
 
 Actions may be joined with `all`, `any`, `if (c) A else B` and `match`. Where Quint reads a condition (a `val`, a `def`, an invariant, a guard, an `expect`, an argument, inside `forall` or `filter`), an `all { … }` whose items assign nothing is `and`, and an `any { … }` is `or`, as both `quint run` and `quint verify --backend tlc` read them: `val TypeOK = all { n >= 0, n <= 3 }`. A `match` whose branches are actions, in `init`, in a step or in a run step, is one action for each branch, which can happen only when the value has that branch's variant, with the variant's value bound to the branch's name; a `_` branch covers the variants the earlier branches do not name:
 
@@ -467,7 +476,7 @@ Still refused, each named in the problem with what to write instead:
 - Not read: `chooseSome`, `allLists`, `allListsUpTo`, `setOfMaps`, `apalache::generate`, `q::debug` as a run operator, inductive invariants, and in a temporal property `strongFair`, `next`, `orKeep`, `mustChange`, `enabled`, `eventually(always(P))`, `weakFair` of an action inside another, of an action given an argument read from the state or picked from a set that changes, and fairness under `exists`, `not` over anything but `eventually(P)` or `always(P)` of a state condition, and the nestings the temporal report lists.
 - An action where Quint wants a value, which Quint's own effect checker allows only in a temporal property: the problem names what was written, an `` `all { … }` `` or `` `any { … }` `` with an assignment in it, an assignment `` `x' = …` ``, or a named action, and says to write the condition without the assignment or to move the assignment into an action.
 - Not read: `fieldNames` of a record whose type is left open where it is read, such as `def names(r) = r.fieldNames()` given `m.get(k)`: give the parameter a record type. Given a record written out or a state variable, it is read.
-- Limits: a `nondet` over a range or a set of more than 1,000,000 values, the powerset of a set of more than 19 items, and an integer literal past 64 bits, which the problem shows as written up to 2^64 (`` `18446744073709551615` ``). Past 2^64 the compiled JSON's number is read rounded, so the problem shows it as a whole number near the one written, such as `` `100000000000000000000` ``.
+- Limits: a `nondet` over a range or a set of more than 1,000,000 values, and the powerset of a set of more than 19 items.
 
 Quint's typechecker refuses an operator kept as a value (`pure val f = inc`, an `if` that gives an operator, a set of operators), so the reader meets operators only as arguments.
 
@@ -511,23 +520,46 @@ Each run is played over its own variables: the ones it reaches through its actio
     why    what the run expects after step 1 is false here
 ```
 
-A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`.
+A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`, or is that action alone after a `nondet` at its top, where the value is skipped (see [below](#a-nondet-at-the-top-of-a-run)).
 
 Earnest reads these run operators as `quint test` judges them:
 
 | Operator | What earnest does |
 |---|---|
-| `A.then(B)` | `B` is the next step. A step that can't happen breaks the run |
+| `A.then(B)` | `B` is the next step. A step that can't happen breaks the run, but for the last step after a `nondet` at the top of the run, where the value is skipped |
 | `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
 | `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
 | `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step. In the run's first action, or as the whole run (`run t = assert(f(1) == 2)`), a false `P` breaks the run, as `quint test` fails it |
 | a condition with no step, such as `run t = f(1) == 1` | The run holds when the condition is true and is broken when it is false |
-| `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
+| `nondet` and `val` at the top of the run | Each value of the `nondet` is played, and a value the run is false for is skipped, as below; a `val` is a constant |
 | a run's name | That run, played in place |
 | a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |
 
-A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. A `nondet` at the top of a run is judged the same way by both: the run must pass for every value, and `quint test` fails the run on the first value it samples that breaks it.
+A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses.
+
+### A `nondet` at the top of a run
+
+Quint plays a `nondet` at the top of a run as it plays one in a step: where the run is false for the value it picked, it tries the next value, and where the run ends in an error, it stops and fails the run. Earnest plays every combination of the values and judges them the same way. For each combination, the run is:
+
+- **false**, and skipped, where its last step can't happen (the last part of a `then` chain, or its only action), where it ends in `A.fail()` and `A` gets through, or where it is a condition that is false, such as `nondet n = S.oneOf() n > 2` for `n` = 1, or picks from an empty set.
+- **an error**, which breaks the run with the values and the path, where a step in the middle of a chain can't happen (the first part of a `then`, Quint's QNT513), where a round of `reps` can't happen (the last one too), where the action of an `expect` can't happen or its condition is false (QNT508), and on a false `assert`.
+
+The run holds when no combination ends in an error and at least one gets it through. It is broken when one ends in an error, or when every one is false, with ``the run is false for every value its `nondet`s pick, or can be, so `quint test` fails it`` after the first false one:
+
+```text
+  broken  allFalseTest
+    start  no state: the first action gives none
+    why    with `n` = 1: the run's first action can't happen: it gives no state to start from; the run is false for every value its `nondet`s pick, or can be, so `quint test` fails it
+```
+
+So `nondet n = Set(1, 2, 3).oneOf() init.then(all { n < 3, x' = n })` holds, as `quint test` passes it: `n` = 3 is skipped. With the same guard on the first action and a `then(step)` after it, the run is broken with `n` = 3, as `quint test` fails it with QNT513. A `nondet` inside another tries its values for each value of the outer one.
+
+Where a step picks a value of its own, as in `init.then(pick).then(last)`, Quint samples that value, so for one combination some samples can get the run through and others leave it false. Earnest takes the strict side, so that it never says `holds` where a sample of `quint test` can fail: the run holds only when no choice anywhere ends in an error and some combination gets the run through whatever the steps pick. A combination that gets through only for some picks is skipped, as a false one is.
+
+Quint tries the other values only of a set of fewer than 100 values (its `QUINT_RETRY_NONDET_SMALLER_THAN`). Over a larger set it keeps the first value it picked, so there a value the run is false for breaks it, with ``the run is false here, and `quint test` tries no other value of a `nondet` over 100 values or more``. Quint counts the values of each part of a set of tuples, maps or records apiece, so it retries `tuples(1.to(20), 1.to(20))`, of 400 values; earnest goes by the number of values in the whole set and so breaks such a run where one value is false, which is the strict side again.
+
+A run with no `nondet` at its top is false where `quint test` fails it, so a false run and an error both break it, as before.
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
@@ -568,6 +600,7 @@ A Quint check prints its values as Quint's REPL writes them, in a path, a `why` 
 | map | `Map("a" -> 1)`, `Map()` | `[["a", 1]]` |
 | list | `[1, 2]` | `[1, 2]` |
 | text, integer, boolean | `"a"`, `-3`, `true` | `"a"`, `-3`, `true` |
+| integer past 64 bits | `18446744073709551616` | `{"#bigint": "18446744073709551616"}` |
 
 A step of a path prints each field it changes as `field: before -> after`. When a field is a map, a record, a set or a list and at most three of its parts changed, the step prints only those parts, in forms that read like Quint, when that is shorter:
 
@@ -581,7 +614,7 @@ A step of a path prints each field it changes as `field: before -> after`. When 
 
 The `start` and `end` lines keep every value whole, and so does the JSON. A step that changes more parts prints the whole values. A run whose first action can't happen prints `start  no state: the first action gives none`.
 
-The JSON of a tuple and a variant is the one Quint's ITF traces use (`quint run --out-itf`); sets, maps and lists keep earnest's JSON. The items of a set and the keys of a map are in earnest's order: Quint's for numbers, texts, records and tuples, item by item for a set of sets.
+The JSON of a tuple, a variant and an integer past 64 bits is the one Quint's ITF traces use (`quint run --out-itf`), since a JSON number past 64 bits is not read back exactly; sets, maps and lists keep earnest's JSON. The items of a set and the keys of a map are in earnest's order: Quint's for numbers, texts, records and tuples, item by item for a set of sets.
 
 A module that itself writes a record whose fields are exactly `tag` and `value`, or only `_1`, `_2`, ..., would print that record as a variant or a tuple. Earnest looks for such a record in the compiled module, and when it finds one, prints every value of that kind as a record instead, as `{ tag: "Plain", value: () }`.
 
@@ -643,7 +676,7 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 |---|---|
 | Java is not on `PATH` | `Java was not found on PATH, and quint verify --backend tlc needs it ...` |
 | `quint` stops with an error, such as Quint 0.33.1 on `import X as A` inside an instantiated spec | `Quint stopped:` and Quint's error |
-| The model declares, or the search computes, a number outside 32 bits | TLC's integers hold 32 bits |
+| The model declares, or the search computes, a number outside 32 bits, such as `2^64` | TLC's integers hold 32 bits; when Quint's TLC run stops on the number, `Quint stopped: TLC can't handle a number this big.` |
 | The checker could not judge a property or a run, such as `/` or `%` of a negative number, which is a fault | `the checker could not judge it` |
 | A run `quint test` passed after more than one sample, which the checker breaks | `quint test` tries random choices of a run, and the checker tries every choice |
 | A run the check plays reaches `range`; only the comparison with `quint test` | `quint test` answers otherwise when `range` starts above its end ([listed above](#where-quints-backends-differ)) |

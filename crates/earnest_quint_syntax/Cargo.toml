@@ -9,3 +9,7 @@ homepage.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+earnest_check.workspace = true
+earnest_quint.workspace = true

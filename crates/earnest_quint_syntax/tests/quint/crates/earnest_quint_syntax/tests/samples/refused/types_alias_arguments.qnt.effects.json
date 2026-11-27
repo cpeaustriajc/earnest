@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify tup and app\nTrying to unify (int, int) and Pair[int, str]\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/types_alias_arguments.qnt","start":{"line":2,"col":6,"index":61},"end":{"line":2,"col":9,"index":64}}]}]}

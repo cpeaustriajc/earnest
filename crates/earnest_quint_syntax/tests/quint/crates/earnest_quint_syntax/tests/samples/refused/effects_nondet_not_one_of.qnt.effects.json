@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT204] the outermost expression in a nondet definition must be either 'oneOf' or 'apalache::generate'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_nondet_not_one_of.qnt","start":{"line":2,"col":26,"index":74},"end":{"line":2,"col":26,"index":74}}]}]}

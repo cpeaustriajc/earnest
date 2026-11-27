@@ -436,6 +436,10 @@ dependencies = [
 [[package]]
 name = "earnest_quint_syntax"
 version = "0.1.0"
+dependencies = [
+ "earnest_check",
+ "earnest_quint",
+]
 
 [[package]]
 name = "earnest_rs"
@@ -503,6 +507,7 @@ dependencies = [
 name = "earnest_value"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
  "proptest",
  "rustc-hash",
  "serde_json",

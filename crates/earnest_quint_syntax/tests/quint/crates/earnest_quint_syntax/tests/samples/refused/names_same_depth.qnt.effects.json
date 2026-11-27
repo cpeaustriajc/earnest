@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT101] Conflicting definitions found for name 'z' in module 'SameDepth'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_same_depth.qnt","start":{"line":4,"col":8,"index":208},"end":{"line":4,"col":8,"index":208}}]}]}

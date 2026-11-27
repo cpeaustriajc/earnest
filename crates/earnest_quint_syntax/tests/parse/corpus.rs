@@ -13,7 +13,7 @@ pub(crate) fn recorded() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint")
 }
 
-fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
+pub(crate) fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(base.join(directory)) else {
         return;
     };
@@ -34,7 +34,7 @@ const NOT_RECORDED: &str = "not recorded";
 
 const RECORD_COMMAND: &str = "npm install @informalsystems/quint@0.33.1 in a scratch folder, export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint, then from the repository: tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint <file>...";
 
-fn fixture(recorded: &Path, kind: &str) -> Result<Json, String> {
+pub(crate) fn fixture(recorded: &Path, kind: &str) -> Result<Json, String> {
     let path = PathBuf::from(format!("{}.{kind}.json", recorded.display()));
     let text = fs::read_to_string(&path).map_err(|_| NOT_RECORDED.to_owned())?;
     Json::parse(&text).map_err(|at| format!("{} is JSON up to {at}", path.display()))
@@ -177,7 +177,7 @@ fn sorted_module(module: &Json, order: &Json, depth: &Json) -> Result<Json, Stri
     ))
 }
 
-fn quint_output(phases: &Json, parse: &Json) -> Result<Json, String> {
+pub(crate) fn quint_output(phases: &Json, parse: &Json) -> Result<Json, String> {
     let (Some(Json::List(modules)), Some(Json::List(order))) =
         (phases.get("modules"), parse.get("order"))
     else {

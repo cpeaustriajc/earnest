@@ -1,4 +1,5 @@
 use crate::Runs;
+use crate::code;
 use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
@@ -6,7 +7,7 @@ use crate::reader::{
     Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run, refusal,
 };
 use crate::starts::{Asserts, start_states};
-use earnest_ir::{Action, Code, Expr, Field, Pick, Plan, Script, Stage};
+use earnest_ir::{Action, Expr, Falls, Field, Pick, Plan, Script, Stage};
 use earnest_value::{Domain, Value};
 use std::collections::BTreeSet;
 
@@ -15,6 +16,7 @@ const DECLARED_ON: u32 = 1;
 const MOST_STEPS: usize = 1000;
 const MOST_PLANS: usize = 1000;
 const MOST_ALIASES: usize = 100;
+const RETRIED_BELOW: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
 const CHAINS: [&str; 4] = ["then", "reps", "expect", "fail"];
 
@@ -40,6 +42,7 @@ struct Drawn {
     start: Option<Expr>,
     steps: Vec<Step>,
     must_not_finish: bool,
+    ends_false: bool,
 }
 
 pub(crate) struct Variables<'v> {
@@ -58,6 +61,8 @@ struct Run<'r, 'a> {
     plans: Vec<Plan>,
     number: usize,
     picks: Vec<Pick>,
+    nondets: bool,
+    retried: Vec<bool>,
 }
 
 fn both(first: Option<Expr>, second: Expr) -> Expr {
@@ -170,13 +175,25 @@ impl<'a> Run<'_, 'a> {
         Ok(())
     }
 
-    fn without_steps(chosen: &[(String, Value)]) -> Plan {
+    fn falls(&self) -> Falls {
+        if self.nondets {
+            Falls::Retried {
+                last_step: false,
+                retried: self.retried.clone(),
+            }
+        } else {
+            Falls::Breaks
+        }
+    }
+
+    fn without_steps(&self, chosen: &[(String, Value)]) -> Plan {
         Plan {
             chosen: chosen.to_vec(),
             start: None,
             starts: None,
             steps: Vec::new(),
             must_not_finish: false,
+            falls: self.falls(),
         }
     }
 
@@ -193,16 +210,20 @@ impl<'a> Run<'_, 'a> {
                          step that uses it",
                     );
                 };
+                self.nondets = true;
                 if values.is_empty() {
                     return self.push(Plan {
                         must_not_finish: true,
-                        ..Self::without_steps(chosen)
+                        ..self.without_steps(chosen)
                     });
                 }
+                let retried = values.len() < RETRIED_BELOW;
                 for value in values {
                     let was = self.reader.hold(opdef.id, Expr::Const(value.clone()));
                     chosen.push((opdef.name.clone(), value));
+                    self.retried.push(retried);
                     let played = self.plans(expr, chosen);
+                    self.retried.pop();
                     chosen.pop();
                     self.reader.release(opdef.id, was);
                     played?;
@@ -236,7 +257,7 @@ impl<'a> Run<'_, 'a> {
                     Some(Value::Bool(holds)) => self.push(Plan {
                         must_not_finish: !holds,
                         starts: self.init.is_none().then(|| vec![Vec::new()]),
-                        ..Self::without_steps(chosen)
+                        ..self.without_steps(chosen)
                     }),
                     _ => self.refuse(
                         "a run",
@@ -250,22 +271,26 @@ impl<'a> Run<'_, 'a> {
     fn plan(&mut self, expr: &'a Quint, chosen: &[(String, Value)]) -> Read<()> {
         let mut drawn = Drawn::default();
         self.walk(expr, Place::Last, &mut drawn)?;
-        let plan = Plan {
+        let mut plan = Plan {
             chosen: chosen.to_vec(),
-            start: drawn.start.map(Code::new),
+            start: drawn.start.map(code),
             starts: drawn.starts,
             steps: drawn
                 .steps
                 .into_iter()
                 .map(|step| Stage {
                     choices: step.choices,
-                    asserts: step.asserts.map(Code::new),
-                    expect: step.expect.map(Code::new),
+                    asserts: step.asserts.map(code),
+                    expect: step.expect.map(code),
                     refused: step.refused,
                 })
                 .collect(),
             must_not_finish: drawn.must_not_finish,
+            falls: self.falls(),
         };
+        if let Falls::Retried { last_step, .. } = &mut plan.falls {
+            *last_step = drawn.ends_false;
+        }
         self.push(plan)
     }
 
@@ -277,7 +302,7 @@ impl<'a> Run<'_, 'a> {
             return self.walk_helper(helper, place, drawn);
         }
         let Quint::App { opcode, args, .. } = expr else {
-            return self.leaf(expr, drawn);
+            return self.leaf(expr, place, drawn);
         };
         match (opcode.as_str(), args.as_slice()) {
             ("then", [first, second]) => {
@@ -321,7 +346,7 @@ impl<'a> Run<'_, 'a> {
                 &format!("`{opcode}`"),
                 "a run operator the reader does not map",
             ),
-            _ => self.leaf(expr, drawn),
+            _ => self.leaf(expr, place, drawn),
         }
     }
 
@@ -394,7 +419,7 @@ impl<'a> Run<'_, 'a> {
         }
     }
 
-    fn first_states(&mut self, expr: &'a Quint) -> Read<Vec<Vec<Value>>> {
+    fn first_states(&mut self, expr: &'a Quint) -> Read<Option<Vec<Vec<Value>>>> {
         let first = self.action_name(expr);
         self.reader.in_init = true;
         let paths = self.reader.paths(expr);
@@ -447,7 +472,8 @@ impl<'a> Run<'_, 'a> {
         })
     }
 
-    fn leaf(&mut self, expr: &'a Quint, drawn: &mut Drawn) -> Read<bool> {
+    fn leaf(&mut self, expr: &'a Quint, place: Place, drawn: &mut Drawn) -> Read<bool> {
+        drawn.ends_false = place == Place::Last;
         if !drawn.started {
             drawn.started = true;
             if self.is_init(expr) {
@@ -462,7 +488,9 @@ impl<'a> Run<'_, 'a> {
                 }
                 return Ok(false);
             }
-            drawn.starts = Some(self.first_states(expr)?);
+            let starts = self.first_states(expr)?;
+            drawn.ends_false &= starts.is_some();
+            drawn.starts = Some(starts.unwrap_or_default());
             return Ok(false);
         }
         if drawn.steps.len() >= MOST_STEPS {
@@ -592,6 +620,8 @@ fn script<'a>(
         plans: Vec::new(),
         number,
         picks: Vec::new(),
+        nondets: false,
+        retried: Vec::new(),
     };
     let played = run.plans(&def.expr, &mut Vec::new());
     if let Some(outer) = outer {

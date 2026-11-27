@@ -121,6 +121,7 @@ impl Domain {
                 Value::Null
                 | Value::Bool(_)
                 | Value::Int(_)
+                | Value::Big(_)
                 | Value::Str(_)
                 | Value::Record(_)
                 | Value::Set(_)

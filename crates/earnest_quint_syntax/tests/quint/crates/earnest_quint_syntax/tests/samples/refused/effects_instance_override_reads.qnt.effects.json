@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT201] Instance overrides must be pure, but the value for N reads variables 'x'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_instance_override_reads.qnt","start":{"line":8,"col":19,"index":142},"end":{"line":8,"col":19,"index":142}}]}]}
