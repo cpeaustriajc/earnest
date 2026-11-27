@@ -29,6 +29,7 @@ mod quint_review;
 mod quint_runs;
 mod quint_samples;
 mod quint_setups;
+mod quint_switch_review;
 mod quint_temporal;
 mod quint_views;
 mod replay;
