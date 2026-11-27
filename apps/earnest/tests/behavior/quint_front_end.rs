@@ -165,3 +165,100 @@ fn confirm_with_no_quint_says_the_check_is_not_compared_and_how_to_install_quint
     let verified = with_no_programs(&sandbox, &["verify", "specs/b.qnt"]);
     verified.exits(0);
 }
+
+fn without_times(run: &Run) -> serde_json::Value {
+    let mut report = run.json();
+    for each in report["models"].as_array_mut().into_iter().flatten() {
+        if let Some(fields) = each.as_object_mut() {
+            fields.remove("milliseconds");
+            fields.remove("cached");
+        }
+    }
+    report
+}
+
+fn counter() -> String {
+    let path = crate::support::repository().join("tasks/quint/checks/counter/counter.qnt");
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
+}
+
+#[test]
+fn a_verdict_kept_from_a_run_before_lines_were_added_prints_what_a_fresh_run_prints() {
+    let sandbox = Sandbox::empty();
+    sandbox.write("specs/counter.qnt", &counter());
+    with_no_programs(&sandbox, &["verify", "specs"]).exits(1);
+    let moved = counter()
+        .replacen("/// @check", "// above the mark\n/// @check", 1)
+        .replacen("  val tooBig", "  // above the rule\n\n  val tooBig", 1);
+    sandbox.write("specs/counter.qnt", &moved);
+    let kept = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+    kept.exits(1);
+    assert_eq!(
+        kept.json()["models"][0]["cached"],
+        true,
+        "the lines added change nothing the check reads, so its verdict is kept\n{kept}"
+    );
+    let fresh = with_no_programs(&sandbox, &["verify", "--json", "--no-cache", "specs"]);
+    assert_eq!(
+        without_times(&kept),
+        without_times(&fresh),
+        "{kept}\n{fresh}"
+    );
+    let text = with_no_programs(&sandbox, &["verify", "specs"]);
+    let again = with_no_programs(&sandbox, &["verify", "--no-cache", "specs"]);
+    assert_eq!(
+        text.model_lines()
+            .into_iter()
+            .map(|mut line| {
+                line.retain(|field| field != "(cached)" && !field.ends_with(" ms"));
+                line
+            })
+            .collect::<Vec<_>>(),
+        again
+            .model_lines()
+            .into_iter()
+            .map(|mut line| {
+                line.retain(|field| !field.ends_with(" ms"));
+                line
+            })
+            .collect::<Vec<_>>(),
+        "{text}\n{again}"
+    );
+}
+
+#[test]
+fn a_problem_of_an_unreadable_file_moves_with_the_lines_added_above_it() {
+    let sandbox = Sandbox::empty();
+    let path = crate::support::repository().join("tasks/quint/checks/choose/choose.qnt");
+    let choose = fs::read_to_string(&path).expect("the sample can be read");
+    sandbox.write("specs/choose.qnt", &choose);
+    let first = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+    assert_eq!(problems(&first)[0].1, 7, "{first}");
+    sandbox.write("specs/choose.qnt", &format!("// moved\n{choose}"));
+    let moved = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+    assert_eq!(
+        (problems(&moved)[0].1, problems(&moved)[0].2),
+        (8, 22),
+        "the construct is one line lower\n{moved}"
+    );
+}
+
+#[test]
+fn a_renamed_file_is_shown_by_its_new_name() {
+    let sandbox = Sandbox::empty();
+    sandbox.write("specs/counter.qnt", &counter());
+    with_no_programs(&sandbox, &["verify", "specs"]).exits(1);
+    fs::rename(
+        sandbox.path().join("specs/counter.qnt"),
+        sandbox.path().join("specs/renamed.qnt"),
+    )
+    .expect("the file can be renamed");
+    let run = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+    run.exits(1);
+    assert_eq!(
+        model(&run.json(), "counter")["file"],
+        "specs/renamed.qnt",
+        "{run}"
+    );
+}
