@@ -3435,6 +3435,14 @@ generator below met it in 6 of 120 models. Test:
 
 ### A run's own `nondet` over a range past 64 bits is refused as read from the state
 
+Fixed on the integration branch at 1fa66cda, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: a range across `2^63` with a guarded first action
+and `expect` (broken, QNT508), the same with a middle step (broken, QNT513), a range below
+`-(2^63)` with `/` in `expect` (broken), two nested ranges past `2^64` and `2^65` (holds), 150
+values from `2^63` with one false (broken), an empty range past 64 bits (broken, QNT511), `%` of
+the picks, a `map` of the range and `n * n` past `2^124` (holds): 9 runs, each as `quint test`
+says. A range of 2 001 values is refused by earnest's documented limit of 1 000 combinations.
+
 `models/quint_seventh/big_top_range/big_top_range.qnt`: `nondet n = (2 ^ 63 - 1).to(2 ^ 63 +
 1).oneOf() init.expect(x <= n)`, and the same range written as digits. `quint test` passes both
 (`passed 10000 test(s)`). Earnest makes the file `unreadable`: ``a run's own `nondet` over a set
