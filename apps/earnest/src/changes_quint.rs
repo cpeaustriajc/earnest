@@ -7,7 +7,7 @@ use crate::checks::CHECKS_FILE;
 use crate::discovery::{discover, is_skipped_folder};
 use crate::places::Places;
 use crate::plan::{Plan, planned};
-use crate::quint::{Quint, cache_path, parsed, program_for};
+use crate::quint::{cache_path, parsed};
 use earnest_diagnostics::Problem;
 use earnest_quint::Runs;
 use serde_json::{Map, Value};
@@ -539,15 +539,10 @@ struct BaseTree {
 
 struct Reader<'a> {
     base: &'a str,
-    programs: HashMap<PathBuf, Result<Quint, String>>,
     trees: Vec<BaseTree>,
 }
 
 impl Reader<'_> {
-    fn quint_for(&mut self, folder: &Path) -> Result<Quint, String> {
-        program_for(&mut self.programs, folder)
-    }
-
     fn tree_holding(&mut self, folder: &Path) -> Option<(PathBuf, PathBuf)> {
         let top = text_of(
             &git(folder)
@@ -575,11 +570,10 @@ impl Reader<'_> {
     }
 
     fn checks_at_base(&mut self, folder: &Path, below: &Path, shown: &str) -> Result<Side, Why> {
-        let quint = self.quint_for(folder).map_err(|_| Why::QuintNotFound)?;
         let (top, tree) = self.tree_holding(folder).ok_or(Why::Unreadable)?;
         let inside = folder.strip_prefix(&top).map_err(|_| Why::Unreadable)?;
         let file = real(&tree.join(inside).join(below));
-        let places = parsed(&file, &file.to_string_lossy(), &quint).map_err(|_| Why::Unreadable)?;
+        let places = parsed(&file, &file.to_string_lossy()).map_err(|_| Why::Unreadable)?;
         Ok(checks_in(&places, &file, shown))
     }
 }
@@ -729,7 +723,6 @@ fn checks_unread_now(compare: &Compare<'_>, real_file: &Path) -> Vec<String> {
 pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotRead>) {
     let mut reader = Reader {
         base: compare.base,
-        programs: HashMap::new(),
         trees: Vec::new(),
     };
     let mut changes = Vec::new();
@@ -743,10 +736,7 @@ pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotR
         }
         let real_file = real(file);
         let (folder, below) = existing_folder(&real_file);
-        let now_places = reader
-            .quint_for(&folder)
-            .ok()
-            .and_then(|quint| parsed(&real_file, &shown, &quint).ok());
+        let now_places = parsed(&real_file, &shown).ok();
         let unread = checks_unread_now(compare, &real_file);
         let now: Vec<Judging> = now_places
             .as_ref()

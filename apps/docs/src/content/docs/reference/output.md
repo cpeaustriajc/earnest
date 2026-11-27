@@ -267,7 +267,6 @@ rule changes since origin/main
   |---|---|---|
   | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
   | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
-  | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
   | `unreadableNow` | `unreadable now` | the file, or the check, is unreadable in the working tree. The results print why, so the entry has no `problem` and stderr no warning |
   | `marks` | `its marks are unreadable at <base>: <line>:<column> <problem>` | a mark is unreadable at the base, as `earnest verify` would report it there |
 

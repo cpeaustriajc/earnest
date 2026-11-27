@@ -320,6 +320,7 @@ dependencies = [
  "earnest_diagnostics",
  "earnest_ir",
  "earnest_quint",
+ "earnest_quint_syntax",
  "earnest_rs",
  "earnest_semantic",
  "earnest_threads",

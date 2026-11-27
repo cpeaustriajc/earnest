@@ -12,6 +12,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 const FOLDER: &str = ".earnest/confirm/quint";
+const PROGRAM_VARIABLE: &str = "EARNEST_QUINT";
+const PROGRAM: &str = "quint";
+const LOCAL_PROGRAMS: &str = "node_modules/.bin";
+const NOT_FOUND: &str = "`quint` was not found: install it with `npm install --save-dev \
+                         @informalsystems/quint`, or set `EARNEST_QUINT`";
 const BROKEN: &str = "broken";
 const HOLDS: &str = "holds";
 const UNKNOWN: &str = "unknown";
@@ -38,6 +43,11 @@ const NO_JAVA: &str = "Java was not found on PATH, and `quint verify --backend t
 const SAMPLED: &str = "`quint test` tries random choices of a run, and the checker tries every \
                        choice";
 const UNSURE_WHICH: &str = "the checker can't tell which of its results is this property";
+
+#[cfg(windows)]
+const PROGRAM_FILES: [&str; 3] = ["quint.cmd", "quint.exe", "quint"];
+#[cfg(not(windows))]
+const PROGRAM_FILES: [&str; 1] = [PROGRAM];
 
 #[cfg(windows)]
 const JAVA: [&str; 2] = ["java.exe", "java"];
@@ -270,9 +280,53 @@ fn ours_cut_short(checked: &Checked) -> Vec<String> {
         .collect()
 }
 
+fn local_program(folder: &Path) -> Option<PathBuf> {
+    let real = fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    real.ancestors().find_map(|above| {
+        PROGRAM_FILES
+            .iter()
+            .map(|name| above.join(LOCAL_PROGRAMS).join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn program_on_path() -> Option<PathBuf> {
+    let listed = env::var_os("PATH")?;
+    env::split_paths(&listed).find_map(|folder| {
+        PROGRAM_FILES
+            .iter()
+            .map(|name| folder.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn find_program(folder: &Path) -> Result<PathBuf, String> {
+    if let Some(named) = env::var_os(PROGRAM_VARIABLE).filter(|named| !named.is_empty()) {
+        let program = PathBuf::from(&named);
+        return if program.is_file() {
+            Ok(program)
+        } else {
+            Err(format!(
+                "`{PROGRAM}` was not found: `{PROGRAM_VARIABLE}` names `{}`, which is not a \
+                 file",
+                program.to_string_lossy()
+            ))
+        };
+    }
+    local_program(folder)
+        .or_else(program_on_path)
+        .ok_or_else(|| NOT_FOUND.to_owned())
+}
+
+fn program_for(file: &Path) -> Result<PathBuf, String> {
+    let program = find_program(file.parent().unwrap_or_else(|| Path::new("")))?;
+    Ok(std::path::absolute(&program).unwrap_or(program))
+}
+
 #[derive(Debug)]
 struct Runner<'a> {
     quint: &'a QuintCheck,
+    program: PathBuf,
     folder: PathBuf,
 }
 
@@ -284,7 +338,7 @@ impl Runner<'_> {
                 self.folder.to_string_lossy()
             )
         })?;
-        Command::new(&self.quint.program)
+        Command::new(&self.program)
             .args(arguments)
             .current_dir(&self.folder)
             .stdin(Stdio::null())
@@ -292,7 +346,7 @@ impl Runner<'_> {
             .map_err(|error| {
                 format!(
                     "`{}` did not start: {error}",
-                    self.quint.program.to_string_lossy()
+                    self.program.to_string_lossy()
                 )
             })
     }
@@ -623,8 +677,13 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
             &format!("the checker stopped early ({reason}), so there is no full result to compare"),
         )];
     }
+    let program = match program_for(&quint.file) {
+        Ok(program) => program,
+        Err(message) => return vec![cannot("not compared".to_owned(), &message)],
+    };
     let runner = Runner {
         quint,
+        program,
         folder: asked.folder.to_path_buf(),
     };
     let differ = where_backends_differ(asked.compiled, quint);

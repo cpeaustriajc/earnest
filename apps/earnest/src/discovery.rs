@@ -25,6 +25,8 @@ const RUST_BUILD_SCRIPT: &str = "build.rs";
 const RUST_EXTENSION: &str = "rs";
 const COMPILED_QUINT_EXTENSION: &str = "json";
 const QUINT_EXTENSION: &str = "qnt";
+const COMPILED_QUINT: &str = "the file is what `quint compile` writes, which the checker no longer \
+                              reads: pass the `.qnt` file instead";
 const HERE: &str = ".";
 pub(crate) const IN_EVERY_MODEL_FILE: &str = "earnest";
 const UTF16_LITTLE_ENDIAN: [u8; 2] = [0xFF, 0xFE];
@@ -42,7 +44,6 @@ enum Origin {
 pub(crate) enum Language {
     TypeScript,
     Rust,
-    Quint,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,7 +125,6 @@ pub(crate) fn is_model_source(language: Language, path: &str, source: &str) -> b
     let reaches = |text: &str| match language {
         Language::TypeScript => earnest_ts::reaches_library(path, text),
         Language::Rust => earnest_rs::uses_library(text),
-        Language::Quint => earnest_quint::is_compiled_quint(text),
     };
     reaches(source) || (source.contains('\0') && reaches(&source.replace('\0', "")))
 }
@@ -161,7 +161,6 @@ pub(crate) fn is_test_file(language: Language, below: &Path) -> bool {
                 || in_folder(&TYPESCRIPT_TEST_FOLDERS)
         }
         Language::Rust => name == RUST_BUILD_SCRIPT || in_folder(&RUST_TEST_FOLDERS),
-        Language::Quint => false,
     }
 }
 
@@ -269,9 +268,8 @@ fn not_a_known_language(path: &Path) -> Found {
             TOP_OF_FILE,
             &in_backticks(path),
             "the file was named on the command line, but it is not TypeScript (`.ts`, `.mts`, \
-             `.tsx`), Rust (`.rs`), Quint (`.qnt`) or a Quint \
-             module compiled to JSON (`quint compile --target json`), so the checker does not \
-             know how to read it",
+             `.tsx`), Rust (`.rs`) or Quint (`.qnt`), so the checker does not know how to read \
+             it",
         ),
     )
 }
@@ -283,10 +281,14 @@ fn compiled_quint(path: &Path) -> Option<Searched> {
     }
     let source = fs::read_to_string(path).ok()?;
     earnest_quint::is_compiled_quint(&source).then(|| {
-        Searched::Found(Found::model(
-            &path.to_string_lossy(),
-            Language::Quint,
-            &source,
+        Searched::Found(Found::unread(
+            path,
+            Problem::new(
+                &path.to_string_lossy(),
+                TOP_OF_FILE,
+                &in_backticks(path),
+                COMPILED_QUINT,
+            ),
         ))
     })
 }

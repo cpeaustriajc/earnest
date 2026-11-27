@@ -2,7 +2,6 @@ use crate::changes_quint::meaning_of;
 use crate::quint::shown_in_folder;
 use earnest_diagnostics::Problem;
 use earnest_quint::{Located, Runs};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -15,7 +14,7 @@ const CONSTANT: &str = "const";
 const DEEPEST: usize = 32;
 const PARAMETERS: &str = "lambda";
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct Names {
     name: String,
     declared: Vec<(String, u64)>,
@@ -45,7 +44,7 @@ pub(crate) struct Marked<'a> {
     pub(crate) spot: Option<(&'a str, u32, u32)>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct Seen {
     proto: String,
     prefix: String,
@@ -53,7 +52,7 @@ struct Seen {
     id: Option<u64>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct Link {
     kind: String,
     proto: String,
@@ -79,9 +78,8 @@ pub(crate) struct Imported<'a> {
 
 pub(crate) type Written<'a> = (&'a str, usize, usize);
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Places {
-    pub(crate) read: u64,
     files: HashMap<String, String>,
     at: HashMap<u64, (String, u32, u32)>,
     modules: Vec<Names>,
@@ -238,7 +236,6 @@ impl Places {
             })
             .collect();
         Some(Self {
-            read: 0,
             files,
             at,
             modules,
