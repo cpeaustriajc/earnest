@@ -3131,6 +3131,15 @@ are those of the fifth pass: `quint verify --backend tlc` (Apalache 0.62.4) and 
 --backend typescript`; the checks file is compared with the build of 6dceb43, the last commit that
 reads it.
 
+What became of the five findings, all on the integration branch after the pass: the first was
+decided as behaviour to keep, and the docs now say that a check judging only properties marked
+`broken` or `reachable` stops once each is found (the checks file stopped for the same property,
+and a model with no end has to pass); its test asserts that. The other four are fixed: the
+leftover-file message writes an expression in the copy's names and lists a line that takes the
+place of the copy's own `init` or `step`; `earnest report` words marked rules as `earnest verify`
+does, with the path under a met mark; and a run marked `broken` that a compiled check can't play
+is one of the runs not played. The sections below describe the build the pass ran on.
+
 ### A check whose only marks are `@check reachable` stops early and counts part of the model
 
 `models/quint_sixth/reachable_only/reachable_only.qnt`: `x` counts from 0 to 10 and stays there;
@@ -3146,8 +3155,9 @@ reason is false as well. A check with one `broken` and one `reachable` mark stop
 of 11 states, the same counter with `val three = x == 3` marked `reachable`), and so does `--rule`
 naming a `reachable` mark, which prints the same reason. Cause: `apps/earnest/src/run.rs` gives
 `stop_once_broken` every expected name, `reachable` ones among them. Right result: 11 states and
-no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test:
-`a_check_whose_only_mark_is_reachable_searches_every_state_as_the_docs_say`.
+no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test,
+turned to the behaviour that was kept:
+`a_check_whose_only_mark_is_reachable_stops_once_the_state_is_reached`.
 
 ### The leftover-file message gives lines that `quint parse` refuses for a copied setup
 
