@@ -7,6 +7,7 @@ mod docs;
 mod effects;
 mod names;
 mod places;
+mod readings;
 mod refusals;
 mod review;
 mod threads;

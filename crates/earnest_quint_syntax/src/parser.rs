@@ -279,7 +279,7 @@ fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported
         problem: Problem::coded(
             "unreadable",
             format!(
-                "Quint's grammar reads this `{}` two ways: as written here, or as a name that starts the body of the definition before it, which Quint refuses; earnest can't tell which Quint takes, so {advice}",
+                "Quint's grammar reads this `{}` two ways: as written here, or as a name, which Quint refuses with QNT008; earnest can't tell which of the two Quint takes, so {advice}",
                 token.text
             ),
             token.line - 1,
