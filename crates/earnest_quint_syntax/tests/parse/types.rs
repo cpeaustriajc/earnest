@@ -283,3 +283,16 @@ fn added_definitions_are_typed_against_the_types_already_found() {
         "the definition has iadd's result"
     );
 }
+
+#[test]
+fn a_match_nested_eighty_deep_is_typed_in_no_more_time_than_quint_takes() {
+    let quint_s_time = std::time::Duration::from_millis(1_900);
+    let started = std::time::Instant::now();
+    let sample = "crates/earnest_quint_syntax/tests/samples/typing/matches_eighty_deep.qnt";
+    let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint");
+    assert!(
+        matches!(compared_types(sample, &recorded, &root()), Ok(Typed::Equal)),
+        "the types table is Quint's"
+    );
+    assert!(started.elapsed() < quint_s_time, "{:?}", started.elapsed());
+}
