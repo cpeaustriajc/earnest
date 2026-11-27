@@ -6,6 +6,7 @@ mod configs;
 mod domains;
 mod exprs;
 mod faults;
+mod floored;
 mod limits;
 mod listed;
 mod modules;

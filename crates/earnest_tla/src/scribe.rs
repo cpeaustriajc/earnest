@@ -2,7 +2,7 @@ use crate::helper::Helper;
 use crate::kind::Kind;
 use crate::names::Names;
 use earnest_ir::{Expr, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep};
-use earnest_value::{Domain, IntType, Sym, Symbols, Value};
+use earnest_value::{Domain, IntType, Notation, Sym, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const NULL: &str = "<<>>";
@@ -638,6 +638,12 @@ impl<'a> Scribe<'a> {
     fn apply(&mut self, op: Op, arguments: &[Expr], scope: &mut Scope) -> Written {
         let given = self.each(arguments, scope);
         let mut needed = needs_of(&given);
+        if matches!(self.symbols.notation(), Notation::Quint(_))
+            && let Some((written, divisor)) = floored(op, &given)
+        {
+            needed.push(Some(format!("({divisor} # 0)")));
+            return written.needing(needed);
+        }
         needed.push(has_a_value(op, &given));
         applied(op, &given).needing(needed)
     }
@@ -1045,6 +1051,21 @@ fn on_seq(op: SeqOp, first: &Written, second: &Written, third: Option<&Written>)
         },
         _ => unknown("a sequence primitive added after it was written"),
     }
+}
+
+fn floored(op: Op, given: &[Written]) -> Option<(Written, String)> {
+    let helper = match op {
+        Op::Math(Math::Divide) => Helper::FlooredDivision,
+        Op::Math(Math::Remainder) => Helper::FlooredRemainder,
+        _ => return None,
+    };
+    let [left, right, ..] = given else {
+        return None;
+    };
+    Some((
+        call(helper, &[&left.text, &right.text], Kind::Int),
+        right.text.clone(),
+    ))
 }
 
 fn has_a_value(op: Op, given: &[Written]) -> Option<String> {

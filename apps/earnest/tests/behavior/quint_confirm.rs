@@ -327,19 +327,14 @@ fn a_number_beyond_32_bits_makes_another_answer_of_quint_verify_cannot() {
 }
 
 #[test]
-fn a_division_of_a_negative_number_the_checker_could_not_judge_cannot_be_confirmed() {
+fn a_division_of_a_negative_number_floors_as_quint_verify_does_and_is_the_same() {
     let quint = Quint::new();
     let run = quint.confirm("halves");
-    run.exits(1);
-    let lines: Vec<&str> = run.stdout.lines().collect();
+    run.exits(0);
     assert_eq!(
-        lines,
-        [
-            "cannot   halves  4 states  fail  (Quint)",
-            "  property halfAbove: the checker says unknown, `quint verify` says holds",
-            "    Quint can't confirm this: the checker could not judge it",
-        ],
-        "{run}"
+        run.stdout.lines().collect::<Vec<_>>(),
+        ["same     halves  4 states  pass  (Quint)"],
+        "`-3 / 2` is -2, the floor, as TLC computes it, so `n / 2 >= -2` holds\n{run}"
     );
 }
 

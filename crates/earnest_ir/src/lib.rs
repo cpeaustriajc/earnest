@@ -42,10 +42,14 @@ pub enum Math {
     /// The product.
     Multiply,
     /// What is left of the first after dividing by the second. A negative first number or a
-    /// second number below 1 is [`Fault::Remainder`].
+    /// second number below 1 is [`Fault::Remainder`]. In a frame of Quint's numbers it is
+    /// `first - second * (first / second)` for every second number but zero, which is
+    /// [`Fault::ByZero`].
     Remainder,
     /// The whole number of times the second goes into the first. A negative first number or a
-    /// second number below 1 is [`Fault::Division`].
+    /// second number below 1 is [`Fault::Division`]. In a frame of Quint's numbers it is the
+    /// floor of the exact quotient for every second number but zero, which is
+    /// [`Fault::ByZero`].
     Divide,
 }
 
