@@ -5234,6 +5234,153 @@ than Quint, which reads on in a repaired tree), `tasks/quint/README.md` above.
   `quint compile` write it, where it differs from `quint parse`'s (slice 4 says what differs).
 - Nothing in the table needed the type or effect passes.
 
+## Quint front end, slice 3: types (#87): report
+
+`crates/earnest_quint_syntax` now gives the `types` table `quint typecheck --out` writes
+(`Parsed::types`), and refuses a file Quint's type checker refuses with `QNT000`, at Quint's
+place, with Quint's explanation text. Nothing calls it yet. The code is `src/inference.rs` and
+`src/inference/`. Effects and modes are #88's.
+
+### What Quint's type checker does [read: `dist/src/types/`, `quintAnalyzer.js`, `ir/IRTransformer.js`, `ir/IRVisitor.js`, `ir/IRprinting.js`, `errorTree.js`; then ran]
+
+`quint typecheck` builds one analyzer for all modules, in phase 2's order:
+
+1. A type application resolver is built on the name table, and rewrites every entry of the table
+   in the order the name resolver inserted them (a JavaScript `Map`): each type application
+   `T[x, y]` becomes the alias's type with its parameters renamed to fresh names (`a0`, `a1`, ...,
+   one counter per parameter name) and then replaced by the arguments.
+2. For each module: the same resolver rewrites its declarations, then the type inferrer walks them.
+   The inferrer is shared by all modules: its counter of fresh names (`_t0`, `_t1`, ...), its
+   table of types and its errors carry over.
+3. The inferrer generates constraints as it leaves each expression (an application gets the
+   operator's type instantiated with fresh variables, then a fresh `_tN` for its result; a
+   lambda's parameter is `t_<name>_<id>`, or a fresh `_tN` for `_`), and solves them when it leaves
+   each operator definition, `let` definitions included, and each instance. Solving sorts the
+   constraints (equalities, then `isDefined`), unifies, and applies the substitution to every type
+   in scope. The variables free after solving that were not free before are quantified, in the
+   order of a JavaScript `Set` built by prepending each type's names.
+4. At the end of each module every new type is simplified (rows flattened, an empty row replaced
+   by its tail).
+
+So the names of type and row variables, their order in `typeVariables` and `rowVariables`, and
+even the key order of each type (a substitution rebuilds `{ kind, args, res, id }`, a spread
+keeps the original order) follow from the order of that walk. None of it depends on a hash.
+
+### How the crate does it [ran]
+
+The crate ports the type checker over a small model of JavaScript objects (`inference/value.rs`):
+keys in insertion order, `undefined` kept as a value (a substitution writes `id: undefined`, which
+`JSON.stringify` drops but `isDeepStrictEqual` counts), spread and assignment as JavaScript does
+them. Each Quint function has its counterpart: `solver.rs` (`unify`, `unifyRows`,
+`solveConstraint`), `substitution.rs`, `simplification.rs`, `application.rs` (the type
+application resolver), `special.rs` (records, tuples, variants, `match`), `signatures.rs` (the
+built-in signatures, parsed by the crate's own parser with fresh ids, as Quint parses them each
+time), `generator.rs` (the constraint generator and inferrer) and `printing.rs` (`typeToString`,
+`expressionToString`, error trees).
+
+Two small changes outside these files: `names.rs` keeps the order in which the name resolver
+inserts entries into the table, and `files.rs` gives it (and the source map) to the type checker.
+
+Where Quint's type checker throws an exception (it stops; `quint typecheck` prints a stack trace
+and gives no verdict), the crate refuses the file as `unreadable`, naming the exception.
+
+### How it is compared [ran]
+
+`tasks/quint/syntax/types.js` runs Quint's own type passes on a file (`parse`, then the type
+application resolver and the inferrer per module, as `quintAnalyzer.js` does, without the effect
+passes) and writes the types, the type errors in Quint's order, and the exception if one is
+thrown. The type errors are recorded apart because Quint gives effect errors the same code,
+`QNT000`. `record_types.sh` (called by `record.sh`) also runs `quint typecheck --out` and
+`condense_types.py` checks, when the file has no type error, that its `types` equals that of
+`types.js` as text, then stores `<file>.types.json`: each distinct scheme once, the id of each
+type pointing at its scheme, the first three type errors, and `quint typecheck`'s first three
+explanations. The 405 recordings come to 2.5 MB.
+
+`tests/parse/types.rs` compares the whole table key by key (the first id that differs is named)
+and then as text; a refused file must be refused with `QNT000`, Quint's explanation (`[QNT000]` and
+the error tree, as text) and the line and column of the place of the error's id.
+
+To record again: as for slice 1 (`record.sh`), or `record_types.sh` alone; `RECORD_BASE=<folder>`
+for files outside the repository. Generated programs:
+`python3 -I tasks/quint/syntax/generate_types.py <folder> <count> <seed>`.
+
+### Results [ran]
+
+| Corpus | Files | Equal | Notes |
+| --- | --- | --- | --- |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax --test parse`) | 468 | 405 | 368 typed with the whole table equal as text; 37 refused by the type checker, each with Quint's explanation at Quint's place, one of them (`types_crash_wildcard_only.qnt`) where Quint throws; the other 63 are refused before types, by the parse and name phases (slice 1 and 2) |
+| Quint's repository at `v0.33.1`, in the container only | 196 | 177 | 173 typed, all equal as text; 4 refused alike; 19 refused before types (slice 2's count) |
+| 300 generated programs (`generate_types.py <folder> 300 1`: polymorphic definitions used at many types, records through several definitions, sum types in collections, a planted type error in about 3 of 10), in the container only | 300 | 300 | 209 typed, all equal; 91 refused alike |
+| 1000 more, seed 2, with local polymorphic definitions and higher-order chains, in the container only | 1000 | 1000 | 696 typed, all equal; 304 refused alike |
+
+The command for the last three rows: `QUINT_EXAMPLES=<folder of .qnt>
+QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test --release -p earnest_quint_syntax
+--test parse every_file_of_quint_s_repository_has_the_types -- --include-ignored --nocapture`.
+
+### Every message Quint's type checker raises
+
+All are `QNT000`; the explanation is the error tree, innermost first, each node's location under
+it (`Trying to unify ...`, `Generating constraints for ...`). Each sample is in
+`crates/earnest_quint_syntax/tests/samples/refused/` and is refused alike.
+
+| Message | Where | Sample |
+| --- | --- | --- |
+| `Couldn't unify <kind> and <kind>` | `unify`, `unifyRows` | `types_base_mismatch`, `types_annotation_contradicted`, `types_assume_not_bool`, `types_instance_constant`, `types_extra_field` (`empty and row`), `types_match_missing_variant` (`row and empty`), `types_alias_arguments` (`tup and app`) |
+| `Expected <n> arguments, got <m>` | `unify` of two operators | `types_argument_count`, `types_lambda_arguments` |
+| `Can't bind <name> to <type>: cyclical binding` | the occurs check | `types_occurs_check` |
+| `Incompatible tails for rows with disjoint fields: <row> and <row>` | `unifyRows` | `types_missing_field`, `types_unknown_variant`, `types_disjoint_records` |
+| `Couldn't unify uninterpreted type <T> with different type` | `unifyWithAlias` | `types_uninterpreted` |
+| `Couldn't find type alias <T>` | `unifyWithAlias` | none: a type name name resolution did not find is `QNT404` first |
+| `Expected type is not defined` | `isDefined`, a variant no sum type has | `types_undefined_variant` |
+| `Type annotation is too general: <a> should be <type>` | `checkAnnotationGenerality` | `types_annotation_too_general` |
+| `Operator expects <n> arguments but was given <m>` | the arity of `Rec`, `field`, `fieldNames`, `with`, `item`, `variant`, `matchVariant` | `types_operator_arity` |
+| `Record field name must be a name expression but is <kind>: <e>` | `Rec` | `types_record_field_name` |
+| `Record field name must be a string expression but is <kind>: <e>` | `field`, `with` | `types_field_name` |
+| `Tup field index must be an int expression but is <kind>: <e>` | `item` | `types_item_index` |
+| `Variant label must be a string expression but is <kind>: <e>` | `variant` (the kind is the label's type's) | `types_variant_label` |
+| `Match variant name must be a string literal but it is a <kind>: <e>` | `matchVariant` | `types_match_label` |
+| `Match case eliminator must be an operator expression but it is a <kind>: <e>` | `matchVariant` | `types_match_eliminator` |
+| `Match case eliminator must be a unary operator but it is an operator of <n> arguments: <e>` | `matchVariant` | `types_match_eliminator_arity` |
+| `Invalid wildcard match ('_') in match expression: <e>. Only one wildcard can appear and it must be the final case of a match.` | `matchVariant` | `types_match_wildcard_first` |
+| `too many arguments supplied: <T> only accepts <n> parameters` (and `too few`) | the type application resolver | `types_alias_arguments_only` |
+| `Signature not found for name: <name>` | `typeForName` | none: a name name resolution did not find is `QNT404` first |
+
+The samples of every kind of type are in `crates/earnest_quint_syntax/tests/samples/typing/`:
+`base.qnt` (base types, sets, lists, tuples, maps, operators of several arguments and as
+arguments), `records.qnt` (closed and open records, spread, `with`, `fieldNames`, a row variable in
+an annotation, a definition used at two record types), `sums.qnt` (with and without payloads,
+`match` with a default case, `Option[a]` used at two types, sums in sets and lists, a nested
+match), `aliases.qnt` (aliases, parameters, nested applications, a row parameter, an
+uninterpreted type), `declarations.qnt` (`const`, `var`, a polymorphic definition used at two
+types, `assume`, `temporal`, `run`, instances with constants), `builtins.qnt` (every operator of
+`builtin.qnt` once), `last_assume.qnt` and `sum_tails.qnt` (below).
+
+### Where Quint looks wrong, and what the crate does: as Quint
+
+- An `assume` whose body is not a boolean is accepted when it is the last declaration of the last
+  module (`typing/last_assume.qnt`): its constraint is pushed but only solved with the next
+  definition, and there is none. Accepted, as Quint does; followed by any definition it is refused
+  (`types_assume_not_bool`).
+- `typeToString` of a sum type leaves out its row variable, and `unify` first compares the two
+  types as text, so `(A | r1)` and `(A | r2)` unify with no substitution (`typing/sum_tails.qnt`).
+  As Quint.
+- A `match` with only a default case throws inside Quint's simplifier ("Impossible: sum type
+  fields transformed into non-row"): no verdict from Quint (`types_crash_wildcard_only.qnt`,
+  `tests/samples/matching.qnt`). Refused as `unreadable`.
+- A spread or `with` that adds a field a record does not have is refused (`with` keeps the row):
+  as Quint.
+
+### Where the crate knowingly does other than Quint's type checker
+
+- When Quint's type checker throws (above), the crate refuses the file as `unreadable` with the
+  exception's message: Quint gives no verdict either. Smallest file:
+  `module m { def f(e) = match e { | _ => 1 } }`.
+- Only the first error is given. Quint reports every error; the first is the same.
+- A type application error (`too many arguments supplied`) comes after the module's effect errors
+  in Quint's list. The crate does not check effects (#88), so on a file with both and no type error,
+  Quint's first error is the effect error and the crate's the type application error. Both refuse.
+  No sample has it.
+
 ## Quint front end, slice 3b: effects and modes (#88): report
 
 `crates/earnest_quint_syntax` now gives what `quint typecheck` adds for effects: `Parsed::effects`

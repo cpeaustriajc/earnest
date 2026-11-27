@@ -308,7 +308,16 @@ fn with_namespaces(entry: &Entry, namespaces: &[String]) -> Entry {
 #[derive(Debug, Default)]
 pub(crate) struct Resolution {
     pub(crate) table: BTreeMap<u64, Entry>,
+    pub(crate) inserted: Vec<u64>,
     pub(crate) errors: Vec<Raised>,
+}
+
+impl Resolution {
+    fn insert(&mut self, id: u64, entry: Entry) {
+        if self.table.insert(id, entry).is_none() {
+            self.inserted.push(id);
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -743,7 +752,7 @@ impl Resolver {
         } else {
             Entry::of(definition).with("depth", depth)
         };
-        self.resolution.table.insert(id, entry);
+        self.resolution.insert(id, entry);
     }
 
     fn expression(&mut self, expression: &Json) {
@@ -802,7 +811,7 @@ impl Resolver {
             Some(entry) if entry.get("kind") != Some(&Json::text("typedef")) => {
                 let entry = entry.clone();
                 if let Some(id) = id {
-                    self.resolution.table.insert(id, entry);
+                    self.resolution.insert(id, entry);
                 }
             }
             _ => self.raise("QNT404", format!("Name '{name}' not found"), id),
@@ -818,7 +827,7 @@ impl Resolver {
                     Some(entry) if entry.get("kind") == Some(&Json::text("typedef")) => {
                         let entry = entry.clone();
                         if let Some(id) = id {
-                            self.resolution.table.insert(id, entry);
+                            self.resolution.insert(id, entry);
                         }
                     }
                     _ => self.raise("QNT404", format!("Type alias '{name}' not found"), id),

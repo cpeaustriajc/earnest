@@ -19,4 +19,5 @@ for file in "$@"; do
     printf '{"stage":"crashed","errors":[]}' > "$target.effects.json"
   fi
   rm -f "$target.typecheck.json"
+  RECORD_BASE="$root" "$here/record_types.sh" "$out" "$file"
 done
