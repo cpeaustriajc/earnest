@@ -62,7 +62,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 15] = [
+const SETS: [&str; 16] = [
     "labels",
     "bare",
     "kinds",
@@ -75,6 +75,7 @@ const SETS: [&str; 15] = [
     "numbers",
     "numbers_bare",
     "defs",
+    "defs_bare",
     "override",
     "near",
     "quintrefuses",
@@ -645,23 +646,11 @@ fn a_label_keeps_every_number_of_the_compiled_module_as_quint_wrote_it() {
 }
 
 #[test]
-fn a_def_is_refused_as_a_label_whether_its_check_is_built_from_the_typecheck_or_compiled() {
+fn a_def_with_no_parameters_labels_the_chart_whether_its_check_is_built_from_the_typecheck_or_compiled()
+ {
     let quint = Quint::new();
-    let run = quint.earnest(&["verify", "defs", "--json"]);
-    run.exits(1);
-    let report = run.json();
-    let found = problems(&report);
-    assert_eq!(
-        problem_at(&found, 12),
-        "`stage` `stage` is declared with `def`, and a chart label is a `val`: write `val stage = \
-         ...` and mark it `/// @view state`"
-    );
-    assert!(
-        problem_at(&found, 33).starts_with("`label` `label` is declared with `def`"),
-        "{found:?}"
-    );
-    assert_eq!(model(&report, "Small")["status"], "pass");
-    assert_eq!(model(&report, "plain")["status"], "pass");
+    let marked = quint.earnest(&["verify", "defs", "--no-cache"]);
+    marked.exits(0);
     let compiled: Vec<String> = quint
         .calls()
         .into_iter()
@@ -670,7 +659,35 @@ fn a_def_is_refused_as_a_label_whether_its_check_is_built_from_the_typecheck_or_
     assert_eq!(
         compiled.len(),
         1,
-        "only `plain` is compiled; `Small` is built from the typecheck: {compiled:?}"
+        "only `plain` is compiled; `Small`, whose spec's label is a `def`, is built from the \
+         typecheck: {compiled:?}"
+    );
+    assert!(
+        compiled.iter().all(|call| call.contains("--main plain")),
+        "{compiled:?}"
+    );
+    let bare = quint.earnest(&["verify", "defs_bare", "--no-cache"]);
+    bare.exits(0);
+    for name in ["Small", "plain"] {
+        assert_eq!(
+            result_line(&marked, name),
+            result_line(&bare, name),
+            "{marked}\n{bare}"
+        );
+    }
+    assert_eq!(
+        result_line(&marked, "Small"),
+        ["pass", "Small", "4 states", "1 rule, 1 run"],
+        "the spec's run is played"
+    );
+    let small = quint.earnest(&["chart", "defs", "--model", "Small"]);
+    assert_eq!(states_drawn(&small.stdout), ["start", "running"], "{small}");
+    let plain = quint.earnest(&["chart", "defs", "--model", "plain"]);
+    assert_eq!(states_drawn(&plain.stdout), ["zero", "more"], "{plain}");
+    assert_eq!(
+        groups_drawn(&plain.stdout),
+        ["counter"],
+        "a `pure def` labels the box: {plain}"
     );
 }
 
@@ -873,7 +890,7 @@ fn a_view_mark_in_another_case_or_in_a_comment_quint_drops_is_unreadable_at_its_
     assert_eq!(
         problem_at(&found, 2),
         "`x` `x` is a `nondet` definition, which gives no value to label the chart with: mark a \
-         `val` with no parameters `/// @view state`"
+         `val`, or a `def` with no parameters, `/// @view state`"
     );
     assert_eq!(
         found.len(),
