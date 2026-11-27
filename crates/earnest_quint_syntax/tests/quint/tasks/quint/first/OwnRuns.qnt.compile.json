@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile --target json --main OwnRuns --init init --step step tasks/quint/first/OwnRuns.qnt","error":"error: [QNT404] Name 'init' not found"}]}

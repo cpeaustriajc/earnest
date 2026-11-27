@@ -118,7 +118,7 @@ pub(crate) struct Entry {
 }
 
 impl Entry {
-    fn of(written: &Json) -> Self {
+    pub(crate) fn of(written: &Json) -> Self {
         match written {
             Json::Object(fields) => Self {
                 fields: fields
@@ -137,7 +137,7 @@ impl Entry {
             .and_then(|(_, value)| value.as_deref())
     }
 
-    fn set(&mut self, key: &str, value: Option<Json>) {
+    pub(crate) fn set(&mut self, key: &str, value: Option<Json>) {
         let value = value.map(Rc::new);
         match self.fields.iter_mut().find(|(name, _)| name == key) {
             Some((_, slot)) => *slot = value,
@@ -145,7 +145,7 @@ impl Entry {
         }
     }
 
-    fn with(&self, key: &str, value: Option<Json>) -> Self {
+    pub(crate) fn with(&self, key: &str, value: Option<Json>) -> Self {
         let mut copy = self.clone();
         copy.set(key, value);
         copy
@@ -155,7 +155,7 @@ impl Entry {
         number(self.get("id"))
     }
 
-    fn text(&self, key: &str) -> &str {
+    pub(crate) fn text(&self, key: &str) -> &str {
         match self.get(key) {
             Some(Json::Text(text)) => text,
             _ => "",
@@ -308,7 +308,16 @@ fn with_namespaces(entry: &Entry, namespaces: &[String]) -> Entry {
 #[derive(Debug, Default)]
 pub(crate) struct Resolution {
     pub(crate) table: BTreeMap<u64, Entry>,
+    pub(crate) order: Vec<u64>,
     pub(crate) errors: Vec<Raised>,
+}
+
+impl Resolution {
+    fn insert(&mut self, id: u64, entry: Entry) {
+        if self.table.insert(id, entry).is_none() {
+            self.order.push(id);
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -743,7 +752,7 @@ impl Resolver {
         } else {
             Entry::of(definition).with("depth", depth)
         };
-        self.resolution.table.insert(id, entry);
+        self.resolution.insert(id, entry);
     }
 
     fn expression(&mut self, expression: &Json) {
@@ -802,7 +811,7 @@ impl Resolver {
             Some(entry) if entry.get("kind") != Some(&Json::text("typedef")) => {
                 let entry = entry.clone();
                 if let Some(id) = id {
-                    self.resolution.table.insert(id, entry);
+                    self.resolution.insert(id, entry);
                 }
             }
             _ => self.raise("QNT404", format!("Name '{name}' not found"), id),
@@ -818,7 +827,7 @@ impl Resolver {
                     Some(entry) if entry.get("kind") == Some(&Json::text("typedef")) => {
                         let entry = entry.clone();
                         if let Some(id) = id {
-                            self.resolution.table.insert(id, entry);
+                            self.resolution.insert(id, entry);
                         }
                     }
                     _ => self.raise("QNT404", format!("Type alias '{name}' not found"), id),

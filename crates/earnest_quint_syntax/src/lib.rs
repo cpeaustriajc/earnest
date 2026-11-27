@@ -17,7 +17,9 @@
 //! So [`Parsed::output`] is what `quint parse --out` writes, and [`Parsed::source_map`] the
 //! file `quint parse --source-map` writes.
 
+mod compile;
 mod files;
+mod flatten;
 mod ids;
 mod json;
 mod lexer;
@@ -28,6 +30,7 @@ mod parser;
 mod problem;
 mod types;
 
+pub use compile::{Compiled, Target};
 pub use files::{Parsed, read};
 pub use json::Json;
 pub use problem::Problem;

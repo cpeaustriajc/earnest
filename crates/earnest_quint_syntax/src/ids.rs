@@ -38,7 +38,7 @@ impl Place {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Ids {
     last: u64,
     places: Vec<(u64, Place)>,

@@ -10,9 +10,9 @@ use std::collections::{BTreeMap, VecDeque};
 /// The modules of a file and of every file it imports, and the source map of their ids.
 #[derive(Debug)]
 pub struct Parsed {
-    modules: Vec<Json>,
-    table: BTreeMap<u64, Entry>,
-    ids: Ids,
+    pub(crate) modules: Vec<Json>,
+    pub(crate) table: BTreeMap<u64, Entry>,
+    pub(crate) ids: Ids,
 }
 
 impl Parsed {

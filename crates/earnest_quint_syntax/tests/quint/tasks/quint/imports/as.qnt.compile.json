@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile --target json --main As --init init --step step --invariant ok,noDownAtTop,small tasks/quint/imports/as.qnt","error":"Error: Internal error while flattening [QNT404] Name 'twice' not found,[QNT404] Name 'twice' not found,[QNT404] Name 'twice' not found,[QNT404] Name 'twice' not found"}]}
