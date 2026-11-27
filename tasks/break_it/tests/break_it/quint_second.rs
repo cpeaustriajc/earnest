@@ -268,14 +268,25 @@ fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
         "`quint test --main Plays` plays `S::upTest` and `ownTest`, and the check, built from \
          the typecheck, plays both\n{built:#}"
     );
-    let recorded = RecordedQuint::new(&fixtures(""));
+    let folder = TempDir::new().expect("a temporary folder can be made");
     fs::write(
-        recorded.folder.path().join("fake/parse.json"),
-        include_str!("../../models/quint_second/runs_not_played/parse.json"),
+        folder.path().join("compiled.qnt"),
+        include_str!("../../../quint/setups/compiled.qnt"),
     )
-    .expect("the parse can be written");
-    let report = recorded.verify(&["--no-cache"]);
-    let model = model_named(&report, "Plays");
+    .expect("the setups can be written");
+    let verified = |arguments: &[&str]| {
+        Command::new(binary())
+            .args(["verify", "--no-cache"])
+            .args(arguments)
+            .arg("compiled.qnt")
+            .env_remove("EARNEST_QUINT")
+            .current_dir(folder.path())
+            .output()
+            .expect("earnest starts")
+    };
+    let report: Value =
+        serde_json::from_slice(&verified(&["--json"]).stdout).expect("earnest verify prints JSON");
+    let model = model_named(&report, "Single");
     assert_eq!(
         (
             model["status"].as_str(),
@@ -284,31 +295,41 @@ fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
         ),
         (
             Some("unfinished"),
-            &serde_json::json!(["S::upTest"]),
+            &serde_json::json!(["Single::Base::upTest"]),
             Some(
-                "runs not played: S::upTest: `quint typecheck` gave nothing to build the check \
-                 from"
+                "runs not played: Single::Base::upTest: the checker does not build `import \
+                 Limit.L` at `compiled.qnt:32` from `quint typecheck`"
             )
         ),
-        "with no typecheck, `quint compile` drops `S::upTest`, so the check plays `ownTest` and \
-         does not pass: it says which run it did not play\n{report:#}"
+        "`Single` imports one name alone, a shape the checker leaves to the compile, which \
+         drops `Base`'s `upTest`; `quint test --main Single` plays it, so the check does not \
+         pass: it says which run it did not play and what kept it from building the check\n\
+         {report:#}"
     );
     assert_eq!(
-        run_ids(model),
-        vec![("ownTest".to_owned(), "holds".to_owned())],
-        "the run the compiled module holds is played\n{report:#}"
+        (
+            model["states"].as_u64(),
+            model["rules"][0]["verdict"].as_str()
+        ),
+        (Some(3), Some("holds")),
+        "the check's property is still judged\n{report:#}"
     );
-    let output = Command::new(binary())
-        .args(["verify", "--no-cache", "."])
-        .env("EARNEST_QUINT", &recorded.quint)
-        .current_dir(recorded.folder.path())
-        .output()
-        .expect("earnest starts");
-    let text = String::from_utf8_lossy(&output.stdout);
+    let renamed = model_named(&report, "Renamed");
+    assert_eq!(
+        (renamed["status"].as_str(), run_ids(renamed)),
+        (
+            Some("pass"),
+            vec![("upTest".to_owned(), "holds".to_owned())]
+        ),
+        "beside it, `Renamed` is a shape the checker builds, and it plays the same run\n\
+         {report:#}"
+    );
+    let text = String::from_utf8_lossy(&verified(&[]).stdout).into_owned();
     assert!(
         text.lines()
-            .any(|line| line.trim_start().starts_with("note") && line.contains("S::upTest")),
-        "the text names the run not played on a line under the result\n{text}"
+            .any(|line| line.trim_start().starts_with("note")
+                && line.contains("Single::Base::upTest")),
+        "the text output names the run under the result line\n{text}"
     );
     let direct = compiled(
         "Named",
