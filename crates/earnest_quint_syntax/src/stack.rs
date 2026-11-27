@@ -5,12 +5,33 @@ use std::panic;
 use std::sync::mpsc;
 use std::thread;
 
-/// The stack of the thread the crate reads and checks a file on. Every recursive pass refuses a
-/// file nested deeper than its bound before it can spend this.
-pub(crate) const STACK: usize = 64 * 1024 * 1024;
+/// The stack, in bytes, that reading and checking a file needs: what the deepest file the bounds
+/// let through spends in a debug build, twice over. Every recursive pass refuses a file nested
+/// deeper than its bound before it can spend this.
+pub const STACK_NEEDED: usize = 64 * 1024 * 1024;
 
 thread_local! {
     static ON_LARGE_STACK: Cell<bool> = const { Cell::new(false) };
+}
+
+struct Restored(bool);
+
+impl Drop for Restored {
+    fn drop(&mut self) {
+        ON_LARGE_STACK.with(|large| large.set(self.0));
+    }
+}
+
+/// Runs `work` on this thread, which the caller states was started with `bytes` of stack. When
+/// that is at least [`STACK_NEEDED`], every entry of the crate called inside `work` on this thread
+/// runs on it, and no thread is started. When it is less, `work` runs as it would without this
+/// call: each entry starts a thread of its own.
+pub fn on_a_stack_of<T>(bytes: usize, work: impl FnOnce() -> T) -> T {
+    if bytes < STACK_NEEDED {
+        return work();
+    }
+    let _restored = Restored(ON_LARGE_STACK.with(|large| large.replace(true)));
+    work()
 }
 
 fn not_started(error: &std::io::Error) -> Problem {
@@ -25,10 +46,10 @@ fn not_started(error: &std::io::Error) -> Problem {
     }
 }
 
-/// Runs `work` on a thread with a stack of [`STACK`] bytes, or on this thread when it is one
+/// Runs `work` on a thread with a stack of [`STACK_NEEDED`] bytes, or on this thread when it is one
 /// already. A panic of `work` is passed on as it is.
 pub(crate) fn on_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
-    on_stack_of(STACK, work)
+    on_stack_of(STACK_NEEDED, work)
 }
 
 fn on_stack_of<T: Send>(stack: usize, work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
@@ -59,7 +80,7 @@ pub(crate) fn reading_on_large_stack<T: Send>(
     let (asking, asked) = mpsc::channel::<String>();
     let (giving, given) = mpsc::channel::<Option<String>>();
     thread::scope(|scope| {
-        let worker = start(scope, Some(STACK), move || {
+        let worker = start(scope, Some(STACK_NEEDED), move || {
             ON_LARGE_STACK.with(|large| large.set(true));
             let mut remote = |path: &str| {
                 asking.send(path.to_owned()).ok()?;
