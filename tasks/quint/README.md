@@ -5475,19 +5475,15 @@ was copied from, and `Parsed::types_of_added` infers only the definitions `quint
   (Quint 1.3 s); at two hundred, 0.57 s and 0.12 s (optimized build).
 - Only the first error is given. Quint reports every error; the first is the same.
 - Where Quint's type checker runs out of stack ("Maximum call stack size exceeded"), the crate
-  refuses the file as `unreadable` with that text instead of running out of its own stack. Two
-  bounds do it: a substitution applied inside another more than 300 deep, and a substitution still
-  changing after 100 rounds (the most any file needs is 3). Smallest files, both from the review:
+  refuses the file as `unreadable` instead of running out of its own stack, or reads it where its
+  own bounds allow: see "Depth, stack and size" below for the bounds, the stack they need and
+  which deep files each reads. The bound on rounds stays 100 (the most any file needs is 3).
+  Smallest files Quint overflows on, both from the review:
   `review/typing/row_inside_its_own_field.qnt`
   (`def f(x: { f: a | r }, y: { f: { z: int | r }, h: a | s }): bool = x == y`) and
   `review/typing/with_of_itself_after_with.qnt` (`def f(z) = z.with("h", 1).with("f", z)`): the
   tail and field substitutions of `unifyRows` compose into one that binds a variable to a type that
-  holds it, and its application grows forever. The 300 is what a 2 MB thread of an unoptimized
-  build survives on those files (400 overflows it). It is stricter than Quint on valid files typed
-  more than 300 deep: Quint 0.33.1 accepts a `Set(Set(...))` 500 deep (in 58 s) and overflows at
-  1,000; the crate refuses from 301. In an unoptimized build on a 2 MB thread the crate's parser
-  already overflows near 150 nested calls, before types: that is slice 1's recursion, and a deep
-  file needs a larger stack (the optimized build and an 8 MB main thread take 500).
+  holds it, and its application grows forever.
 - On Quint's two internal errors of composing substitutions ("Substitutions with same name (x) but
   incompatible kinds: [ ... ]" and "Unifying substitutions with same name: x, <error tree>") the
   crate stops all type work at once, as Quint's exception does, and refuses the file as
@@ -5823,3 +5819,92 @@ set to `undefined`, and the import of the module that exported it sets it again,
 place (`exported_and_used.qnt`, found by the review of `5008154`). That is the one key the
 flattener sets to `undefined` that a later pass sets again, and the crate keeps its place with a
 marker (`flatten::CLEARED`) that the table and the written output leave out.
+
+## Quint front end: depth, stack and size (#93, under B): report
+
+Hand-over: `crates/earnest_quint_syntax` reads, typechecks and compiles files nested as deep or as
+long as Quint 0.33.1 answers, and further where its own bounds allow. A file past a bound is refused
+as `unreadable`, naming the bound; no input found kills the process. Numbers below are an optimized
+build unless said otherwise. Quint is Quint 0.33.1's CLI on the same files.
+
+### The bounds
+
+| Bound | Value | Refusal | Quint 0.33.1 |
+| --- | --- | --- | --- |
+| Expressions or types nested in the parser | 2,000 | "expressions or types here are nested more than 2000 deep, deeper than earnest reads" | a `Set` 1,000 deep overflows its type checker |
+| Depth of Quint's tree, checked before names | 4,000 | "... nested more than 4000 deep in Quint's tree, deeper than earnest reads" | a sum of 1,000 terms already overflows |
+| A substitution applied inside another | 2,100 | "Maximum call stack size exceeded: a type here is nested more than 2100 deep, deeper than earnest reads" | types a type 2,048 deep (`f11` below), overflows at 4,096 |
+| Unification nested in types | 5,000 | "... these types are nested more than 5000 deep ..." | no input reaches it while the bound above holds |
+| Rounds of one substitution | 100 | "... still changing after 100 rounds ..." | the most any sample needs is 2 |
+| Type nodes the types of one file hold | 1,600,000 | "the types of this file hold more than 1600000 type nodes (N counted when type work stopped), more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's" | none |
+
+- The substitution bound was measured with `pure def f_i(x) = f_{i-1}(f_{i-1}(x))`: `f11` (2,048 deep)
+  is typed in 2.0 s (Quint 14.2 s), `f12` is refused, as Quint overflows. A composite such as
+  `f10(f9(...(1)))` of 2,000 already overflows Quint; earnest reads it.
+- The type-node bound is earnest's own. Each id holds a copy of its type where Quint shares one
+  object, so a `match` of n cases or a sum type of n variants holds about 6n² type nodes (inference
+  alone is at 330 MB for 500 cases, against Quint's whole 265 MB). 1,600,000 nodes keeps `compile`
+  under about 4 GiB (500 cases: 1.51 million nodes, 3.7 GB). It admits about 515 cases or variants.
+  Quint typechecks 2,500 cases (626 s, 4.5 GB) and fails to compile them (exit 1 after 1,065 s,
+  7.6 GB), so earnest is stricter between 515 and 2,500. The count is kept as inference gives each
+  id its type, so the 2,500-case file is refused at a peak of 408 MiB in 16 s. The largest table in
+  the repository holds 25,250 nodes, in Quint's repository 74,688 (`evaluator/fixtures/jmt/test/
+  test_all.qnt`), and in the deep samples 504,011 (`records_500`). Sharing the type, which a later
+  issue does, removes the cause.
+- Where Quint overflows and earnest reads within its bounds (a sum of 1,000 terms, a `Set` 1,000
+  deep, chains of 4,000 to 20,000 aliases), Quint 0.33.1 gives no verdict; `confirm --quint` says
+  `cannot`.
+
+### The stack
+
+- `STACK_NEEDED` is 64 MiB: in a debug build the parser at its bound needs 28 to 32 MiB, and a type
+  4,096 deep fits 64 MiB (so the substitution bound has twice its need). Each outermost call of a
+  public entry starts one thread of that stack; calls inside it run on it.
+- `on_a_stack_of(bytes, work)`: a caller whose thread was started with at least `STACK_NEEDED` says
+  so, and every entry inside `work` runs on that thread with no thread of its own. The marker is
+  restored when `work` ends, panics included. Outside it the crate starts its own thread, and a thread
+  that can't start is a refusal that says what to do (fewer `--jobs`, or a higher `ulimit -v`).
+- Address space, eight threads reading, typechecking and compiling at once, lowest `ulimit -v` with
+  nothing refused ten times over: 1,664 MiB with small callers and the crate's own threads, 2,432 MiB
+  with 256 MiB callers running the crate inline (`threads::lowest_limit_on_address_space_that_holds`).
+
+### Long shapes (survey)
+
+Time of `typecheck` and `compile`, with the peak resident memory of the whole run. Quint's columns
+are `quint typecheck` and `quint compile`; `-` where not measured.
+
+| Shape | Size | earnest typecheck | earnest compile | Peak | Quint typecheck | Quint compile | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `type` aliases, each the one before | 4,000 / 8,000 / 20,000 | 0.07 / 0.15 / 0.56 s | 0.47 / 0.68 / 2.2 s | 80 / 150 / 368 MB | overflows / overflows | - | fixed: unified in a loop, inlined once per alias |
+| `val x_i = Set(x_{i-1})` | 100 / 400 | 0.04 / 0.66 s | 0.15 / 2.5 s | 38 / 473 MB | - | - | fixed (was 35 s at 400): aliases inlined in place; the rest is the output's square |
+| `val` chain, `pure def` chain | 8,000 each | 1.6 s (defs) | 2.0 s (vals), 7.1 s (defs) | 1.0 GB (defs) | - | - | linear |
+| modules, each importing the one before | 500 / 1,000 | 0.06 / 0.12 s | 13 / 58 s | 426 MB / 1.6 GB | - | 98 s / - | fixed (was 413 s at 500): flattened modules resolved once |
+| modules importing and exporting the one before | 200 / 500 | 0.01 / 0.03 s | 17 / 358 s | 75 / 425 MB | 4 s (500) | 618 s (500) | as Quint's flattener, cubic; faster than Quint |
+| instances, each of the one before | 50 / 100 | 0.01 / 0.02 s | 0.85 / 8.5 s | 44 / 169 MB | - | 3.1 / 10.9 s | fixed (was 30 s at 100) |
+| files, each importing the one before | 50 / 100 | 0.01 / 0.05 s | - / 0.54 s | 17 / 35 MB | - | - | fixed (was 5.7 s at 100) |
+| unrelated `val`s in one module | 10,000 / 20,000 | 0.21 / 0.45 s | 1.1 / 2.4 s | 206 / 409 MB | - | - | linear |
+| one line of `val`s | 512 KB / 1 MB | 0.92 / 2.1 s | 4.8 / 10.1 s | 675 MB / 1.35 GB | - | - | linear |
+| one string literal | 512 KB / 1 MB | 1 / 2 ms | 6 / 9 ms | 12 / 20 MB | - | - | linear |
+| `Set(...)` of n items | 2,500 / 5,000 | 1.8 / 7.5 s | 6.2 / 24 s | 35 / 66 MB | 88 / 780 s | 97 s / - | square, as Quint's solver; far inside Quint |
+| tuple of n items | 2,500 / 5,000 | 2.1 / 12.7 s | 5.6 / 28 s | 35 / 67 MB | - | - | square, as `Set` |
+| record of n fields | 2,500 / 5,000 | 8.0 / 43 s | 23 / 131 s | 60 / 117 MB | 745 s / - | 725 s / - | left: effect substitutions over 2n arguments, about n^2.4; far inside Quint |
+| `match` of n cases, sum type of n variants | 500 / 2,500 | 4.6 s / refused | 18 s / refused | 3.7 GB / 408 MiB | 13 / 626 s | - / fails | bound: type nodes, above |
+| chain of n `.union(...)` calls | 3,990 / 20,000 | 24 s / refused | 60 s / refused | 122 MB / - | overflows from 2,000 (1.4 s) | - | fixed: read 17.6 s → 74 ms at 3,990; 20,000 refused in 0.3 s (1.4 s in debug) |
+| chain of n `.map(x => Set(x))` | 500 | 40 s | 81 s | 1.5 GB | 210 s | - | left: Quint's nested fixpoint of substitutions; about 5 times faster than Quint |
+
+### Tests
+
+- `tests/parse/depth.rs`: one refusal test per bound, each run on the crate's own thread and inline
+  on a 256 MiB thread, in a debug build (15 s); the 2,048-deep type and the deep sum and set
+  (`#[ignore]`, `cargo test --release -p earnest_quint_syntax --test parse depth:: -- --include-ignored`);
+  time bounds that hold in an optimized build: a match 160 deep under Quint's 5.7 s, 8,000 aliases
+  under 2 s; the 2,500-case match refused under 2 GiB (`#[ignore]`, its command in the attribute).
+- `tests/parse/threads.rs`: eight threads at once, `on_a_stack_of` starting no thread (counted from
+  `/proc/self/task` in a child process run alone), nesting, a panic inside `work`, and the address
+  space under 4 GiB both ways.
+- `tests/parse/deep.rs`: ten files nested hundreds deep that Quint answers (`tests/samples/deep/`),
+  compared with Quint's parse, types, effects and whole typecheck output as text, 10 of 10 equal;
+  recordings over 1 MB keep the length and FNV-64 hash of Quint's text
+  (`cargo test --release -p earnest_quint_syntax --test parse deep:: -- --ignored`).
+- The unit tests of `src/inference/tests.rs`: the bounds on unification and on type nodes, just
+  under and just over, and the largest table of the samples ten times under the bound.
