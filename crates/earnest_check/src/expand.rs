@@ -789,6 +789,14 @@ impl<'v> Values<'v> {
         Width::of(self.frame.as_ref())
     }
 
+    fn told_apart(&mut self, fault: Fault, code: &Code) -> Fault {
+        match (fault, code.eval(self.frame())) {
+            (Fault::WrongKind, Ok(Value::Bool(_) | Value::Null)) | (_, Err(_)) => fault,
+            (Fault::WrongKind, Ok(_)) => Fault::NotBoolean,
+            _ => fault,
+        }
+    }
+
     fn judge(&mut self, packed: Option<&PackedTest>, code: &Code) -> Result<bool, Fault> {
         if let (Some(test), Some(row)) = (packed, self.row)
             && let Some(answer) = test.holds(row)
@@ -1395,6 +1403,7 @@ impl Expand<'_> {
                 Ok(true) => {}
                 Ok(false) => found.broken.push(position),
                 Err(fault) => {
+                    let fault = values.told_apart(fault, &rule.holds);
                     found.note(Whence::Rule(position), fault);
                     found.unjudged.push(position);
                 }

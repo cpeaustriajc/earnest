@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: clearer messages for a badly written Quint mark
+
+Four messages about a mark sent the author the wrong way. A file with a marked module and a bad mark elsewhere says only the bad mark, not that no module is checked. A comma that ends a doc comment with no name after it says that the comma makes the list go on and no names follow. A name written twice in one mark says it is listed twice, not that it is under two marks. A mark on a `val` that does not give a boolean is still a fault, and the message names the definition and its mark. No verdict changes.
+
 ## November 2026: Quint runs and assumptions judged as Quint judges them
 
 Where earnest and Quint gave different answers on the same `.qnt` file, earnest now gives Quint's:
