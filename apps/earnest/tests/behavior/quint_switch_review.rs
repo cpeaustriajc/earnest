@@ -190,3 +190,33 @@ module A {
          where the switched build prints 7:5 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
     );
 }
+
+#[test]
+fn a_brace_left_open_before_a_def_is_refused_at_quints_place_with_quints_code() {
+    let sandbox = Sandbox::empty();
+    sandbox.write(
+        "specs/a.qnt",
+        "/// @check
+module A {
+  var x: int
+  val small = and {
+    x >= 0,
+  def at(v) = x == v
+  action init = x' = 0
+  action step = x' = x
+  /// @check
+  val ok = x >= 0
+}
+",
+    );
+    let run = with_no_programs(&sandbox, &["verify", "--no-cache", "--json", "specs/a.qnt"]);
+    run.exits(1);
+    assert_eq!(
+        first_problem(&run),
+        (9, 3, "[QNT000]".to_owned()),
+        "the build before the switch, with Quint 0.33.1, printed:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:9:3  `quint parse`  [QNT000] extraneous input '/// @check\\n' expecting {{'{{', 'val', ...}}\n\
+         where the switched build prints 7:3 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
+    );
+}
