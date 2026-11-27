@@ -542,3 +542,98 @@ fn every_built_in_with_an_effect_signature_is_used_by_a_sample_of_effects() {
         .collect();
     assert!(missing.is_empty(), "no sample uses {missing:?}");
 }
+
+fn reads_sample() -> earnest_quint_syntax::Parsed {
+    let base = root();
+    read(&format!("{KINDS}/reads.qnt"), |path| {
+        fs::read_to_string(base.join(path)).ok()
+    })
+    .expect("the sample is read")
+}
+
+#[test]
+fn a_copied_id_gets_the_effect_scheme_of_the_id_it_was_copied_from() {
+    let effects = reads_sample().effects().expect("the effects");
+    let Json::Object(entries) = &effects else {
+        panic!("the effects are an object");
+    };
+    let (old, scheme) = entries.last().expect("an effect");
+    let old: u64 = old.parse().expect("an id");
+    let copied = earnest_quint_syntax::effects_with_copies(
+        &effects,
+        &[(old + 1000, old), (old + 1001, old + 999)],
+    );
+    let Json::Object(after) = &copied else {
+        panic!("the copy is an object");
+    };
+    assert_eq!(
+        after.len(),
+        entries.len() + 1,
+        "one copy, none for an id with no effect"
+    );
+    assert_eq!(
+        after.last(),
+        Some(&((old + 1000).to_string(), scheme.clone())),
+        "the copy comes last, in numeric order, with the same scheme"
+    );
+}
+
+fn object(fields: &[(&str, Json)]) -> Json {
+    Json::Object(
+        fields
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
+    )
+}
+
+#[test]
+fn an_added_definition_s_mode_error_is_dropped_as_quint_compile_drops_it() {
+    let parsed = reads_sample();
+    let table = parsed.table();
+    let Some(declarations) = parsed.modules()[0].get("declarations") else {
+        panic!("the module has declarations");
+    };
+    let Json::List(declarations) = declarations else {
+        panic!("a list of declarations");
+    };
+    let variable = declarations
+        .iter()
+        .find(|declaration| declaration.get("name") == Some(&Json::Text("x".to_owned())))
+        .expect("the variable x");
+    let number = |digits: &str| Json::parse(digits).expect("a number");
+    let name = object(&[
+        ("id", number("90000")),
+        ("kind", Json::Text("name".to_owned())),
+        ("name", Json::Text("x".to_owned())),
+    ]);
+    let value = object(&[
+        ("id", number("90001")),
+        ("kind", Json::Text("int".to_owned())),
+        ("value", number("1")),
+    ]);
+    let assignment = object(&[
+        ("id", number("90002")),
+        ("kind", Json::Text("app".to_owned())),
+        ("opcode", Json::Text("assign".to_owned())),
+        ("args", Json::List(vec![name, value])),
+    ]);
+    let definition = object(&[
+        ("id", number("90003")),
+        ("kind", Json::Text("def".to_owned())),
+        ("name", Json::Text("q::inv".to_owned())),
+        ("qualifier", Json::Text("val".to_owned())),
+        ("expr", assignment),
+    ]);
+    let Json::Object(mut entries) = table else {
+        panic!("the table is an object");
+    };
+    entries.push(("90000".to_owned(), variable.clone()));
+    entries.push(("90003".to_owned(), definition.clone()));
+    assert!(
+        parsed
+            .analyze_added(&Json::Object(entries), &[definition])
+            .is_ok(),
+        "quint compile --invariant \"x' = 1\" is not refused"
+    );
+}

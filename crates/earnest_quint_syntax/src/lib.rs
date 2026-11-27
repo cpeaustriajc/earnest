@@ -30,6 +30,7 @@ mod printing_ir;
 mod problem;
 mod types;
 
+pub use effects::effects_with_copies;
 pub use files::{Parsed, read};
 pub use json::Json;
 pub use problem::Problem;

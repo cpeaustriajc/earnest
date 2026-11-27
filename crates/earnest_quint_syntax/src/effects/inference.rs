@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 pub(crate) struct Crash(pub(crate) String);
 
+#[derive(Clone)]
 pub(crate) struct Ordered<T> {
     values: HashMap<u64, T>,
     order: Vec<u64>,
@@ -561,6 +562,7 @@ pub(crate) struct Analysis {
     pub(crate) effects: Json,
     pub(crate) inference: Vec<Vec<Raised>>,
     pub(crate) checks: Vec<Vec<Raised>>,
+    pub(crate) schemes: Ordered<Scheme>,
 }
 
 pub(crate) fn analyze(
@@ -626,5 +628,33 @@ pub(crate) fn analyze(
         effects,
         inference,
         checks,
+        schemes: inferrer.effects,
     })
+}
+
+pub(crate) fn analyze_added(
+    previous: &Ordered<Scheme>,
+    table: &BTreeMap<u64, Entry>,
+    definitions: &[Json],
+    types: &dyn Fn(u64) -> Option<TypeOf>,
+) -> Result<(), Crash> {
+    let mut inferrer = Inferrer {
+        table,
+        effects: previous.clone(),
+        errors: Ordered::default(),
+        substitutions: Vec::new(),
+        fresh_effects: 0,
+        fresh_entities: 0,
+        origins: 0,
+        location: Location::Empty,
+        free: Vec::new(),
+        depth: -1,
+    };
+    for definition in definitions {
+        inferrer.declaration(definition)?;
+    }
+    ModeChecker::default().check(definitions, &inferrer.effects)?;
+    UpdatesChecker::default().check(inferrer.effects.since(0));
+    NondetChecker::new(table, types).check(definitions);
+    Ok(())
 }

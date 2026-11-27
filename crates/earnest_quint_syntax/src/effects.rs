@@ -3,12 +3,13 @@ mod inference;
 mod signatures;
 
 use crate::json::Json;
+use crate::names::Entry;
 use crate::names::Raised;
 use checks::TypeOf;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-pub(crate) use inference::analyze;
+pub(crate) use inference::{analyze, analyze_added};
 
 #[derive(Clone, Debug)]
 pub(crate) struct StateVariable {
@@ -976,6 +977,59 @@ impl crate::files::Parsed {
         }
         Ok(analysis.effects)
     }
+
+    /// Runs Quint's effect passes on definitions `quint compile` adds to the main module, such as
+    /// `q::init` and `q::step`, as it runs them: against the effects of the whole file, with
+    /// fresh names counted from zero again, and with every error they raise dropped. `table` is
+    /// the name table once the added definitions are resolved, as [`Parsed::table`] writes it.
+    /// Quint writes no effect for the added definitions, so nothing is returned.
+    ///
+    /// # Errors
+    ///
+    /// A file on which Quint stops with an internal error, as `unreadable`.
+    pub fn analyze_added(&self, table: &Json, definitions: &[Json]) -> Result<(), crate::Problem> {
+        let crashed = |inference::Crash(why)| crate::Problem {
+            code: "unreadable".to_owned(),
+            message: format!("quint compile 0.33.1 stops with an internal error here: {why}"),
+            source: self.main_source().to_owned(),
+            line: 1,
+            column: 1,
+        };
+        let entries: BTreeMap<u64, Entry> = match table {
+            Json::Object(entries) => entries
+                .iter()
+                .filter_map(|(id, entry)| id.parse().ok().map(|id| (id, Entry::of(entry))))
+                .collect(),
+            _ => BTreeMap::new(),
+        };
+        let analysis = analyze(self.modules(), self.entries(), &|_| None).map_err(crashed)?;
+        analyze_added(&analysis.schemes, &entries, definitions, &|_| None).map_err(crashed)
+    }
+}
+
+/// The effects table after `quint compile` flattens: `effects` as [`Parsed::effects`] gives it,
+/// with each id the flattener makes given the effect scheme of the id it was copied from, as
+/// Quint's id refresher does. `copies` holds the pairs (new id, old id); an old id with no effect
+/// gives none.
+pub fn effects_with_copies(effects: &Json, copies: &[(u64, u64)]) -> Json {
+    let Json::Object(entries) = effects else {
+        return effects.clone();
+    };
+    let mut by_id: BTreeMap<u64, Json> = entries
+        .iter()
+        .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme.clone())))
+        .collect();
+    for (new, old) in copies {
+        if let Some(scheme) = by_id.get(old).cloned() {
+            by_id.insert(*new, scheme);
+        }
+    }
+    Json::Object(
+        by_id
+            .into_iter()
+            .map(|(id, scheme)| (id.to_string(), scheme))
+            .collect(),
+    )
 }
 
 #[cfg(test)]

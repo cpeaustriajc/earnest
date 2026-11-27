@@ -5241,7 +5241,7 @@ is the `effects` table `quint typecheck --out` writes, and a file Quint's effect
 refused with Quint's first error: code, place and text. Nothing calls it yet. The code is
 `src/effects.rs` (effects, simplification, substitutions, unification), `src/effects/inference.rs`
 (the walk), `src/effects/signatures.rs` (the built-ins), `src/effects/checks.rs` (the mode,
-multiple-updates and `nondet` checks) and `src/expression_text.rs` (Quint's printing of an
+multiple-updates and `nondet` checks) and `src/printing_ir.rs` (Quint's printing of an
 expression, which the text of a `QNT000` needs).
 
 ### What `quint typecheck` runs, and in which order [read: `quintAnalyzer.ts`, `cliCommands.ts`; ran]
@@ -5258,17 +5258,43 @@ and lambdas, in later modules too.
 
 Effect inference needs nothing from the type checker: it reads the table (`id`, `importedFrom`,
 `namespaces`) and, for a `const`, whether its annotation is an operator type once type
-applications are resolved. Two things do need it, and wait for #87:
+applications are resolved. That resolution is done from the syntax in
+`src/effects/inference.rs` (`operator_arity`); the type checker needs the same resolver, and one
+of the two goes at the merge.
+
+The analyzer is `Parsed::analyzed` (`src/effects.rs`). It takes the type pass from outside, as a
+`TypePass`: the type scheme of each id as Quint prints it (with whether it is `bool`), and the type
+errors and the type-application errors, each with its module's index. Module by module, in phase
+2's order, it puts a module's errors in Quint's order: type errors, effect-inference errors,
+type-application errors, then mode, multiple-updates and `nondet` errors; the first is the
+problem. Until the type checker (#87) gives a `TypePass`, `Parsed::effects` gives an empty one, so:
 
 - `QNT205` (`nondet bindings can only be used with boolean expressions, but expression has type:
-  T`): the `nondet` checker reads the type of the `let`'s body. The check is built and takes the
-  types through a hook, which gives none until the type checker exists (Quint skips the check
-  where it has no type). `refused/effects_nondet_not_boolean.qnt` is refused by Quint and read by
-  the crate today.
-- The order across passes: a module with a type error and an effect or mode error is refused with
-  the type error (`refused/effects_order_type_then_mode.qnt`). The crate keeps each module's
-  effect-inference errors apart from its check errors so the type errors can be put before both
-  and the type-application errors between them.
+  T`) is built and is raised only when the type of the `let`'s body is given
+  (`refused/effects_nondet_not_boolean.qnt` is read by `Parsed::effects` today).
+- A module with a type error and an effect or mode error is refused with the type error only when
+  the type errors are given (`refused/effects_order_type_then_mode.qnt`).
+
+Both are tested in `src/effects/tests.rs` with a `TypePass` filled by hand from Quint's
+recordings, as are a type-application error placed between effect inference and the checks, and
+modules taken in turn (`refused/effects_first_of_two_modules.qnt`: phase 2 sorts the modules by
+id as text).
+
+`src/printing_ir.rs` is Quint's `expressionToString`, which the text of a `QNT000` needs; the type
+checker uses the same file. Its test compares the 101 expressions of `tests/samples/printing.qnt`
+with what Quint prints (`tasks/quint/syntax/printing.js` records them).
+
+### After flattening: what `quint compile` does with effects [read: `cliCommands.ts` `compile`, `ir/idRefresher.ts`; ran]
+
+`quint compile` does not analyze the flattened module again. Each id its flattener makes gets the
+effect scheme of the id it copies, the same object (`effects_with_copies` does that on the table,
+given the pairs of ids). The definitions it adds (`q::init`, `q::step`, `q::inv`,
+`q::temporalProps`, ...) go through `analyzeInc`, whose result is dropped: its effect inferrer works
+on a copy of the table and counts fresh names from zero again, and its errors are not reported.
+So `quint compile` writes no effect for the added definitions, and `quint compile --invariant
+"x' = 1"` is not refused, although `val q::inv = x' = 1` is a `QNT200` in a file. Only an
+internal error of Quint can stop it there. `Parsed::analyze_added` runs those passes the same way
+and refuses only on such an error.
 
 ### How it is compared [ran]
 
@@ -5337,8 +5363,8 @@ Quint's printing.
 
 ### Where the crate knowingly does other than Quint's effect passes
 
-- `QNT205` and the order across passes, until #87: above. A file Quint refuses for either is read
-  by the crate today. Smallest: `refused/effects_nondet_not_boolean.qnt`,
+- `QNT205` and the order across passes, until #87 gives the type pass: above. A file Quint refuses
+  for either is read by `Parsed::effects` today. Smallest: `refused/effects_nondet_not_boolean.qnt`,
   `refused/effects_order_type_then_mode.qnt`.
 - The analysis stops at the first module with an error, where Quint goes on: the first error is
   the same, and a refused file has no table.
