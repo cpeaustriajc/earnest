@@ -4,3 +4,4 @@
 mod checks;
 mod compared;
 mod reader;
+mod samples;

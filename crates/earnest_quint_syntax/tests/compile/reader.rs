@@ -43,6 +43,7 @@ fn the_reader_given_the_crate_s_output_checks_the_model_it_checks_given_quint_s(
     let mut same = 0;
     let mut searched = 0;
     let mut differences = Vec::new();
+    let mut field_names_searched = 0;
     for each in &recorded {
         let Ok(theirs) = &each.quint else {
             continue;
@@ -65,6 +66,9 @@ fn the_reader_given_the_crate_s_output_checks_the_model_it_checks_given_quint_s(
             same += 1;
             if !their_outcome.starts_with("unreadable") {
                 searched += 1;
+                if each.check.file.ends_with("fieldnames.qnt") {
+                    field_names_searched += 1;
+                }
             }
         } else {
             differences.push(format!(
@@ -81,4 +85,8 @@ fn the_reader_given_the_crate_s_output_checks_the_model_it_checks_given_quint_s(
     );
     assert!(differences.is_empty(), "{}", differences.join("\n"));
     assert!(searched > 100, "only {searched} searched");
+    assert!(
+        field_names_searched >= 2,
+        "the fieldNames sample was searched {field_names_searched} times"
+    );
 }

@@ -5195,3 +5195,146 @@ than Quint, which reads on in a repaired tree), `tasks/quint/README.md` above.
 - The `types` and `effects` Quint's `typecheck` adds, and the table as `quint typecheck` and
   `quint compile` write it, where it differs from `quint parse`'s (slice 4 says what differs).
 - Nothing in the table needed the type or effect passes.
+
+## Quint front end, slice 4: flatten a module as `quint compile` does (#89): report
+
+`Parsed::compile(&Target)` in `crates/earnest_quint_syntax` (`src/compile.rs`, `src/flatten.rs`,
+`src/applications.rs`) gives the whole of what `quint compile --target json --main M --init i
+--step s [--invariant p] [--temporal t]` writes to stdout, ids and key order included, except
+`types` and `effects`: those are the type and effect passes' (#87, #88), and are left out of every
+comparison below until they land.
+
+### What `quint compile` does before it writes [read: `cliCommands.js` `compile`, `quintAnalyzer.js`, `types/typeApplicationResolution.js`, `types/substitutions.js`, `flattening/*.js`, `names/unshadower.js`, `ir/namespacer.js`, `ir/idRefresher.js`; then ran]
+
+In this order, all on the one id generator of the parse:
+
+1. **The typecheck stage rewrites the modules and the table.** `analyzeModules` replaces every
+   module's declarations with copies in which each application of a parametric type alias
+   (`Option[int]`) is its definition with the arguments substituted, and does the same to every
+   table entry. No id is taken. The type and effect passes then run on these and take no id of
+   the shared generator either (`types/parser.js` and the effect visitor count on their own).
+2. **`--init` and `--step` are parsed** as expressions (`toExpr`), each taking its ids, and
+   checked: a name that resolves to nothing is `QNT404`, one that is not an `action` is `QNT501`
+   (`default --step action name 'n' is used by a var declaration`). Those expressions are thrown
+   away.
+3. **The `q::*` definitions are parsed and appended** to the main module, taking the next ids:
+   `action q::init = <init>`, `action q::step = <step>`, `val q::inv = and(<invariant>)` unless
+   the flag is absent or `true` (earnest gives `a,b` for two, so `and(a,b)`),
+   `temporal q::temporalProps = and(<temporal>)`. Names are resolved again over all modules (a
+   new table), and the analyzer is run on the new definitions only: its constructor rewrites the
+   type applications of every entry of the new table once more.
+4. **`flattenModules`**: every module is unshadowed (a lambda parameter becomes `<name>_<lambda
+   id>`, a `let` name `<name>_<let id>` when its entry has `shadowing`), its aliases inlined, and
+   then each module, in order, is flattened: imports and exports first (a walk in which every name
+   met that is a top-level definition is walked and then added, its table entry with `depth`,
+   `importedFrom`, `hidden` and `namespaces` copied in), then each instance becomes a new module
+   `<module>::<instance>` holding a `pureval` per override, the override's dependencies before
+   it, and every non-`const` declaration of the instantiated module with each name not built in
+   prefixed and fresh ids, in the order `idRefresher` visits them: the definition, its type, then
+   its body, an expression before its children and a lambda's parameters after the lambda. Names
+   are resolved over the flattened modules after each step, and a resolution error there throws
+   `Internal error while flattening <errors>`.
+5. The main module is written with the table of every module flattened, not only the main one.
+
+So the ids of copied definitions depend on nothing the type checker does: they are equal on every
+file compared.
+
+The types of the new ids are not inferred again: `idRefresher` gives each fresh id the type,
+effect and mode of the id it copies, and only the `q::*` definitions are type checked.
+`Compiled::copies()` gives those pairs (new id, old id) and `Compiled::modules()` every flattened
+module, for the type and effect passes to fill `types` and `effects` as Quint does.
+
+### What Quint's flattener leaves out
+
+Only what the main module's own declarations and the `q::*` definitions reach is kept from
+another module; the main module keeps all of its own. So, from every imported or instantiated
+module: its runs, its `assume`s, its `const`s (replaced by the `pureval` of the override), its
+type aliases (inlined), and every definition no kept definition names. The main module's own
+runs, `assume`s, aliases and unused definitions stay (`drops.qnt`). `--target json` does not
+drop runs; only `--target tlaplus` does.
+
+### How it is compared [ran]
+
+- `tasks/quint/syntax/list_checks.sh <earnest> tasks` lists every check earnest compiles: it
+  runs `earnest verify` with a `quint` that refuses `typecheck`, so every check is compiled,
+  and records the arguments. They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
+  (249). `extra_checks.py` adds every candidate name of the 17 shapes (as
+  `tasks/quint/shapes/record.py` tries them), every module of `tasks/quint/imports/` and of the
+  crate's samples (`tests/samples/compile/`), and 15 checks of what a check adds: 272 in
+  `extra_checks.txt`.
+- `record_compile.sh <out> <lists>...` runs Quint 0.33.1 on each and `condense_compile.py` stores,
+  per `.qnt` file, `<file>.compile.json` under `tests/quint/`: each check's arguments and either
+  its output without `types` and `effects` (with the entries of `types` for the main module's
+  variables and for every `fieldNames` argument, which the reader reads) or the first error line.
+  It checks when recording that Quint's stdout is the compact JSON of what it holds and that the
+  condensed file gives it back. Subtrees are stored once per file: 11 MB in 161 files, against
+  130 MB as Quint writes them (84 MB of it `types` and `effects`).
+- The test (`tests/compile/`) compares the crate's output with Quint's key by key, naming the first
+  path that differs, then as text, and each variable type the crate gives with Quint's. A check
+  Quint refuses must be refused with Quint's message, except one Quint's type or effect pass
+  refuses, which is counted apart. Then earnest's reader (`earnest_quint::read`, searched by
+  `earnest_check::explore` to 20,000 states) is given Quint's recording, with the `types` entries
+  the reader reads, and the crate's output, with the variable types the crate gives: the outcomes
+  (status, states, every rule's verdict and path) must be equal.
+
+To record again (the tests need no Node):
+
+```sh
+npm install @informalsystems/quint@0.33.1          # in a scratch folder
+export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint
+tasks/quint/syntax/list_checks.sh target/release/earnest tasks > crates/earnest_quint_syntax/tests/compile/checks.txt
+python3 -I tasks/quint/syntax/extra_checks.py . > crates/earnest_quint_syntax/tests/compile/extra_checks.txt
+tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint crates/earnest_quint_syntax/tests/compile/*checks.txt
+```
+
+### Results [ran]
+
+| Corpus | Checks | Equal | Notes |
+| --- | --- | --- | --- |
+| Every check earnest compiles under `tasks/` (`checks.txt`) | 249 | 241 | 6 refused by both with Quint's message (4 `init` not found, 2 `Internal error while flattening`); 2 refused by Quint's mode check (`QNT203`, `quintrefuses/refused.qnt`), left to #88 |
+| The 17 shapes, every name tried; every module of `tasks/quint/imports/` and of the samples; what a check adds (`extra_checks.txt`) | 272 | 64 | 208 refused by both, each with Quint's message: names a shape does not see (`QNT404`), modules with no `init`, the two flattener crashes |
+| The reader, on each of the 305 equal | 305 | 305 | 251 searched with the same outcome, 54 unreadable both ways with the same problems |
+| Quint's repository at `v0.33.1`, in the container only: each module with `action init` and `action step` (`corpus_checks.py`), `--main M` | 108 modules in 93 of the 196 files | 106 | 2 refused by both with Quint's message: `adr006before.qnt` (a syntax error, `QNT000`) and `two_phase_commit_modules.qnt` (`Internal error while flattening`) |
+
+The command for the last row: `python3 -I tasks/quint/syntax/corpus_checks.py <quint> > <list>`,
+`RECORD_FROM=<quint> tasks/quint/syntax/record_compile.sh <out> <list>`, then
+`QUINT_COMPILED=<out> QUINT_COMPILED_BASE=<quint> cargo test -p earnest_quint_syntax --test compile
+every_check_of_a_folder -- --ignored --nocapture`.
+
+### Slice 3a: the types the reader needs
+
+The reader reads `types` at two places only: the type of a `fieldNames` argument
+(`crates/earnest_quint/src/data.rs:623`) and the type of a variable whose field is that argument
+(`data.rs:640`); effects not at all. `Compiled::variable_types()` gives Quint's entry for each
+variable of the main module: its written type with aliases inlined, under the ids of the
+declaration it was copied from (`{"id": 3, ...}` for `Main::Spec::slot`, whose own annotation
+now has fresh ids), equal to Quint's on every variable of every check. A variable whose written
+type applies a type constructor (`List[Option[int]]`) or has a type variable is left out: there
+Quint's type is one its inference and simplification make (on Quint's corpus, 7 modules), which
+only the type pass reproduces. The type of a `fieldNames` argument is the type pass's too: for
+`make(3).fieldNames()` Quint writes the record with the id of one field kept and not the other's.
+Without it the reader falls back to the record written out, a constant, or the variable's type,
+and refuses the rest; on `fieldnames.qnt` (a variable, a call, a parameter, a `val`, a record
+written out, in a spec and through an instance) it checks the same model given either output.
+
+### Where the crate knowingly does other than `quint compile`
+
+| What | Direction | Smallest file |
+| --- | --- | --- |
+| A file Quint's type or effect pass refuses | Laxer for now: flattened. Refused once #87 and #88 land | `tasks/quint/views/quintrefuses/refused.qnt` (`QNT203`) |
+| `types` and `effects` | Left out, but each variable's type, as above | |
+| Where Quint's flattener throws (an instance of an instance through `export`; `import X as A` inside an instantiated spec) | The same refusal, Quint's text after `Internal error while flattening`, code `QNT000`, at no place (Quint gives a stack trace) | `tests/samples/compile/crash_export.qnt`, `crash_import_as.qnt` |
+| A type application with the wrong number of arguments, a type constructor with no definition | Refused: Quint's type pass refuses the first; Quint asserts on the second | |
+| An `export` whose module does not exist at that point, an instance of an unknown module | Refused, where Quint throws a `TypeError` | |
+
+Where Quint's behaviour looks wrong and the crate does the same: the first module in a file that
+crashes the flattener stops every check of the file, whichever module is main, since every
+module is flattened; the table written holds the entries of every module of the file, not only
+the main one's; a lambda parameter is renamed even where it shadows nothing; an exported
+definition is written with `hidden: false` and `namespaces: []`; two declarations named `_`
+(two `assume _`) keep only the first.
+
+One place is written as Quint writes it on every file compared but is not shown to be in
+general: a key JavaScript sets to `undefined` keeps its place in the object, and the crate drops
+it, so a key set again later would come last. Only `importedFrom` of an exported definition is
+set to `undefined` and could be set again, when a later module imports the main one.

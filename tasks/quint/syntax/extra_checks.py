@@ -46,7 +46,7 @@ lines += [
     f"{COMPILE} --main Main --init init --step step --invariant ok {samples.format('drops')}",
     f"{COMPILE} --main Spec --init init --step step --invariant named,called,viaParam,valued,literal {samples.format('fieldnames')}",
     f"{COMPILE} --main Main --init init --step step --invariant named,called,viaParam,valued,literal {samples.format('fieldnames')}",
-    f"{COMPILE} --main Through --init init --step step --invariant pOk {samples.format('crashes')}",
-    f"{COMPILE} --main Setup --init init --step step --invariant sOk {samples.format('crashes')}",
+    f"{COMPILE} --main Through --init init --step step --invariant pOk {samples.format('crash_export')}",
+    f"{COMPILE} --main Setup --init init --step step --invariant sOk {samples.format('crash_import_as')}",
 ]
 print("\n".join(lines))

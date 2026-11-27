@@ -244,12 +244,12 @@ compile --target json --main Both --init init --step step tasks/quint/imports/st
 compile --target json --main types --init init --step step tasks/quint/imports/types.qnt
 compile --target json --main Lamp --init init --step step crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
 compile --target json --main Dim --init init --step step crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Param --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Mid --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Through --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Helpers --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Spec --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Setup --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
+compile --target json --main Param --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile --target json --main Mid --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile --target json --main Through --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile --target json --main Helpers --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile --target json --main Spec --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile --target json --main Setup --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
 compile --target json --main Base --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile --target json --main Lib --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
@@ -268,5 +268,5 @@ compile --target json --main Dim --init L::init --step L::step --temporal L::fli
 compile --target json --main Main --init init --step step --invariant ok crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile --target json --main Spec --init init --step step --invariant named,called,viaParam,valued,literal crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
 compile --target json --main Main --init init --step step --invariant named,called,viaParam,valued,literal crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
-compile --target json --main Through --init init --step step --invariant pOk crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
-compile --target json --main Setup --init init --step step --invariant sOk crates/earnest_quint_syntax/tests/samples/compile/crashes.qnt
+compile --target json --main Through --init init --step step --invariant pOk crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile --target json --main Setup --init init --step step --invariant sOk crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
