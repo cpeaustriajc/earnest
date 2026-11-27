@@ -84,7 +84,10 @@ fn violated(states: u64) -> String {
     )
 }
 
-const TOP: (&str, &str) = ("floor < 3, floor' = floor + 1", "floor < 5, floor' = floor + 1");
+const TOP: (&str, &str) = (
+    "floor < 3, floor' = floor + 1",
+    "floor < 5, floor' = floor + 1",
+);
 
 const FOLD: (&str, &str) = (
     "  action step = any { up, down }",

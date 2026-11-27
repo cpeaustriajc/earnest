@@ -4,8 +4,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-
-use crate::support::{Run, Sandbox, find_model, model, repository};
+use crate::support::{Run, Sandbox, find_model, model, repository, without_timings};
+use serde_json::Value;
 
 const FAKE: &str = r##"#!/bin/sh
 PATH=/usr/bin:/bin
@@ -172,17 +172,6 @@ impl Quint {
             .filter(|call| call.starts_with("compile"))
             .collect()
     }
-
-    fn reads(&self) -> Vec<String> {
-        self.calls()
-            .into_iter()
-            .filter(|call| call.starts_with("compile") || call.starts_with("typecheck"))
-            .collect()
-    }
-
-    fn forget_calls(&self) {
-        self.sandbox.write("fake/calls", "");
-    }
 }
 
 fn problems(report: &serde_json::Value) -> Vec<(String, u64, u64, String)> {
@@ -215,34 +204,10 @@ fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_check
     quint.with_check("models", "temporal", "dead");
     let run = quint.earnest(&["verify"]);
     run.exits(1);
-    let calls = quint.calls();
     assert_eq!(
-        calls.first().map(String::as_str),
-        Some("--version"),
-        "the version first: {calls:?}"
-    );
-    let mut compiles = quint.compiles();
-    compiles.sort();
-    assert_eq!(
-        compiles,
-        [
-            "compile --target json --main counter --init init --step step --invariant \
-             inRange,tooBig models/counter.qnt",
-            "compile --target json --main dead --init init --step step --invariant ok \
-             --temporal later,sooner models/dead.qnt",
-        ],
-        "one compile per check side by side, the properties joined by commas\n{run}"
-    );
-    let mut parses: Vec<String> = calls
-        .iter()
-        .filter(|call| call.starts_with("parse"))
-        .filter_map(|call| call.split(' ').nth(1).map(str::to_owned))
-        .collect();
-    parses.sort();
-    assert_eq!(
-        parses,
-        ["models/counter.qnt", "models/dead.qnt"],
-        "one parse per file, for the files it reads: {calls:?}"
+        quint.calls(),
+        Vec::<String>::new(),
+        "earnest reads the files itself and starts no `quint`\n{run}"
     );
     assert_eq!(run.model_line("counter")[0], "fail", "{run}");
     assert_eq!(run.model_line("counter")[2], "12 states", "{run}");
@@ -258,103 +223,59 @@ fn a_marked_check_is_compiled_with_its_module_init_step_and_properties_and_check
         counter["file"], "models/counter.qnt",
         "the `.qnt` file is the file"
     );
+    let ids = |found: &Value| -> Vec<String> {
+        found["rules"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|rule| rule["id"].as_str().map(str::to_owned))
+            .collect()
+    };
+    assert_eq!(
+        ids(counter),
+        ["inRange", "tooBig"],
+        "the check is compiled with its module, `init`, `step` and both invariants\n{report}"
+    );
+    assert_eq!(
+        ids(model(&report, "dead")),
+        ["ok", "later", "sooner"],
+        "and with its invariant and both temporal properties\n{report}"
+    );
     assert_eq!(report["summary"]["models"], 2, "{report}");
 }
 
 #[test]
-fn compiles_run_side_by_side_but_never_more_than_jobs_at_once() {
-    let quint = Quint::new();
-    quint.sandbox.write("fake/pause", "");
-    let specs = [
-        ("inrange", "counter"),
-        ("dead", "dead"),
-        ("starts", "starts"),
-        ("inbounds", "mixed"),
-    ];
-    for (variant, file) in specs {
-        quint.with_check("models", variant, file);
-    }
-    let peaks = |jobs: &str| -> Vec<u64> {
-        quint.sandbox.write("fake/peaks", "");
-        let run = quint.earnest(&["verify", "--no-cache", "--jobs", jobs]);
-        assert_eq!(quint.compiles().len(), specs.len(), "{run}");
-        quint.forget_calls();
-        fs::remove_dir_all(quint.sandbox.path().join(".earnest")).expect("the cache goes");
-        quint
-            .sandbox
-            .read("fake/peaks")
-            .lines()
-            .map(|line| line.trim().parse().expect("a count"))
-            .collect()
-    };
-    let alone = peaks("1");
-    assert!(
-        alone.iter().all(|peak| *peak == 1),
-        "one at a time with one job: {alone:?}"
-    );
-    let two = peaks("2");
-    assert!(
-        two.iter().all(|peak| *peak <= 2),
-        "at most two at a time with two jobs: {two:?}"
-    );
-    assert!(
-        two.contains(&2),
-        "two compiles overlap with two jobs: {two:?}"
-    );
-}
-
-#[test]
-fn an_unchanged_check_starts_no_quint_and_an_edit_compiles_only_its_folder_again() {
+fn an_unchanged_check_comes_from_the_cache_and_an_edit_checks_only_its_folder_again() {
     let quint = Quint::new();
     quint.with_check("first", "counter", "counter");
     quint.with_check("second", "dead", "dead");
     let first = quint.earnest(&["verify"]);
     first.exits(1);
-    assert_eq!(
-        quint.compiles().len(),
-        2,
-        "both checks are compiled\n{first}"
+    let cached = |run: &Run, name: &str| run.model_line(name).contains(&"(cached)".to_owned());
+    assert!(
+        !cached(&first, "counter") && !cached(&first, "dead"),
+        "both checks are read\n{first}"
     );
-    quint.forget_calls();
     let again = quint.earnest(&["verify"]);
     again.exits(1);
-    assert_eq!(
-        quint.calls(),
-        Vec::<String>::new(),
-        "nothing changed, so `quint` is not started at all, not even for its version\n{again}"
-    );
     assert!(
-        again.model_line("counter").contains(&"(cached)".to_owned()),
-        "the result cache serves the unchanged JSON: {again}"
+        cached(&again, "counter") && cached(&again, "dead"),
+        "the result cache serves both unchanged checks: {again}"
     );
     let marked = quint.sandbox.read("second/dead.qnt");
     quint
         .sandbox
-        .write("second/dead.qnt", &format!("{marked}// edited\n"));
+        .write("second/dead.qnt", &marked.replace("a <= 3", "a <= 4"));
     let edited = quint.earnest(&["verify"]);
     edited.exits(1);
-    assert_eq!(
-        quint.compiles(),
-        [
-            "compile --target json --main dead --init init --step step --invariant ok \
-          second/dead.qnt"
-        ],
-        "only the check of the edited folder\n{edited}"
+    assert!(
+        cached(&edited, "counter") && !cached(&edited, "dead"),
+        "only the check of the edited folder is checked again\n{edited}"
     );
-    quint.forget_calls();
-    quint.with_version("0.34.0-next");
-    let upgraded = quint.earnest(&["verify"]);
-    upgraded.exits(1);
-    let calls = quint.calls();
-    assert_eq!(
-        calls.first().map(String::as_str),
-        Some("--version"),
-        "a changed program is asked its version again: {calls:?}"
-    );
-    assert_eq!(
-        quint.compiles().len(),
-        2,
-        "a new version of Quint compiles everything again: {calls:?}"
+    assert_eq!(quint.calls(), Vec::<String>::new(), "no `quint` is started");
+    assert!(
+        !quint.sandbox.path().join(".earnest/quint").exists(),
+        "nothing of Quint's is kept"
     );
 }
 
@@ -399,7 +320,7 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
 }
 
 #[test]
-fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
+fn without_quint_each_quint_file_is_checked_all_the_same() {
     let quint = Quint::new();
     quint.with_check("models", "counter", "counter");
     quint.with_check("models", "dead", "dead");
@@ -407,19 +328,12 @@ fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
     run.exits(1);
     let report = run.json();
     assert_eq!(
-        problems(&report),
-        [
-            ("models/counter.qnt".to_owned(), 1, 1, "`quint`".to_owned()),
-            ("models/dead.qnt".to_owned(), 1, 1, "`quint`".to_owned()),
-        ],
-        "{report}"
+        report["unreadable"],
+        serde_json::json!([]),
+        "no `quint` and no Node are needed: {report}"
     );
-    assert_eq!(
-        message_of(&report),
-        "`quint` was not found: install it with `npm install --save-dev \
-         @informalsystems/quint`, or set `EARNEST_QUINT`"
-    );
-    assert_eq!(report["summary"]["unreadable"], 2, "{report}");
+    assert_eq!(model(&report, "counter")["status"], "fail", "{report}");
+    assert_eq!(model(&report, "dead")["status"], "pass", "{report}");
     let named = Run::of(
         quint
             .sandbox
@@ -428,14 +342,15 @@ fn without_quint_each_quint_file_is_unreadable_and_nothing_is_guessed() {
             .env("PATH", quint.sandbox.path().join("no-programs"))
             .args(["verify", "--json"]),
     );
-    assert!(
-        message_of(&named.json()).contains("`EARNEST_QUINT` names"),
-        "a variable that names no file is said: {named}"
+    assert_eq!(
+        without_timings(&named.json()),
+        without_timings(&report),
+        "`EARNEST_QUINT` is read by `confirm --quint` only: {named}"
     );
 }
 
 #[test]
-fn quint_in_node_modules_above_the_checks_is_used() {
+fn quint_in_node_modules_above_the_checks_is_not_started_by_verify() {
     let quint = Quint::new();
     quint.with_check("app/specs", "counter", "counter");
     fs::create_dir_all(quint.sandbox.path().join("app/node_modules/.bin"))
@@ -448,7 +363,11 @@ fn quint_in_node_modules_above_the_checks_is_used() {
     let run = quint.without_quint(&["verify"]);
     run.exits(1);
     assert_eq!(run.model_line("counter")[0], "fail", "{run}");
-    assert_eq!(quint.compiles().len(), 1, "{run}");
+    assert_eq!(
+        quint.calls(),
+        Vec::<String>::new(),
+        "`verify` reads the file itself, so the `quint` beside it is not started\n{run}"
+    );
 }
 
 #[test]
@@ -531,7 +450,6 @@ fn a_quint_file_named_on_the_command_line_checks_only_its_marked_modules() {
     let run = quint.earnest(&["verify", "models/dead.qnt", "--json"]);
     run.exits(0);
     assert_eq!(models_of(&run.json()), ["dead"], "{run}");
-    assert_eq!(quint.compiles().len(), 1, "{run}");
 }
 
 #[test]
@@ -569,20 +487,11 @@ fn a_refused_construct_is_reported_at_its_line_in_the_quint_file() {
         "line 7 is `action step = x' = Set(1, 2).chooseSome()`, and the call starts at its \
          receiver, column 22\n{run}"
     );
-    let parses = |calls: Vec<String>| {
-        calls
-            .iter()
-            .filter(|call| call.starts_with("parse"))
-            .count()
-    };
-    assert_eq!(parses(quint.calls()), 1, "one parse for the file");
-    quint.forget_calls();
     let again = quint.earnest(&["verify", "--json"]);
-    assert_eq!(problems(&again.json()), expected, "{again}");
     assert_eq!(
-        quint.calls(),
-        Vec::<String>::new(),
-        "the places are cached too"
+        problems(&again.json()),
+        expected,
+        "a second run places it alike\n{again}"
     );
 }
 
@@ -647,25 +556,30 @@ fn editing_a_file_imported_from_a_parent_folder_reads_the_check_again() {
         "fake/parsed/counter.sourcemap.json",
         &map.replace("ROOT", &root.join("app").to_string_lossy()),
     );
-    quint.earnest(&["verify"]).exits(1);
-    assert_eq!(
-        quint.reads().len(),
-        1,
-        "the first run reads the check from Quint"
+    let first = quint.earnest(&["verify"]);
+    first.exits(1);
+    let again = quint.earnest(&["verify"]);
+    again.exits(1);
+    assert!(
+        again.model_line("counter").contains(&"(cached)".to_owned()),
+        "nothing changed\n{again}"
     );
-    quint.forget_calls();
-    quint.earnest(&["verify"]).exits(1);
-    assert_eq!(quint.calls(), Vec::<String>::new(), "nothing changed");
     quint.sandbox.write(
         "app/shared/lib.qnt",
         "module lib {\n  pure val Limit = 6\n}\n",
     );
     let edited = quint.earnest(&["verify"]);
     edited.exits(1);
-    assert_eq!(
-        quint.reads().len(),
-        1,
-        "the file Quint read from `../shared` changed, so the check is read from Quint again\n{edited}"
+    assert!(
+        !edited
+            .model_line("counter")
+            .contains(&"(cached)".to_owned()),
+        "the file read from `../shared` changed, so the check is read again\n{edited}"
+    );
+    assert_ne!(
+        edited.model_line("counter")[2],
+        first.model_line("counter")[2],
+        "with a limit of 6 the counter reaches more states\n{first}\n{edited}"
     );
 }
 

@@ -209,7 +209,11 @@ pub(crate) fn front_end(shown: &str) -> Result<Parsed, earnest_quint_syntax::Pro
     })
 }
 
-fn placed(problem: &earnest_quint_syntax::Problem, real_file: &Path, shown: &str) -> (String, Place) {
+fn placed(
+    problem: &earnest_quint_syntax::Problem,
+    real_file: &Path,
+    shown: &str,
+) -> (String, Place) {
     let at = Place {
         line: u32::try_from(problem.line).unwrap_or(u32::MAX).max(1),
         column: u32::try_from(problem.column).unwrap_or(u32::MAX).max(1),
@@ -217,7 +221,10 @@ fn placed(problem: &earnest_quint_syntax::Problem, real_file: &Path, shown: &str
     if problem.source.is_empty() {
         return (shown.to_owned(), TOP_OF_FILE);
     }
-    (shown_in_folder(Path::new(&problem.source), real_file, shown), at)
+    (
+        shown_in_folder(Path::new(&problem.source), real_file, shown),
+        at,
+    )
 }
 
 fn parse_failed(shown: &str, real_file: &Path, problem: &earnest_quint_syntax::Problem) -> Problem {
@@ -230,24 +237,27 @@ fn parse_failed(shown: &str, real_file: &Path, problem: &earnest_quint_syntax::P
     Problem::new(&file, place, PARSE, &message)
 }
 
-fn compile_failed(job: &Job, problem: &earnest_quint_syntax::Problem) -> Problem {
+fn compile_said(problem: &earnest_quint_syntax::Problem) -> (String, bool) {
     let first = problem.message.lines().next().unwrap_or_default();
-    let (said, (file, place)) = if problem.message.starts_with(FLATTENER_STOPPED) {
-        (format!("Error: {first}"), (job.shown.clone(), TOP_OF_FILE))
+    if problem.message.starts_with(FLATTENER_STOPPED) {
+        (format!("Error: {first}"), false)
     } else if problem.source.is_empty() && problem.code == MISSING_MODULE {
-        (format!("error: {first}"), (job.shown.clone(), TOP_OF_FILE))
+        (format!("error: {first}"), false)
     } else if problem.source.is_empty() {
-        (
-            format!("error: [{}] {first}", problem.code),
-            (job.shown.clone(), TOP_OF_FILE),
-        )
+        (format!("error: [{}] {first}", problem.code), false)
     } else if problem.code == NOT_READ {
-        (first.to_owned(), placed(problem, &job.real, &job.shown))
+        (first.to_owned(), true)
     } else {
-        (
-            format!("Error [{}]: {first}", problem.code),
-            placed(problem, &job.real, &job.shown),
-        )
+        (format!("Error [{}]: {first}", problem.code), true)
+    }
+}
+
+fn compile_failed(job: &Job, problem: &earnest_quint_syntax::Problem) -> Problem {
+    let (said, at_its_place) = compile_said(problem);
+    let (file, place) = if at_its_place {
+        placed(problem, &job.real, &job.shown)
+    } else {
+        (job.shown.clone(), TOP_OF_FILE)
     };
     Problem::new(
         &file,
@@ -907,4 +917,67 @@ fn one_per_file(files: Vec<ModelFile>) -> Vec<ModelFile> {
         }
     }
     kept
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compile_said;
+    use earnest_quint_syntax::Problem;
+
+    fn problem(code: &str, message: &str, source: &str) -> Problem {
+        Problem {
+            code: code.to_owned(),
+            message: message.to_owned(),
+            source: source.to_owned(),
+            line: 4,
+            column: 22,
+        }
+    }
+
+    #[test]
+    fn a_compile_error_is_said_as_the_first_line_quint_prints_for_it() {
+        assert_eq!(
+            compile_said(&problem(
+                "QNT000",
+                "Couldn't unify int and bool\nTrying to unify int and bool",
+                "/specs/a.qnt"
+            )),
+            (
+                "Error [QNT000]: Couldn't unify int and bool".to_owned(),
+                true
+            ),
+            "an error at a place: its first line, the place after it"
+        );
+        assert_eq!(
+            compile_said(&problem("QNT404", "Name 'nope' not found", "")),
+            ("error: [QNT404] Name 'nope' not found".to_owned(), false),
+            "an error in what the command line names, with no place"
+        );
+        assert_eq!(
+            compile_said(&problem("QNT405", "module zz does not exist", "")),
+            ("error: module zz does not exist".to_owned(), false),
+            "a main module that is not there, which Quint prints with no code"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "QNT000",
+                "Internal error while flattening [QNT404] Name 'twice' not found",
+                ""
+            )),
+            (
+                "Error: Internal error while flattening [QNT404] Name 'twice' not found".to_owned(),
+                false
+            ),
+            "the flattener's internal error, as Node prints what Quint throws"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "unreadable",
+                "Quint's type checker throws here",
+                "/a.qnt"
+            )),
+            ("Quint's type checker throws here".to_owned(), true),
+            "a file the front end refuses where Quint throws, in its own words"
+        );
+    }
 }

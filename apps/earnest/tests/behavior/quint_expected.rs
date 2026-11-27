@@ -4,7 +4,6 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-
 use crate::support::{Run, Sandbox, model, repository, rule, without_timings};
 
 const FAKE: &str = r##"#!/bin/sh
@@ -139,12 +138,8 @@ impl Quint {
         )
     }
 
-    fn compiles(&self) -> usize {
-        self.sandbox
-            .read("fake/calls")
-            .lines()
-            .filter(|call| call.starts_with("compile"))
-            .count()
+    fn calls(&self) -> usize {
+        self.sandbox.read("fake/calls").lines().count()
     }
 
     fn forget_calls(&self) {
@@ -468,9 +463,9 @@ fn editing_a_mark_checks_again() {
         "`small` is no longer expected to break\n{ordinary}"
     );
     assert_eq!(
-        quint.compiles(),
-        1,
-        "the mark is in the `.qnt` file, so the file is compiled again\n{ordinary}"
+        quint.calls(),
+        0,
+        "the mark is in the `.qnt` file, which earnest reads itself, with no `quint`\n{ordinary}"
     );
 }
 
