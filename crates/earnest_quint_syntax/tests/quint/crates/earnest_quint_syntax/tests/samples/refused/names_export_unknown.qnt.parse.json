@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT405] Module 'Nowhere' not found","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_export_unknown.qnt","start":{"line":2,"col":2,"index":39},"end":{"line":2,"col":17,"index":54}}]}],"order":[[2,3]],"depth":{},"table":{"2":{"$":2,"+":[["depth",0]]}}}

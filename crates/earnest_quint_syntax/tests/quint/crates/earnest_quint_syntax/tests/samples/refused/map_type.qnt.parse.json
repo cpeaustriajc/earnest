@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT015] Use 'int -> str' instead of 'Map[int, str]' for map types","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/map_type.qnt","start":{"line":1,"col":11,"index":26},"end":{"line":1,"col":23,"index":38}}]}],"order":[[5]],"depth":{"5":0},"table":{}}

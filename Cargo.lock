@@ -320,6 +320,7 @@ dependencies = [
  "earnest_diagnostics",
  "earnest_ir",
  "earnest_quint",
+ "earnest_quint_syntax",
  "earnest_rs",
  "earnest_semantic",
  "earnest_threads",
@@ -431,6 +432,15 @@ dependencies = [
  "earnest_value",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "earnest_quint_syntax"
+version = "0.1.0"
+dependencies = [
+ "earnest_check",
+ "earnest_quint",
+ "earnest_threads",
 ]
 
 [[package]]

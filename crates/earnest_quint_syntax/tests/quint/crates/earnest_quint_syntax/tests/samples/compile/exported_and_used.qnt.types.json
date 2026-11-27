@@ -1,0 +1,1 @@
+{"schemes":[{"typeVariables":[],"rowVariables":[],"type":{"kind":"int"}},{"typeVariables":[],"rowVariables":[],"type":{"id":12,"kind":"int"}},{"typeVariables":[],"rowVariables":[],"type":{"id":3,"kind":"bool"}}],"printed":["int","int","bool"],"types":{"1":0,"2":0,"8":0,"9":0,"13":1,"14":0,"15":1,"16":2,"17":2,"18":1,"19":1,"20":2,"21":2},"errors":[],"patches":[],"typecheck":[]}

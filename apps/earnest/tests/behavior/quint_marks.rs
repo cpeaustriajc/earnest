@@ -438,7 +438,7 @@ fn a_quint_file_with_no_marked_module_is_no_model_and_named_says_how_to_mark() {
 }
 
 #[test]
-fn a_changed_mark_checks_again_and_changes_the_quint_entries() {
+fn a_changed_mark_checks_again_and_keeps_nothing_under_earnest_quint() {
     let quint = Quint::new();
     quint.earnest(&["verify", "specs"]).exits(0);
     let before = quint.quint_entries();
@@ -456,10 +456,10 @@ fn a_changed_mark_checks_again_and_changes_the_quint_entries() {
     let bank = model(&again.json(), "bank").clone();
     assert_eq!(bank["cached"], false, "{bank}");
     assert_eq!(rule(&bank, "nonNegative")["says"], reworded, "{bank}");
-    assert_ne!(
-        quint.quint_entries(),
-        before,
-        "the entries are written again"
+    assert_eq!(
+        (before, quint.quint_entries()),
+        (Vec::new(), Vec::new()),
+        "nothing of Quint's is kept under `.earnest/quint`"
     );
     quint.edit(
         "specs/bank.qnt",

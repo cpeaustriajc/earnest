@@ -120,23 +120,48 @@ impl Quint {
         Self { sandbox, program }
     }
 
-    fn without_typecheck(&self, set: &str) {
-        fs::remove_dir_all(
-            self.sandbox
-                .path()
-                .join("fake/fixtures/typechecked")
-                .join(set),
-        )
-        .expect("the typecheck of the set goes");
-    }
-
-    fn compiles(&self) -> Vec<String> {
+    fn calls(&self) -> Vec<String> {
         self.sandbox
             .read("fake/calls")
             .lines()
-            .filter(|call| call.starts_with("compile"))
             .map(str::to_owned)
             .collect()
+    }
+
+    fn without_expectations(&self, set: &str) {
+        let entries = fs::read_dir(self.sandbox.path().join(set)).expect("the set is there");
+        for entry in entries.filter_map(Result::ok) {
+            if entry
+                .path()
+                .extension()
+                .and_then(|extension| extension.to_str())
+                != Some("qnt")
+            {
+                continue;
+            }
+            let name = format!("{set}/{}", entry.file_name().to_string_lossy());
+            let text = self.sandbox.read(&name);
+            self.sandbox.write(
+                &name,
+                &text
+                    .replace("/// @check reachable", "/// @check")
+                    .replace("/// @check broken", "/// @check"),
+            );
+        }
+    }
+
+    fn flattened_by_quint(&self, set: &str) -> Value {
+        let folder = format!("fake/fixtures/compiled/{set}");
+        let mut recorded: Vec<String> = fs::read_dir(self.sandbox.path().join(&folder))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| format!("{folder}/{}", entry.file_name().to_string_lossy()))
+            .collect();
+        recorded.sort();
+        let mut arguments = vec!["verify", "--json", "--no-cache"];
+        arguments.extend(recorded.iter().map(String::as_str));
+        Run::of(self.sandbox.command().args(&arguments)).json()
     }
 
     fn report(&self, set: &str) -> Value {
@@ -464,18 +489,14 @@ fn a_bare_mark_followed_by_a_comma_as_the_unreadable_names_line_asks_is_read_on(
 
 fn built_and_compiled(set: &str, main: &str) {
     let built = Quint::new();
+    built.without_expectations(set);
     let ours = built.report(set);
     assert!(
-        !built
-            .compiles()
-            .iter()
-            .any(|call| call.contains(&format!("--main {main} "))),
-        "{set}: `{main}` is built from the typecheck: {:?}",
-        built.compiles()
+        built.calls().is_empty(),
+        "{set}: no `quint` is started: {:?}",
+        built.calls()
     );
-    let compiled = Quint::new();
-    compiled.without_typecheck(set);
-    let theirs = compiled.report(set);
+    let theirs = built.flattened_by_quint(set);
     let (ours, theirs) = (model(&ours, main), model(&theirs, main));
     assert_eq!(
         ours["states"], theirs["states"],
@@ -493,7 +514,9 @@ fn built_and_compiled(set: &str, main: &str) {
     assert_eq!(
         searched(ours),
         searched(theirs),
-        "{set}: each property, its verdict and its path, as `quint compile` gives them"
+        "{set}: each property, its verdict and its path, as `quint compile` gives them; the \
+         set's `@check reachable` and `@check broken` marks are read as `@check` here, since \
+         Quint's compiled JSON carries no marks"
     );
     assert!(
         ours["runsNotPlayed"].is_null()

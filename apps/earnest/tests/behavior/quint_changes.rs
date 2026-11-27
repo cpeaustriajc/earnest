@@ -180,11 +180,14 @@ impl Repo {
             .collect()
     }
 
-    fn base_parses(&self) -> usize {
-        self.calls()
-            .iter()
-            .filter(|call| call.starts_with("parse") && call.contains("/.earnest/quint/base-"))
-            .count()
+    fn base_copies(&self) -> Vec<String> {
+        fs::read_dir(self.root().join(".earnest/quint"))
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("base-"))
+            .collect()
     }
 }
 
@@ -265,7 +268,11 @@ fn a_quint_file_the_base_does_not_have_lists_every_rule_and_run_of_its_checks_as
             .any(|line| line[..2] == ["added", "Small.tickTest (witness)"]),
         "a run is listed as a witness, as the results list it\n{run}"
     );
-    assert_eq!(repo.base_parses(), 0, "the base has no file to read");
+    assert!(
+        repo.base_copies().is_empty(),
+        "the base has no file to read: {:?}",
+        repo.base_copies()
+    );
     let json = repo.earnest(&["verify", "--base", "HEAD", "--json"]).json();
     assert_eq!(
         json["ruleChanges"][0],
@@ -387,7 +394,7 @@ fn a_rule_is_added_removed_reworded_or_changed_by_name_within_its_check() {
         ],
         "{run}"
     );
-    assert_eq!(repo.base_parses(), 1, "{:?}", repo.calls());
+    assert!(repo.calls().is_empty(), "{:?}", repo.calls());
 }
 
 #[test]
@@ -484,18 +491,20 @@ fn a_base_whose_checks_a_checks_file_lists_is_warned_of() {
         )],
         "{run}"
     );
-    assert_eq!(repo.base_parses(), 0, "{:?}", repo.calls());
+    assert!(repo.calls().is_empty(), "{:?}", repo.calls());
 }
 
 #[test]
-fn a_base_is_warned_of_when_quint_is_not_installed() {
+fn a_base_is_read_when_quint_is_not_installed() {
     let repo = with_clock();
     repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
     let run = repo.run(
         &["verify", "--base", "HEAD"],
         &repo.sandbox.path().join("nowhere/quint"),
     );
-    warned_and_not_listed(&run, CLOCK);
+    run.exits(0);
+    assert!(!run.stderr.contains("warning"), "{run}");
+    assert_eq!(section(&run), [fields("  none")], "{run}");
 }
 
 #[test]
@@ -570,20 +579,29 @@ fn a_folder_with_native_and_quint_models_lists_the_changes_of_both() {
 }
 
 #[test]
-fn a_file_as_the_base_has_it_starts_no_quint_for_the_base() {
+fn a_file_as_the_base_has_it_is_not_read_at_the_base() {
     let repo = with_clock();
     let run = repo.earnest(&["verify", "--base", "HEAD"]);
     run.exits(0);
     assert_eq!(section(&run), [fields("  none")], "{run}");
-    assert_eq!(repo.base_parses(), 0, "{:?}", repo.calls());
+    assert!(
+        repo.base_copies().is_empty(),
+        "nothing is read at the base: {:?}",
+        repo.base_copies()
+    );
     repo.edit(CLOCK, "val top = Limit", "val top = Limit + 0");
     repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
-    assert_eq!(repo.base_parses(), 1, "{:?}", repo.calls());
-    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
     assert_eq!(
-        repo.base_parses(),
+        repo.base_copies().len(),
         1,
-        "the base's parse is kept in the cache: {:?}",
+        "the file changed, so the base's files are copied once and read: {:?}",
+        repo.base_copies()
+    );
+    repo.earnest(&["verify", "--base", "HEAD"]).exits(0);
+    assert_eq!(repo.base_copies().len(), 1, "{:?}", repo.base_copies());
+    assert!(
+        repo.calls().is_empty(),
+        "no `quint` is started: {:?}",
         repo.calls()
     );
 }

@@ -260,14 +260,13 @@ rule changes since origin/main
 - `holds` is the definition's source with each run of white space as one space, after `broken: ` or `reachable: ` when it is marked so.
 - A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison, and each lambda's parameters and each name local to a block (`{ val t = n + 1 t > 0 }`) are numbered by their place, so a reformatted file, a comment, a renamed parameter or a renamed local lists nothing. An edit of a helper or of the model under a rule lists nothing either, even when it changes the rule's verdict: a `val` the rule reads, the constant an instance gives (`import Spec(N = 3)`), `init` or `step`.
 - Every rule of a check in a `.qnt` file the base does not have is `added`. Every rule of a check the working tree no longer has is `removed`: a file only the base has, a check removed from its file, and a module whose `/// @check` mark was taken off. A file that no longer parses, or a check that is unreadable now, is `not compared` with the reason `unreadable now` instead, as a native file unreadable now is.
-- The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base starts no `quint` for the base. Any other file starts `quint parse` once, and the result is cached for the next run against the same commit.
+- The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base is not read at the base. Any other file is read at the base on each run; the copy is kept for the next run against the same commit.
 - A file that can't be read at the base is `not compared`, with its reason. The reasons in JSON, and the words of the text line, are:
 
   | `reason` | Text | When |
   |---|---|---|
   | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
   | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
-  | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
   | `unreadableNow` | `unreadable now` | the file, or the check, is unreadable in the working tree. The results print why, so the entry has no `problem` and stderr no warning |
   | `marks` | `its marks are unreadable at <base>: <line>:<column> <problem>` | a mark is unreadable at the base, as `earnest verify` would report it there |
 

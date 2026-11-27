@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT008] Reserved keyword 'match' cannot be used as an identifier.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/keyword_match.qnt","start":{"line":1,"col":12,"index":29},"end":{"line":1,"col":12,"index":29}}]}],"order":[[3]],"depth":{},"table":{"3":{"$":3,"+":[["depth",0]]}}}

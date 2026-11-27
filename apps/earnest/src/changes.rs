@@ -645,7 +645,6 @@ pub(crate) fn model_changes(old: Option<&Draft>, new: &Draft, bounds: Bounds) ->
 pub(crate) enum Why {
     Unreadable,
     ChecksFile,
-    QuintNotFound,
     Marks,
     UnreadableNow,
 }
@@ -718,7 +717,6 @@ impl NotRead {
             Why::Unreadable => format!("unreadable at {base}"),
             Why::UnreadableNow => "unreadable now".to_owned(),
             Why::ChecksFile => format!("an earnest.quint.json lists its checks at {base}"),
-            Why::QuintNotFound => format!("no quint was found to read it at {base}"),
             Why::Marks => match &self.problem {
                 Some(problem) => format!(
                     "its marks are unreadable at {base}: {}",

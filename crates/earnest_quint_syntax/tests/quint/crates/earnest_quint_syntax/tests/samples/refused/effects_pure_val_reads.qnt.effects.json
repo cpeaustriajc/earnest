@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] pure val operators may not interact with state variables, but operator `v` reads variables 'x'. Use val instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_pure_val_reads.qnt","start":{"line":2,"col":11,"index":56},"end":{"line":2,"col":11,"index":56}}]}]}

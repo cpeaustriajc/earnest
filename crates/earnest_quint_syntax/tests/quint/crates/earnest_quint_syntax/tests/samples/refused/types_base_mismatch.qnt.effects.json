@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify int and bool\nTrying to unify int and bool\nTrying to unify (int, int) => int and (int, bool) => _t0\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/types_base_mismatch.qnt","start":{"line":1,"col":12,"index":41},"end":{"line":1,"col":19,"index":48}}]}]}

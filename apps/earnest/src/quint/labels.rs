@@ -72,8 +72,6 @@ fn unlabelled(job: &Job) -> Job {
         expected: job.expected.clone(),
         reachable: job.reachable.clone(),
         said: job.said.clone(),
-        read: job.read,
-        quint: job.quint.clone(),
         labels: Labels::default(),
     }
 }

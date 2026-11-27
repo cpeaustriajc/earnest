@@ -1,0 +1,1 @@
+{"schemes":[{"typeVariables":[],"rowVariables":[],"type":{"id":107,"kind":"fun","arg":{"id":105,"kind":"const","name":"Word"},"res":{"id":106,"kind":"const","name":"Count"}}}],"printed":["(Word -> Count)"],"types":{"108":0},"errors":[],"patches":[[["modules",0,"declarations",27,"type"],{"kind":"list","elem":{"id":92,"kind":"int"},"id":85}]],"typecheck":[]}

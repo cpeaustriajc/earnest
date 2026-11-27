@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT000] extraneous input 'val' expecting {<EOF>, 'module', DOCCOMMENT}","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/outside_module.qnt","start":{"line":3,"col":0,"index":25},"end":{"line":3,"col":2,"index":27}}]}]}
