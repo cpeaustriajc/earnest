@@ -256,7 +256,7 @@ impl Parsed {
 }
 
 fn ids_within(value: &Json, found: &mut Vec<u64>) {
-    match value {
+    match value.unshared() {
         Json::Object(fields) => {
             for (key, inner) in fields {
                 if key == "id"

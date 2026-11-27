@@ -121,7 +121,7 @@ pub(crate) struct Entry {
 
 impl Entry {
     pub(crate) fn of(written: &Json) -> Self {
-        match written {
+        match written.unshared() {
             Json::Object(fields) => Self {
                 fields: fields
                     .iter()
@@ -391,7 +391,7 @@ pub(crate) fn resolve(modules: &mut [Json]) -> Resolution {
 }
 
 fn declarations_mut(module: &mut Json) -> Option<&mut Vec<Json>> {
-    match module {
+    match module.owned_mut() {
         Json::Object(fields) => fields
             .iter_mut()
             .find(|(key, _)| key == "declarations")
@@ -404,7 +404,7 @@ fn declarations_mut(module: &mut Json) -> Option<&mut Vec<Json>> {
 }
 
 fn append(value: &mut Json, key: &str, inner: Json) {
-    if let Json::Object(fields) = value {
+    if let Json::Object(fields) = value.owned_mut() {
         fields.push((key.to_owned(), inner));
     }
 }

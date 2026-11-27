@@ -10,7 +10,7 @@ use crate::inference::special::{
     Typed, field_access, field_names, item, matching, record, tuple, variant, with,
 };
 use crate::inference::substitution::{Constraint, Substitution, Substitutions, apply, compose};
-use crate::inference::value::Value;
+use crate::inference::value::{Interner, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
@@ -166,6 +166,8 @@ pub(crate) struct Inferrer<'a> {
     /// The most type nodes inference keeps before it stops all type work.
     pub(crate) node_limit: usize,
     counted: HashMap<u64, usize>,
+    /// Every type given an id, stored once by its content.
+    interner: Interner,
 }
 
 fn nodes(value: &Value) -> usize {
@@ -202,14 +204,20 @@ impl<'a> Inferrer<'a> {
             most_nodes: 0,
             node_limit: usize::MAX,
             counted: HashMap::new(),
+            interner: Interner::default(),
         }
     }
 
     pub(crate) fn with_types(context: &'a Context, types: BTreeMap<u64, Scheme>) -> Self {
-        Self {
-            types,
-            ..Self::new(context)
-        }
+        let mut inferrer = Self::new(context);
+        inferrer.types = types
+            .into_iter()
+            .map(|(id, scheme)| {
+                let value = inferrer.interner.intern(&scheme.value);
+                (id, Scheme { value, ..scheme })
+            })
+            .collect();
+        inferrer
     }
 
     pub(crate) fn infer(&mut self, declarations: &'a [Value]) {
@@ -227,7 +235,9 @@ impl<'a> Inferrer<'a> {
             if let Some(scheme) = self.types.get(&id) {
                 let sound = self.context.crashed().is_none();
                 let simplified = Scheme {
-                    value: simplify_type(self.context, &scheme.value),
+                    value: self
+                        .interner
+                        .intern(&simplify_type(self.context, &scheme.value)),
                     ..scheme.clone()
                 };
                 if sound && self.context.crashed().is_some() {
@@ -263,6 +273,10 @@ impl<'a> Inferrer<'a> {
                 self.errors.set(id, error);
             }
             Ok(scheme) => {
+                let scheme = Scheme {
+                    value: self.interner.intern(&scheme.value),
+                    ..scheme
+                };
                 self.count(id, &scheme.value);
                 self.in_scope.set(id, scheme.clone());
                 self.types.insert(id, scheme);

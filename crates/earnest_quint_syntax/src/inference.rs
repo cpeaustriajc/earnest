@@ -18,7 +18,7 @@ use crate::inference::generator::Inferrer;
 use crate::inference::printing::{ErrorTree, error_text, scheme_text};
 use crate::inference::signatures::Scheme;
 use crate::inference::solver::{Context, Table};
-use crate::inference::value::Value;
+use crate::inference::value::{Memo, Value};
 use crate::json::Json;
 use crate::names::{Entry, Raised};
 use crate::problem::Problem;
@@ -81,7 +81,7 @@ fn raised(id: u64, error: &ErrorTree) -> Raised {
     }
 }
 
-fn scheme_of(written: &Json) -> Scheme {
+fn scheme_of(written: &Json, memo: &mut Memo) -> Scheme {
     let names = |key: &str| match written.get(key) {
         Some(Json::List(names)) => names
             .iter()
@@ -95,7 +95,9 @@ fn scheme_of(written: &Json) -> Scheme {
     Scheme {
         types: names("typeVariables"),
         rows: names("rowVariables"),
-        value: written.get("type").map_or(Value::Undefined, Value::of),
+        value: written
+            .get("type")
+            .map_or(Value::Undefined, |written| Value::of_shared(written, memo)),
     }
 }
 
@@ -213,6 +215,7 @@ pub(crate) fn analyze_within(
             )
         })
         .collect();
+    let mut memo = Memo::default();
     results.table = Json::Object(
         inferrer
             .types
@@ -226,7 +229,7 @@ pub(crate) fn analyze_within(
                     Json::object(vec![
                         ("typeVariables", names(&scheme.types)),
                         ("rowVariables", names(&scheme.rows)),
-                        ("type", scheme.value.to_json()),
+                        ("type", scheme.value.to_shared_json(&mut memo)),
                     ]),
                 )
             })
@@ -240,10 +243,11 @@ pub(crate) fn types_of_added(
     types: &Json,
     declarations: &[Json],
 ) -> TypeResults {
+    let mut memo = Memo::default();
     let previous = match types {
         Json::Object(entries) => entries
             .iter()
-            .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme_of(scheme))))
+            .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme_of(scheme, &mut memo))))
             .collect(),
         _ => BTreeMap::new(),
     };

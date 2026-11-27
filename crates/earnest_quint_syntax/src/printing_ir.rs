@@ -101,7 +101,7 @@ mod tests {
     const SAMPLE: &str = "crates/earnest_quint_syntax/tests/samples/printing.qnt";
 
     fn expressions<'a>(value: &'a Json, found: &mut Vec<&'a Json>) {
-        match value {
+        match value.unshared() {
             Json::Object(fields) => {
                 let kind = match value.get("kind") {
                     Some(Json::Text(kind)) => kind.as_str(),

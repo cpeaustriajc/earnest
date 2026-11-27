@@ -498,7 +498,7 @@ pub(crate) fn sort(modules: &mut [Json], table: &BTreeMap<u64, Entry>, errors: &
             })
             .collect();
         let reordered: Vec<Json> = done.iter().filter_map(|id| by_id.remove(id)).collect();
-        if let Json::Object(fields) = module
+        if let Json::Object(fields) = module.owned_mut()
             && let Some((_, value)) = fields.iter_mut().find(|(key, _)| key == "declarations")
         {
             *value = Json::List(reordered);
