@@ -23,7 +23,7 @@ fn math(math: Math, left: Expr, right: Expr) -> Expr {
     apply(Op::Math(math), vec![left, right])
 }
 
-fn fit(ty: IntType, inner: Expr) -> Expr {
+fn fitted(ty: IntType, inner: Expr) -> Expr {
     apply(Op::Fit(ty), vec![inner])
 }
 
@@ -52,7 +52,7 @@ fn every_form(op: Math, left: i64, right: i64) -> Gave {
         math(op, Expr::Field(0), int(right)),
         math(op, int(left), Expr::Field(1)),
         math(op, Expr::Field(0), Expr::Field(1)),
-        fit(IntType::I64, math(op, Expr::Field(0), Expr::Field(1))),
+        fitted(IntType::I64, math(op, Expr::Field(0), Expr::Field(1))),
         apply(Op::Safe, vec![math(op, Expr::Field(0), int(right))]),
     ];
     let answers: Vec<Gave> = forms.iter().map(|form| agreed(form, &state)).collect();
@@ -118,14 +118,14 @@ fn the_smallest_number_over_minus_one_is_the_fault_rust_panics_with() {
         Err(Fault::Overflow)
     );
     let state = [Value::Int(-128), Value::Int(-1)];
-    let quotient = fit(IntType::I8, math(DIVIDE, Expr::Field(0), Expr::Field(1)));
+    let quotient = fitted(IntType::I8, math(DIVIDE, Expr::Field(0), Expr::Field(1)));
     assert_eq!(
         agreed(&quotient, &state).0,
         Err(Fault::Outside(IntType::I8))
     );
     for ty in [IntType::I8, IntType::I16, IntType::I32] {
         let lowest = ty.lowest();
-        let remainder = fit(
+        let remainder = fitted(
             ty,
             math(
                 Math::TruncatedRemainder(Some(ty)),
@@ -207,8 +207,8 @@ proptest! {
         let (Ok(left8), Ok(right8)) = (i8::try_from(left), i8::try_from(right)) else {
             return Err(TestCaseError::fail("both fit in i8"));
         };
-        let quotient = fit(ty, math(DIVIDE, Expr::Field(0), Expr::Field(1)));
-        let remainder = fit(ty, math(Math::TruncatedRemainder(Some(ty)), Expr::Field(0), Expr::Field(1)));
+        let quotient = fitted(ty, math(DIVIDE, Expr::Field(0), Expr::Field(1)));
+        let remainder = fitted(ty, math(Math::TruncatedRemainder(Some(ty)), Expr::Field(0), Expr::Field(1)));
         prop_assert_eq!(agreed(&quotient, &state).0, narrow(left8.checked_div(right8)));
         prop_assert_eq!(agreed(&remainder, &state).0, narrow(left8.checked_rem(right8)));
     }

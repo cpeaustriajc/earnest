@@ -361,9 +361,10 @@ What does not fit today:
    - `setBy`, `ite` on any value (`Choose` already does it), `ipow`;
    - range `to`, `chooseSome`;
    - list ops beyond `SeqOp` (`concat`, `slice`, `replaceAt`, `select`, `indices`, `range`);
-   - Quint's `idiv`/`imod`. Earnest's `Divide`/`Remainder` already fault on a negative first
-     number or a divisor below 1, which **avoids the TLC/simulator split by refusing it at
-     run time**. Keep that.
+   - Quint's `idiv`/`imod`. Earnest's `Divide`/`Remainder` faulted on a negative first
+     number or a divisor below 1, which avoided the TLC/simulator split by refusing it at
+     run time. Since #92 they floor, as TLA+ defines and Quint's TLC run computes, and only
+     a divisor of zero is a fault.
    - `get` on a missing key must be a fault, not `null` (`MapOp::Get` gives `null` today), so it
      needs a `MapOp::Must` or `Op::Unwrap` around it.
 
