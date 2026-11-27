@@ -1,5 +1,6 @@
-use crate::quint::QuintCheck;
+use crate::quint::{QuintCheck, with_front_end};
 use earnest_quint::Runs;
+use earnest_quint_syntax::on_large_stack;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -213,11 +214,17 @@ fn own_causes(bodies: &[&Value]) -> Vec<String> {
     causes
 }
 
+/// Where earnest and Quint's own tools may differ on the check compiled in `source`. The JSON
+/// is the front end's, read with no limit on its nesting and walked as deep as the file is
+/// nested, so on a large stack, also from the command's thread.
 pub(crate) fn where_backends_differ(source: &str, quint: &QuintCheck) -> Reasons {
-    let Some(Ok(compiled)) = serde_json::Deserializer::from_str(source)
-        .into_iter::<Value>()
-        .next()
-    else {
+    with_front_end(|| on_large_stack(|| where_differ(source, quint))).unwrap_or_default()
+}
+
+fn where_differ(source: &str, quint: &QuintCheck) -> Reasons {
+    let mut reader = serde_json::Deserializer::from_str(source);
+    reader.disable_recursion_limit();
+    let Some(Ok(compiled)) = reader.into_iter::<Value>().next() else {
         return Reasons::default();
     };
     let found = declarations(&compiled);
