@@ -9,6 +9,8 @@ const SMALL: &str = "module small {\n  var x: int\n  action init = x' = 0\n  act
 const JOBS: usize = 8;
 const CHILD: &str = "EARNEST_QUINT_SYNTAX_THREADS_CHILD";
 const CHILD_JOBS: &str = "EARNEST_QUINT_SYNTAX_THREADS_JOBS";
+const CHILD_INLINE: &str = "EARNEST_QUINT_SYNTAX_THREADS_INLINE";
+const LARGE: usize = 256 * 1024 * 1024;
 
 fn jobs() -> usize {
     env::var(CHILD_JOBS)
@@ -38,11 +40,25 @@ fn checked() -> Result<(), String> {
 
 #[test]
 fn eight_threads_read_typecheck_and_compile_at_once() {
+    let inline = env::var(CHILD_INLINE).is_ok();
     let outcomes: Vec<Result<(), String>> = thread::scope(|scope| {
-        let workers: Vec<_> = (0..jobs()).map(|_| scope.spawn(checked)).collect();
+        let workers: Vec<_> = (0..jobs())
+            .map(|_| {
+                if inline {
+                    earnest_threads::start(scope, Some(LARGE), || {
+                        earnest_quint_syntax::on_a_stack_of(LARGE, checked)
+                    })
+                } else {
+                    earnest_threads::start(scope, None, checked)
+                }
+            })
+            .collect();
         workers
             .into_iter()
-            .map(|worker| worker.join().unwrap_or_else(|_| Err("panicked".to_owned())))
+            .map(|worker| match worker {
+                Ok(worker) => worker.join().unwrap_or_else(|_| Err("panicked".to_owned())),
+                Err(error) => Err(format!("no thread of 256 MiB: {error}")),
+            })
             .collect()
     });
     let refused: Vec<&String> = outcomes
@@ -67,9 +83,13 @@ fn eight_threads_read_typecheck_and_compile_at_once() {
     assert!(refused.is_empty(), "{refused:?}");
 }
 
-fn refused_under(kib: u64) -> usize {
+fn refused_under(kib: u64, inline: bool) -> usize {
     let binary = env::current_exe().expect("the test binary");
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    if inline {
+        command.env(CHILD_INLINE, "1");
+    }
+    let output = command
         .arg("-c")
         .arg(format!(
             "ulimit -v {kib} && exec \"$0\" --exact threads::eight_threads_read_typecheck_and_compile_at_once --nocapture --test-threads 1"
@@ -90,13 +110,35 @@ fn refused_under(kib: u64) -> usize {
 #[cfg(target_os = "linux")]
 fn eight_threads_at_once_fit_in_four_gibibytes_of_address_space() {
     assert_eq!(
-        refused_under(4 * 1024 * 1024),
+        refused_under(4 * 1024 * 1024, false),
         0,
         "nothing is refused under 4 GiB"
     );
 }
 
-const LARGE: usize = 256 * 1024 * 1024;
+#[test]
+#[cfg(target_os = "linux")]
+fn eight_threads_of_256_mib_calling_the_crate_inline_fit_in_four_gibibytes_of_address_space() {
+    assert_eq!(
+        refused_under(4 * 1024 * 1024, true),
+        0,
+        "nothing is refused under 4 GiB"
+    );
+}
+
+#[test]
+#[ignore = "measures the lowest limit on address space that holds: cargo test -p earnest_quint_syntax --test parse threads::lowest -- --ignored --nocapture"]
+#[cfg(target_os = "linux")]
+fn lowest_limit_on_address_space_that_holds() {
+    for inline in [false, true] {
+        let mut mib = 1024;
+        while !(0..10).all(|_| refused_under(mib * 1024, inline) == 0) {
+            mib += 128;
+        }
+        println!("inline {inline}: nothing refused at {mib} MiB, ten times over");
+    }
+}
+
 const ALONE: &str = "EARNEST_QUINT_SYNTAX_THREADS_ALONE";
 
 fn alone(test: &str) -> bool {
