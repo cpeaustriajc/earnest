@@ -19,6 +19,27 @@ const TRUNCATES: &str = "the check's runs use `/` or `%`, which `quint test` tru
 pub(crate) struct Reasons {
     pub(crate) search: Vec<String>,
     pub(crate) runs: Vec<String>,
+    own: BTreeMap<String, Vec<String>>,
+}
+
+impl Reasons {
+    /// The causes that hold for the run `id` alone: what that run reaches, through the
+    /// definitions it calls, and no other run of the check does.
+    pub(crate) fn of_run(&self, id: &str) -> Vec<String> {
+        let mut causes: Vec<String> = Vec::new();
+        for (_, own) in self
+            .own
+            .iter()
+            .filter(|(name, _)| last_segment(name) == last_segment(id))
+        {
+            for cause in own {
+                if !causes.contains(cause) {
+                    causes.push(cause.clone());
+                }
+            }
+        }
+        causes
+    }
 }
 
 fn last_segment(name: &str) -> &str {
@@ -173,6 +194,25 @@ fn played_runs<'a>(found: &BTreeMap<&'a str, &'a Value>, runs: &Runs) -> Vec<&'a
         .collect()
 }
 
+fn own_causes(bodies: &[&Value]) -> Vec<String> {
+    let mut ranges = Vec::new();
+    let mut divisions = Vec::new();
+    for body in bodies {
+        uses(body, "range", &mut ranges);
+        for opcode in DIVIDES {
+            uses(body, opcode, &mut divisions);
+        }
+    }
+    let mut causes = Vec::new();
+    if !ranges.is_empty() {
+        causes.push(RANGE.to_owned());
+    }
+    if !divisions.is_empty() {
+        causes.push(TRUNCATES.to_owned());
+    }
+    causes
+}
+
 pub(crate) fn where_backends_differ(source: &str, quint: &QuintCheck) -> Reasons {
     let Some(Ok(compiled)) = serde_json::Deserializer::from_str(source)
         .into_iter::<Value>()
@@ -191,24 +231,82 @@ pub(crate) fn where_backends_differ(source: &str, quint: &QuintCheck) -> Reasons
             .map(|property| property.text.as_str()),
     );
     let by_search = reached(&found, &searched);
-    let by_runs = reached(&found, &played_runs(&found, &quint.runs));
-    let mut ranges = Vec::new();
-    let mut divisions = Vec::new();
-    for body in &by_runs {
-        uses(body, "range", &mut ranges);
-        for opcode in DIVIDES {
-            uses(body, opcode, &mut divisions);
-        }
-    }
-    let mut runs = fold_reasons(&compiled, &by_runs);
-    if !ranges.is_empty() {
-        runs.push(RANGE.to_owned());
-    }
-    if !divisions.is_empty() {
-        runs.push(TRUNCATES.to_owned());
-    }
+    let played = played_runs(&found, &quint.runs);
+    let by_runs = reached(&found, &played);
+    let own = played
+        .iter()
+        .map(|run| ((*run).to_owned(), own_causes(&reached(&found, &[run]))))
+        .filter(|(_, causes)| !causes.is_empty())
+        .collect();
     Reasons {
         search: fold_reasons(&compiled, &by_search),
-        runs,
+        runs: fold_reasons(&compiled, &by_runs),
+        own,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RANGE, TRUNCATES, where_backends_differ};
+    use crate::quint::QuintCheck;
+    use earnest_quint::Runs;
+    use std::path::PathBuf;
+
+    const COMPILED: &str = r#"{"modules":[{"declarations":[
+        {"kind":"def","qualifier":"puredef","name":"half","expr":
+            {"kind":"app","opcode":"idiv","args":[{"kind":"name","name":"n"},{"kind":"int","value":2}]}},
+        {"kind":"def","qualifier":"run","name":"dividesTest","expr":
+            {"kind":"app","opcode":"half","args":[{"kind":"int","value":-7}]}},
+        {"kind":"def","qualifier":"run","name":"rangesTest","expr":
+            {"kind":"app","opcode":"range","args":[{"kind":"int","value":3},{"kind":"int","value":1}]}},
+        {"kind":"def","qualifier":"run","name":"plainTest","expr":
+            {"kind":"app","opcode":"iadd","args":[{"kind":"int","value":1},{"kind":"int","value":2}]}}
+    ]}]}"#;
+
+    fn check() -> QuintCheck {
+        QuintCheck {
+            file: PathBuf::from("spec.qnt"),
+            main: "spec".to_owned(),
+            init: "init".to_owned(),
+            step: "step".to_owned(),
+            invariants: Vec::new(),
+            temporal: Vec::new(),
+            runs: Runs::Tests,
+            searches: false,
+        }
+    }
+
+    #[test]
+    fn a_run_has_the_division_cause_only_when_it_reaches_a_division_itself() {
+        let reasons = where_backends_differ(COMPILED, &check());
+        assert_eq!(
+            reasons.of_run("dividesTest"),
+            [TRUNCATES.to_owned()],
+            "the run calls `half`, which divides: what a run reaches through the definitions it \
+             calls counts"
+        );
+        assert_eq!(
+            reasons.of_run("rangesTest"),
+            [RANGE.to_owned()],
+            "the run uses `range` and no division"
+        );
+        assert!(
+            reasons.of_run("plainTest").is_empty(),
+            "the run reaches neither, so a difference on it is a difference"
+        );
+        assert!(
+            reasons.runs.is_empty(),
+            "neither cause is given to every run of the check"
+        );
+    }
+
+    #[test]
+    fn a_run_seen_under_a_longer_name_has_the_causes_of_its_last_name() {
+        let reasons = where_backends_differ(COMPILED, &check());
+        assert_eq!(
+            reasons.of_run("Spec::dividesTest"),
+            [TRUNCATES.to_owned()],
+            "`quint test` and the checker may name one run with and without its module"
+        );
     }
 }
