@@ -1,0 +1,77 @@
+{
+  "board": {
+    "module": "board",
+    "rules": {
+      "xHasTwo": "broken",
+      "xNeverBehind": "holds"
+    },
+    "runs": {
+      "opensTest": "holds"
+    },
+    "states": 35
+  },
+  "ledger": {
+    "module": "ledger",
+    "rules": {
+      "conserved": "holds",
+      "noDebt": "holds",
+      "someoneEmpty": "broken"
+    },
+    "runs": {
+      "exactTest": "holds",
+      "shortTest": "holds"
+    },
+    "states": 15
+  },
+  "parts": {
+    "module": "house",
+    "rules": {
+      "neverLit": "broken",
+      "tickBound": "holds"
+    },
+    "runs": {
+      "thriceTest": "holds",
+      "twiceTest": "holds"
+    },
+    "states": 8
+  },
+  "pool": {
+    "module": "pool",
+    "rules": {
+      "allDone": "broken",
+      "notBoth": "holds"
+    },
+    "runs": {
+      "drainsTest": "holds"
+    },
+    "states": 9
+  },
+  "ring": {
+    "module": "Two",
+    "rules": {
+      "moves": "holds",
+      "mutex": "holds"
+    },
+    "runs": {
+      "onePassesTest": "holds"
+    },
+    "states": 8
+  },
+  "tally": {
+    "module": "tally",
+    "rules": {},
+    "runs": {
+      "clampsTest": "holds",
+      "sumsTest": "holds"
+    },
+    "states": 0
+  },
+  "tallyfails": {
+    "module": "tallyfails",
+    "rules": {},
+    "runs": {
+      "wrongTest": "fails"
+    },
+    "states": null
+  }
+}
