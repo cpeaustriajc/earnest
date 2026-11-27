@@ -29,7 +29,7 @@ fn field(name: &str, field_type: Value) -> Value {
 fn row(fields: Vec<Value>, other: Value) -> Value {
     Value::object(vec![
         ("kind", Value::text("row")),
-        ("fields", Value::List(fields)),
+        ("fields", Value::list(fields)),
         ("other", other),
     ])
 }

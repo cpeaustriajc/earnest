@@ -590,12 +590,8 @@ pub(crate) fn analyze(
         let mut by_checks = modes.check(declarations, &inferrer.effects)?;
         by_checks.extend(updates.check(inferrer.effects.since(effects_before)));
         by_checks.extend(nondets.check(declarations));
-        let refused = !by_inference.is_empty() || !by_checks.is_empty();
         inference.push(by_inference);
         checks.push(by_checks);
-        if refused {
-            break;
-        }
     }
     let mut ids: Vec<u64> = inferrer.effects.order.clone();
     ids.sort_unstable();

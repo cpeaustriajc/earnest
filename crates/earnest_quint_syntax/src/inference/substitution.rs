@@ -48,10 +48,12 @@ fn applied_to_substitutions(
         if let Some(found) = first.iter().find(|found| found.name == substitution.name) {
             if found.row != substitution.row {
                 context.crash(format!(
-                    "Substitutions with same name ({}) but incompatible kinds",
-                    substitution.name
+                    "Substitutions with same name ({}) but incompatible kinds: [ {}, {} ]",
+                    substitution.name,
+                    shown(found),
+                    shown(substitution)
                 ));
-                continue;
+                return Vec::new();
             }
             let unified = if found.row {
                 unify_rows(context, &substitution.value, &found.value)
@@ -60,10 +62,14 @@ fn applied_to_substitutions(
             };
             match unified {
                 Ok(substitutions) => result.extend(substitutions),
-                Err(_) => context.crash(format!(
-                    "Unifying substitutions with same name: {}",
-                    substitution.name
-                )),
+                Err(error) => {
+                    context.crash(format!(
+                        "Unifying substitutions with same name: {}, {}",
+                        substitution.name,
+                        crate::inference::printing::error_text(&error)
+                    ));
+                    return Vec::new();
+                }
             }
             continue;
         }
@@ -81,119 +87,245 @@ fn applied_to_substitutions(
     result
 }
 
-pub(crate) const ROUND_LIMIT: usize = 10_000;
+pub(crate) const ROUND_LIMIT: usize = 100;
+
+pub(crate) const DEPTH_LIMIT: usize = 300;
 
 thread_local! {
     static MOST_ROUNDS: Cell<usize> = const { Cell::new(0) };
+    static DEPTH: Cell<usize> = const { Cell::new(0) };
+    static DEEPEST: Cell<usize> = const { Cell::new(0) };
+    static STOPPED: Cell<bool> = const { Cell::new(false) };
 }
 
 pub(crate) fn start_counting_rounds() {
     MOST_ROUNDS.with(|most| most.set(0));
+    DEEPEST.with(|deepest| deepest.set(0));
+    STOPPED.with(|stopped| stopped.set(false));
 }
 
 pub(crate) fn most_rounds() -> usize {
     MOST_ROUNDS.with(Cell::get)
 }
 
+pub(crate) fn deepest() -> usize {
+    DEEPEST.with(Cell::get)
+}
+
 pub(crate) fn apply(substitutions: &[Substitution], written: &Value) -> Value {
-    let mut current = written.clone();
+    applied(substitutions, written).unwrap_or_else(|| written.clone())
+}
+
+fn shown(substitution: &Substitution) -> String {
+    let value = if substitution.row {
+        crate::inference::printing::row_text(&substitution.value)
+    } else {
+        crate::inference::printing::type_text(&substitution.value)
+    };
+    format!("{} |-> {value}", substitution.name)
+}
+
+pub(crate) fn stop() {
+    STOPPED.with(|stopped| stopped.set(true));
+}
+
+pub(crate) fn stopped() -> bool {
+    STOPPED.with(Cell::get)
+}
+
+fn applied(substitutions: &[Substitution], written: &Value) -> Option<Value> {
+    if stopped() {
+        return None;
+    }
+    let depth = DEPTH.with(|depth| {
+        depth.set(depth.get() + 1);
+        depth.get()
+    });
+    DEEPEST.with(|deepest| deepest.set(deepest.get().max(depth)));
+    let result = if depth > DEPTH_LIMIT {
+        stop();
+        None
+    } else {
+        settled(substitutions, written)
+    };
+    DEPTH.with(|depth| depth.set(depth.get() - 1));
+    result
+}
+
+fn settled(substitutions: &[Substitution], written: &Value) -> Option<Value> {
+    let mut current: Option<Value> = None;
     for round in 1..=ROUND_LIMIT {
-        let next = once(substitutions, &current);
-        if next.same(&current) {
-            MOST_ROUNDS.with(|most| most.set(most.get().max(round)));
-            return current;
+        let next = once(substitutions, current.as_ref().unwrap_or(written));
+        match next {
+            None => {
+                MOST_ROUNDS.with(|most| most.set(most.get().max(round)));
+                return current;
+            }
+            Some(next) => current = Some(next),
         }
-        current = next;
     }
     MOST_ROUNDS.with(|most| most.set(ROUND_LIMIT + 1));
     current
 }
 
-fn once(substitutions: &[Substitution], written: &Value) -> Value {
+fn has_exactly(written: &Value, keys: &[&str]) -> bool {
+    match written {
+        Value::Object(fields) => {
+            fields.len() == keys.len()
+                && keys
+                    .iter()
+                    .all(|key| fields.iter().any(|(name, _)| name == key))
+        }
+        _ => false,
+    }
+}
+
+fn kept(changed: Option<Value>, original: &Value, any: &mut bool) -> Value {
+    match changed {
+        Some(value) => {
+            *any = true;
+            value
+        }
+        None => original.clone(),
+    }
+}
+
+fn applied_list(substitutions: &[Substitution], items: &[Value], any: &mut bool) -> Value {
+    Value::list(
+        items
+            .iter()
+            .map(|item| kept(applied(substitutions, item), item, any))
+            .collect(),
+    )
+}
+
+fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
     let id = written.get("id").clone();
     let kind = written.get("kind").clone();
+    let mut any = false;
     match written.kind() {
         "var" => match substitutions
             .iter()
             .find(|found| found.name == written.str("name"))
         {
-            Some(found) if !found.row => found.value.clone(),
-            _ => written.clone(),
+            Some(found) if !found.row && !found.value.same(written) => Some(found.value.clone()),
+            _ => None,
         },
-        "oper" => Value::object(vec![
-            ("kind", kind),
-            (
-                "args",
-                Value::List(
-                    written
-                        .items("args")
-                        .iter()
-                        .map(|argument| apply(substitutions, argument))
-                        .collect(),
-                ),
-            ),
-            ("res", apply(substitutions, written.get("res"))),
-            ("id", id),
-        ]),
-        "list" | "set" => Value::object(vec![
-            ("kind", kind),
-            ("elem", apply(substitutions, written.get("elem"))),
-            ("id", id),
-        ]),
-        "fun" => Value::object(vec![
-            ("kind", kind),
-            ("arg", apply(substitutions, written.get("arg"))),
-            ("res", apply(substitutions, written.get("res"))),
-            ("id", id),
-        ]),
-        "tup" | "rec" => Value::object(vec![
-            ("kind", kind),
-            ("fields", apply_to_row(substitutions, written.get("fields"))),
-            ("id", id),
-        ]),
-        "sum" => written.spread(vec![(
-            "fields",
-            apply_to_row(substitutions, written.get("fields")),
-        )]),
-        "app" => written.spread(vec![(
-            "args",
-            Value::List(
-                written
-                    .items("args")
-                    .iter()
-                    .map(|argument| apply(substitutions, argument))
-                    .collect(),
-            ),
-        )]),
-        _ => written.clone(),
+        "oper" => {
+            let arguments = applied_list(substitutions, written.items("args"), &mut any);
+            let result = kept(
+                applied(substitutions, written.get("res")),
+                written.get("res"),
+                &mut any,
+            );
+            (any || !has_exactly(written, &["kind", "args", "res", "id"])).then(|| {
+                Value::object(vec![
+                    ("kind", kind),
+                    ("args", arguments),
+                    ("res", result),
+                    ("id", id),
+                ])
+            })
+        }
+        "list" | "set" => {
+            let element = kept(
+                applied(substitutions, written.get("elem")),
+                written.get("elem"),
+                &mut any,
+            );
+            (any || !has_exactly(written, &["kind", "elem", "id"]))
+                .then(|| Value::object(vec![("kind", kind), ("elem", element), ("id", id)]))
+        }
+        "fun" => {
+            let argument = kept(
+                applied(substitutions, written.get("arg")),
+                written.get("arg"),
+                &mut any,
+            );
+            let result = kept(
+                applied(substitutions, written.get("res")),
+                written.get("res"),
+                &mut any,
+            );
+            (any || !has_exactly(written, &["kind", "arg", "res", "id"])).then(|| {
+                Value::object(vec![
+                    ("kind", kind),
+                    ("arg", argument),
+                    ("res", result),
+                    ("id", id),
+                ])
+            })
+        }
+        "tup" | "rec" => {
+            let fields = kept(
+                row_applied(substitutions, written.get("fields")),
+                written.get("fields"),
+                &mut any,
+            );
+            (any || !has_exactly(written, &["kind", "fields", "id"]))
+                .then(|| Value::object(vec![("kind", kind), ("fields", fields), ("id", id)]))
+        }
+        "sum" => {
+            let fields = kept(
+                row_applied(substitutions, written.get("fields")),
+                written.get("fields"),
+                &mut any,
+            );
+            any.then(|| written.spread(vec![("fields", fields)]))
+        }
+        "app" => {
+            let arguments = applied_list(substitutions, written.items("args"), &mut any);
+            any.then(|| written.spread(vec![("args", arguments)]))
+        }
+        _ => None,
     }
 }
 
 pub(crate) fn apply_to_row(substitutions: &[Substitution], row: &Value) -> Value {
+    row_applied(substitutions, row).unwrap_or_else(|| row.clone())
+}
+
+fn row_applied(substitutions: &[Substitution], row: &Value) -> Option<Value> {
     match row.kind() {
-        "row" => Value::object(vec![
-            ("kind", Value::text("row")),
-            (
-                "fields",
-                Value::List(
-                    row.items("fields")
-                        .iter()
-                        .map(|field| {
-                            Value::object(vec![
-                                ("fieldName", field.get("fieldName").clone()),
-                                ("fieldType", apply(substitutions, field.get("fieldType"))),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            ("other", apply_to_row(substitutions, row.get("other"))),
-        ]),
+        "row" => {
+            let mut any = !has_exactly(row, &["kind", "fields", "other"]);
+            let fields = row
+                .items("fields")
+                .iter()
+                .map(|field| {
+                    if !has_exactly(field, &["fieldName", "fieldType"]) {
+                        any = true;
+                    }
+                    let field_type = kept(
+                        applied(substitutions, field.get("fieldType")),
+                        field.get("fieldType"),
+                        &mut any,
+                    );
+                    Value::object(vec![
+                        ("fieldName", field.get("fieldName").clone()),
+                        ("fieldType", field_type),
+                    ])
+                })
+                .collect();
+            let other = kept(
+                row_applied(substitutions, row.get("other")),
+                row.get("other"),
+                &mut any,
+            );
+            any.then(|| {
+                Value::object(vec![
+                    ("kind", Value::text("row")),
+                    ("fields", Value::list(fields)),
+                    ("other", other),
+                ])
+            })
+        }
         "var" => substitutions
             .iter()
             .find(|found| found.row && found.name == row.str("name"))
-            .map_or_else(|| row.clone(), |found| found.value.clone()),
-        _ => row.clone(),
+            .filter(|found| !found.value.same(row))
+            .map(|found| found.value.clone()),
+        _ => None,
     }
 }
 

@@ -5418,14 +5418,28 @@ was copied from, and `Parsed::types_of_added` infers only the definitions `quint
 - When Quint's type checker throws (above), the crate refuses the file as `unreadable` with the
   exception's message: Quint gives no verdict either. Smallest file:
   `module m { def f(e) = match e { | _ => 1 } }`.
+- Speed: the crate's values share unchanged parts as Quint's objects do, so a type nested a hundred
+  deep is typed in 68 ms (Quint 0.9 s) and a hundred nested `val`s of ever deeper sets in 33 ms
+  (Quint 1.3 s); at two hundred, 0.57 s and 0.12 s (optimized build).
 - Only the first error is given. Quint reports every error; the first is the same.
-- A substitution that is still changing after 10,000 rounds of application stops the file as
-  `unreadable` ("the types of this file could not be settled"), where Quint would recurse until its
-  stack runs out. No file reaches it: the most rounds any file needs are 2 on the repository's
-  samples, 3 on Quint's 196 files (`tendermint.qnt`) and 2 on the 1,000 generated programs, and the
-  test of the samples asserts the bound stays a hundred times above what they need. The occurs
-  checks of `bindType` and `bindRow` keep a single binding from being cyclic, and I found no
-  composition that makes one, so there is no smallest file.
+- Where Quint's type checker runs out of stack ("Maximum call stack size exceeded"), the crate
+  refuses the file as `unreadable` with that text instead of running out of its own stack. Two
+  bounds do it: a substitution applied inside another more than 300 deep, and a substitution still
+  changing after 100 rounds (the most any file needs is 3). Smallest files, both from the review:
+  `review/typing/row_inside_its_own_field.qnt`
+  (`def f(x: { f: a | r }, y: { f: { z: int | r }, h: a | s }): bool = x == y`) and
+  `review/typing/with_of_itself_after_with.qnt` (`def f(z) = z.with("h", 1).with("f", z)`): the
+  tail and field substitutions of `unifyRows` compose into one that binds a variable to a type that
+  holds it, and its application grows forever. The 300 is what a 2 MB thread of an unoptimized
+  build survives on those files (400 overflows it). It is stricter than Quint on valid files typed
+  more than 300 deep: Quint 0.33.1 accepts a `Set(Set(...))` 500 deep (in 58 s) and overflows at
+  1,000; the crate refuses from 301. In an unoptimized build on a 2 MB thread the crate's parser
+  already overflows near 150 nested calls, before types: that is slice 1's recursion, and a deep
+  file needs a larger stack (the optimized build and an 8 MB main thread take 500).
+- On Quint's two internal errors of composing substitutions ("Substitutions with same name (x) but
+  incompatible kinds: [ ... ]" and "Unifying substitutions with same name: x, <error tree>") the
+  crate stops all type work at once, as Quint's exception does, and refuses the file as
+  `unreadable` with Quint's whole text. No file of any corpus reaches them.
 - `Parsed::types` alone puts a type application error after the module's type errors. Quint puts
   the module's effect errors between them; `Parsed::typecheck` does
   (`refused/types_application_after_effects.qnt`).
@@ -5563,7 +5577,7 @@ used by one of them.
 | `QNT000` `Can't bind e to E: cyclical binding` | unification | yes; no file found where the type checker does not refuse it first | |
 | `QNT000` `Can't unify different types of effects` | unification | yes (a constant typed by a plain alias of an operator type gets the pure effect; found by the review) | `refused/effects_different_kinds_of_effect.qnt` |
 | `Can't unify <kind> ... and <kind> ...` | concrete unification | not needed: two different kinds always coexist, so it is never raised | |
-| `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; no file found that reaches them | |
+| `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; the second review reached `Unexpected arrow found in operator result` | `review/typing/instance_crash_after_mode_error.qnt` |
 | `Arrow effect after substitution should be an arrow`, `Error applying fresh names substitution`, `Impossible: all cases should be covered`, `Unexpected error while formatting effect scheme` | thrown | can't happen: the substitutions they guard never fail | |
 
 Each `QNT000` text is the whole error tree, with every unification tried and the expressions in
@@ -5571,11 +5585,15 @@ Quint's printing.
 
 ### Where the crate knowingly does other than Quint's effect passes
 
-- The analysis stops at the first module with an error, where Quint goes on: the first error is
-  the same, and a refused file has no table (accepted: earnest reports one problem).
-- A file on which `quint typecheck` throws is refused as `unreadable`, where Quint stops with a
-  stack trace. For the type checker's crash: `tests/samples/matching.qnt`. For the effect passes'
-  throws: no file found.
+- Only the first error is reported, where Quint lists them all (accepted: earnest reports one
+  problem). The analysis runs every module, as Quint does, so a pass that throws in a later module
+  is reached: until the second review it stopped at the first module with an error, and refused
+  `review/typing/instance_crash_after_mode_error.qnt` with the earlier module's `QNT200`.
+- A file on which `quint typecheck` throws, in any pass of any module, is refused as `unreadable`,
+  whatever errors were collected before, where Quint stops with a stack trace and writes nothing.
+  For the type checker: `tests/samples/matching.qnt`. For the effect passes (the mode checker's
+  `Unexpected arrow found in operator result` on an instance override that returns an operator):
+  `review/typing/instance_crash_after_mode_error.qnt`.
 
 ### Where Quint looks wrong, and what the crate does
 
