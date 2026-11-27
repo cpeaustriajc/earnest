@@ -6,6 +6,7 @@ mod depth;
 mod docs;
 mod effects;
 mod names;
+mod places;
 mod refusals;
 mod review;
 mod threads;
