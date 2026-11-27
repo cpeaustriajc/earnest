@@ -16,6 +16,9 @@
 //!
 //! So [`Parsed::output`] is what `quint parse --out` writes, and [`Parsed::source_map`] the
 //! file `quint parse --source-map` writes.
+//!
+//! [`Parsed::types`] then checks the types as `quint typecheck` does, and gives the `types` table
+//! it writes, or the first type error it reports.
 
 mod files;
 mod ids;

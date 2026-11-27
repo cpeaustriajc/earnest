@@ -243,46 +243,8 @@ pub(crate) fn unify_rows(
                 .any(|field| field.str("fieldName") == *name)
         })
         .collect();
-    let (first_other, second_other) = (first.get("other"), second.get("other"));
     if shared.is_empty() {
-        if first_other.kind() == "var"
-            && second_other.kind() == "var"
-            && first_other.str("name") != second_other.str("name")
-        {
-            let tail = Value::object(vec![
-                ("kind", Value::text("var")),
-                (
-                    "name",
-                    Value::Text(format!(
-                        "${}${}",
-                        first_other.str("name"),
-                        second_other.str("name")
-                    )),
-                ),
-            ]);
-            let bound_first = bind_row(
-                first_other.str("name"),
-                &second.spread(vec![("other", tail.clone())]),
-            );
-            let bound_second = bind_row(
-                second_other.str("name"),
-                &first.spread(vec![("other", tail)]),
-            );
-            return match (bound_first, bound_second) {
-                (Ok(first_bound), Ok(second_bound)) => {
-                    Ok(compose(context, &first_bound, &second_bound))
-                }
-                (Err(message), _) | (_, Err(message)) => Err(leaf(&location, &message)),
-            };
-        }
-        return Err(leaf(
-            &location,
-            &format!(
-                "Incompatible tails for rows with disjoint fields: {} and {}",
-                row_text(first_other),
-                row_text(second_other)
-            ),
-        ));
+        return unify_disjoint(context, &first, &second, &location);
     }
     let unique = |fields: &[Value]| {
         Value::List(
@@ -317,6 +279,53 @@ pub(crate) fn unify_rows(
         (Ok(tails), Ok(fields)) => Ok(compose(context, &tails, &fields)),
         (Err(error), _) | (_, Err(error)) => Err(tree(&location, Failure::Tree(error))),
     }
+}
+
+fn unify_disjoint(
+    context: &Context,
+    first: &Value,
+    second: &Value,
+    location: &str,
+) -> Result<Substitutions, ErrorTree> {
+    let (first_other, second_other) = (first.get("other"), second.get("other"));
+    if first_other.kind() == "var"
+        && second_other.kind() == "var"
+        && first_other.str("name") != second_other.str("name")
+    {
+        let tail = Value::object(vec![
+            ("kind", Value::text("var")),
+            (
+                "name",
+                Value::Text(format!(
+                    "${}${}",
+                    first_other.str("name"),
+                    second_other.str("name")
+                )),
+            ),
+        ]);
+        let bound_first = bind_row(
+            first_other.str("name"),
+            &second.spread(vec![("other", tail.clone())]),
+        );
+        let bound_second = bind_row(
+            second_other.str("name"),
+            &first.spread(vec![("other", tail)]),
+        );
+        return match (bound_first, bound_second) {
+            (Ok(first_bound), Ok(second_bound)) => {
+                Ok(compose(context, &first_bound, &second_bound))
+            }
+            (Err(message), _) | (_, Err(message)) => Err(leaf(location, &message)),
+        };
+    }
+    Err(leaf(
+        location,
+        &format!(
+            "Incompatible tails for rows with disjoint fields: {} and {}",
+            row_text(first_other),
+            row_text(second_other)
+        ),
+    ))
 }
 
 fn unify_with_alias(
