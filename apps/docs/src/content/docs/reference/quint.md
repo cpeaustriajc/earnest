@@ -397,6 +397,19 @@ unreadable  specs/problems.qnt  problems
   specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
 ```
 
+### How deep a file may nest
+
+Earnest reads expressions and types nested up to 2,000 deep in the text, such as 2,000 `not(` or `Set(` inside each other, and up to 4,000 deep in Quint's tree, which a flat sum of 4,000 terms already is (`x + x + ...` is a tree as deep as it has terms). A file nested deeper is `unreadable` at the place of the first expression past the bound:
+
+```text
+unreadable  specs/deep.qnt
+  specs/deep.qnt:7:8015  `quint parse`  expressions or types here are nested more than 2000 deep, deeper than earnest reads
+```
+
+Past the second bound the message ends `nested more than 4000 deep in Quint's tree, deeper than earnest reads`.
+
+These are earnest's bounds, not Quint's. Quint 0.33.1 itself overflows its stack well before them on some shapes, such as a `Set` 1,000 deep or a sum of 1,000 terms; [`confirm --quint`](#confirming-a-check-with-quint) then says `cannot`. A file nested a few hundred deep reads in seconds, but a deep type, such as a `Set` or a record nested 500 deep, can take minutes, as it takes Quint.
+
 ## What is read today
 
 The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.
@@ -746,4 +759,4 @@ quint compile --target json --main counter --invariant inRange,tooBig counter.qn
 earnest verify counter.json
 ```
 
-A `.json` file is read only when it is named on the command line and is what `quint compile --target json` writes. A folder search does not pick up `.json` files. The compiled JSON has no line numbers, so each problem of such a file is at line 1, column 1.
+A `.json` file is read only when it is named on the command line and is what `quint compile --target json` writes. A folder search does not pick up `.json` files. The compiled JSON has no line numbers, so each problem of such a file is at line 1, column 1. The one exception is a file whose `{` and `[` nest more than 8,008 deep, twice the 4,000 levels of an expression and room for the module around them: it is refused before it is read, at the place of the first bracket past the bound, with `the JSON is nested more than 8008 deep here, deeper than earnest reads: a compiled module's expressions may nest up to 4000 deep`.
