@@ -1,9 +1,33 @@
-use crate::corpus::{compared, recorded, root};
-use earnest_quint_syntax::{Problem, read};
+use crate::corpus::{TWO_READINGS, compared, recorded, root, samples};
+use earnest_quint_syntax::{Json, Problem, read};
+use std::fs;
+use std::path::Path;
 
 fn as_quint_reads(sample: &str) -> Result<(), String> {
     let path = format!("crates/earnest_quint_syntax/tests/samples/readings/{sample}.qnt");
     compared(&path, &recorded(), &root()).map(drop)
+}
+
+fn first_error(path: &str) -> Option<String> {
+    let recording = recorded().join(format!("{path}.phases.json"));
+    let text = fs::read_to_string(&recording)
+        .unwrap_or_else(|_| panic!("{} is recorded", recording.display()));
+    let phases =
+        Json::parse(&text).unwrap_or_else(|at| panic!("the recording parses, not at {at}"));
+    match phases.get("errors") {
+        Some(Json::List(errors)) => errors.first().and_then(|first| match first.get("code") {
+            Some(Json::Text(code)) => Some(code.clone()),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn refused(path: &str) -> Problem {
+    match read(path, |file| fs::read_to_string(root().join(file)).ok()) {
+        Ok(_) => panic!("{path} is refused"),
+        Err(problem) => problem,
+    }
 }
 
 fn refusal(text: &str) -> Problem {
@@ -60,16 +84,65 @@ fn a_match_quint_reads_as_a_call_of_a_name_is_refused_rather_than_read_another_w
 }
 
 #[test]
-fn the_two_files_known_to_be_read_where_quint_reads_a_keyword_before_a_parenthesis_as_a_name_are_still_read()
- {
-    let known = [
-        "module G{val w0 def f()def g=val l59877=def l59878={{false}}implies(if(w0)f else{()})val l59880=val l59881={\"s\"}()and(def l59882()f)val v1}",
-        "module G{var y:int val w0 val w1 def g=nondet l59412=nondet l59413={y}-if(w0)w0 else{w1}match match and({()}){_=>y}[if(\"s\")w1 else false]{_=>match{1}{_=>false}}}",
-    ];
-    for text in known {
+fn the_two_files_quint_refuses_where_it_reads_a_keyword_before_a_parenthesis_as_a_name_are_refused()
+{
+    for sample in [
+        "keyword_call_quint_reads_after_an_infix_operator",
+        "match_quint_reads_as_a_name_before_an_operator",
+    ] {
+        let path = format!("{TWO_READINGS}/{sample}.qnt");
+        let quint = first_error(&path).unwrap_or_else(|| panic!("Quint refuses {sample}"));
+        assert_eq!(quint, "QNT008", "Quint refuses {sample} with QNT008");
+        let problem = refused(&path);
         assert!(
-            read("/m/a.qnt", |_| Some(text.to_owned())).is_ok(),
-            "Quint refuses it with QNT008; the README lists it as read, so a change here moves that count: {text}"
+            problem.code == "unreadable" && problem.message.contains("two ways"),
+            "earnest refuses {sample} as having two readings: {problem}"
         );
+    }
+}
+
+#[test]
+fn a_keyword_call_quint_reads_as_a_call_is_refused_where_it_could_also_continue_the_value_before_it()
+ {
+    let path = format!("{TWO_READINGS}/keyword_call_quint_reads_as_a_call.qnt");
+    assert_eq!(first_error(&path), None, "Quint reads it");
+    let problem = refused(&path);
+    assert_eq!(
+        (problem.code.as_str(), problem.line, problem.column),
+        ("unreadable", 1, 147),
+        "at the `and`: {problem}"
+    );
+    assert!(
+        problem
+            .message
+            .ends_with("put that call, from 1:147 to before 1:165, in parentheses"),
+        "the message says what to write: {}",
+        problem.message
+    );
+}
+
+#[test]
+fn the_same_call_in_parentheses_is_read_as_quint_reads_it() {
+    assert_eq!(as_quint_reads("keyword_call_in_parentheses"), Ok(()));
+}
+
+#[test]
+fn every_file_quint_reads_two_ways_is_refused_as_having_two_readings() {
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new(TWO_READINGS), &mut found);
+    assert!(found.len() >= 3, "the samples are found: {found:?}");
+    for path in found {
+        let problem = refused(&path);
+        assert!(
+            problem.code == "unreadable" && problem.message.contains("two ways"),
+            "{path} is refused as having two readings: {problem}"
+        );
+        if let Some(code) = first_error(&path) {
+            assert_eq!(
+                code, "QNT008",
+                "where Quint refuses {path}, it is with QNT008"
+            );
+        }
     }
 }

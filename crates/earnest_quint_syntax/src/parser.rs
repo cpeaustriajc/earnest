@@ -190,6 +190,7 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         candidates: Vec::new(),
         stops: Vec::new(),
         forced: None,
+        second: Second::Name,
         doubtful: Vec::new(),
     };
     let outcome = parser.file();
@@ -203,13 +204,16 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         (Some(first), _) | (None, Err(first)) => Err(first),
         (None, Ok(())) => {
             let doubtful = std::mem::take(&mut parser.doubtful);
-            let mut points: Vec<usize> = doubtful.iter().map(|doubt| doubt.at).collect();
+            let mut points: Vec<(usize, Second)> = doubtful
+                .iter()
+                .map(|doubt| (doubt.at, doubt.second))
+                .collect();
             points.sort_unstable();
             points.dedup();
-            let declaration_of = |point: usize| {
+            let declaration_of = |point: (usize, Second)| {
                 doubtful
                     .iter()
-                    .filter(|doubt| doubt.at == point)
+                    .filter(|doubt| (doubt.at, doubt.second) == point)
                     .map(|doubt| doubt.declaration)
                     .try_fold(None, |reach: Option<Span>, declaration| {
                         let (start, end) = declaration?;
@@ -226,7 +230,7 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
                 let value = doubtful
                     .iter()
                     .rev()
-                    .find(|doubt| doubt.at == point)
+                    .find(|doubt| (doubt.at, doubt.second) == point)
                     .and_then(|doubt| doubt.value);
                 return Err(two_readings(tokens, point, value));
             }
@@ -241,12 +245,12 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
 fn reads_with_a_name_at(
     tokens: &[Token],
     source: usize,
-    doubt: usize,
+    (doubt, second): (usize, Second),
     declaration: Option<Span>,
 ) -> bool {
     if let Some((start, end)) = declaration {
         let mut ids = Ids::default();
-        let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+        let mut parser = forced_parser(tokens, &mut ids, source, doubt, second);
         parser.at = start;
         let mut read = true;
         while read && parser.at < end {
@@ -256,21 +260,46 @@ fn reads_with_a_name_at(
             return false;
         }
         if parser.at == end {
-            return named_only(parser.reported.as_ref(), doubt);
+            return named_only(tokens, parser.reported.as_ref(), doubt, second);
         }
     }
     let mut ids = Ids::default();
-    let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+    let mut parser = forced_parser(tokens, &mut ids, source, doubt, second);
     let outcome = parser.file();
     outcome.is_ok()
         && parser.too_deep.is_none()
         && parser.exhausted.is_none()
-        && named_only(parser.reported.as_ref(), doubt)
+        && named_only(tokens, parser.reported.as_ref(), doubt, second)
 }
 
-fn named_only(reported: Option<&Reported>, doubt: usize) -> bool {
-    reported
-        .is_some_and(|reported| reported.token == doubt + 1 && reported.problem.code == "QNT008")
+fn named_only(tokens: &[Token], reported: Option<&Reported>, doubt: usize, second: Second) -> bool {
+    reported.is_some_and(|reported| {
+        reported.problem.code == "QNT008"
+            && if second == Second::Continued {
+                tokens
+                    .get(reported.token)
+                    .is_some_and(|token| token.kind == Kind::LeftParen)
+            } else {
+                reported.token == doubt + 1
+            }
+    })
+}
+
+fn closing_paren(tokens: &[Token], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, token) in tokens.iter().enumerate().skip(open) {
+        match token.kind {
+            Kind::LeftParen => depth += 1,
+            Kind::RightParen => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn forced_parser<'a>(
@@ -278,6 +307,7 @@ fn forced_parser<'a>(
     ids: &'a mut Ids,
     source: usize,
     doubt: usize,
+    second: Second,
 ) -> Parser<'a> {
     Parser {
         tokens,
@@ -299,16 +329,31 @@ fn forced_parser<'a>(
         candidates: Vec::new(),
         stops: Vec::new(),
         forced: Some(doubt),
+        second,
         doubtful: Vec::new(),
     }
 }
 
-fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported {
+fn two_readings(
+    tokens: &[Token],
+    (doubt, second): (usize, Second),
+    value: Option<Span>,
+) -> Reported {
     let place = |at: usize| {
         let token = &tokens[at.min(tokens.len() - 1)];
         (token.line, token.column + 1)
     };
     let token = &tokens[doubt.min(tokens.len() - 1)];
+    let value = if second == Second::Continued {
+        closing_paren(tokens, doubt + 1).map(|close| (doubt, close))
+    } else {
+        value
+    };
+    let what = if second == Second::Continued {
+        "that call"
+    } else {
+        "that definition's value"
+    };
     let advice = value.map_or_else(
         || "put the value of the definition before it in parentheses".to_owned(),
         |(start, end)| {
@@ -316,15 +361,20 @@ fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported
             let (to_line, to_column) = place(end);
             let to_column = to_column + tokens[end.min(tokens.len() - 1)].text.chars().count();
             format!(
-                "put that definition's value, from {from_line}:{from_column} to before {to_line}:{to_column}, in parentheses"
+                "put {what}, from {from_line}:{from_column} to before {to_line}:{to_column}, in parentheses"
             )
         },
     );
+    let other = if second == Second::Continued {
+        "as an operator between the value before it and what follows, which makes a later keyword a name that Quint refuses with QNT008"
+    } else {
+        "as a name, which Quint refuses with QNT008"
+    };
     Reported {
         problem: Problem::coded(
             "unreadable",
             format!(
-                "Quint's grammar reads this `{}` two ways: as written here, or as a name, which Quint refuses with QNT008; earnest can't tell which of the two Quint takes, so {advice}",
+                "Quint's grammar reads this `{}` two ways: as written here, or {other}; earnest can't tell which of the two Quint takes, so {advice}",
                 token.text
             ),
             token.line - 1,
@@ -355,13 +405,21 @@ struct Parser<'a> {
     candidates: Vec<usize>,
     stops: Vec<usize>,
     forced: Option<usize>,
+    second: Second,
     doubtful: Vec<Doubt>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Second {
+    Name,
+    Continued,
 }
 
 struct Doubt {
     at: usize,
     value: Option<Span>,
     declaration: Option<Span>,
+    second: Second,
 }
 
 struct Mark {
@@ -644,15 +702,34 @@ impl Parser<'_> {
     }
 
     fn doubts(&mut self, at: usize) -> bool {
-        if self.forced == Some(at) {
+        if self.forced == Some(at) && self.second == Second::Name {
             return true;
         }
         self.doubtful.push(Doubt {
             at,
             value: None,
             declaration: None,
+            second: Second::Name,
         });
         false
+    }
+
+    fn ends_before(&mut self, kind: Kind) -> bool {
+        if !self.may_start_body(kind) || self.goes_on(self.at) {
+            return false;
+        }
+        if self.forced == Some(self.at) && self.second == Second::Continued {
+            return false;
+        }
+        if INFIX_NAMES.contains(&kind) && self.kind_at(self.at + 1) == Kind::LeftParen {
+            self.doubtful.push(Doubt {
+                at: self.at,
+                value: None,
+                declaration: None,
+                second: Second::Continued,
+            });
+        }
+        true
     }
 
     fn may_be_called(&self, open: usize) -> bool {
@@ -1705,7 +1782,7 @@ impl Parser<'_> {
                 Kind::Arrow => (PAIR, "Tup", PAIR + 1),
                 _ => break,
             };
-            if level < precedence || (self.may_start_body(kind) && !self.goes_on(self.at)) {
+            if level < precedence || self.ends_before(kind) {
                 break;
             }
             if kind == Kind::Minus && fallback == Fallback::Allowed && !self.operand_starts() {
@@ -1957,8 +2034,9 @@ impl Parser<'_> {
                 }
             }
             Kind::Match
-                if self.kind_at(self.at + 1) == Kind::LeftParen
-                    && self.may_be_called(self.at + 1)
+                if ((self.kind_at(self.at + 1) == Kind::LeftParen
+                    && self.may_be_called(self.at + 1))
+                    || INFIX_NAMES.contains(&self.kind_at(self.at + 1)))
                     && self.doubts(self.at) =>
             {
                 self.named(start)
