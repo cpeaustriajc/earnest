@@ -296,6 +296,9 @@ impl<'a> Inliner<'a> {
             aliased = next;
         }
         let found = known.unwrap_or_else(|| match aliased {
+            _ if crate::json::sharing_every_object() => {
+                Json::Shared(Arc::new(aliased.with_every_object_shared()))
+            }
             Json::Shared(_) => aliased.clone(),
             _ => Json::Shared(Arc::new(aliased.clone())),
         });

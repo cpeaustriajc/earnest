@@ -173,7 +173,7 @@ impl Value {
                 Json::List(items.iter().map(|item| item.to_shared_json(memo)).collect())
             }
             Self::Object(fields) => {
-                let shared = Rc::strong_count(fields) > 1;
+                let shared = Rc::strong_count(fields) > 1 || crate::json::sharing_every_object();
                 let address = address(fields);
                 if shared && let Some(known) = memo.json.get(&address) {
                     return known.clone();

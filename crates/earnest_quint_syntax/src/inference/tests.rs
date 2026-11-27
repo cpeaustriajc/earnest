@@ -176,3 +176,48 @@ fn type_work_stops_once_the_types_hold_more_type_nodes_than_the_bound() {
         "as a crash, so every pass refuses the file"
     );
 }
+
+fn written_both_ways(file: &str, main: &str) -> (String, String) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let parsed = read(file, |path| fs::read_to_string(root.join(path)).ok()).expect("read");
+    let target = crate::compile::Target {
+        main: main.to_owned(),
+        init: "init".to_owned(),
+        step: "step".to_owned(),
+        invariant: None,
+        temporal: None,
+    };
+    let typecheck = parsed.typecheck().map(|checked| checked.to_string());
+    let compile = parsed
+        .compile(&target)
+        .map(|compiled| compiled.output().to_string());
+    (format!("{typecheck:?}"), format!("{compile:?}"))
+}
+
+#[test]
+fn a_file_is_written_the_same_when_every_object_of_its_types_is_shared() {
+    let files = [
+        ("tasks/quint/samples/ring.qnt", "Two"),
+        ("tasks/quint/setups/shadow.qnt", "S"),
+        ("tasks/quint/imports/star.qnt", "SpecStar"),
+        (
+            "crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt",
+            "Main",
+        ),
+    ];
+    let usual: Vec<(String, String)> = files
+        .iter()
+        .map(|(file, main)| written_both_ways(file, main))
+        .collect();
+    crate::json::share_every_object(true);
+    let shared: Vec<(String, String)> = files
+        .iter()
+        .map(|(file, main)| written_both_ways(file, main))
+        .collect();
+    crate::json::share_every_object(false);
+    for ((file, _), (usual, shared)) in files.iter().zip(usual.iter().zip(&shared)) {
+        assert!(usual.0.starts_with("Ok("), "{file} typechecks: {}", usual.0);
+        assert!(usual.1.starts_with("Ok("), "{file} compiles: {}", usual.1);
+        assert!(usual == shared, "{file} is written alike");
+    }
+}

@@ -1,5 +1,23 @@
 use std::fmt::{self, Write};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+
+/// Set by a test: every object the types table and the alias inliner write is shared, not only
+/// those held twice, so that any reading that does not see through a [`Json::Shared`] shows as
+/// a difference in the output. `EARNEST_QUINT_SHARE_EVERY_OBJECT=1` sets it for a whole run.
+static SHARE_EVERY_OBJECT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+pub(crate) fn share_every_object(on: bool) {
+    SHARE_EVERY_OBJECT.store(on, Ordering::Relaxed);
+}
+
+pub(crate) fn sharing_every_object() -> bool {
+    static FROM_ENVIRONMENT: OnceLock<bool> = OnceLock::new();
+    SHARE_EVERY_OBJECT.load(Ordering::Relaxed)
+        || *FROM_ENVIRONMENT
+            .get_or_init(|| std::env::var_os("EARNEST_QUINT_SHARE_EVERY_OBJECT").is_some())
+}
 
 /// A JSON value as Quint writes it: numbers keep their digits, so an integer of any size
 /// survives, and an object keeps its keys in the order they were written.
@@ -19,7 +37,8 @@ pub enum Json {
     /// An object, its keys in order.
     Object(Vec<(String, Json)>),
     /// A value held in more than one place, as the types table holds a type that many ids
-    /// have. It is written, compared and read as the value it holds.
+    /// have. It is written, compared and read as the value it holds. It holds an object, or
+    /// another `Shared`: a list or a scalar is never shared.
     Shared(Arc<Json>),
 }
 
@@ -74,6 +93,22 @@ impl Json {
             value = inner;
         }
         value
+    }
+
+    /// This value with every object in it shared, for [`sharing_every_object`].
+    pub(crate) fn with_every_object_shared(&self) -> Json {
+        match self.unshared() {
+            Self::List(items) => {
+                Self::List(items.iter().map(Self::with_every_object_shared).collect())
+            }
+            Self::Object(fields) => Self::Shared(Arc::new(Self::Object(
+                fields
+                    .iter()
+                    .map(|(key, inner)| (key.clone(), inner.with_every_object_shared()))
+                    .collect(),
+            ))),
+            other => other.clone(),
+        }
     }
 
     /// This value to change in place: a [`Json::Shared`] is copied first where another holder
