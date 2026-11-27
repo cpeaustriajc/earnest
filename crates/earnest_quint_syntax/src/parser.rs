@@ -111,6 +111,21 @@ enum Within {
     Let,
 }
 
+impl Within {
+    fn follow(self) -> Follow {
+        match self {
+            Self::Module => Follow::Declaration,
+            Self::Let => Follow::Body,
+        }
+    }
+}
+
+enum Follow {
+    Declaration,
+    Body,
+    Closing(Vec<Kind>),
+}
+
 #[derive(Clone, Copy)]
 enum Pattern {
     Tuple,
@@ -147,6 +162,7 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         listened: None,
         edge: false,
         root: false,
+        follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
     };
@@ -171,6 +187,7 @@ struct Parser<'a> {
     listened: Option<Problem>,
     edge: bool,
     root: bool,
+    follows: Vec<Follow>,
     candidates: Vec<usize>,
     stops: Vec<usize>,
 }
@@ -182,6 +199,7 @@ struct Mark {
     listened: Option<Problem>,
     candidates: usize,
     stops: usize,
+    declarations: usize,
 }
 
 fn id(value: u64) -> Json {
@@ -414,6 +432,7 @@ impl Parser<'_> {
             listened: self.listened.clone(),
             candidates: self.candidates.len(),
             stops: self.stops.len(),
+            declarations: self.declarations.len(),
         }
     }
 
@@ -424,16 +443,25 @@ impl Parser<'_> {
         self.listened.clone_from(&mark.listened);
         self.candidates.truncate(mark.candidates);
         self.stops.truncate(mark.stops);
+        self.declarations.truncate(mark.declarations);
     }
 
     fn goes_on(&mut self, at: usize) -> bool {
+        self.decides(at * 2)
+    }
+
+    fn reads_keyword(&mut self, at: usize) -> bool {
+        self.decides(at * 2 + 1)
+    }
+
+    fn decides(&mut self, decision: usize) -> bool {
         if !self.edge {
             return true;
         }
-        if self.stops.contains(&at) {
+        if self.stops.contains(&decision) {
             return false;
         }
-        self.candidates.push(at);
+        self.candidates.push(decision);
         true
     }
 
@@ -475,11 +503,49 @@ impl Parser<'_> {
         self.expr(0)
     }
 
-    fn enclosed(&mut self) -> Result<Json, Reported> {
+    fn enclosed(&mut self, closers: &[Kind]) -> Result<Json, Reported> {
         let edge = std::mem::replace(&mut self.edge, false);
-        let value = self.root_expr();
+        let value = self.followed_expr(Follow::Closing(closers.to_vec()));
         self.edge = edge;
         value
+    }
+
+    fn followed_expr(&mut self, follow: Follow) -> Result<Json, Reported> {
+        self.follows.push(follow);
+        let value = self.root_expr();
+        self.follows.pop();
+        value
+    }
+
+    fn can_follow(&self) -> bool {
+        let kind = self.kind();
+        match self.follows.last() {
+            None => true,
+            Some(Follow::Declaration) => DECLARATION_FOLLOWERS.contains(&kind),
+            Some(Follow::Closing(closers)) => closers.contains(&kind),
+            Some(Follow::Body) => kind == Kind::Semicolon || self.starts_expression(),
+        }
+    }
+
+    fn starts_expression(&self) -> bool {
+        let kind = self.kind();
+        self.is_identifier(self.at)
+            || QUALIFIERS.contains(&kind)
+            || CALL_NAMES.contains(&kind)
+            || matches!(
+                kind,
+                Kind::Minus
+                    | Kind::If
+                    | Kind::All
+                    | Kind::Any
+                    | Kind::LeftBracket
+                    | Kind::LeftBrace
+                    | Kind::LeftParen
+                    | Kind::Hole
+                    | Kind::Number
+                    | Kind::Truth
+                    | Kind::Text
+            )
     }
 
     fn file(&mut self) -> Result<(), Reported> {
@@ -568,7 +634,7 @@ impl Parser<'_> {
                 self.advance();
                 let name = self.ident_or_hole()?;
                 self.expect(Kind::Assign, "=")?;
-                let assumption = self.root_expr()?;
+                let assumption = self.followed_expr(Follow::Declaration)?;
                 let declaration_id = self.placed(self.span(start));
                 self.declarations.push(Json::object(vec![
                     ("id", id(declaration_id)),
@@ -718,7 +784,7 @@ impl Parser<'_> {
         loop {
             let name = self.qualified_name()?;
             self.expect(Kind::Assign, "=")?;
-            let value = self.root_expr()?;
+            let value = self.followed_expr(Follow::Closing(vec![Kind::Comma, Kind::RightParen]))?;
             overrides.push((name, value));
             if self.kind() == Kind::Comma && self.kind_at(self.at + 1) != Kind::RightParen {
                 self.advance();
@@ -1118,29 +1184,13 @@ impl Parser<'_> {
                 ("res", result),
             ]));
         } else {
-            if self.eat(Kind::LeftParen) && self.kind() != Kind::RightParen {
-                loop {
-                    let param_start = self.at;
-                    let name = self.ident_or_hole()?;
-                    let param_id = self.placed(self.span(param_start));
-                    params.push(param(param_id, &self.text(name)));
-                    if self.kind() == Kind::Comma && self.kind_at(self.at + 1) != Kind::RightParen {
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-                self.eat(Kind::Comma);
-                self.expect(Kind::RightParen, ")")?;
-            } else if self.at > call_name.1 + 1 {
-                self.expect(Kind::RightParen, ")")?;
-            }
+            params = self.unannotated_parameters()?;
             if self.eat(Kind::Colon) {
                 annotation = Some(self.type_expr(0)?);
             }
         }
         let body = if self.eat(Kind::Assign) {
-            Some(self.root_expr()?)
+            Some(self.followed_expr(within.follow())?)
         } else {
             None
         };
@@ -1201,7 +1251,7 @@ impl Parser<'_> {
             self.expect(Kind::RightBrace, "}")?;
         }
         self.expect(Kind::Assign, "=")?;
-        let value = self.root_expr()?;
+        let value = self.followed_expr(within.follow())?;
         self.eat(Kind::Semicolon);
         let temporary_id = self.placed(self.span(start));
         let temporary_name = format!("quintDestructTemp{temporary_id}");
@@ -1283,7 +1333,7 @@ impl Parser<'_> {
                     let indexed = left.clone();
                     let index = |parser: &mut Self| {
                         parser.advance();
-                        let index = parser.enclosed()?;
+                        let index = parser.enclosed(&[Kind::RightBracket])?;
                         parser.expect(Kind::RightBracket, "]")?;
                         let app_id = parser.placed(parser.span(start));
                         Ok(app(app_id, "nth", vec![indexed, index]))
@@ -1400,19 +1450,19 @@ impl Parser<'_> {
     }
 
     fn arguments(&mut self) -> Result<Vec<Json>, Reported> {
-        let mut args = vec![self.enclosed()?];
+        let mut args = vec![self.enclosed(&[Kind::Comma, Kind::RightParen])?];
         while self.kind() == Kind::Comma && !matches!(self.kind_at(self.at + 1), Kind::RightParen) {
             self.advance();
-            args.push(self.enclosed()?);
+            args.push(self.enclosed(&[Kind::Comma, Kind::RightParen])?);
         }
         Ok(args)
     }
 
     fn listed(&mut self, close: Kind, shown: &str) -> Result<Vec<Json>, Reported> {
-        let mut values = vec![self.enclosed()?];
+        let mut values = vec![self.enclosed(&[Kind::Comma, close])?];
         while self.kind() == Kind::Comma && self.kind_at(self.at + 1) != close {
             self.advance();
-            values.push(self.enclosed()?);
+            values.push(self.enclosed(&[Kind::Comma, close])?);
         }
         self.eat(Kind::Comma);
         self.expect(close, shown)?;
@@ -1435,6 +1485,57 @@ impl Parser<'_> {
                 Kind::Comma => at += 1,
                 Kind::RightParen => return Some(at),
                 _ => return None,
+            }
+        }
+    }
+
+    fn unannotated_parameters(&mut self) -> Result<Vec<Json>, Reported> {
+        let mut params = Vec::new();
+        let listed = self.kind() == Kind::LeftParen
+            && self.is_parameter_list(self.at + 1)
+            && self.goes_on(self.at);
+        if !listed {
+            return Ok(params);
+        }
+        self.advance();
+        if self.eat(Kind::RightParen) {
+            return Ok(params);
+        }
+        loop {
+            let param_start = self.at;
+            let name = self.ident_or_hole()?;
+            let param_id = self.placed(self.span(param_start));
+            params.push(param(param_id, &self.text(name)));
+            if self.kind() == Kind::Comma && self.kind_at(self.at + 1) != Kind::RightParen {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        self.eat(Kind::Comma);
+        self.expect(Kind::RightParen, ")")?;
+        Ok(params)
+    }
+
+    fn is_parameter_list(&self, start: usize) -> bool {
+        if self.kind_at(start) == Kind::RightParen {
+            return true;
+        }
+        let mut at = start;
+        loop {
+            let after = if self.kind_at(at) == Kind::Hole {
+                at + 1
+            } else {
+                self.after_qualified(at)
+            };
+            if after == at {
+                return false;
+            }
+            at = after;
+            match (self.kind_at(at), self.kind_at(at + 1)) {
+                (Kind::RightParen, _) | (Kind::Comma, Kind::RightParen) => return true,
+                (Kind::Comma, _) => at += 1,
+                _ => return false,
             }
         }
     }
@@ -1465,9 +1566,9 @@ impl Parser<'_> {
             Kind::If => {
                 self.advance();
                 self.expect(Kind::LeftParen, "(")?;
-                let condition = self.enclosed()?;
+                let condition = self.enclosed(&[Kind::RightParen])?;
                 self.expect(Kind::RightParen, ")")?;
-                let then = self.enclosed()?;
+                let then = self.enclosed(&[Kind::Else])?;
                 self.expect(Kind::Else, "else")?;
                 let otherwise = self.expr(ELSE_BRANCH)?;
                 Ok(self.application(self.span(start), "ite", vec![condition, then, otherwise]))
@@ -1484,7 +1585,9 @@ impl Parser<'_> {
                 let args = self.listed(Kind::RightBrace, "}")?;
                 Ok(self.application(self.span(start), opcode, args))
             }
-            Kind::And | Kind::Or if self.kind_at(self.at + 1) == Kind::LeftBrace => {
+            Kind::And | Kind::Or
+                if self.kind_at(self.at + 1) == Kind::LeftBrace && self.reads_keyword(self.at) =>
+            {
                 let opcode = if self.kind() == Kind::And {
                     "and"
                 } else {
@@ -1501,7 +1604,10 @@ impl Parser<'_> {
                     None => self.plain_name(start),
                 }
             }
-            kind if CALL_NAMES.contains(&kind) && self.kind_at(self.at + 1) == Kind::LeftParen => {
+            kind if CALL_NAMES.contains(&kind)
+                && self.kind_at(self.at + 1) == Kind::LeftParen
+                && self.reads_keyword(self.at) =>
+            {
                 let called = self.attempt(|parser| {
                     parser.advance();
                     parser.call(start)
@@ -1511,10 +1617,12 @@ impl Parser<'_> {
                     None => self.plain_name(start),
                 }
             }
-            Kind::Match => match self.attempt(|parser| parser.match_expression(start)) {
-                Some(matched) => Ok(matched),
-                None => self.plain_name(start),
-            },
+            Kind::Match if self.reads_keyword(self.at) => {
+                match self.attempt(|parser| parser.match_expression(start)) {
+                    Some(matched) => Ok(matched),
+                    None => self.plain_name(start),
+                }
+            }
             Kind::LeftBracket => {
                 self.advance();
                 let args = if self.kind() == Kind::RightBracket {
@@ -1564,6 +1672,9 @@ impl Parser<'_> {
     }
 
     fn named(&mut self, start: usize) -> Result<Json, Reported> {
+        if self.edge && self.stops.contains(&(self.at * 2 + 1)) {
+            return self.plain_name(start);
+        }
         let after = self.after_qualified(self.at);
         match self.kind_at(after) {
             Kind::FatArrow => {
@@ -1628,6 +1739,7 @@ impl Parser<'_> {
         }
         if self.kind_at(self.at + 1) == Kind::LeftParen
             && let Some(close) = self.lambda_params(self.at + 2)
+            && (self.at + 2..close).any(|at| self.kind_at(at) == Kind::Comma)
             && self.kind_at(close + 1) == Kind::RightParen
             && self.kind_at(close + 2) == Kind::FatArrow
         {
@@ -1645,7 +1757,7 @@ impl Parser<'_> {
             let unit_id = self.placed(self.span(start));
             return Ok(unit(unit_id));
         }
-        let first = self.enclosed()?;
+        let first = self.enclosed(&[Kind::RightParen, Kind::Comma])?;
         if self.eat(Kind::RightParen) {
             return Ok(first);
         }
@@ -1694,7 +1806,7 @@ impl Parser<'_> {
                 && self.kind_at(self.after_qualified(next)) == Kind::Colon);
         self.advance();
         if !is_record {
-            let inner = self.enclosed()?;
+            let inner = self.enclosed(&[Kind::RightBrace])?;
             self.expect(Kind::RightBrace, "}")?;
             return Ok(inner);
         }
@@ -1703,11 +1815,11 @@ impl Parser<'_> {
         loop {
             let element_start = self.at;
             if self.eat(Kind::Spread) {
-                spreads.push(self.enclosed()?);
+                spreads.push(self.enclosed(&[Kind::Comma, Kind::RightBrace])?);
             } else {
                 let field = self.simple_name("record")?;
                 self.expect(Kind::Colon, ":")?;
-                let value = self.enclosed()?;
+                let value = self.enclosed(&[Kind::Comma, Kind::RightBrace])?;
                 let field_id = self.placed(self.span(element_start));
                 pairs.push((
                     literal(field_id, "str", Json::text(&self.text(field))),
@@ -1778,7 +1890,7 @@ impl Parser<'_> {
 
     fn match_expression(&mut self, start: usize) -> Result<Json, Reported> {
         self.advance();
-        let scrutinee = self.enclosed()?;
+        let scrutinee = self.enclosed(&[Kind::LeftBrace])?;
         self.expect(Kind::LeftBrace, "{")?;
         self.eat(Kind::Pipe);
         let mut cases = Vec::new();
@@ -1799,7 +1911,7 @@ impl Parser<'_> {
                 (self.text(label), binding)
             };
             self.expect(Kind::FatArrow, "=>")?;
-            let body = self.enclosed()?;
+            let body = self.enclosed(&[Kind::Pipe, Kind::RightBrace])?;
             cases.push((self.span(case_start), label, binding, body));
             if !self.eat(Kind::Pipe) {
                 break;
@@ -1852,24 +1964,69 @@ impl Parser<'_> {
         }
     }
 
+    fn followed_retry(
+        &mut self,
+        mark: &Mark,
+        mut candidates: Vec<usize>,
+    ) -> Option<(Definition, Json)> {
+        candidates.sort_unstable();
+        candidates.dedup();
+        for candidate in candidates.into_iter().rev() {
+            self.rewind(mark);
+            self.stops.push(candidate);
+            if self.let_parts(mark.candidates).is_ok() && self.can_follow() {
+                self.rewind(mark);
+                self.stops.push(candidate);
+                return self.let_parts(mark.candidates).ok();
+            }
+        }
+        None
+    }
+
+    fn retried(&mut self, mark: &Mark, mut candidates: Vec<usize>) -> Option<(Definition, Json)> {
+        candidates.sort_unstable();
+        candidates.dedup();
+        let mut parsed = None;
+        for candidate in candidates.into_iter().rev() {
+            self.rewind(mark);
+            self.stops.push(candidate);
+            if self.let_parts(mark.candidates).is_ok() {
+                if self.can_follow() {
+                    self.rewind(mark);
+                    self.stops.push(candidate);
+                    return self.let_parts(mark.candidates).ok();
+                }
+                parsed = parsed.or(Some(candidate));
+            }
+        }
+        self.rewind(mark);
+        let candidate = parsed?;
+        self.stops.push(candidate);
+        self.let_parts(mark.candidates).ok()
+    }
+
     fn let_expression(&mut self, start: usize) -> Result<Json, Reported> {
         let mark = self.mark();
         let (definition, body) = match self.let_parts(mark.candidates) {
-            Ok(parts) => parts,
-            Err((failure, mut candidates)) => {
-                candidates.sort_unstable();
-                candidates.dedup();
-                let mut found = None;
-                for candidate in candidates.into_iter().rev() {
+            Ok(parts) if self.can_follow() => parts,
+            Ok(_) => {
+                let candidates = self
+                    .candidates
+                    .get(mark.candidates..)
+                    .unwrap_or_default()
+                    .to_vec();
+                if let Some(parts) = self.followed_retry(&mark, candidates) {
+                    parts
+                } else {
                     self.rewind(&mark);
-                    self.stops.push(candidate);
-                    if let Ok(parts) = self.let_parts(mark.candidates) {
-                        found = Some(parts);
-                        break;
-                    }
+                    self.let_parts(mark.candidates)
+                        .map_err(|(failure, _)| failure)?
                 }
-                let Some(parts) = found else {
+            }
+            Err((failure, candidates)) => {
+                let Some(parts) = self.retried(&mark, candidates.clone()) else {
                     self.rewind(&mark);
+                    self.candidates.extend(candidates);
                     return Err(failure);
                 };
                 parts

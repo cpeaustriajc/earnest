@@ -4955,10 +4955,11 @@ find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earn
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 381 | 381 | 332 samples of the repository and 49 of the crate's own, 34 of them refused |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 385 | 385 | 332 samples of the repository and 53 of the crate's own, 34 of them refused |
 | Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place |
-| 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1080 | 63 Quint accepts: all equal; 1136 Quint refuses: 1037 at Quint's line and column, 99 elsewhere; 20 more refused only by Quint's name phases |
-| 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 659 | 225 Quint accepts: 224 equal, 1 we refuse; 575 Quint refuses: 435 at Quint's place, 132 elsewhere, 8 we read |
+| 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1084 | 63 Quint accepts: all equal; 1136 Quint refuses: 1041 at Quint's line and column, 95 elsewhere; 20 more refused only by Quint's name phases |
+| 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 666 | 225 Quint accepts: all equal; 575 Quint refuses: 441 at Quint's place, 134 elsewhere, none read |
+| 1000 more from another seed, generated after the fix below, in the container only | 1000 | 871 | 307 Quint accepts: 306 equal, 1 we refuse; 693 Quint refuses: 565 at Quint's place, 126 elsewhere, 2 we read (before the fix: 865 equal, 1 refused, 13 read, 1 tree different) |
 
 The command for the two last rows and Quint's repository: `QUINT_EXAMPLES=<folder of .qnt>
 QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax every_file_of
@@ -4971,14 +4972,22 @@ What differs, with the reason:
   falls back to the one that ended the expression earliest, so its error lands where that leaves
   it. The crate does that fallback for a call's parentheses, `match`, `and {`/`or {`, an index and
   a binary `-` (at Quint's place for all the probes in the scratch runs), not in general.
-- Nested `let`s whose bodies start with `-`, `[`, `(`, `and`, `or`, `iff`, `implies` or `leadsTo`
-  (generated only, never in a real file): where several readings parse, the crate takes the value
-  that ends latest and then retries at each such token; Quint decides each by lookahead. 1
-  generated file Quint accepts is refused, and 8 Quint refuses with `QNT008` or `QNT006` (a
-  reserved word read as a name) are read.
+- Nested `let`s whose bodies start with `-`, `[`, `(`, `and`, `or`, `iff`, `implies`, `leadsTo` or
+  `match`, or whose value is a header followed by `(` (generated only, never in a real file). Quint's
+  parser decides each such point by lookahead over the rest of the input. The crate reads the value
+  greedily, then retries with each such point inside the `let` ending the value (nested `let`s
+  included), and keeps a reading only if the token after the `let` can follow an expression where it
+  stands. That is one token of Quint's lookahead, not all of it: 3 of the 1000 files of the second
+  seed still differ. The smallest Quint accepts and the crate refuses:
+  `module G{val v2=match def l=val l=true[_000]-1{_=>({x1F})}}`; the smallest Quint refuses (`QNT008`)
+  and the crate reads: `module G{val v1=val{g}={...{false},f:()}-{()}val v2=or{{()},}val v4=match(){_=>{true}}}`.
+  `tests/samples/ambiguous/` holds four that are now equal.
 - A syntax error in an imported file: Quint ignores it in phases 1 and 2 and reads on in a tree its
   parser repaired. The crate refuses the import as `unreadable`, naming the imported file's own
-  error.
+  error. This is the one place earnest is stricter than Quint on purpose (decided on #84), and it
+  stays.
+- A syntax error's message is earnest's own wording, with Quint's code, line and column (decided on
+  #84): Quint's lists the tokens its parser expected.
 
 ### What Quint's parser rewrites before it writes [read, then ran on the samples]
 
