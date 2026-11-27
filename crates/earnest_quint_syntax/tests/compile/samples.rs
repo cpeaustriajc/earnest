@@ -141,3 +141,30 @@ fn a_variable_s_type_is_its_written_type_with_aliases_inlined_under_the_ids_it_w
         "{slot}"
     );
 }
+
+#[test]
+fn a_definition_exported_by_one_module_and_used_by_another_keeps_quint_s_order_of_keys() {
+    let compiled = flattened("Main", "--init init --step step", "exported_and_used")
+        .expect("Main is flattened");
+    let found = declarations(&compiled)
+        .into_iter()
+        .find(|declaration| declaration.get("name") == Some(&Json::Text("c".to_owned())));
+    let Some(Json::Object(fields)) = found else {
+        panic!("no c in {:?}", names(&compiled));
+    };
+    let keys: Vec<&str> = fields.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys,
+        [
+            "id",
+            "kind",
+            "name",
+            "qualifier",
+            "expr",
+            "depth",
+            "importedFrom",
+            "hidden",
+            "namespaces"
+        ]
+    );
+}

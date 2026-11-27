@@ -253,6 +253,10 @@ compile --target json --main Setup --init init --step step crates/earnest_quint_
 compile --target json --main Base --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile --target json --main Lib --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
+compile --target json --main Lib --init init --step step crates/earnest_quint_syntax/tests/samples/compile/exported_and_used.qnt
+compile --target json --main Mid --init init --step step crates/earnest_quint_syntax/tests/samples/compile/exported_and_used.qnt
+compile --target json --main Other --init init --step step crates/earnest_quint_syntax/tests/samples/compile/exported_and_used.qnt
+compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/exported_and_used.qnt
 compile --target json --main Spec --init init --step step crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
 compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
 compile --target json --main Lamp --init init --step step --invariant small crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
