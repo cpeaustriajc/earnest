@@ -1,1 +1,1 @@
-{"pool":[],"checks":[{"args":"compile --target json --main lib --init init --step step tasks/quint/imports/lib.qnt","error":"error: [QNT404] Name 'init' not found"}]}
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tlib\t--init\tinit\t--step\tstep\ttasks/quint/imports/lib.qnt","error":"error: [QNT404] Name 'init' not found"}]}

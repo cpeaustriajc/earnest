@@ -19,7 +19,7 @@ pub(crate) struct Check {
 }
 
 pub(crate) fn check_of(name: &str, line: &str) -> Result<Check, String> {
-    let words: Vec<&str> = line.split_whitespace().collect();
+    let words: Vec<&str> = line.split('\t').collect();
     let flag = |wanted: &str| {
         words
             .iter()

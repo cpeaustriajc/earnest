@@ -4,7 +4,8 @@ use earnest_quint_syntax::{Compiled, Json, Problem};
 const SAMPLES: &str = "crates/earnest_quint_syntax/tests/samples/compile";
 
 fn flattened(main: &str, flags: &str, file: &str) -> Result<Compiled, Problem> {
-    let line = format!("compile --target json --main {main} {flags} {SAMPLES}/{file}.qnt");
+    let line = format!("compile --target json --main {main} {flags} {SAMPLES}/{file}.qnt")
+        .replace(' ', "\t");
     let check = check_of(&line, &line).expect("the check is written");
     compiled(&check, &root()).expect("the sample is read")
 }

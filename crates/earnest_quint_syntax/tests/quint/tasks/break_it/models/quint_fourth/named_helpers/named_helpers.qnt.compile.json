@@ -1,1 +1,1 @@
-{"pool":[],"checks":[{"args":"compile --target json --main small --init init --step step --invariant inRange tasks/break_it/models/quint_fourth/named_helpers/named_helpers.qnt","error":"Error: Internal error while flattening [QNT404] Name 'small::spec::H::up' not found"}]}
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tsmall\t--init\tinit\t--step\tstep\t--invariant\tinRange\ttasks/break_it/models/quint_fourth/named_helpers/named_helpers.qnt","error":"Error: Internal error while flattening [QNT404] Name 'small::spec::H::up' not found"}]}

@@ -1,272 +1,272 @@
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant A::bOk tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant A::Base::bOk tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::A::bOk tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant A::bTwo tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant A::Base::bTwo tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::A::bTwo tasks/quint/shapes/as.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/bare.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/bare.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/bare.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/bare.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bOk tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bOk tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bOk tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bTwo tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bTwo tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bTwo tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant midOwn tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::midOwn tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::midOwn tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::midOwn tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::midOwn tasks/quint/shapes/export.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::M::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Base::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Mid::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::M::bOk tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::M::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Base::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Mid::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::M::bTwo tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::M::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Base::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant M::Mid::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::M::midOwn tasks/quint/shapes/exportas.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bOk tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bOk tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bOk tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bTwo tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bTwo tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bTwo tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant midOwn tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::midOwn tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::midOwn tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::midOwn tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::midOwn tasks/quint/shapes/exportone.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Top::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Top::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Base::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Mid::bOk tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Top::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Top::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Base::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Mid::bTwo tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Top::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Top::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Base::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Mid::midOwn tasks/quint/shapes/exporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant farOk tasks/quint/shapes/from.qnt
-compile --target json --main U --init uInit --step uStep --invariant Far::farOk tasks/quint/shapes/from.qnt
-compile --target json --main U --init uInit --step uStep --invariant farOk tasks/quint/shapes/fromas.qnt
-compile --target json --main U --init uInit --step uStep --invariant F::farOk tasks/quint/shapes/fromas.qnt
-compile --target json --main U --init uInit --step uStep --invariant F::Far::farOk tasks/quint/shapes/fromas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Far::farOk tasks/quint/shapes/fromas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Far::F::farOk tasks/quint/shapes/fromas.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bOk tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bOk tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bOk tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::bTwo tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::bTwo tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::bTwo tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant midOwn tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::midOwn tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::Mid::midOwn tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::midOwn tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Base::midOwn tasks/quint/shapes/hidden.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instance.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instanceas.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::pOk tasks/quint/shapes/instanceas.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Param::pOk tasks/quint/shapes/instanceas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instanceas.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::P::pOk tasks/quint/shapes/instanceas.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Mid::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Param::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::B::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Param::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::B::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Mid::pOk tasks/quint/shapes/instanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Mid::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Param::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Top::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::B::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Param::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Top::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::B::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Mid::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Top::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::B::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Mid::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant Top::Param::pOk tasks/quint/shapes/instanceexporttwice.qnt
-compile --target json --main U --init uInit --step uStep --invariant mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::P::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Param::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Q::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Mid::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Param::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Q::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Mid::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::P::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Q::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::Mid::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::P::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::Param::mOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::P::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Param::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Q::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Mid::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Param::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant P::Q::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Mid::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::P::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Q::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::Mid::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::P::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant Q::Param::pOk tasks/quint/shapes/instanceofinstance.qnt
-compile --target json --main U --init uInit --step uStep --invariant pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Mid::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant B::Param::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::B::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Mid::Param::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::B::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant Param::Mid::pOk tasks/quint/shapes/instanceofinstanceexport.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/one.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/one.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/one.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/one.qnt
-compile --target json --main U --init uInit --step uStep --invariant bOk tasks/quint/shapes/star.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bOk tasks/quint/shapes/star.qnt
-compile --target json --main U --init uInit --step uStep --invariant bTwo tasks/quint/shapes/star.qnt
-compile --target json --main U --init uInit --step uStep --invariant Base::bTwo tasks/quint/shapes/star.qnt
-compile --target json --main SpecAs --init init --step step tasks/quint/imports/as.qnt
-compile --target json --main As --init init --step step tasks/quint/imports/as.qnt
-compile --target json --main Direct --init init --step step tasks/quint/imports/assume.qnt
-compile --target json --main Spec --init init --step step tasks/quint/imports/assume.qnt
-compile --target json --main Bad --init init --step step tasks/quint/imports/assume.qnt
-compile --target json --main Good --init init --step step tasks/quint/imports/assume.qnt
-compile --target json --main Big --init init --step step tasks/quint/imports/big.qnt
-compile --target json --main Lib --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main Counter --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main OneName --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main WithState --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main Single --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main Stateful --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main Twice --init init --step step tasks/quint/imports/compiled.qnt
-compile --target json --main doors --init init --step step tasks/quint/imports/doors.qnt
-compile --target json --main lib --init init --step step tasks/quint/imports/lib.qnt
-compile --target json --main Printing --init init --step step tasks/quint/imports/printing.qnt
-compile --target json --main fault --init init --step step tasks/quint/imports/printing.qnt
-compile --target json --main two --init init --step step tasks/quint/imports/setups.qnt
-compile --target json --main three --init init --step step tasks/quint/imports/setups.qnt
-compile --target json --main named --init init --step step tasks/quint/imports/setups.qnt
-compile --target json --main scenarios --init init --step step tasks/quint/imports/setups.qnt
-compile --target json --main Spec --init init --step step tasks/quint/imports/short.qnt
-compile --target json --main Few --init init --step step tasks/quint/imports/short.qnt
-compile --target json --main Lib --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main Helpers --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main Kinds --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main SpecStar --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main Star --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main SpecOther --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main Both --init init --step step tasks/quint/imports/star.qnt
-compile --target json --main types --init init --step step tasks/quint/imports/types.qnt
-compile --target json --main Lamp --init init --step step crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Dim --init init --step step crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Param --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
-compile --target json --main Mid --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
-compile --target json --main Through --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
-compile --target json --main Helpers --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
-compile --target json --main Spec --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
-compile --target json --main Setup --init init --step step crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
-compile --target json --main Base --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
-compile --target json --main Lib --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
-compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
-compile --target json --main Spec --init init --step step crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
-compile --target json --main Main --init init --step step crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
-compile --target json --main Lamp --init init --step step --invariant small crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step step --invariant small,known crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step flip --invariant n<5 crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step step --invariant true crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step step --temporal flips crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step step --invariant small --temporal flips,counts crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step n crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Lamp --init init --step missing crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Dim --init start --step go --invariant dimOk,L::small crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Dim --init L::init --step L::step --temporal L::flips crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
-compile --target json --main Main --init init --step step --invariant ok crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
-compile --target json --main Spec --init init --step step --invariant named,called,viaParam,valued,literal crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
-compile --target json --main Main --init init --step step --invariant named,called,viaParam,valued,literal crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
-compile --target json --main Through --init init --step step --invariant pOk crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
-compile --target json --main Setup --init init --step step --invariant sOk crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	A::bOk	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	A::Base::bOk	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::A::bOk	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	A::bTwo	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	A::Base::bTwo	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::A::bTwo	tasks/quint/shapes/as.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/bare.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/bare.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/bare.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/bare.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bOk	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bOk	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bOk	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bTwo	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bTwo	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bTwo	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	midOwn	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::midOwn	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::midOwn	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::midOwn	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::midOwn	tasks/quint/shapes/export.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::M::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Base::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Mid::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::M::bOk	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::M::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Base::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Mid::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::M::bTwo	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::M::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Base::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	M::Mid::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::M::midOwn	tasks/quint/shapes/exportas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bOk	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bOk	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bOk	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bTwo	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bTwo	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bTwo	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	midOwn	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::midOwn	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::midOwn	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::midOwn	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::midOwn	tasks/quint/shapes/exportone.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Top::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Top::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Base::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Mid::bOk	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Top::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Top::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Base::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Mid::bTwo	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Top::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Top::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Base::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Mid::midOwn	tasks/quint/shapes/exporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	farOk	tasks/quint/shapes/from.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Far::farOk	tasks/quint/shapes/from.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	farOk	tasks/quint/shapes/fromas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	F::farOk	tasks/quint/shapes/fromas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	F::Far::farOk	tasks/quint/shapes/fromas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Far::farOk	tasks/quint/shapes/fromas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Far::F::farOk	tasks/quint/shapes/fromas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bOk	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bOk	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bOk	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::bTwo	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::bTwo	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::bTwo	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	midOwn	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::midOwn	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::Mid::midOwn	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::midOwn	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Base::midOwn	tasks/quint/shapes/hidden.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instanceas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::pOk	tasks/quint/shapes/instanceas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Param::pOk	tasks/quint/shapes/instanceas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instanceas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::P::pOk	tasks/quint/shapes/instanceas.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Mid::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Param::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::B::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Param::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::B::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Mid::pOk	tasks/quint/shapes/instanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Mid::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Param::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Top::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::B::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Param::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Top::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::B::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Mid::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Top::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::B::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Mid::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Top::Param::pOk	tasks/quint/shapes/instanceexporttwice.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::P::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Param::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Q::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Mid::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Param::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Q::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Mid::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::P::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Q::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::Mid::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::P::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::Param::mOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::P::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Param::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Q::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Mid::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Param::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	P::Q::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Mid::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::P::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Q::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::Mid::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::P::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Q::Param::pOk	tasks/quint/shapes/instanceofinstance.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Mid::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	B::Param::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::B::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Mid::Param::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::B::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Param::Mid::pOk	tasks/quint/shapes/instanceofinstanceexport.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/one.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/one.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/one.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/one.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bOk	tasks/quint/shapes/star.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bOk	tasks/quint/shapes/star.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	bTwo	tasks/quint/shapes/star.qnt
+compile	--target	json	--main	U	--init	uInit	--step	uStep	--invariant	Base::bTwo	tasks/quint/shapes/star.qnt
+compile	--target	json	--main	SpecAs	--init	init	--step	step	tasks/quint/imports/as.qnt
+compile	--target	json	--main	As	--init	init	--step	step	tasks/quint/imports/as.qnt
+compile	--target	json	--main	Direct	--init	init	--step	step	tasks/quint/imports/assume.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	tasks/quint/imports/assume.qnt
+compile	--target	json	--main	Bad	--init	init	--step	step	tasks/quint/imports/assume.qnt
+compile	--target	json	--main	Good	--init	init	--step	step	tasks/quint/imports/assume.qnt
+compile	--target	json	--main	Big	--init	init	--step	step	tasks/quint/imports/big.qnt
+compile	--target	json	--main	Lib	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	Counter	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	OneName	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	WithState	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	Single	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	Stateful	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	Twice	--init	init	--step	step	tasks/quint/imports/compiled.qnt
+compile	--target	json	--main	doors	--init	init	--step	step	tasks/quint/imports/doors.qnt
+compile	--target	json	--main	lib	--init	init	--step	step	tasks/quint/imports/lib.qnt
+compile	--target	json	--main	Printing	--init	init	--step	step	tasks/quint/imports/printing.qnt
+compile	--target	json	--main	fault	--init	init	--step	step	tasks/quint/imports/printing.qnt
+compile	--target	json	--main	two	--init	init	--step	step	tasks/quint/imports/setups.qnt
+compile	--target	json	--main	three	--init	init	--step	step	tasks/quint/imports/setups.qnt
+compile	--target	json	--main	named	--init	init	--step	step	tasks/quint/imports/setups.qnt
+compile	--target	json	--main	scenarios	--init	init	--step	step	tasks/quint/imports/setups.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	tasks/quint/imports/short.qnt
+compile	--target	json	--main	Few	--init	init	--step	step	tasks/quint/imports/short.qnt
+compile	--target	json	--main	Lib	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	Helpers	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	Kinds	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	SpecStar	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	Star	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	SpecOther	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	Both	--init	init	--step	step	tasks/quint/imports/star.qnt
+compile	--target	json	--main	types	--init	init	--step	step	tasks/quint/imports/types.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Dim	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Param	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile	--target	json	--main	Mid	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile	--target	json	--main	Through	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile	--target	json	--main	Helpers	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile	--target	json	--main	Setup	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
+compile	--target	json	--main	Base	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
+compile	--target	json	--main	Lib	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
+compile	--target	json	--main	Main	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	Main	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	small	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	small,known	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	flip	--invariant	n<5	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	true	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	--temporal	flips	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	small	--temporal	flips,counts	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	n	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Lamp	--init	init	--step	missing	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Dim	--init	start	--step	go	--invariant	dimOk,L::small	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Dim	--init	L::init	--step	L::step	--temporal	L::flips	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Main	--init	init	--step	step	--invariant	ok	crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	--invariant	named,called,viaParam,valued,literal	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	Main	--init	init	--step	step	--invariant	named,called,viaParam,valued,literal	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	Through	--init	init	--step	step	--invariant	pOk	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
+compile	--target	json	--main	Setup	--init	init	--step	step	--invariant	sOk	crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt

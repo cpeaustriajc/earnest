@@ -1,1 +1,1 @@
-{"pool":[],"checks":[{"args":"compile --target json --main tally --init init --step step tasks/quint/samples/tally.qnt","error":"error: [QNT404] Name 'init' not found"}]}
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\ttally\t--init\tinit\t--step\tstep\ttasks/quint/samples/tally.qnt","error":"error: [QNT404] Name 'init' not found"}]}

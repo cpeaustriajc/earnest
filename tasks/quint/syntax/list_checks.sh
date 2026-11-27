@@ -9,7 +9,7 @@ scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 cat > "$scratch/quint" <<WRAPPER
 #!/usr/bin/env bash
-if [ "\$1" = compile ]; then printf '%s\n' "\$*" >> "$scratch/compiled.txt"; fi
+if [ "\$1" = compile ]; then (IFS=\$'\\t'; printf '%s\n' "\$*") >> "$scratch/compiled.txt"; fi
 if [ "\$1" = typecheck ]; then echo "no typecheck: every check is compiled" >&2; exit 1; fi
 exec "$quint" "\$@"
 WRAPPER

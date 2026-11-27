@@ -20,4 +20,4 @@ for directory, _, files in sorted(os.walk(folder)):
             if re.search(r"\baction\s+init\b", body) and re.search(r"\baction\s+step\b", body):
                 relative = os.path.relpath(path, folder)
                 lines.append(f"compile --target json --main {module} --init init --step step {relative}")
-print("\n".join(lines))
+print("\n".join("\t".join(line.split(" ")) for line in lines))

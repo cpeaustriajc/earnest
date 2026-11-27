@@ -69,7 +69,7 @@ def main():
         args = open(stem + ".args").read().strip()
         stdout = open(stem + ".out").read()
         stderr = open(stem + ".err").read()
-        by_file[args.split()[-1]].append((args, stdout, stderr))
+        by_file[args.split("\t")[-1]].append((args, stdout, stderr))
     for file, checks in sorted(by_file.items()):
         pool, index, written = [], {}, []
         for args, stdout, stderr in checks:

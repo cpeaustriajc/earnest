@@ -49,4 +49,4 @@ lines += [
     f"{COMPILE} --main Through --init init --step step --invariant pOk {samples.format('crash_export')}",
     f"{COMPILE} --main Setup --init init --step step --invariant sOk {samples.format('crash_import_as')}",
 ]
-print("\n".join(lines))
+print("\n".join("\t".join(line.split(" ")) for line in lines))

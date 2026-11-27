@@ -5296,7 +5296,7 @@ drop runs; only `--target tlaplus` does.
 - `tasks/quint/syntax/list_checks.sh <earnest> tasks` lists every check earnest compiles: it
   runs `earnest verify` with a `quint` that refuses `typecheck`, so every check is compiled,
   and records the arguments. They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
-  (249). `extra_checks.py` adds every candidate name of the 17 shapes (as
+  (249), one check a line with its arguments between tabs, since earnest gives an invariant such as `pair == pair` as one argument. `extra_checks.py` adds every candidate name of the 17 shapes (as
   `tasks/quint/shapes/record.py` tries them), every module of `tasks/quint/imports/` and of the
   crate's samples (`tests/samples/compile/`), and 15 checks of what a check adds: 272 in
   `extra_checks.txt`.

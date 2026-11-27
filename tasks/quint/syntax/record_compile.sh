@@ -16,7 +16,7 @@ done < <(cat "$@")
 cd "${RECORD_FROM:-$root}"
 export quint scratch
 seq 1 "$count" | xargs -P 4 -I {} bash -c '
-  read -r -a words < "$scratch/{}.args"
+  IFS=$'\''\t'\'' read -r -a words < "$scratch/{}.args"
   "$quint" "${words[@]}" > "$scratch/{}.out" 2> "$scratch/{}.err" || true
 '
 python3 -I "$here/condense_compile.py" "$root" "$out" "$scratch"
