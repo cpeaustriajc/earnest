@@ -165,12 +165,27 @@ pub(crate) fn unify(
     crate::inference::substitution::deeper(Ok(Vec::new()), || unified(context, first, second))
 }
 
+enum Step {
+    Done(Result<Substitutions, ErrorTree>),
+    Next(Value, Value),
+}
+
 fn unified(context: &Context, first: &Value, second: &Value) -> Result<Substitutions, ErrorTree> {
+    let mut step = unified_once(context, first, second);
+    loop {
+        match step {
+            Step::Done(result) => return result,
+            Step::Next(first, second) => step = unified_once(context, &first, &second),
+        }
+    }
+}
+
+fn unified_once(context: &Context, first: &Value, second: &Value) -> Step {
     let first_text = type_text(first);
     let second_text = type_text(second);
     let location = format!("Trying to unify {first_text} and {second_text}");
     let (first_kind, second_kind) = (first.kind(), second.kind());
-    if first_text == second_text {
+    let result = if first_text == second_text {
         Ok(Vec::new())
     } else if first_kind == "var" {
         bind_type(first.str("name"), second).map_err(|message| leaf(&location, &message))
@@ -179,14 +194,14 @@ fn unified(context: &Context, first: &Value, second: &Value) -> Result<Substitut
     } else if first_kind == "oper" && second_kind == "oper" {
         let (first_args, second_args) = (first.items("args"), second.items("args"));
         if first_args.len() != second_args.len() {
-            return Err(leaf(
+            return Step::Done(Err(leaf(
                 &location,
                 &format!(
                     "Expected {} arguments, got {}",
                     first_args.len(),
                     second_args.len()
                 ),
-            ));
+            )));
         }
         let mut firsts = first_args.to_vec();
         firsts.push(first.get("res").clone());
@@ -198,20 +213,27 @@ fn unified(context: &Context, first: &Value, second: &Value) -> Result<Substitut
     {
         unify(context, first.get("elem"), second.get("elem"))
     } else if first_kind == "fun" && second_kind == "fun" {
-        let arguments = unify(context, first.get("arg"), second.get("arg"))?;
-        let results = unify(
-            context,
-            &apply(&arguments, first.get("res")),
-            &apply(&arguments, second.get("res")),
-        )?;
-        Ok(compose(context, &arguments, &results))
+        unify(context, first.get("arg"), second.get("arg")).and_then(|arguments| {
+            unify(
+                context,
+                &apply(&arguments, first.get("res")),
+                &apply(&arguments, second.get("res")),
+            )
+            .map(|results| compose(context, &arguments, &results))
+        })
     } else if first_kind == "tup" && second_kind == "tup" {
         unify_rows(context, first.get("fields"), second.get("fields"))
             .map_err(|error| tree(&location, Failure::Tree(error)))
     } else if first_kind == "const" {
-        unify_with_alias(context, first, second)
+        return match aliased(context, first, second) {
+            Ok(defined) => Step::Next(defined, second.clone()),
+            Err(error) => Step::Done(Err(error)),
+        };
     } else if second_kind == "const" {
-        unify_with_alias(context, second, first)
+        return match aliased(context, second, first) {
+            Ok(defined) => Step::Next(defined, first.clone()),
+            Err(error) => Step::Done(Err(error)),
+        };
     } else if (first_kind == "rec" && second_kind == "rec")
         || (first_kind == "sum" && second_kind == "sum")
     {
@@ -222,7 +244,8 @@ fn unified(context: &Context, first: &Value, second: &Value) -> Result<Substitut
             &location,
             &format!("Couldn't unify {first_kind} and {second_kind}"),
         ))
-    }
+    };
+    Step::Done(result)
 }
 
 pub(crate) fn unify_rows(
@@ -346,11 +369,7 @@ fn unify_disjoint(
     ))
 }
 
-fn unify_with_alias(
-    context: &Context,
-    alias: &Value,
-    other: &Value,
-) -> Result<Substitutions, ErrorTree> {
+fn aliased(context: &Context, alias: &Value, other: &Value) -> Result<Value, ErrorTree> {
     let name = alias.str("name");
     let location = format!("Trying to unify {name} and {}", type_text(other));
     let value = alias.id().and_then(|id| context.table.get(id));
@@ -364,7 +383,7 @@ fn unify_with_alias(
             &format!("Couldn't unify uninterpreted type {name} with different type"),
         ));
     }
-    unify(context, defined, other)
+    Ok(defined.clone())
 }
 
 fn bind_type(name: &str, written: &Value) -> Result<Substitutions, String> {

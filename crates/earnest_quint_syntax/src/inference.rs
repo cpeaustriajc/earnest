@@ -93,7 +93,7 @@ fn scheme_of(written: &Json) -> Scheme {
 fn crash_on_bounds(context: &Context, results: &TypeResults) {
     if substitution::too_deep_to_unify() {
         context.crash(format!(
-            "Maximum call stack size exceeded: these types unify through aliases or nested types more than {} deep, deeper than earnest reads",
+            "Maximum call stack size exceeded: these types are nested more than {} deep, deeper than earnest reads",
             substitution::UNIFY_LIMIT
         ));
     }
