@@ -57,6 +57,7 @@ fn plan(steps: Vec<Stage>) -> Plan {
         starts: None,
         steps,
         must_not_finish: false,
+        falls: earnest_ir::Falls::Breaks,
     }
 }
 
