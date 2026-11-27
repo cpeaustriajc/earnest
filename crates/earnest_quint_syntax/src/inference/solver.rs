@@ -64,6 +64,7 @@ impl Context {
         if crashed.is_none() {
             *crashed = Some(message);
         }
+        crate::inference::substitution::stop();
     }
 
     pub(crate) fn crashed(&self) -> Option<String> {
@@ -158,6 +159,9 @@ pub(crate) fn unify(
     first: &Value,
     second: &Value,
 ) -> Result<Substitutions, ErrorTree> {
+    if crate::inference::substitution::stopped() {
+        return Ok(Vec::new());
+    }
     let first_text = type_text(first);
     let second_text = type_text(second);
     let location = format!("Trying to unify {first_text} and {second_text}");
@@ -257,7 +261,7 @@ pub(crate) fn unify_rows(
         return unify_disjoint(context, &first, &second, &location);
     }
     let unique = |fields: &[Value]| {
-        Value::List(
+        Value::list(
             fields
                 .iter()
                 .filter(|field| !shared.contains(&field.str("fieldName")))

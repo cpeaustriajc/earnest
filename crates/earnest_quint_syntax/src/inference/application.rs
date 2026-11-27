@@ -69,10 +69,10 @@ impl Resolver {
                         let value = items
                             .get(1)
                             .map_or(Value::Undefined, |value| self.expression(context, value));
-                        Value::List(vec![name, value])
+                        Value::list(vec![name, value])
                     })
                     .collect();
-                copy.set("overrides", Value::List(overrides));
+                copy.set("overrides", Value::list(overrides));
                 copy
             }
             "import" | "export" => declaration.clone(),
@@ -108,7 +108,7 @@ impl Resolver {
                     .iter()
                     .map(|argument| self.expression(context, argument))
                     .collect();
-                copy.set("args", Value::List(arguments));
+                copy.set("args", Value::list(arguments));
             }
             "lambda" => {
                 let params = expression
@@ -124,7 +124,7 @@ impl Resolver {
                         }
                     })
                     .collect();
-                copy.set("params", Value::List(params));
+                copy.set("params", Value::list(params));
                 copy.set("expr", self.expression(context, expression.get("expr")));
             }
             "let" => {
@@ -173,7 +173,7 @@ impl Resolver {
     }
 
     fn walk_types(&mut self, context: &Context, types: &[Value], hook: Hook) -> Value {
-        Value::List(
+        Value::list(
             types
                 .iter()
                 .map(|inner| self.walk_type(context, inner, hook))
@@ -192,7 +192,7 @@ impl Resolver {
                     field.spread(vec![("fieldType", resolved)])
                 })
                 .collect();
-            copy.set("fields", Value::List(fields));
+            copy.set("fields", Value::list(fields));
             copy.set("other", self.walk_row(context, row.get("other"), hook));
         }
         copy
@@ -311,7 +311,7 @@ fn rename(written: &Value, renamed: &[(String, String)]) -> Value {
         "oper" => {
             copy.set(
                 "args",
-                Value::List(
+                Value::list(
                     written
                         .items("args")
                         .iter()
@@ -324,7 +324,7 @@ fn rename(written: &Value, renamed: &[(String, String)]) -> Value {
         "tup" | "rec" | "sum" => copy.set("fields", rename_row(written.get("fields"), renamed)),
         "app" => copy.set(
             "args",
-            Value::List(
+            Value::list(
                 written
                     .items("args")
                     .iter()
@@ -344,7 +344,7 @@ fn rename_row(row: &Value, renamed: &[(String, String)]) -> Value {
         "row" => {
             copy.set(
                 "fields",
-                Value::List(
+                Value::list(
                     row.items("fields")
                         .iter()
                         .map(|field| {
