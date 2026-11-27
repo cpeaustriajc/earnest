@@ -40,7 +40,7 @@ pub(crate) struct Recording {
     pub(crate) output: Vec<(String, usize, String)>,
 }
 
-fn fnv(written: &str) -> String {
+pub(crate) fn fnv(written: &str) -> String {
     let mut value: u64 = 0xCBF2_9CE4_8422_2325;
     for byte in written.bytes() {
         value = (value ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3);
@@ -126,6 +126,7 @@ fn place(error: &Json) -> Option<(usize, usize)> {
     Some((number("line") + 1, number("col") + 1))
 }
 
+#[derive(Debug)]
 pub(crate) enum Outcome {
     Equal,
     RefusedAlike,
@@ -688,15 +689,14 @@ fn an_added_definition_s_mode_error_is_dropped_as_quint_compile_drops_it() {
         ("qualifier", Json::Text("val".to_owned())),
         ("expr", assignment),
     ]);
-    let Json::Object(mut entries) = table else {
+    let mut table = table;
+    let Json::Object(entries) = &mut table else {
         panic!("the table is an object");
     };
     entries.push(("90000".to_owned(), variable.clone()));
     entries.push(("90003".to_owned(), definition.clone()));
     assert!(
-        parsed
-            .analyze_added(&Json::Object(entries), &[definition])
-            .is_ok(),
+        parsed.analyze_added(&table, &[definition]).is_ok(),
         "quint compile --invariant \"x' = 1\" is not refused"
     );
 }

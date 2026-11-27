@@ -660,20 +660,10 @@ fn a_def_with_no_parameters_labels_the_chart_whether_its_check_is_built_from_the
     let quint = Quint::new();
     let marked = quint.earnest(&["verify", "defs", "--no-cache"]);
     marked.exits(0);
-    let compiled: Vec<String> = quint
-        .calls()
-        .into_iter()
-        .filter(|call| call.starts_with("compile"))
-        .collect();
-    assert_eq!(
-        compiled.len(),
-        1,
-        "only `plain` is compiled; `Small`, whose spec's label is a `def`, is built from the \
-         typecheck: {compiled:?}"
-    );
     assert!(
-        compiled.iter().all(|call| call.contains("--main plain")),
-        "{compiled:?}"
+        quint.calls().is_empty(),
+        "no `quint` is started: {:?}",
+        quint.calls()
     );
     let bare = quint.earnest(&["verify", "defs_bare", "--no-cache"]);
     bare.exits(0);
@@ -713,79 +703,11 @@ fn a_label_leaves_a_setup_built_from_the_typecheck_and_its_imported_runs_played(
         result_line(&run, "Named"),
         ["pass", "Named", "3 states", "2 rules, 1 run"]
     );
-    let compiled: Vec<String> = quint
-        .calls()
-        .into_iter()
-        .filter(|call| call.starts_with("compile"))
-        .collect();
     assert!(
-        compiled.is_empty(),
-        "both setups, with their labels, are built from the typecheck: {compiled:?}"
-    );
-}
-
-#[test]
-fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_not_judged() {
-    let quint = Quint::new();
-    let fixture = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
-    let text = quint.sandbox.read(fixture);
-    let last = r#"{"id":255,"kind":"app","opcode":"eq","args":[{"id":253,"kind":"name","name":"retried"},{"id":254,"kind":"name","name":"retried"}]}"#;
-    assert!(
-        text.contains(last),
-        "the fixture ends its invariants with the group label"
-    );
-    quint.sandbox.write(
-        fixture,
-        &text.replace(last, r#"{"id":253,"kind":"name","name":"retried"}"#),
-    );
-    let run = quint.earnest(&["verify", "labels", "--json"]);
-    run.exits(1);
-    let report = run.json();
-    assert!(
-        crate::support::find_model(&report, "shop").is_none(),
-        "no check is judged with a label taken for an invariant: {report}"
-    );
-    let said = problem_at(&problems(&report), 74);
-    assert!(
-        said.starts_with(
-            "`seen` the module compiled for the check `shop` does not end its invariants with \
-             the chart label `seen` and `retried`"
-        ),
-        "{said}"
-    );
-}
-
-#[test]
-fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
-    let quint = Quint::new();
-    let labelled = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
-    fs::remove_file(quint.sandbox.path().join(labelled)).expect("the fixture is there");
-    let plain = quint
-        .sandbox
-        .read("fake/fixtures/compiled/bare/shop@shownWasAccepted,acceptedWasPlaced@.json");
-    quint.sandbox.write(
-        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced@.json",
-        &plain,
-    );
-    let run = quint.earnest(&["verify", "labels", "--json"]);
-    run.exits(1);
-    let report = run.json();
-    assert!(
-        crate::support::find_model(&report, "shop").is_none(),
-        "{report}"
-    );
-    let said = problem_at(&problems(&report), 74);
-    assert!(
-        said.starts_with(
-            "`seen` `quint compile --main shop` fails when it is asked to keep the chart label \
-             `seen` and `retried`, written `name == name` after the invariants, and compiles the \
-             check without it"
-        ),
-        "{said}"
-    );
-    assert!(
-        said.contains("Quint said: no fixture for labels/shop@"),
-        "{said}"
+        quint.calls().is_empty(),
+        "both setups, with their labels, are built from the typecheck, and so play the spec's \
+         run, with no `quint` started: {:?}",
+        quint.calls()
     );
 }
 
@@ -797,6 +719,13 @@ fn a_label_of_the_checks_own_module_wins_over_the_labels_it_imports() {
     let report = run.json();
     for name in ["Inherits", "Overrides", "Chooses", "Once"] {
         assert_eq!(model(&report, name)["status"], "pass", "{name}: {report}");
+    }
+    for name in ["Inherits", "Overrides"] {
+        let found = model(&report, name);
+        assert!(
+            found.get("runsNotPlayed").is_none() && rule(found, "tickTest")["kind"] == "witness",
+            "{name} is built from the typecheck, so it plays the spec's `tickTest`: {report}"
+        );
     }
     let chart = |name: &str| {
         let run = quint.earnest(&["chart", "override", "--model", name]);
@@ -851,15 +780,10 @@ fn a_label_of_the_checks_own_module_wins_over_the_labels_it_imports() {
         "`second` the check `TwoOwn` sees two definitions marked `@view state`, `first` and \
          `second`, and a chart takes one: keep the mark on one of them"
     );
-    let compiled: Vec<String> = quint
-        .calls()
-        .into_iter()
-        .filter(|call| call.starts_with("compile"))
-        .filter(|call| !call.contains("--main Once"))
-        .collect();
     assert!(
-        compiled.is_empty(),
-        "the setups are built from the typecheck: {compiled:?}"
+        quint.calls().is_empty(),
+        "no `quint` is started: {:?}",
+        quint.calls()
     );
 }
 

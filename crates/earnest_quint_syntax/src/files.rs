@@ -30,6 +30,10 @@ impl Parsed {
     /// definition it names, with `depth`, and `importedFrom`, `hidden`, `namespaces` and
     /// `shadowing` where Quint sets them. Keys are the ids as text, in numeric order.
     pub fn table(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.table_here())
+    }
+
+    fn table_here(&self) -> Json {
         Json::Object(
             self.table
                 .iter()
@@ -40,6 +44,10 @@ impl Parsed {
 
     /// The whole of what `quint parse --out` writes for a file it accepts.
     pub fn output(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.output_here())
+    }
+
+    fn output_here(&self) -> Json {
         Json::object(vec![
             ("stage", Json::text("parsing")),
             ("warnings", Json::List(Vec::new())),
@@ -102,7 +110,12 @@ struct Pending {
 /// the module itself (`QNT407`) or of an unknown module (`QNT405`). A syntax error in an
 /// imported file is refused too, under the code `unreadable`: Quint ignores it there and reads
 /// on in a tree its parser repaired, which is not reproduced.
-pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<Parsed, Problem> {
+pub fn read(path: &str, load: impl FnMut(&str) -> Option<String>) -> Result<Parsed, Problem> {
+    let path = path.to_owned();
+    crate::stack::reading_on_large_stack(load, move |load| read_here(&path, load))?
+}
+
+fn read_here(path: &str, load: &mut dyn FnMut(&str) -> Option<String>) -> Result<Parsed, Problem> {
     let mut ids = Ids::default();
     let text = load(path).ok_or_else(|| Problem {
         code: "unreadable".to_owned(),
@@ -182,6 +195,7 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
         }
     }
     let mut modules = sorted(by_file.into_iter().flatten().collect(), &ids)?;
+    shallow_enough(&ids, &modules)?;
     let mut resolution = resolve(&mut modules);
     sort(&mut modules, &resolution.table, &mut resolution.errors);
     if let Some(first) = resolution.errors.first() {
@@ -192,6 +206,20 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
         table: resolution.table,
         inserted: resolution.inserted,
         ids,
+    })
+}
+
+fn shallow_enough(ids: &Ids, modules: &[Json]) -> Result<(), Problem> {
+    crate::depth::too_deep(modules).map_or(Ok(()), |deep| {
+        Err(placed(
+            ids,
+            deep,
+            "unreadable",
+            format!(
+                "expressions or types here are nested more than {} deep in Quint's tree, deeper than earnest reads",
+                crate::depth::TREE_DEPTH
+            ),
+        ))
     })
 }
 

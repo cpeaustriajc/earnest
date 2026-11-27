@@ -73,36 +73,75 @@ impl Json {
     }
 }
 
-impl fmt::Display for Json {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Null => formatter.write_str("null"),
-            Self::Bool(value) => write!(formatter, "{value}"),
-            Self::Number(digits) => formatter.write_str(digits),
-            Self::Text(value) => quoted(value, formatter),
-            Self::List(values) => {
-                formatter.write_char('[')?;
-                for (index, value) in values.iter().enumerate() {
-                    if index > 0 {
-                        formatter.write_char(',')?;
-                    }
-                    write!(formatter, "{value}")?;
+impl Drop for Json {
+    fn drop(&mut self) {
+        let mut pending: Vec<Json> = match self {
+            Self::List(items) => std::mem::take(items),
+            Self::Object(fields) => std::mem::take(fields)
+                .into_iter()
+                .map(|(_, value)| value)
+                .collect(),
+            _ => return,
+        };
+        while let Some(mut value) = pending.pop() {
+            match &mut value {
+                Self::List(items) => pending.append(items),
+                Self::Object(fields) => {
+                    pending.extend(std::mem::take(fields).into_iter().map(|(_, inner)| inner));
                 }
-                formatter.write_char(']')
-            }
-            Self::Object(fields) => {
-                formatter.write_char('{')?;
-                for (index, (key, value)) in fields.iter().enumerate() {
-                    if index > 0 {
-                        formatter.write_char(',')?;
-                    }
-                    quoted(key, formatter)?;
-                    write!(formatter, ":{value}")?;
-                }
-                formatter.write_char('}')
+                _ => {}
             }
         }
     }
+}
+
+impl fmt::Display for Json {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut pending = vec![Step::Value(self)];
+        while let Some(step) = pending.pop() {
+            match step {
+                Step::Mark(mark) => formatter.write_char(mark)?,
+                Step::Key(key) => {
+                    quoted(key, formatter)?;
+                    formatter.write_char(':')?;
+                }
+                Step::Value(value) => match value {
+                    Self::Null => formatter.write_str("null")?,
+                    Self::Bool(value) => write!(formatter, "{value}")?,
+                    Self::Number(digits) => formatter.write_str(digits)?,
+                    Self::Text(value) => quoted(value, formatter)?,
+                    Self::List(values) => {
+                        formatter.write_char('[')?;
+                        pending.push(Step::Mark(']'));
+                        for (index, value) in values.iter().enumerate().rev() {
+                            pending.push(Step::Value(value));
+                            if index > 0 {
+                                pending.push(Step::Mark(','));
+                            }
+                        }
+                    }
+                    Self::Object(fields) => {
+                        formatter.write_char('{')?;
+                        pending.push(Step::Mark('}'));
+                        for (index, (key, value)) in fields.iter().enumerate().rev() {
+                            pending.push(Step::Value(value));
+                            pending.push(Step::Key(key));
+                            if index > 0 {
+                                pending.push(Step::Mark(','));
+                            }
+                        }
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
+}
+
+enum Step<'a> {
+    Value(&'a Json),
+    Key(&'a str),
+    Mark(char),
 }
 
 fn quoted(value: &str, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

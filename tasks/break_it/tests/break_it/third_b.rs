@@ -225,20 +225,19 @@ fn three_thousand_additions_in_a_rust_rule_do_not_abort_the_run() {
 }
 
 #[test]
-fn explore_in_node_gives_unknown_for_a_remainder_of_a_negative_number() {
+fn explore_in_node_and_the_checker_agree_on_a_remainder_of_a_negative_number() {
     let source = include_str!("../../models/third_b/remainder.model.ts");
     let sandbox = Sandbox::with(&[(TYPESCRIPT_FILE, source)]);
     let checked = sandbox.verify(&[]);
     let explored = sandbox.explore(TYPESCRIPT_FILE, "Rem");
     assert_eq!(
         rule(checked.model("Rem"), "below")["verdict"],
-        "unknown",
-        "`%` of -1 is a fault in the contract, so the checker can't judge `below`\n{checked}"
+        "holds",
+        "`m.rem(-1, 3)` is JavaScript's -1, so the checker judges `below`\n{checked}"
     );
     assert_eq!(
         rule(&explored.json, "below")["verdict"],
-        "unknown",
-        "`explore` runs `(-1) % 3` as JavaScript and gets -1, but the contract makes `%` on a \
-         negative number a fault, so `below` can't be judged\n{explored}"
+        "holds",
+        "`explore` runs `m.rem(-1, 3)` as JavaScript and gets -1, as the checker does\n{explored}"
     );
 }

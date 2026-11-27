@@ -1,4 +1,4 @@
-use crate::cache::{ENGINE, fingerprint_of, folder_in, write_whole};
+use crate::cache::folder_in;
 use crate::checks::{CHECKS_FILE, Check};
 use crate::discovery::Listed;
 use crate::marks::how_to_mark;
@@ -8,52 +8,36 @@ use crate::plan::{Labels, Plan, Spot, Viewing, planned};
 use crate::reading::{Content, Declared, ModelFile, Readable};
 use crate::run::whole_of;
 use crate::typecheck::typechecked;
-use crate::workers::run_each;
+use crate::workers::{run_each, stack_of_this_worker};
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{Code, Expr, Op};
 use earnest_quint::{Located, Runs, Setup, Typechecked};
-use serde::{Deserialize, Serialize};
+use earnest_quint_syntax::{Parsed, Target, on_a_stack_of, read};
 use std::collections::{BTreeSet, HashMap};
 use std::env;
-use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::fs::File;
 use std::io;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::UNIX_EPOCH;
+use std::path::{Component, Path, PathBuf};
 
 mod labels;
 
 use labels::{at_marks, blamed, label_names, label_unbuilt, labelled, without_labels};
 
-const PROGRAM_VARIABLE: &str = "EARNEST_QUINT";
-const PROGRAM: &str = "quint";
-const LOCAL_PROGRAMS: &str = "node_modules/.bin";
-const QUINT_EXTENSION: &str = "qnt";
 const CACHE: &str = "quint";
 const HERE: &str = ".";
-const SKIPPED_FOLDERS: [&str; 4] = ["node_modules", "target", "dist", "build"];
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
 const QUALIFIED: &str = "::";
-const NOT_FOUND: &str = "`quint` was not found: install it with `npm install --save-dev \
-                         @informalsystems/quint`, or set `EARNEST_QUINT`";
-
-static SCRATCH: AtomicU64 = AtomicU64::new(0);
-
-#[cfg(windows)]
-const PROGRAM_FILES: [&str; 3] = ["quint.cmd", "quint.exe", "quint"];
-#[cfg(not(windows))]
-const PROGRAM_FILES: [&str; 1] = [PROGRAM];
+const PARSE: &str = "`quint parse`";
+const NOT_PARSED: &str = "the Quint file can't be parsed";
+const NOT_READ: &str = "unreadable";
+const MISSING_MODULE: &str = "QNT405";
+const FLATTENER_STOPPED: &str = "Internal error while flattening";
 
 #[derive(Debug)]
 struct Candidate {
     shown: PathBuf,
     real: PathBuf,
     named: bool,
-    read: u64,
-    quint: Result<Quint, String>,
 }
 
 #[derive(Debug)]
@@ -64,8 +48,6 @@ struct Job {
     expected: Vec<String>,
     reachable: Vec<String>,
     said: Vec<(String, String)>,
-    read: u64,
-    quint: Result<Quint, String>,
     labels: Labels,
 }
 
@@ -83,7 +65,6 @@ pub(crate) struct QuintProperty {
 
 #[derive(Clone, Debug)]
 pub(crate) struct QuintCheck {
-    pub(crate) program: PathBuf,
     pub(crate) file: PathBuf,
     pub(crate) main: String,
     pub(crate) init: String,
@@ -94,7 +75,7 @@ pub(crate) struct QuintCheck {
     pub(crate) searches: bool,
 }
 
-fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
+fn as_asked(job: &Job) -> QuintCheck {
     let check = &job.check;
     let named = |name: &String| QuintProperty {
         id: name.clone(),
@@ -105,7 +86,6 @@ fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
         },
     };
     QuintCheck {
-        program: std::path::absolute(&quint.program).unwrap_or_else(|_| quint.program.clone()),
         file: job.real.clone(),
         main: check.main.clone(),
         init: check.init.clone(),
@@ -115,20 +95,6 @@ fn as_asked(job: &Job, quint: &Quint) -> QuintCheck {
         runs: check.runs.clone(),
         searches: !runs_only(check),
     }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct Quint {
-    pub(crate) program: PathBuf,
-    pub(crate) version: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Version {
-    path: String,
-    size: u64,
-    modified: u128,
-    said: String,
 }
 
 fn real(path: &Path) -> PathBuf {
@@ -171,7 +137,6 @@ fn not_a_model(qnt: &Path) -> ModelFile {
 fn found(listed: &[Listed]) -> (Vec<PathBuf>, Vec<Candidate>) {
     let mut old: Vec<PathBuf> = Vec::new();
     let mut seen_old: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut programs: HashMap<PathBuf, Result<Quint, String>> = HashMap::new();
     let mut candidates: Vec<Candidate> = Vec::new();
     for each in listed {
         if (each.only.is_none() || each.checks.is_file()) && seen_old.insert(real(&each.checks)) {
@@ -185,13 +150,7 @@ fn found(listed: &[Listed]) -> (Vec<PathBuf>, Vec<Candidate>) {
             kept.named |= each.named;
             continue;
         }
-        let real_folder = real_file
-            .parent()
-            .unwrap_or_else(|| Path::new(""))
-            .to_path_buf();
         candidates.push(Candidate {
-            read: tree_fingerprint(&real_folder),
-            quint: program_for(&mut programs, &real_folder),
             shown: qnt.clone(),
             real: real_file,
             named: each.named,
@@ -201,190 +160,8 @@ fn found(listed: &[Listed]) -> (Vec<PathBuf>, Vec<Candidate>) {
     (old, candidates)
 }
 
-fn is_skipped(name: &OsStr) -> bool {
-    name.to_str()
-        .is_none_or(|name| name.starts_with('.') || SKIPPED_FOLDERS.contains(&name))
-}
-
-fn quint_files(folder: &Path, below: &Path, found: &mut Vec<(PathBuf, PathBuf)>) {
-    let Ok(entries) = fs::read_dir(folder) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let name = entry.file_name();
-        let path = entry.path();
-        if path.is_dir() {
-            if !is_skipped(&name) {
-                quint_files(&path, &below.join(&name), found);
-            }
-        } else if path.extension().and_then(OsStr::to_str) == Some(QUINT_EXTENSION) {
-            found.push((below.join(&name), path));
-        }
-    }
-}
-
-fn tree_fingerprint(folder: &Path) -> u64 {
-    let mut found = Vec::new();
-    quint_files(folder, Path::new(""), &mut found);
-    found.sort();
-    let mut pieces: Vec<Vec<u8>> = Vec::with_capacity(found.len().saturating_mul(2));
-    for (below, path) in found {
-        pieces.push(below.to_string_lossy().into_owned().into_bytes());
-        pieces.push(fs::read(&path).unwrap_or_default());
-    }
-    let borrowed: Vec<&[u8]> = pieces.iter().map(Vec::as_slice).collect();
-    fingerprint_of(&borrowed)
-}
-
-fn local_program(folder: &Path) -> Option<PathBuf> {
-    real(folder).ancestors().find_map(|above| {
-        PROGRAM_FILES
-            .iter()
-            .map(|name| above.join(LOCAL_PROGRAMS).join(name))
-            .find(|candidate| candidate.is_file())
-    })
-}
-
-fn program_on_path() -> Option<PathBuf> {
-    let listed = env::var_os("PATH")?;
-    env::split_paths(&listed).find_map(|folder| {
-        PROGRAM_FILES
-            .iter()
-            .map(|name| folder.join(name))
-            .find(|candidate| candidate.is_file())
-    })
-}
-
-fn find_program(folder: &Path) -> Result<PathBuf, String> {
-    if let Some(named) = env::var_os(PROGRAM_VARIABLE).filter(|named| !named.is_empty()) {
-        let program = PathBuf::from(&named);
-        return if program.is_file() {
-            Ok(program)
-        } else {
-            Err(format!(
-                "`{PROGRAM}` was not found: `{PROGRAM_VARIABLE}` names `{}`, which is not a \
-                 file",
-                program.to_string_lossy()
-            ))
-        };
-    }
-    local_program(folder)
-        .or_else(program_on_path)
-        .ok_or_else(|| NOT_FOUND.to_owned())
-}
-
 pub(crate) fn cache_path(name: &str) -> PathBuf {
     folder_in(Path::new(HERE), CACHE).join(name)
-}
-
-pub(crate) fn store(target: &Path, text: &str) {
-    if let Err(error) = write_whole(target, text) {
-        crate::print::to_stderr(&format!(
-            "warning: {} was not cached: {error}",
-            shown_string(target)
-        ));
-    }
-}
-
-fn first_lines(output: &Output) -> String {
-    let said = String::from_utf8_lossy(&output.stderr);
-    let first = said
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .map(str::to_owned);
-    first.unwrap_or_else(|| format!("`{PROGRAM}` stopped with {}", output.status))
-}
-
-pub(crate) fn scratch(what: &str) -> io::Result<PathBuf> {
-    let path = cache_path(&format!(
-        ".{what}-{}-{}.json",
-        std::process::id(),
-        SCRATCH.fetch_add(1, Ordering::Relaxed)
-    ));
-    if let Some(folder) = path.parent() {
-        fs::create_dir_all(folder)?;
-    }
-    Ok(path)
-}
-
-fn version_of(program: &Path) -> Result<String, String> {
-    let resolved = real(program);
-    let metadata = fs::metadata(&resolved)
-        .map_err(|error| format!("`{}` can't be read: {error}", shown_string(program)))?;
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map_or(0, |since| since.as_nanos());
-    let path = shown_string(&resolved);
-    let target = cache_path(&format!(
-        "version-{:016x}.json",
-        fingerprint_of(&[path.as_bytes()])
-    ));
-    if let Ok(text) = fs::read_to_string(&target)
-        && let Ok(kept) = serde_json::from_str::<Version>(&text)
-        && kept.path == path
-        && kept.size == metadata.len()
-        && kept.modified == modified
-    {
-        return Ok(kept.said);
-    }
-    let output = Command::new(program)
-        .arg("--version")
-        .output()
-        .map_err(|error| {
-            format!(
-                "`{} --version` did not start: {error}",
-                shown_string(program)
-            )
-        })?;
-    if !output.status.success() {
-        return Err(format!(
-            "`{} --version` failed: {}",
-            shown_string(program),
-            first_lines(&output)
-        ));
-    }
-    let version = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    let kept = Version {
-        path,
-        size: metadata.len(),
-        modified,
-        said: version.clone(),
-    };
-    if let Ok(text) = serde_json::to_string(&kept) {
-        store(&target, &text);
-    }
-    Ok(version)
-}
-
-fn arguments(check: &Check, file: &str) -> Vec<OsString> {
-    let mut arguments: Vec<OsString> = [
-        "compile",
-        "--target",
-        "json",
-        "--main",
-        &check.main,
-        "--init",
-        &check.init,
-        "--step",
-        &check.step,
-    ]
-    .iter()
-    .map(OsString::from)
-    .collect();
-    for (flag, names) in [
-        ("--invariant", &check.invariants),
-        ("--temporal", &check.temporal),
-    ] {
-        if !names.is_empty() {
-            arguments.push(flag.into());
-            arguments.push(names.join(",").into());
-        }
-    }
-    arguments.push(file.into());
-    arguments
 }
 
 fn compiled_as(check: &Check) -> [String; 5] {
@@ -395,56 +172,6 @@ fn compiled_as(check: &Check) -> [String; 5] {
         check.invariants.join(","),
         check.temporal.join(","),
     ]
-}
-
-fn key_of(job: &Job, quint: &Quint, source: &[u8]) -> String {
-    let compiled = compiled_as(&labelled(job));
-    let mut listed: Vec<&str> = vec![quint.version.as_str()];
-    listed.extend(compiled.iter().map(String::as_str));
-    let mut pieces: Vec<&[u8]> = listed.iter().map(|each| each.as_bytes()).collect();
-    let read = job.read.to_le_bytes();
-    pieces.push(&read);
-    pieces.push(source);
-    format!("{:016x}", fingerprint_of(&pieces))
-}
-
-pub(crate) fn kept(target: &Path, key: &str) -> Option<String> {
-    let text = fs::read_to_string(target).ok()?;
-    let (first, rest) = text.split_once('\n')?;
-    (first == key).then(|| rest.to_owned())
-}
-
-fn quint_place(said: &str, job: &Job) -> (String, Place) {
-    for line in said.lines().map(str::trim) {
-        let Some(rest) = line.strip_prefix("at ") else {
-            continue;
-        };
-        let mut parts = rest.rsplitn(3, ':');
-        let (Some(column), Some(number), Some(file)) = (parts.next(), parts.next(), parts.next())
-        else {
-            continue;
-        };
-        if Path::new(file).extension().and_then(OsStr::to_str) != Some(QUINT_EXTENSION) {
-            continue;
-        }
-        let (Ok(column), Ok(number)) = (column.parse::<u32>(), number.parse::<u32>()) else {
-            continue;
-        };
-        if !Path::new(file)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("qnt"))
-        {
-            continue;
-        }
-        return (
-            shown_in(Path::new(file), job),
-            Place {
-                line: number.max(1),
-                column: column.max(1),
-            },
-        );
-    }
-    (job.shown.clone(), TOP_OF_FILE)
 }
 
 pub(crate) fn shown_in_folder(file: &Path, check: &Path, shown: &str) -> String {
@@ -461,64 +188,120 @@ fn shown_in(file: &Path, job: &Job) -> String {
     shown_in_folder(file, &job.real, &job.shown)
 }
 
+fn normalized(path: &Path) -> String {
+    let whole = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut parts: Vec<Component<'_>> = Vec::new();
+    for part in whole.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(parts.last(), Some(Component::Normal(_))) {
+                    parts.pop();
+                }
+            }
+            other => parts.push(other),
+        }
+    }
+    shown_string(&parts.iter().collect::<PathBuf>()).replace('\\', "/")
+}
+
+pub(crate) fn quint_text(path: impl AsRef<Path>) -> io::Result<String> {
+    fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
+const _: () = assert!(
+    earnest_check::WORKER_STACK >= earnest_quint_syntax::STACK_NEEDED,
+    "a worker's stack must hold the front end, which runs on it with no thread of its own"
+);
+
+pub(crate) fn with_front_end<T>(work: impl FnOnce() -> T) -> T {
+    on_a_stack_of(stack_of_this_worker().unwrap_or(0), work)
+}
+
+pub(crate) fn front_end(shown: &str) -> Result<Parsed, earnest_quint_syntax::Problem> {
+    read(&normalized(Path::new(shown)), |path| quint_text(path).ok())
+}
+
+fn placed(
+    problem: &earnest_quint_syntax::Problem,
+    real_file: &Path,
+    shown: &str,
+) -> (String, Place) {
+    let at = Place {
+        line: u32::try_from(problem.line).unwrap_or(u32::MAX).max(1),
+        column: u32::try_from(problem.column).unwrap_or(u32::MAX).max(1),
+    };
+    if problem.source.is_empty() {
+        return (shown.to_owned(), TOP_OF_FILE);
+    }
+    (
+        shown_in_folder(Path::new(&problem.source), real_file, shown),
+        at,
+    )
+}
+
+fn parse_failed(shown: &str, real_file: &Path, problem: &earnest_quint_syntax::Problem) -> Problem {
+    let (file, place) = placed(problem, real_file, shown);
+    let message = if problem.code == NOT_READ {
+        problem.message.clone()
+    } else {
+        format!("[{}] {}", problem.code, problem.message)
+    };
+    Problem::new(&file, place, PARSE, &message)
+}
+
+fn compile_said(problem: &earnest_quint_syntax::Problem) -> (String, bool) {
+    let first = problem.message.lines().next().unwrap_or_default();
+    if problem.code == NOT_READ {
+        (first.to_owned(), !problem.source.is_empty())
+    } else if problem.message.starts_with(FLATTENER_STOPPED) {
+        (format!("Error: {first}"), false)
+    } else if problem.source.is_empty() && problem.code == MISSING_MODULE {
+        (format!("error: {first}"), false)
+    } else if problem.source.is_empty() {
+        (format!("error: [{}] {first}", problem.code), false)
+    } else {
+        (format!("Error [{}]: {first}", problem.code), true)
+    }
+}
+
+fn compile_failed(job: &Job, problem: &earnest_quint_syntax::Problem) -> Problem {
+    let (said, at_its_place) = compile_said(problem);
+    let (file, place) = if at_its_place {
+        placed(problem, &job.real, &job.shown)
+    } else {
+        (job.shown.clone(), TOP_OF_FILE)
+    };
+    Problem::new(
+        &file,
+        place,
+        &format!("`quint compile --main {}`", job.check.main),
+        &said,
+    )
+}
+
+fn target_of(check: &Check) -> Target {
+    let joined = |names: &[String]| (!names.is_empty()).then(|| names.join(","));
+    Target {
+        main: check.main.clone(),
+        init: check.init.clone(),
+        step: check.step.clone(),
+        invariant: joined(&check.invariants),
+        temporal: joined(&check.temporal),
+    }
+}
+
 fn compile(job: &Job) -> Result<String, Problem> {
-    let failed = |message: String| Problem::new(&job.shown, TOP_OF_FILE, "`quint`", &message);
-    let quint = job.quint.clone().map_err(failed)?;
-    let source = fs::read(&job.real).map_err(|error| {
-        Problem::new(
-            &job.shown,
-            TOP_OF_FILE,
-            &format!("`{}`", job.check.file),
-            &format!("the Quint file that `{CHECKS_FILE}` lists can't be opened: {error}"),
-        )
-    })?;
-    let key = key_of(job, &quint, &source);
-    let compiled = compiled_as(&labelled(job));
-    let file = shown_string(&job.real);
-    let mut named: Vec<&[u8]> = vec![file.as_bytes()];
-    named.extend(compiled.iter().map(String::as_bytes));
-    let target = cache_path(&format!("{:016x}.json", fingerprint_of(&named)));
-    if let Some(json) = kept(&target, &key) {
-        return Ok(json);
-    }
-    let written = scratch("compiled").map_err(|error| {
-        failed(format!(
-            "the folder `.earnest/quint` can't be written, so `quint compile` has no place to \
-             write to: {error}"
-        ))
-    })?;
-    let ran = File::create(&written).and_then(|file| {
-        Command::new(&quint.program)
-            .args(arguments(&labelled(job), &job.shown))
-            .stdout(file)
-            .stderr(Stdio::piped())
-            .output()
-    });
-    let json = fs::read_to_string(&written);
-    fs::remove_file(&written).unwrap_or_default();
-    let output = ran.map_err(|error| {
-        failed(format!(
-            "`{}` did not start: {error}",
-            shown_string(&quint.program)
-        ))
-    })?;
-    if !output.status.success() {
-        let said = String::from_utf8_lossy(&output.stderr);
-        let (file, place) = quint_place(&said, job);
-        return Err(Problem::new(
-            &file,
-            place,
-            &format!("`quint compile --main {}`", job.check.main),
-            &first_lines(&output),
-        ));
-    }
-    let json = json.map_err(|error| {
-        failed(format!(
-            "what `quint compile` wrote can't be read back: {error}"
-        ))
-    })?;
-    store(&target, &format!("{key}\n{json}"));
-    Ok(json)
+    let target = target_of(&labelled(job));
+    #[cfg(test)]
+    tests::record(&target, &job.shown);
+    with_front_end(|| {
+        let parsed = front_end(&job.shown).map_err(|problem| compile_failed(job, &problem))?;
+        let compiled = parsed
+            .compile(&target)
+            .map_err(|problem| compile_failed(job, &problem))?;
+        Ok(compiled.output().to_string())
+    })
 }
 
 fn runs_only(check: &Check) -> bool {
@@ -576,8 +359,6 @@ fn compiled_for_runs(job: &Job, places: Option<&Places>) -> Result<String, Probl
             expected: job.expected.clone(),
             reachable: job.reachable.clone(),
             said: job.said.clone(),
-            read: job.read,
-            quint: job.quint.clone(),
             labels: job.labels.clone(),
         };
         match compile(&attempt) {
@@ -676,132 +457,28 @@ fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<Result<String,
     }
 }
 
-fn fingerprint_files(paths: &[&str]) -> u64 {
-    let mut sorted = paths.to_vec();
-    sorted.sort_unstable();
-    sorted.dedup();
-    let contents: Vec<Vec<u8>> = sorted
-        .iter()
-        .map(|path| fs::read(path).unwrap_or_default())
-        .collect();
-    let mut pieces: Vec<&[u8]> = Vec::with_capacity(sorted.len().saturating_mul(2));
-    for (path, content) in sorted.iter().zip(&contents) {
-        pieces.push(path.as_bytes());
-        pieces.push(content);
-    }
-    fingerprint_of(&pieces)
-}
-
-fn places_key(engine: &str, quint: &Quint, source: &[u8]) -> String {
-    format!(
-        "{:016x}",
-        fingerprint_of(&[engine.as_bytes(), quint.version.as_bytes(), source])
-    )
-}
-
-fn parse_failed(shown: &str, real_file: &Path, said: &str) -> Problem {
-    let feature = "`quint parse`";
-    let first = serde_json::from_str::<serde_json::Value>(said)
-        .ok()
-        .and_then(|value| value.get("errors")?.as_array()?.first().cloned());
-    let Some(first) = first else {
-        return Problem::new(
+pub(crate) fn parsed(real_file: &Path, shown: &str) -> Result<Places, Problem> {
+    if let Err(error) = fs::read(real_file) {
+        return Err(Problem::new(
             shown,
             TOP_OF_FILE,
-            feature,
-            "the Quint file can't be parsed",
-        );
-    };
-    let explanation = first
-        .get("explanation")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("the Quint file can't be parsed");
-    let at = first
-        .get("locs")
-        .and_then(|locs| locs.get(0))
-        .and_then(|loc| {
-            let start = loc.get("start")?;
-            let line = u32::try_from(start.get("line")?.as_u64()?).ok()?;
-            let column = u32::try_from(start.get("col")?.as_u64()?).ok()?;
-            let file = loc
-                .get("source")
-                .and_then(serde_json::Value::as_str)
-                .map_or_else(
-                    || shown.to_owned(),
-                    |source| shown_in_folder(Path::new(source), real_file, shown),
-                );
-            Some((
-                file,
-                Place {
-                    line: line.saturating_add(1),
-                    column: column.saturating_add(1),
-                },
-            ))
-        });
-    let (file, place) = at.unwrap_or_else(|| (shown.to_owned(), TOP_OF_FILE));
-    Problem::new(&file, place, feature, explanation)
-}
-
-pub(crate) fn parsed(real_file: &Path, shown: &str, quint: &Quint) -> Result<Places, Problem> {
-    let unread = |error: io::Error| {
-        Problem::new(
-            shown,
-            TOP_OF_FILE,
-            "`quint parse`",
+            PARSE,
             &format!("the Quint file can't be read: {error}"),
+        ));
+    }
+    let not_parsed = || Problem::new(shown, TOP_OF_FILE, PARSE, NOT_PARSED);
+    if !Path::new(shown).is_file() {
+        return Err(not_parsed());
+    }
+    with_front_end(|| {
+        let parsed =
+            front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
+        Places::from_quint(
+            &parsed.output().to_string(),
+            &parsed.source_map().to_string(),
         )
-    };
-    let source = fs::read(real_file).map_err(unread)?;
-    let key = places_key(ENGINE, quint, &source);
-    let target = cache_path(&format!(
-        "places-{:016x}.json",
-        fingerprint_of(&[shown_string(real_file).as_bytes()])
-    ));
-    if let Some(text) = kept(&target, &key)
-        && let Ok(places) = serde_json::from_str::<Places>(&text)
-        && places.read == fingerprint_files(&places.files_read())
-    {
-        return Ok(places);
-    }
-    let (out, map) = (
-        scratch("parse").map_err(unread)?,
-        scratch("map").map_err(unread)?,
-    );
-    let ran = Command::new(&quint.program)
-        .arg("parse")
-        .arg(shown)
-        .arg("--out")
-        .arg(&out)
-        .arg("--source-map")
-        .arg(&map)
-        .output();
-    let written = fs::read_to_string(&out).unwrap_or_default();
-    let read = || -> Result<Places, Problem> {
-        let output = ran.as_ref().map_err(|error| {
-            Problem::new(
-                shown,
-                TOP_OF_FILE,
-                "`quint`",
-                &format!("`{}` did not start: {error}", shown_string(&quint.program)),
-            )
-        })?;
-        if !output.status.success() {
-            return Err(parse_failed(shown, real_file, &written));
-        }
-        fs::read_to_string(&map)
-            .ok()
-            .and_then(|map| Places::from_quint(&written, &map))
-            .ok_or_else(|| parse_failed(shown, real_file, &written))
-    };
-    let places = read();
-    fs::remove_file(&out).unwrap_or_default();
-    fs::remove_file(&map).unwrap_or_default();
-    let mut places = places?;
-    places.read = fingerprint_files(&places.files_read());
-    if let Ok(text) = serde_json::to_string(&places) {
-        store(&target, &format!("{key}\n{text}"));
-    }
-    Ok(places)
+        .ok_or_else(not_parsed)
+    })
 }
 
 pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
@@ -871,20 +548,6 @@ fn declared(job: &Job) -> Declared {
     }
 }
 
-pub(crate) fn program_for(
-    programs: &mut HashMap<PathBuf, Result<Quint, String>>,
-    folder: &Path,
-) -> Result<Quint, String> {
-    programs
-        .entry(folder.to_path_buf())
-        .or_insert_with(|| {
-            let program = find_program(folder)?;
-            let version = version_of(&program)?;
-            Ok(Quint { program, version })
-        })
-        .clone()
-}
-
 fn job_of(candidate: &Candidate, plan: Plan) -> Job {
     Job {
         shown: shown_string(&candidate.shown),
@@ -904,8 +567,6 @@ fn job_of(candidate: &Candidate, plan: Plan) -> Job {
         expected: plan.expected,
         reachable: plan.reachable,
         said: plan.said,
-        read: candidate.read,
-        quint: candidate.quint.clone(),
         labels: plan.labels,
     }
 }
@@ -1133,17 +794,13 @@ fn compiled_all(
 }
 
 fn parsed_all(candidates: &[Candidate], jobs: usize) -> HashMap<PathBuf, Result<Places, Problem>> {
-    let mut to_parse: Vec<(PathBuf, String, Quint)> = Vec::new();
+    let mut to_parse: Vec<(PathBuf, String)> = Vec::new();
     for each in candidates {
-        if let Ok(quint) = &each.quint
-            && !to_parse.iter().any(|(file, ..)| *file == each.real)
-        {
-            to_parse.push((each.real.clone(), shown_string(&each.shown), quint.clone()));
+        if !to_parse.iter().any(|(file, _)| *file == each.real) {
+            to_parse.push((each.real.clone(), shown_string(&each.shown)));
         }
     }
-    let maps = run_each(&to_parse, jobs, |(file, shown, quint), _| {
-        parsed(file, shown, quint)
-    });
+    let maps = run_each(&to_parse, jobs, |(file, shown), _| parsed(file, shown));
     to_parse
         .into_iter()
         .zip(maps)
@@ -1157,15 +814,6 @@ fn found_checks(
     files: &mut Vec<ModelFile>,
 ) -> (Vec<Job>, HashMap<PathBuf, Places>) {
     let mut checks: Vec<Job> = Vec::new();
-    for candidate in candidates {
-        if let Err(message) = &candidate.quint {
-            files.push(problem_file(
-                &shown_string(&candidate.shown),
-                "`quint`",
-                message,
-            ));
-        }
-    }
     let read = parsed_all(candidates, jobs);
     checks.extend(marked_checks(candidates, &read, files));
     let places = read
@@ -1178,7 +826,7 @@ fn found_checks(
 pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
     let mut files = Vec::new();
     let (old, candidates) = found(listed);
-    let (mut checks, places) = found_checks(&candidates, jobs, &mut files);
+    let (checks, places) = found_checks(&candidates, jobs, &mut files);
     files.extend(old.iter().map(|checks_file| {
         problem_file(
             &shown_string(checks_file),
@@ -1186,27 +834,18 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
             &migration(checks_file, &places),
         )
     }));
-    let mut refusals: Vec<Option<Problem>> = Vec::with_capacity(checks.len());
-    for job in &mut checks {
-        if let Some(found) = places.get(&job.real) {
-            job.read = found.read;
-        }
-        refusals.push(None);
-    }
-    let mut to_typecheck: Vec<(PathBuf, String, Quint)> = Vec::new();
+    let refusals: Vec<Option<Problem>> = vec![None; checks.len()];
+    let mut to_typecheck: Vec<(PathBuf, String)> = Vec::new();
     for job in &checks {
-        if let Ok(quint) = &job.quint
-            && places
-                .get(&job.real)
-                .is_some_and(|found| builds(found, job))
-            && !to_typecheck.iter().any(|(file, ..)| *file == job.real)
+        if places
+            .get(&job.real)
+            .is_some_and(|found| builds(found, job))
+            && !to_typecheck.iter().any(|(file, _)| *file == job.real)
         {
-            to_typecheck.push((job.real.clone(), job.shown.clone(), quint.clone()));
+            to_typecheck.push((job.real.clone(), job.shown.clone()));
         }
     }
-    let typechecks = run_each(&to_typecheck, jobs, |(file, shown, quint), _| {
-        typechecked(file, shown, quint, places.get(file)?)
-    });
+    let typechecks = run_each(&to_typecheck, jobs, |(_, shown), _| typechecked(shown));
     let typechecked: HashMap<PathBuf, Typechecked> = to_typecheck
         .into_iter()
         .zip(typechecks)
@@ -1257,7 +896,7 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                         .then(|| not_built(job, typechecked.get(&job.real), places.get(&job.real)))
                         .flatten(),
                     runs_not_played,
-                    quint: job.quint.as_ref().ok().map(|quint| as_asked(job, quint)),
+                    quint: Some(as_asked(job)),
                 }]),
             },
             Err(located) => {
@@ -1307,38 +946,142 @@ fn one_per_file(files: Vec<ModelFile>) -> Vec<ModelFile> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Quint, places_key};
-    use crate::cache::ENGINE;
-    use std::path::PathBuf;
+    use super::{compile_said, compiled_all, found, found_checks};
+    use crate::discovery::discover;
+    use earnest_quint_syntax::{Problem, Target};
+    use std::collections::{BTreeSet, HashMap};
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    const FOLDER_VARIABLE: &str = "EARNEST_LISTED_FOLDER";
+    const LIST_VARIABLE: &str = "EARNEST_LISTED_CHECKS";
+
+    static RECORDED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub(super) fn record(target: &Target, file: &str) {
+        let mut words: Vec<&str> = vec![
+            "compile",
+            "--target",
+            "json",
+            "--main",
+            &target.main,
+            "--init",
+            &target.init,
+            "--step",
+            &target.step,
+        ];
+        for (flag, text) in [
+            ("--invariant", &target.invariant),
+            ("--temporal", &target.temporal),
+        ] {
+            if let Some(text) = text {
+                words.extend([flag, text.as_str()]);
+            }
+        }
+        words.push(file);
+        if let Ok(mut recorded) = RECORDED.lock() {
+            recorded.push(words.join("\t"));
+        }
+    }
 
     #[test]
-    fn what_another_build_read_from_a_parse_is_not_kept_for_this_build() {
-        let quint = Quint {
-            program: PathBuf::from("quint"),
-            version: "0.33.1".to_owned(),
-        };
-        let source = b"module counter { var n: int }";
-        let ours = places_key(ENGINE, &quint, source);
+    #[ignore = "writes the list of checks to the file named by EARNEST_LISTED_CHECKS"]
+    fn the_checks_earnest_compiles_are_listed_as_quint_compile_is_called() {
+        let list = env::var(LIST_VARIABLE).expect("EARNEST_LISTED_CHECKS names the list to write");
+        let folder = env::var(FOLDER_VARIABLE).unwrap_or_else(|_| "tasks".to_owned());
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("the repository is two folders above the CLI");
+        let listed = discover(&[root.join(folder)])
+            .expect("the folder can be searched")
+            .listed;
+        let (_, candidates) = found(&listed);
+        let mut files = Vec::new();
+        let (checks, places) = found_checks(&candidates, 1, &mut files);
+        compiled_all(
+            &checks,
+            &vec![None; checks.len()],
+            (&HashMap::new(), &places),
+            1,
+        );
+        let prefix = format!("{}/", root.to_string_lossy());
+        let lines: BTreeSet<String> = RECORDED
+            .lock()
+            .expect("the list can be read")
+            .iter()
+            .map(|line| line.replace(&prefix, ""))
+            .collect();
+        let mut text = lines.into_iter().collect::<Vec<_>>().join("\n");
+        text.push('\n');
+        fs::write(&list, text).expect("the list can be written");
+    }
+
+    fn problem(code: &str, message: &str, source: &str) -> Problem {
+        Problem {
+            code: code.to_owned(),
+            message: message.to_owned(),
+            source: source.to_owned(),
+            line: 4,
+            column: 22,
+        }
+    }
+
+    #[test]
+    fn a_compile_error_is_said_as_the_first_line_quint_prints_for_it() {
         assert_eq!(
-            ours,
-            places_key(ENGINE, &quint, source),
-            "one build, one Quint and one file keep one entry"
+            compile_said(&problem(
+                "QNT000",
+                "Couldn't unify int and bool\nTrying to unify int and bool",
+                "/specs/a.qnt"
+            )),
+            (
+                "Error [QNT000]: Couldn't unify int and bool".to_owned(),
+                true
+            ),
+            "an error at a place: its first line, the place after it"
         );
-        assert_ne!(
-            ours,
-            places_key("0.1.0+0000000000000000", &quint, source),
-            "the entry holds what the checker made of Quint's output, so a build from other \
-             sources reads the parse again"
+        assert_eq!(
+            compile_said(&problem("QNT404", "Name 'nope' not found", "")),
+            ("error: [QNT404] Name 'nope' not found".to_owned(), false),
+            "an error in what the command line names, with no place"
         );
-        let newer = Quint {
-            version: "0.34.0".to_owned(),
-            ..quint.clone()
-        };
-        assert_ne!(ours, places_key(ENGINE, &newer, source), "another Quint");
-        assert_ne!(
-            ours,
-            places_key(ENGINE, &quint, b"module counter { var m: int }"),
-            "another text"
+        assert_eq!(
+            compile_said(&problem("QNT405", "module zz does not exist", "")),
+            ("error: module zz does not exist".to_owned(), false),
+            "a main module that is not there, which Quint prints with no code"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "QNT000",
+                "Internal error while flattening [QNT404] Name 'twice' not found",
+                ""
+            )),
+            (
+                "Error: Internal error while flattening [QNT404] Name 'twice' not found".to_owned(),
+                false
+            ),
+            "the flattener's internal error, as Node prints what Quint throws"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "unreadable",
+                "Quint's type checker throws here",
+                "/a.qnt"
+            )),
+            ("Quint's type checker throws here".to_owned(), true),
+            "a file the front end refuses where Quint throws, in its own words"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "unreadable",
+                "earnest could not start the thread",
+                ""
+            )),
+            ("earnest could not start the thread".to_owned(), false),
+            "a refusal of earnest's own with no place, in its own words and with no code"
         );
     }
 }

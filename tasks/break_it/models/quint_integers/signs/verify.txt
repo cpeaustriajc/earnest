@@ -1,0 +1,25 @@
+[TLC] Compiling to TLA+ (via Apalache)...
+[TLC] Running TLC model checker...
+
+Starting... (2026-11-27 05:27:26)
+Computing initial states...
+Finished computing initial states: 1 distinct state generated at 2026-11-27 05:27:26.
+Error: Evaluating invariant q_inv failed.
+The second argument of % should be a positive number, but instead it is:
+-2
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ a = -7
+/\ b = 2
+
+State 2: <step line 37, col 4 to line 40, col 17 of module signs>
+/\ a = 7
+/\ b = -2
+
+2 states generated, 2 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 2.
+The average outdegree of the complete state graph is 1 (minimum is 1, the maximum 1 and the 95th percentile is 1).
+Finished in 00s at (2026-11-27 05:27:26)
+
+[failure] TLC encountered an error (677ms).
+

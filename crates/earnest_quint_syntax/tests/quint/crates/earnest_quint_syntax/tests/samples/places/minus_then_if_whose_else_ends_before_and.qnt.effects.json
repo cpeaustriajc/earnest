@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify bool and tup\nTrying to unify bool and ()\nTrying to unify (bool, bool) => bool and ((), int) => _t4\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/places/minus_then_if_whose_else_ends_before_and.qnt","start":{"line":2,"col":2,"index":56},"end":{"line":2,"col":14,"index":68}}]}]}

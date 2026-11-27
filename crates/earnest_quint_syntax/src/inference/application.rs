@@ -364,13 +364,14 @@ fn rename_row(row: &Value, renamed: &[(String, String)]) -> Value {
 }
 
 pub(crate) fn resolve_alias(table: &Table, written: &Value) -> Value {
-    if written.kind() == "const"
-        && let Some(id) = written.id()
+    let mut current = written;
+    while current.kind() == "const"
+        && let Some(id) = current.id()
         && let Some(alias) = table.get(id)
         && alias.kind() == "typedef"
         && alias.get("type").truthy()
     {
-        return resolve_alias(table, alias.get("type"));
+        current = alias.get("type");
     }
-    written.clone()
+    current.clone()
 }

@@ -5,6 +5,10 @@ pub(crate) enum Helper {
     Fault,
     Remainder,
     Division,
+    FlooredRemainder,
+    FlooredDivision,
+    TruncatedRemainder,
+    TruncatedDivision,
     EmptyMap,
     MapSet,
     MapDelete,
@@ -32,10 +36,14 @@ pub(crate) enum Helper {
     Ascending,
 }
 
-pub(crate) const EVERY_HELPER: [Helper; 28] = [
+pub(crate) const EVERY_HELPER: [Helper; 32] = [
     Helper::Fault,
     Helper::Remainder,
     Helper::Division,
+    Helper::FlooredRemainder,
+    Helper::FlooredDivision,
+    Helper::TruncatedRemainder,
+    Helper::TruncatedDivision,
     Helper::EmptyMap,
     Helper::MapSet,
     Helper::MapDelete,
@@ -65,6 +73,7 @@ pub(crate) const EVERY_HELPER: [Helper; 28] = [
 
 pub(crate) const REMAINDER_FAULT: &str = "a remainder with a negative number or a divisor below 1";
 pub(crate) const DIVISION_FAULT: &str = "a division with a negative number or a divisor below 1";
+pub(crate) const BY_ZERO_FAULT: &str = "a division or a remainder by zero";
 
 impl Helper {
     pub(crate) fn name(self) -> &'static str {
@@ -72,6 +81,10 @@ impl Helper {
             Self::Fault => "Fault",
             Self::Remainder => "Remainder",
             Self::Division => "Division",
+            Self::FlooredRemainder => "FlooredRemainder",
+            Self::FlooredDivision => "FlooredDivision",
+            Self::TruncatedRemainder => "TruncatedRemainder",
+            Self::TruncatedDivision => "TruncatedDivision",
             Self::EmptyMap => "EmptyMap",
             Self::MapSet => "MapSet",
             Self::MapDelete => "MapDelete",
@@ -102,7 +115,12 @@ impl Helper {
 
     pub(crate) fn needs(self) -> Option<Self> {
         match self {
-            Self::Remainder | Self::Division => Some(Self::Fault),
+            Self::Remainder
+            | Self::Division
+            | Self::FlooredRemainder
+            | Self::FlooredDivision
+            | Self::TruncatedRemainder
+            | Self::TruncatedDivision => Some(Self::Fault),
             other if crate::faulting::faults(other) => Some(Self::Fault),
             _ => None,
         }
@@ -130,6 +148,46 @@ impl Helper {
                 format!(
                     "{name}({left}, {right}) == IF ({left} >= 0) /\\ ({right} >= 1) \
                      THEN {left} \\div {right} ELSE Fault(\"{DIVISION_FAULT}\")"
+                )
+            }
+            Self::FlooredRemainder => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN {left} % {right} \
+                     ELSE IF {right} < 0 THEN -((-{left}) % (-{right})) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
+                )
+            }
+            Self::FlooredDivision => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN {left} \\div {right} \
+                     ELSE IF {right} < 0 THEN (-{left}) \\div (-{right}) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
+                )
+            }
+            Self::TruncatedRemainder => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN \
+                     (IF {left} >= 0 THEN {left} % {right} ELSE -((-{left}) % {right})) \
+                     ELSE IF {right} < 0 THEN \
+                     (IF {left} >= 0 THEN {left} % (-{right}) ELSE -((-{left}) % (-{right}))) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
+                )
+            }
+            Self::TruncatedDivision => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN \
+                     (IF {left} >= 0 THEN {left} \\div {right} ELSE -((-{left}) \\div {right})) \
+                     ELSE IF {right} < 0 THEN \
+                     (IF {left} >= 0 THEN -({left} \\div (-{right})) ELSE (-{left}) \\div (-{right})) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
                 )
             }
             Self::TextRank => {
@@ -265,6 +323,24 @@ mod tests {
             defined(Helper::Remainder),
             "Remainder(left, right) == IF (left >= 0) /\\ (right >= 1) THEN left % right \
              ELSE Fault(\"a remainder with a negative number or a divisor below 1\")"
+        );
+    }
+
+    #[test]
+    fn a_floored_remainder_takes_a_positive_divisor_only_and_faults_on_zero() {
+        assert_eq!(
+            defined(Helper::FlooredRemainder),
+            "FlooredRemainder(left, right) == IF right > 0 THEN left % right ELSE IF right < 0 \
+             THEN -((-left) % (-right)) ELSE Fault(\"a division or a remainder by zero\")"
+        );
+    }
+
+    #[test]
+    fn a_floored_division_takes_a_positive_divisor_only_and_faults_on_zero() {
+        assert_eq!(
+            defined(Helper::FlooredDivision),
+            "FlooredDivision(left, right) == IF right > 0 THEN left \\div right ELSE IF right \
+             < 0 THEN (-left) \\div (-right) ELSE Fault(\"a division or a remainder by zero\")"
         );
     }
 

@@ -1,6 +1,8 @@
 import json
 import sys
 
+sys.setrecursionlimit(1_000_000)
+
 root = sys.argv[1].rstrip("/") + "/"
 phases_name, parse_name, map_name = sys.argv[2:5]
 

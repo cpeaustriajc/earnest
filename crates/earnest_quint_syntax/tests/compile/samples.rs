@@ -174,7 +174,7 @@ fn a_definition_exported_by_one_module_and_used_by_another_keeps_quint_s_order_o
     let found = declarations(&compiled)
         .into_iter()
         .find(|declaration| declaration.get("name") == Some(&Json::Text("c".to_owned())));
-    let Some(Json::Object(fields)) = found else {
+    let Some(Json::Object(fields)) = &found else {
         panic!("no c in {:?}", names(&compiled));
     };
     let keys: Vec<&str> = fields.iter().map(|(key, _)| key.as_str()).collect();

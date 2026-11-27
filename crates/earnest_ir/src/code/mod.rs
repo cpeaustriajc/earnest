@@ -243,7 +243,7 @@ pub(super) fn again<T>(
     frame: &mut Frame<'_>,
     general: impl FnOnce(&mut Frame<'_>) -> Result<T, Fault>,
 ) -> Result<T, Fault> {
-    if matches!(fault, Fault::Overflow | Fault::WrongKind) {
+    if crate::eval::retried(fault) {
         frame.of_any_size(general)
     } else {
         Err(fault)

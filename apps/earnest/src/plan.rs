@@ -5,7 +5,7 @@ use crate::marks::{
     unknown_mark, unspaced_source,
 };
 use crate::places::{Marked, Places};
-use crate::quint::shown_in_folder;
+use crate::quint::{quint_text, shown_in_folder};
 use earnest_diagnostics::{Place, Problem};
 use earnest_quint::Runs;
 use std::collections::BTreeSet;
@@ -518,7 +518,7 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
         places,
         real: real_file,
         shown,
-        text: fs::read_to_string(real_file).unwrap_or_default(),
+        text: quint_text(real_file).unwrap_or_default(),
     };
     let mut planned = Planned::default();
     views::view_definitions(&locator, &mut planned);

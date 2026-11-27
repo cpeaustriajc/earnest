@@ -1,6 +1,5 @@
 #![cfg(unix)]
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -133,34 +132,22 @@ impl Quint {
         self.earnest(&["verify", "--json", "specs"]).json()
     }
 
-    fn of_kind(&self, kind: &str) -> Vec<String> {
+    fn calls(&self) -> Vec<String> {
         self.sandbox
             .read("fake/calls")
             .lines()
-            .filter(|call| call.split(' ').next() == Some(kind))
             .map(str::to_owned)
             .collect()
     }
 
-    fn compiled_mains(&self) -> BTreeSet<String> {
-        self.of_kind("compile")
-            .iter()
-            .filter_map(|call| {
-                let mut words = call.split(' ');
-                words.find(|word| *word == "--main")?;
-                words.next().map(str::to_owned)
-            })
-            .collect()
-    }
-
-    fn forget(&self) {
-        self.sandbox.write("fake/calls", "");
-        fs::remove_dir_all(self.sandbox.path().join(".earnest")).unwrap_or_default();
-    }
-
-    fn without_typecheck(&self) {
-        fs::remove_dir_all(self.sandbox.path().join("fake/typechecked"))
-            .expect("the typechecked fixtures go");
+    fn flattened_by_quint(&self) -> Value {
+        let mut arguments: Vec<String> = vec!["verify".to_owned(), "--json".to_owned()];
+        arguments.extend(COMPILED.iter().map(|compiled| {
+            let main = compiled.split_once('.').map_or(*compiled, |(_, main)| main);
+            format!("fake/compiled/{main}.json")
+        }));
+        let borrowed: Vec<&str> = arguments.iter().map(String::as_str).collect();
+        self.earnest(&borrowed).json()
     }
 }
 
@@ -203,24 +190,12 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
 fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_flattens() {
     let quint = Quint::new();
     let ours = quint.verify();
-    assert_eq!(
-        quint.compiled_mains(),
-        BTreeSet::new(),
-        "every setup is built from the typecheck"
+    assert!(
+        quint.calls().is_empty(),
+        "no `quint` is started: {:?}",
+        quint.calls()
     );
-    assert_eq!(
-        quint.of_kind("typecheck").len(),
-        TYPECHECKED.len(),
-        "one typecheck per file"
-    );
-    assert_eq!(
-        quint.of_kind("parse").len(),
-        SOURCES.len(),
-        "one parse per `.qnt` file, each read for its marks"
-    );
-    quint.forget();
-    quint.without_typecheck();
-    let theirs = quint.verify();
+    let theirs = quint.flattened_by_quint();
     let mains = COMPILED
         .iter()
         .map(|compiled| compiled.split_once('.').map_or(*compiled, |(_, main)| main))
@@ -270,7 +245,7 @@ fn a_setup_whose_spec_imports_other_modules_checks_as_the_model_quint_compile_fl
 fn the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_them() {
     let quint = Quint::new();
     let report = quint.verify();
-    assert_eq!(quint.compiled_mains(), BTreeSet::new(), "{report}");
+    assert!(quint.calls().is_empty(), "{report}");
     let spec = [
         ("openTest", "holds"),
         ("pingTest", "holds"),
@@ -338,11 +313,7 @@ fn a_false_assumption_stops_a_module_checked_directly_and_is_left_out_of_a_setup
     let report = quint
         .earnest(&["verify", "--json", "specs/assume.qnt"])
         .json();
-    assert_eq!(
-        quint.compiled_mains(),
-        ["Direct".to_owned()].into_iter().collect::<BTreeSet<_>>(),
-        "a module with no instance is compiled, the setups are built\n{report}"
-    );
+    assert!(quint.calls().is_empty(), "no `quint` is started\n{report}");
     let unreadable: Vec<(String, String)> = report["unreadable"]
         .as_array()
         .into_iter()

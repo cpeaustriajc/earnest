@@ -3,5 +3,6 @@
 
 mod checks;
 mod compared;
+mod labels;
 mod reader;
 mod samples;

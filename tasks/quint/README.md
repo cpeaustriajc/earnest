@@ -361,9 +361,10 @@ What does not fit today:
    - `setBy`, `ite` on any value (`Choose` already does it), `ipow`;
    - range `to`, `chooseSome`;
    - list ops beyond `SeqOp` (`concat`, `slice`, `replaceAt`, `select`, `indices`, `range`);
-   - Quint's `idiv`/`imod`. Earnest's `Divide`/`Remainder` already fault on a negative first
-     number or a divisor below 1, which **avoids the TLC/simulator split by refusing it at
-     run time**. Keep that.
+   - Quint's `idiv`/`imod`. Earnest's `Divide`/`Remainder` faulted on a negative first
+     number or a divisor below 1, which avoided the TLC/simulator split by refusing it at
+     run time. Since #92 they floor, as TLA+ defines and Quint's TLC run computes, and only
+     a divisor of zero is a fault.
    - `get` on a missing key must be a fault, not `null` (`MapOp::Get` gives `null` today), so it
      needs a `MapOp::Must` or `Op::Unwrap` around it.
 
@@ -4956,16 +4957,19 @@ find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earn
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
 | Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 397 | 395 | 332 samples of the repository and 65 of the crate's own (12 from the review of #84), 39 of them refused; the other 2 (`Set[int, str]`, `List[a, b]`) are equal on phases 1 and 2 and refused by `quint parse`'s name phase, as Quint refuses them |
-| Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place |
+| Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place; the same on #93's head, recorded again |
 | 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1087 | 63 Quint accepts: all equal; 1136 Quint refuses: 1044 at Quint's line and column, 92 elsewhere (1 of them by the cap); 20 more refused only by Quint's name phases |
 | 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 670 | 225 Quint accepts: all equal; 575 Quint refuses: 445 at Quint's place, 130 elsewhere, none read |
 | 1000 more from another seed, generated after the fix below, in the container only | 1000 | 875 | 307 Quint accepts: 306 equal, 1 we refuse; 693 Quint refuses: 569 at Quint's place, 122 elsewhere, 2 we read (before the fix: 865 equal, 1 refused, 13 read, 1 tree different) |
+| 72,800 generated one-line values with nested definitions (#93, item 3), in the container only | 72,800 | 72,232 | 40,355 Quint accepts: 40,135 equal, 0 another tree, 175 refused as two readings, 45 refused otherwise; 32,445 Quint refuses: 32,097 at Quint's place, 267 refused as two readings, 79 elsewhere, 2 read |
+| 9000 generated actions with definitions at block level, one typo each (#93), in the container only | 18,000 | 17,121 | 9569 Quint accepts: all equal, modules and table (10 refused before); 8431 Quint refuses: 7552 at Quint's place (4690 before), 879 elsewhere, none read |
+| 708 of the repository's samples without imports, one typo each (#93), in the container only | 708 | 672 | 111 Quint accepts: all equal; 597 Quint refuses: 561 at Quint's place (541 before), 36 elsewhere |
 
 The command for the two last rows and Quint's repository: `QUINT_EXAMPLES=<folder of .qnt>
 QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax every_file_of
 -- --include-ignored --nocapture`. No file of Quint's is committed.
 
-Ten more seeds of the nested-`let` generator (21 to 30, 1000 files each, in the container only):
+Before #93, ten more seeds of the earlier nested-`let` generator (21 to 30, 1000 files each, in the container only, generator not kept):
 Quint accepts 2836 of the 10,000. Of those, **0 have another tree**, 1 is refused by the crate; of
 the 7164 Quint refuses, **0 are read** by the crate.
 
@@ -4981,24 +4985,105 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    `module Broken { val x = (1, }` (test `a_syntax_error_in_an_imported_file_is_unreadable_rather_than_repaired`).
 2. **More than 20,000 attempts. Stricter than Quint.** The retries below are capped per file
    (`SEARCHES` in `parser.rs`); a file that reaches the cap is refused as `unreadable`, never read
-   the way the search stood. Real files use at most 7 attempts (the repository's 397) and 26 (Quint's
-   196). Smallest file Quint accepts that reaches it, nine nested `let`s whose bodies start with `-`:
-   `module A { val v = val a = val a = val a = val a = val a = val a = val a = val a = val a = 1 -1 -1 -1 -1 -1 -1 -1 -1 -1 }`
+   the way the search stood. Counted again on #93 (release build, every file): the repository's
+   559 `.qnt` files need at most 6 attempts (`tests/samples/lets.qnt`; 7 before #93's search) and
+   Quint's 196 at most 7 (`evaluator/fixtures/jmt/grug_ics23.qnt`; 14 before). The cap refuses
+   none of them. The earlier "7 and 26" was counted another way and is not reproduced. Smallest
+   file Quint accepts that reaches the cap, fifteen nested `let`s
+   whose bodies start with `-` (nine before #93):
+   `module A { val v = val a = ... val a = 1 -1 ... -1 }`, `val a = ` and `-1` fifteen times each
    (test `a_file_that_needs_more_attempts_than_the_cap_is_refused_rather_than_guessed`).
-3. **Where a nested `let`'s value ends. Both directions, generated files only.** Quint's parser
-   decides each point where a value may end (before `-`, `[`, `(`, `and`, `or`, `iff`, `implies`,
-   `leadsTo`, `match`, or a header's parentheses) by lookahead over the rest of the input. The crate
-   reads greedily, retries with one point at a time ending the value (latest first, nested `let`s
-   included) and keeps a reading only when the next token can follow an expression there. On
-   12,800 generated files: no file Quint accepts gets another tree; 2 that Quint accepts are
-   refused, 2 that Quint refuses are read.
-   - Stricter, smallest: `module G{val v2=match def l=val l=true[_000]-1{_=>({x1F})}}`, and
-     `module G{val v0=val(y,y)=val(y,_)={x1F}and().implies()val v1={false}}`.
-   - Reads what Quint refuses (`QNT008`), smallest:
-     `module G{val v1=val{g}={...{false},f:()}-{()}val v2=or{{()},}val v4=match(){_=>{true}}}`.
+3. **Where a nested `let`'s value ends. Refuses where Quint's grammar has two readings; reads no
+   file another way on the generated files.** Quint's parser decides each point where a value
+   may end (before `-`, `[`, `(`, `and`, `or`, `iff`, `implies`, `leadsTo`, `match`, or a header's
+   parentheses) by lookahead over the rest of the input, in textual order. At each point it keeps
+   reading the value when some reading of the rest parses that way. The crate reads greedily. When
+   the `let` fails, or its next token can't follow, the crate reads it again with points ending a
+   value, in the same order: the latest single point first, and then, under each point, later
+   points added to it, latest first (#93; before #93 one point at a time). It keeps the first
+   reading whose next token can follow. Two decisions at one token count as one, except for a
+   keyword before `(`.
+   - `match(` may also be read as a call of the name `match`, which Quint's grammar allows and
+     refuses with `QNT008`.
+   - **Refused where the grammar has two readings (#93).** An `and`, `or`, `iff`, `implies` or
+     `leadsTo` inside a definition's value, or a `match` before `(`, can also be read as a name.
+     Which reading Quint takes depends on the order of its grammar's alternatives and on lookahead
+     to the end of the file, which the crate does not model. So when the crate has read a file,
+     it reads the whole file again with each such keyword, one at a time, read as a name. If that
+     reading also parses to the end, with only the `QNT008` the name brings, the file is refused
+     as `unreadable` at the keyword. The message names the value to put in parentheses, e.g.
+     `module G { val v = def l = { true } iff and() [()] }` is refused at the `iff`, "put that
+     definition's value, from 2:19 to before 2:37, in parentheses". Done, both read it with the
+     same tree (test
+     `a_keyword_that_quints_grammar_can_also_read_as_a_name_is_refused_with_the_value_to_put_in_parentheses`).
+   - **What it costs in files.** The repository's samples and Quint's own repository at `v0.33.1`
+     (196 files, cloned in the container) lose no file. Of the generated files Quint accepts, it
+     refuses 175 of 40,355 (0.43%). Following the message, 170 of those 175 read with Quint's
+     tree; the other 5 then name a second keyword further on. Two of the generated files Quint
+     refuses are still read (below); a test keeps them listed.
+   - **What it costs in time.** A keyword is a doubt only where a name could stand. A `match`
+     whose parenthesized scrutinee is followed by `{ |` or `{ Label(` can't be a call, because
+     those braces are no expression. The second reading is parsed only over the declarations
+     whose parsing reached the keyword, not the whole file. If it ends them elsewhere, the whole
+     file is parsed instead. On the 72,800 generated files this refuses and reads exactly what a
+     whole-file second reading does. Release build, best of 9 runs, `read` of the file and its
+     imports:
+
+     | File | KB | `a12afb38` ms | `2989f60e` ms | now ms | attempts `a12afb38` / now | second readings `2989f60e` / now |
+     | --- | --- | --- | --- | --- | --- | --- |
+     | Quint `evaluator/fixtures/jmt/test/apply_simple_test.qnt` | 27.9 | 60.6 | 96.8 | 59.5 | 4 / 2 | 5 / 0 |
+     | Quint `evaluator/fixtures/jmt/apply_fancy.qnt` | 17.6 | 30.8 | 65.2 | 31.7 | 4 / 2 | 5 / 0 |
+     | Quint `examples/cosmos/ics20/ics20.qnt` | 29.4 | 25.0 | 25.5 | 24.9 | 2 / 1 | 0 / 0 |
+     | Quint `examples/cosmos/ics23/ics23.qnt` | 28.9 | 11.9 | 12.1 | 11.6 | 13 / 7 | 0 / 0 |
+     | Quint `examples/cosmos/lightclient/Lightclient.qnt` | 22.6 | 11.4 | 10.9 | 11.4 | 8 / 5 | 0 / 0 |
+     | `tasks/break_it/models/quint_first/fold_seeded/fold_seeded.qnt`, the repository's largest | 8.9 | 7.4 | 7.6 | 7.6 | 0 / 0 | 0 / 0 |
+
+     The 15 largest files of each repository were measured. The other 24 change by less than half
+     a millisecond, and a run of 30 puts the larger swings of single runs within 0.4 ms. Over all
+     755 files of both corpora, 3 second readings are parsed in all.
+
+   - Generated files, in the container only. The one-line generator writes 1 to 3 values, each
+     nesting `val`, `def`, `pure val`, `nondet` and destructurings among every operator, calls of
+     `and`, `or`, `implies`, `Set` and `List`, `and {`/`or {` lists, `match`, `if`, tuples,
+     records, spreads and lambdas, with its free names defined so that Quint's name phase passes.
+     Seed 11 (12,800 files) and seeds 21 to 23 (20,000 each):
+
+     | | Before #93 (`8388c8a`, seed 11) | Now (all four seeds) |
+     | --- | --- | --- |
+     | Quint accepts | 6993 | 40,355 |
+     | read with another tree | **8** | **0** |
+     | read with Quint's tree | 6971 | 40,135 |
+     | refused as having two readings | — | 175 |
+     | refused otherwise | 14 | 45 (44 `QNT008`, 1 `QNT000`) |
+     | Quint refuses | 5807 | 32,445 |
+     | read | **54** | **2** |
+     | at Quint's code, line and column | 5740 | 32,097 |
+     | refused as having two readings | — | 267 |
+     | refused elsewhere | 13 | 79 |
+
+     The 8 files with another tree needed a value to end at two points, which the one-point
+     retry could not find (smallest, now read as Quint reads it, sample
+     `values_ending_at_two_points`: `val v0 = val a = def b = {{w1}}[w0] def c = [][()] -or
+     {{w1},}`). The 54 read were all `QNT008` in Quint, a keyword it reads as a name. The 2
+     still read are also `QNT008`, a keyword before `(` that Quint reads as a name.
+     Smallest: `module G{val w0 def f()def g=val l59877=def l59878={{false}}implies(if(w0)f
+     else{()})val l59880=val l59881={"s"}()and(def l59882()f)val v1}`. Extending the check to
+     keywords before `(` or `{` refuses about 7% of the generated files Quint accepts, so it was
+     not kept. The 45 refused otherwise are the converse: the crate reads a keyword as a name
+     where Quint does not, so the crate refuses (`QNT008`) a file Quint reads.
+   - The earlier smallest files of this item now agree with Quint:
+     `module G{val v2=match def l=val l=true[_000]-1{_=>({x1F})}}` and
+     `module G{val v0=val(y,y)=val(y,_)={x1F}and().implies()val v1={false}}` are `QNT404` in both,
+     and `module G{val v1=val{g}={...{false},f:()}-{()}val v2=or{{()},}val v4=match(){_=>{true}}}`
+     is `QNT008` at 1:74 in both.
+   - A binary `-` whose operand is an `if` with an `else` that ends before an `and {` list on
+     the next line, as in `val w = 2 - if (true) 1 else 1` / `and { (), 1 }`, was refused: the
+     check that an operand follows the `-` read the `else` to the end of the list and gave up.
+     It now also tries the operand with one point ending a value (#93); 10 of the 9569
+     generated files of item 4 that Quint accepts were refused this way, none is now.
    - Refusing every `let` where the retry finds more than one reading the next token can follow
-     was tried and not kept: it refuses 3 of the repository's 397 samples, 1 of Quint's 196 files
-     and 30 of 532 generated files Quint accepts, which the crate reads as Quint does.
+     was tried before #93 and not kept: it refuses 3 of the repository's 397 samples, 1 of Quint's
+     196 files and 30 of 532 generated files Quint accepts, which the crate reads as Quint does.
 4. **Where an error is placed on a file both refuse. Same verdict, other place.** On 1136 mutated
    files Quint refuses, 92 are refused elsewhere (one of them by the cap). Quint places the first
    error where its lookahead over every alternative gives up; the crate does the same for a call's
@@ -5006,9 +5091,42 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    `module A { val x = (a.b(1 +)) }`, at 1:28 in Quint and 1:24 in the crate. Two mutated files have Quint's lexer error first, an unterminated
    string at the end of the file that Quint's lookahead for a `match` 37 and 75 lines earlier
    reached.
+   - After a definition inside an expression (`nondet`, `def`, `val`, `pure val`, #93). When the
+     first reading of a `let` fails, the crate reads it again with one point ending a value. A
+     retry whose `let` parses but which the next token can't follow is taken only when it got at
+     least as far as the first reading's failure, counting the furthest any of its own attempts
+     got. That is how Quint's lookahead keeps the alternative that lives longer and, on a tie, the
+     one that has already left the value. Before, any such retry was taken, so an error in the
+     body was placed where a shorter reading of the value stopped: `{ nondet v = 0.to(2).oneOf()
+     x' = v + }` at the `x` instead of the `}`, and `{ def g(a) = a` / `x' = 1 +` / `}` as
+     `QNT006` at the `x` (samples in `tests/samples/places/`).
+   - A retry taken on such a tie whose `QNT006` falls where its own reading stopped, short of the
+     first reading's failure, gives way to that failure. Quint writes `QNT006` only after the
+     right operand of the `=`, and its parser reads that operand into the part that fails, so the
+     syntax error comes first: `{ def g(a) = f(x +) x' = 1 }` is `QNT000` at the `)`, not
+     `QNT006` at the `(` (sample `def_value_with_dangling_operator`).
+   - On 9000 generated actions with 1 to 3 such definitions at block level, one line or several,
+     under `all`, `any`, `and`, `if` and nested blocks, each with one typo planted (a dangling
+     operator; a `}`, `)`, `,`, `{` or `(` dropped or added; a stray `///` line; `=` for `==` or
+     the reverse; a `'` dropped; seeds 1 to 3, in the container only): of the 8431 Quint refuses,
+     7552 are at Quint's code, line and column (4690 before #93); none that agreed before differs.
+     The 879 left, by Quint's message: 459 `no viable alternative`, 237 `extraneous input`, 78
+     `mismatched input`, 68 `missing`, 37 another code. They come from Quint's token recovery,
+     which the crate does not model: the same generator without the definitions (2780 refused)
+     differs on 207, the same kinds. 140 of the 879 have another code. 103 of them are a reading
+     the crate takes where Quint's lookahead gives up first, the crate naming `QNT008` (85) or
+     `QNT006` (18) where Quint names `QNT000`. Telling these from the files where Quint does write
+     `QNT008` there needs to know where Quint's lookahead leaves the rule it predicts in. Two rules
+     were tried for `QNT008` and not kept. The first, `QNT000` when the keyword read as a name
+     fails at the very next token, turned 16 to 104 files that agreed into differing in each
+     generated set. The second, the same but only when no `{` or `(` follows the keyword, still
+     turned 1 to 12. Smallest:
+     `module A { var x: int action step = { and val w = 1 x' = w } }`, at 1:43 in both, `QNT000`
+     in Quint and `QNT008` in the crate.
 5. **A syntax error's message. Same verdict and place, other text.** For `QNT000` the crate words
    the message itself, with Quint's code, line and column; Quint's lists the tokens its parser
-   expected (decided on #84). Every other code's message is Quint's.
+   expected (decided on #84). Every other code's message is Quint's. A token the message shows
+   is on one line: a doc comment without its line end, any other line break as `\n`.
 
 Nothing else is known to differ: the crate writes what Quint writes even where Quint's behaviour
 looks like a fault (a doc line that keeps half a character as U+FFFD, `from ""` read as no path).
@@ -5423,19 +5541,15 @@ was copied from, and `Parsed::types_of_added` infers only the definitions `quint
   (Quint 1.3 s); at two hundred, 0.57 s and 0.12 s (optimized build).
 - Only the first error is given. Quint reports every error; the first is the same.
 - Where Quint's type checker runs out of stack ("Maximum call stack size exceeded"), the crate
-  refuses the file as `unreadable` with that text instead of running out of its own stack. Two
-  bounds do it: a substitution applied inside another more than 300 deep, and a substitution still
-  changing after 100 rounds (the most any file needs is 3). Smallest files, both from the review:
+  refuses the file as `unreadable` instead of running out of its own stack, or reads it where its
+  own bounds allow: see "Depth, stack and size" below for the bounds, the stack they need and
+  which deep files each reads. The bound on rounds stays 100 (the most any file needs is 3).
+  Smallest files Quint overflows on, both from the review:
   `review/typing/row_inside_its_own_field.qnt`
   (`def f(x: { f: a | r }, y: { f: { z: int | r }, h: a | s }): bool = x == y`) and
   `review/typing/with_of_itself_after_with.qnt` (`def f(z) = z.with("h", 1).with("f", z)`): the
   tail and field substitutions of `unifyRows` compose into one that binds a variable to a type that
-  holds it, and its application grows forever. The 300 is what a 2 MB thread of an unoptimized
-  build survives on those files (400 overflows it). It is stricter than Quint on valid files typed
-  more than 300 deep: Quint 0.33.1 accepts a `Set(Set(...))` 500 deep (in 58 s) and overflows at
-  1,000; the crate refuses from 301. In an unoptimized build on a 2 MB thread the crate's parser
-  already overflows near 150 nested calls, before types: that is slice 1's recursion, and a deep
-  file needs a larger stack (the optimized build and an 8 MB main thread take 500).
+  holds it, and its application grows forever.
 - On Quint's two internal errors of composing substitutions ("Substitutions with same name (x) but
   incompatible kinds: [ ... ]" and "Unifying substitutions with same name: x, <error tree>") the
   crate stops all type work at once, as Quint's exception does, and refuses the file as
@@ -5673,9 +5787,12 @@ drop runs; only `--target tlaplus` does.
 
 ### How it is compared [ran]
 
-- `tasks/quint/syntax/list_checks.sh <earnest> tasks` lists every check earnest compiles: it
-  runs `earnest verify` with a `quint` that refuses `typecheck`, so every check is compiled,
-  and records the arguments. They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
+- `tasks/quint/syntax/list_checks.sh tasks` lists every check earnest compiles: it runs the
+  ignored test `quint::tests::the_checks_earnest_compiles_are_listed_as_quint_compile_is_called`,
+  which plans every check below the folder as `earnest verify` does, with no typecheck, so every
+  check is compiled, and records the arguments `quint compile` would be given (before the switch
+  it ran `earnest verify` with a `quint` that refused `typecheck`; the two lists are equal byte
+  for byte). They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
   (249), one check a line with its arguments between tabs, since earnest gives an invariant such as `pair == pair` as one argument. `extra_checks.py` adds every candidate name of the 17 shapes (as
   `tasks/quint/shapes/record.py` tries them), every module of `tasks/quint/imports/` and of the
   crate's samples (`tests/samples/compile/`), and 15 checks of what a check adds: 272 in
@@ -5707,7 +5824,7 @@ To record again (the tests need no Node):
 ```sh
 npm install @informalsystems/quint@0.33.1          # in a scratch folder
 export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint
-tasks/quint/syntax/list_checks.sh target/release/earnest tasks > crates/earnest_quint_syntax/tests/compile/checks.txt
+tasks/quint/syntax/list_checks.sh tasks > crates/earnest_quint_syntax/tests/compile/checks.txt
 python3 -I tasks/quint/syntax/extra_checks.py . > crates/earnest_quint_syntax/tests/compile/extra_checks.txt
 tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint crates/earnest_quint_syntax/tests/compile/*checks.txt
 ```
@@ -5771,3 +5888,135 @@ set to `undefined`, and the import of the module that exported it sets it again,
 place (`exported_and_used.qnt`, found by the review of `5008154`). That is the one key the
 flattener sets to `undefined` that a later pass sets again, and the crate keeps its place with a
 marker (`flatten::CLEARED`) that the table and the written output leave out.
+
+## Quint front end, slice 5: the switch (#91): report
+
+`earnest verify` (and `earnest changes`, `earnest chart`) on a `.qnt` file now takes from
+`crates/earnest_quint_syntax`, in memory, what it took from the project's `quint`: the parse
+and its source map where it ran `quint parse`, the typecheck of the setups it builds where it ran
+`quint typecheck`, and the flattened module of a check where it ran `quint compile --target
+json`. Each is handed over as the JSON text Quint writes, so the reader, `setup.rs`, the marks,
+the places and the plan read exactly what they read before, and an integer literal past 64 bits
+reaches `json::exact` with every digit. Nothing after those places changed, and the same checks
+are built from the typecheck and the same compiled as before.
+
+Removed with it: the program lookup on this path (it moved to `confirm_quint.rs`, the one place
+that still starts Quint), the Quint version in every key, the kept parse, typecheck and compile
+output under `.earnest/quint/`, the scratch files, and the reason `quintNotFound` of `--base`.
+A compiled `.json` named on the command line is still read as before.
+
+### What a user can now meet that they couldn't before
+
+- A project with no Quint and no Node gets verdicts, where every check was `unreadable` with
+  `` `quint` was not found ``. `earnest confirm --quint` with no Quint prints `not compared` and
+  how to install it.
+- A project whose `quint` is another version than 0.33.1 gets 0.33.1's reading from `verify`,
+  where it got its own Quint's; `confirm --quint` still runs its own Quint, so a difference shows
+  there.
+- A syntax error is in earnest's words with Quint's code, line and column, not in the words of
+  Quint's parser generator.
+- The other differences listed in #82, each a refusal: a syntax error in an imported file; a file
+  that needs more than 20,000 attempts to read; nested `val`/`def`/`nondet` on one line whose body
+  starts with `-`, `[`, `(` or a keyword; a file on which Quint's own passes throw, `unreadable` in
+  earnest's words where Quint printed a stack.
+- A second run of an unchanged file reads it again in memory: 19 ms and 9 MB on
+  `tasks/quint/checks/counter/counter.qnt`, where a run that reused what `quint` kept took 8 ms.
+
+### What was checked
+
+- The reference is `183d76b` built in release, with Quint 0.33.1 from npm on its path. Both were
+  run on every `.qnt` file of `tasks/quint` and `tasks/break_it/models/quint_*` (286 files),
+  each alone and every folder holding one whole (121 folders), with `--json` and as text, at
+  `--jobs 1` and `--jobs 4`: 1,628 runs each, 0 differences in the output, times taken out. No
+  sample changed because of a difference listed in #82.
+- `strace -f -e trace=execve` of `earnest verify counter.qnt`: one `execve`, earnest's own; the
+  reference makes three pairs of `quint` and `node`.
+
+## Quint front end: depth, stack and size (#93, under B): report
+
+Hand-over: `crates/earnest_quint_syntax` reads, typechecks and compiles files nested as deep or as
+long as Quint 0.33.1 answers, and further where its own bounds allow. A file past a bound is refused
+as `unreadable`, naming the bound; no input found kills the process. Numbers below are an optimized
+build unless said otherwise. Quint is Quint 0.33.1's CLI on the same files.
+
+### The bounds
+
+| Bound | Value | Refusal | Quint 0.33.1 |
+| --- | --- | --- | --- |
+| Expressions or types nested in the parser | 2,000 | "expressions or types here are nested more than 2000 deep, deeper than earnest reads" | a `Set` 1,000 deep overflows its type checker |
+| Depth of Quint's tree, checked before names | 4,000 | "... nested more than 4000 deep in Quint's tree, deeper than earnest reads" | a sum of 1,000 terms already overflows |
+| A substitution applied inside another | 2,100 | "Maximum call stack size exceeded: a type here is nested more than 2100 deep, deeper than earnest reads" | types a type 2,048 deep (`f11` below), overflows at 4,096 |
+| Unification nested in types | 5,000 | "... these types are nested more than 5000 deep ..." | no input reaches it while the bound above holds |
+| Rounds of one substitution | 100 | "... still changing after 100 rounds ..." | the most any sample needs is 2 |
+| Type nodes the types of one file hold | 1,600,000 | "the types of this file hold more than 1600000 type nodes (N counted when type work stopped), more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's" | none |
+
+- The substitution bound was measured with `pure def f_i(x) = f_{i-1}(f_{i-1}(x))`: `f11` (2,048 deep)
+  is typed in 2.0 s (Quint 14.2 s), `f12` is refused, as Quint overflows. A composite such as
+  `f10(f9(...(1)))` of 2,000 already overflows Quint; earnest reads it.
+- The type-node bound is earnest's own. Each id holds a copy of its type where Quint shares one
+  object, so a `match` of n cases or a sum type of n variants holds about 6n² type nodes (inference
+  alone is at 330 MB for 500 cases, against Quint's whole 265 MB). 1,600,000 nodes keeps `compile`
+  under about 4 GiB (500 cases: 1.51 million nodes, 3.7 GB). It admits about 515 cases or variants.
+  Quint typechecks 2,500 cases (626 s, 4.5 GB) and fails to compile them (exit 1 after 1,065 s,
+  7.6 GB), so earnest is stricter between 515 and 2,500. The count is kept as inference gives each
+  id its type, so the 2,500-case file is refused at a peak of 408 MiB in 16 s. The largest table in
+  the repository holds 25,250 nodes, in Quint's repository 74,688 (`evaluator/fixtures/jmt/test/
+  test_all.qnt`), and in the deep samples 504,011 (`records_500`). Sharing the type, which a later
+  issue does, removes the cause.
+- Where Quint overflows and earnest reads within its bounds (a sum of 1,000 terms, a `Set` 1,000
+  deep, chains of 4,000 to 20,000 aliases), Quint 0.33.1 gives no verdict; `confirm --quint` says
+  `cannot`.
+
+### The stack
+
+- `STACK_NEEDED` is 64 MiB: in a debug build the parser at its bound needs 28 to 32 MiB, and a type
+  4,096 deep fits 64 MiB (so the substitution bound has twice its need). Each outermost call of a
+  public entry starts one thread of that stack; calls inside it run on it.
+- `on_a_stack_of(bytes, work)`: a caller whose thread was started with at least `STACK_NEEDED` says
+  so, and every entry inside `work` runs on that thread with no thread of its own. The marker is
+  restored when `work` ends, panics included. Outside it the crate starts its own thread, and a thread
+  that can't start is a refusal that says what to do (fewer `--jobs`, or a higher `ulimit -v`).
+- Address space, eight threads reading, typechecking and compiling at once, lowest `ulimit -v` with
+  nothing refused ten times over: 1,664 MiB with small callers and the crate's own threads, 2,432 MiB
+  with 256 MiB callers running the crate inline (`threads::lowest_limit_on_address_space_that_holds`).
+
+### Long shapes (survey)
+
+Time of `typecheck` and `compile`, with the peak resident memory of the whole run. Quint's columns
+are `quint typecheck` and `quint compile`; `-` where not measured.
+
+| Shape | Size | earnest typecheck | earnest compile | Peak | Quint typecheck | Quint compile | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `type` aliases, each the one before | 4,000 / 8,000 / 20,000 | 0.07 / 0.15 / 0.56 s | 0.47 / 0.68 / 2.2 s | 80 / 150 / 368 MB | overflows / overflows | - | fixed: unified in a loop, inlined once per alias |
+| `val x_i = Set(x_{i-1})` | 100 / 400 | 0.04 / 0.66 s | 0.15 / 2.5 s | 38 / 473 MB | - | - | fixed (was 35 s at 400): aliases inlined in place; the rest is the output's square |
+| `val` chain, `pure def` chain | 8,000 each | 1.6 s (defs) | 2.0 s (vals), 7.1 s (defs) | 1.0 GB (defs) | - | - | linear |
+| modules, each importing the one before | 500 / 1,000 | 0.06 / 0.12 s | 13 / 58 s | 426 MB / 1.6 GB | - | 98 s / - | fixed (was 413 s at 500): flattened modules resolved once |
+| modules importing and exporting the one before | 200 / 500 | 0.01 / 0.03 s | 17 / 358 s | 75 / 425 MB | 4 s (500) | 618 s (500) | as Quint's flattener, cubic; faster than Quint |
+| instances, each of the one before | 50 / 100 | 0.01 / 0.02 s | 0.85 / 8.5 s | 44 / 169 MB | - | 3.1 / 10.9 s | fixed (was 30 s at 100) |
+| files, each importing the one before | 50 / 100 | 0.01 / 0.05 s | - / 0.54 s | 17 / 35 MB | - | - | fixed (was 5.7 s at 100) |
+| unrelated `val`s in one module | 10,000 / 20,000 | 0.21 / 0.45 s | 1.1 / 2.4 s | 206 / 409 MB | - | - | linear |
+| one line of `val`s | 512 KB / 1 MB | 0.92 / 2.1 s | 4.8 / 10.1 s | 675 MB / 1.35 GB | - | - | linear |
+| one string literal | 512 KB / 1 MB | 1 / 2 ms | 6 / 9 ms | 12 / 20 MB | - | - | linear |
+| `Set(...)` of n items | 2,500 / 5,000 | 1.8 / 7.5 s | 6.2 / 24 s | 35 / 66 MB | 88 / 780 s | 97 s / - | square, as Quint's solver; far inside Quint |
+| tuple of n items | 2,500 / 5,000 | 2.1 / 12.7 s | 5.6 / 28 s | 35 / 67 MB | - | - | square, as `Set` |
+| record of n fields | 2,500 / 5,000 | 8.0 / 43 s | 23 / 131 s | 60 / 117 MB | 745 s / - | 725 s / - | left: effect substitutions over 2n arguments, about n^2.4; far inside Quint |
+| `match` of n cases, sum type of n variants | 500 / 2,500 | 4.6 s / refused | 18 s / refused | 3.7 GB / 408 MiB | 13 / 626 s | - / fails | bound: type nodes, above |
+| chain of n `.union(...)` calls | 3,990 / 20,000 | 24 s / refused | 60 s / refused | 122 MB / - | overflows from 2,000 (1.4 s) | - | fixed: read 17.6 s → 74 ms at 3,990; 20,000 refused in 0.3 s (1.4 s in debug) |
+| chain of n `.map(x => Set(x))` | 500 | 40 s | 81 s | 1.5 GB | 210 s | - | left: Quint's nested fixpoint of substitutions; about 5 times faster than Quint |
+
+### Tests
+
+- `tests/parse/depth.rs`: one refusal test per bound, each run on the crate's own thread and inline
+  on a 256 MiB thread, in a debug build (15 s); the 2,048-deep type and the deep sum and set
+  (`#[ignore]`, `cargo test --release -p earnest_quint_syntax --test parse depth:: -- --include-ignored`);
+  time bounds that hold in an optimized build: a match 160 deep under Quint's 5.7 s, 8,000 aliases
+  under 2 s; the 2,500-case match refused under 2 GiB (`#[ignore]`, its command in the attribute).
+- `tests/parse/threads.rs`: eight threads at once, `on_a_stack_of` starting no thread (counted from
+  `/proc/self/task` in a child process run alone), nesting, a panic inside `work`, and the address
+  space under 4 GiB both ways.
+- `tests/parse/deep.rs`: ten files nested hundreds deep that Quint answers (`tests/samples/deep/`),
+  compared with Quint's parse, types, effects and whole typecheck output as text, 10 of 10 equal;
+  recordings over 1 MB keep the length and FNV-64 hash of Quint's text
+  (`cargo test --release -p earnest_quint_syntax --test parse deep:: -- --ignored`).
+- The unit tests of `src/inference/tests.rs`: the bounds on unification and on type nodes, just
+  under and just over, and the largest table of the samples ten times under the bound.

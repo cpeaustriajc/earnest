@@ -2,6 +2,8 @@ import json
 import os
 import sys
 
+sys.setrecursionlimit(1_000_000)
+
 root = sys.argv[1].rstrip("/") + "/"
 typecheck_name, inferred_name, types_name = sys.argv[2:5]
 parse_name = sys.argv[5] if len(sys.argv) > 5 else None

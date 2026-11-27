@@ -2,7 +2,7 @@ use crate::helper::Helper;
 use crate::kind::Kind;
 use crate::names::Names;
 use earnest_ir::{Expr, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep};
-use earnest_value::{Domain, IntType, Sym, Symbols, Value};
+use earnest_value::{Domain, IntType, Notation, Sym, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const NULL: &str = "<<>>";
@@ -638,6 +638,12 @@ impl<'a> Scribe<'a> {
     fn apply(&mut self, op: Op, arguments: &[Expr], scope: &mut Scope) -> Written {
         let given = self.each(arguments, scope);
         let mut needed = needs_of(&given);
+        if matches!(self.symbols.notation(), Notation::Quint(_))
+            && let Some((written, divisor)) = floored(op, &given)
+        {
+            needed.push(Some(format!("({divisor} # 0)")));
+            return written.needing(needed);
+        }
         needed.push(has_a_value(op, &given));
         applied(op, &given).needing(needed)
     }
@@ -928,6 +934,12 @@ fn pair(op: Op, first: &Written, second: &Written, third: Option<&Written>) -> W
                 Math::Divide => {
                     return call(Helper::Division, &[left, right], Kind::Int);
                 }
+                Math::TruncatedRemainder(_) => {
+                    return call(Helper::TruncatedRemainder, &[left, right], Kind::Int);
+                }
+                Math::TruncatedDivide => {
+                    return call(Helper::TruncatedDivision, &[left, right], Kind::Int);
+                }
                 _ => return unknown("arithmetic added after it was written"),
             };
             Written::new(format!("({left} {sign} {right})"), Kind::Int)
@@ -1047,6 +1059,21 @@ fn on_seq(op: SeqOp, first: &Written, second: &Written, third: Option<&Written>)
     }
 }
 
+fn floored(op: Op, given: &[Written]) -> Option<(Written, String)> {
+    let helper = match op {
+        Op::Math(Math::Divide) => Helper::FlooredDivision,
+        Op::Math(Math::Remainder) => Helper::FlooredRemainder,
+        _ => return None,
+    };
+    let [left, right, ..] = given else {
+        return None;
+    };
+    Some((
+        call(helper, &[&left.text, &right.text], Kind::Int),
+        right.text.clone(),
+    ))
+}
+
 fn has_a_value(op: Op, given: &[Written]) -> Option<String> {
     match (op, given) {
         (Op::Unwrap, [on, ..]) => Some(format!("({} # {NULL})", on.text)),
@@ -1056,6 +1083,22 @@ fn has_a_value(op: Op, given: &[Written]) -> Option<String> {
             "(({} >= 0) {AND} ({} >= 1))",
             left.text, right.text
         )),
+        (Op::Math(Math::TruncatedDivide), [_, right, ..]) => Some(format!("({} # 0)", right.text)),
+        (Op::Math(Math::TruncatedRemainder(ty)), [left, right, ..]) => {
+            let lowest = ty
+                .map(IntType::lowest)
+                .filter(|lowest| *lowest < 0 && *lowest > i64::from(i32::MIN));
+            Some(match lowest {
+                Some(lowest) => format!(
+                    "(({right} # 0) {AND} (({left} # {}) \\/ ({right} # {})))",
+                    number(lowest),
+                    number(-1),
+                    left = left.text,
+                    right = right.text
+                ),
+                None => format!("({} # 0)", right.text),
+            })
+        }
         _ => None,
     }
 }

@@ -1,3 +1,4 @@
+use crate::effects::with_copies;
 use crate::files::Parsed;
 use crate::flatten::{Table, field_mut, flatten_modules, id_of, text, without_cleared};
 use crate::ids::Ids;
@@ -7,7 +8,6 @@ use crate::lexer::lex;
 use crate::names::{Raised, resolve};
 use crate::parser::parse;
 use crate::problem::Problem;
-use crate::{effects_with_copies, types_with_copies};
 
 /// What `quint compile --target json` is told to flatten and check: `--main`, `--init`,
 /// `--step`, `--invariant` and `--temporal`, each as the text given on the command line.
@@ -41,13 +41,15 @@ pub struct Compiled {
     effects: Json,
 }
 
+static NULL: Json = Json::Null;
+
 impl Compiled {
     /// The main module, flattened: what `quint compile` writes under `modules`.
     pub fn main_module(&self) -> &Json {
         self.modules
             .iter()
             .find(|module| text(module, "name") == self.main)
-            .unwrap_or(&Json::Null)
+            .unwrap_or(&NULL)
     }
 
     /// Every module Quint flattened, in its order, the main one among them. The type and effect
@@ -59,6 +61,10 @@ impl Compiled {
     /// The `table` `quint compile` writes: every name of every flattened module, keys in
     /// numeric order.
     pub fn table(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.table_here())
+    }
+
+    fn table_here(&self) -> Json {
         self.table.to_json()
     }
 
@@ -83,6 +89,10 @@ impl Compiled {
 
     /// The whole of what `quint compile --target json` writes to stdout.
     pub fn output(&self) -> Json {
+        crate::stack::built_on_large_stack(|| self.output_here())
+    }
+
+    fn output_here(&self) -> Json {
         Json::object(vec![
             ("stage", Json::text("compiling")),
             ("warnings", Json::List(Vec::new())),
@@ -154,6 +164,10 @@ impl Parsed {
     /// flattener stops with "Internal error while flattening", that error with Quint's text
     /// under the code `QNT000`.
     pub fn compile(&self, target: &Target) -> Result<Compiled, Problem> {
+        crate::stack::on_large_stack(|| self.compile_here(target))?
+    }
+
+    fn compile_here(&self, target: &Target) -> Result<Compiled, Problem> {
         let checked = self.typecheck()?;
         let mut modules = match checked.get("modules") {
             Some(Json::List(modules)) => modules.clone(),
@@ -215,28 +229,27 @@ impl Parsed {
             .iter()
             .filter_map(|id| table.get(*id).map(|entry| (*id, entry.to_json())))
             .collect();
-        let checked_types = checked
-            .get("types")
-            .cloned()
-            .unwrap_or(Json::Object(Vec::new()));
-        let analyzed = types_of_added(in_order.clone(), &checked_types, &added);
+        let none = Json::Object(Vec::new());
+        let checked_types = checked.get("types").unwrap_or(&none);
+        let analyzed = types_of_added(in_order.clone(), checked_types, &added);
         if analyzed.crash.is_some() {
-            self.types_of_added(&in_order, &checked_types, &added)?;
+            self.types_of_added(&in_order, checked_types, &added)?;
         }
+        drop(in_order);
+        let effects = checked.get("effects").cloned().unwrap_or(none);
+        drop(checked);
         let types = analyzed.table;
         self.analyze_added(&table.to_json(), &added)?;
-        let flat = flatten_modules(&modules, &table, &types, &mut ids)
+        let flat = flatten_modules(&modules, &table, types, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;
-        let effects = checked
-            .get("effects")
-            .cloned()
-            .unwrap_or(Json::Object(Vec::new()));
+        drop(modules);
+        drop(table);
         Ok(Compiled {
             modules: flat.modules.iter().map(without_cleared).collect(),
             table: flat.table,
             main: target.main.clone(),
-            types: types_with_copies(&flat.types, &flat.copies),
-            effects: effects_with_copies(&effects, &flat.copies),
+            types: with_copies(flat.types, &flat.copies),
+            effects: with_copies(effects, &flat.copies),
             copies: flat.copies,
         })
     }

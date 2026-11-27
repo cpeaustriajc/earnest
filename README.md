@@ -93,8 +93,8 @@ Earnest also runs under the tests of a state machine library, with no model file
 ## Requirements and security
 
 - **Platforms:** macOS (Apple silicon, Intel), Linux x64 and ARM64 with glibc 2.39 or newer, and Windows x64. Linux with musl builds from source.
-- **No runtime:** no Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then. Only `earnest confirm --tlc` needs Java.
-- **Nothing runs:** earnest parses model files. It never executes JavaScript, resolves `node_modules` or runs `cargo build`, except that checking `.qnt` files starts the project's own `quint` (Node), and only then.
+- **No runtime:** no Java and no Node. Earnest reads `.qnt` files itself, as Quint 0.33.1 reads them. Only `earnest confirm --tlc` needs Java, and only `earnest confirm --quint` needs Quint and Node.
+- **Nothing runs:** earnest parses model files. It never executes JavaScript, resolves `node_modules` or runs `cargo build`, and it starts no `quint`, except for `earnest confirm --quint`.
 - **Offline and bounded:** no network calls. It writes only to `.earnest/` and to `--out`. `--max-states` (default 5,000,000) and `--time-limit` cap each run.
 - **Verified install:** `install.sh` and `install.ps1` check the archive's SHA-256 before installing.
 - **Licenses:** the checker is `GPL-3.0-or-later` ([LICENSE](LICENSE)). The model libraries are `LGPL-3.0-or-later` ([LICENSE.LESSER](LICENSE.LESSER)), so app code that only depends on them stays outside the GPL.

@@ -1,5 +1,6 @@
 use crate::checks::CHECKS_FILE;
 use crate::places::Places;
+use crate::quint::quint_text;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -144,7 +145,7 @@ fn real(path: &Path) -> PathBuf {
 }
 
 fn module_line(file: &Path, name: &str) -> Option<usize> {
-    let text = fs::read_to_string(file).ok()?;
+    let text = quint_text(file).ok()?;
     let position = text.lines().position(|line| {
         line.trim_start()
             .strip_prefix("module")
@@ -159,7 +160,7 @@ fn module_line(file: &Path, name: &str) -> Option<usize> {
 
 fn written_import(written: (&str, usize, usize)) -> Option<String> {
     let (file, start, end) = written;
-    let text = fs::read_to_string(file).ok()?;
+    let text = quint_text(file).ok()?;
     let line: String = text
         .chars()
         .skip(start)

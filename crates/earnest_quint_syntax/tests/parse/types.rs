@@ -1,27 +1,10 @@
-use crate::corpus::root;
+use crate::corpus::{root, samples};
 use earnest_quint_syntax::{Json, Problem, read};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const RECORD_COMMAND: &str = "npm install @informalsystems/quint@0.33.1 in a scratch folder, export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint, then from the repository: tasks/quint/syntax/record_types.sh crates/earnest_quint_syntax/tests/quint <file>...";
-
-fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(base.join(directory)) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let relative = directory.join(entry.file_name());
-        if entry.path().is_dir() {
-            samples(base, &relative, found);
-        } else if relative
-            .extension()
-            .is_some_and(|extension| extension == "qnt")
-        {
-            found.push(relative.to_string_lossy().replace('\\', "/"));
-        }
-    }
-}
 
 fn number(value: Option<&Json>) -> usize {
     match value {
@@ -82,6 +65,7 @@ fn first_difference(ours: &Json, theirs: &Json) -> Option<String> {
         .map(|(key, value)| format!("id {key}: {value}, where Quint has no type"))
 }
 
+#[derive(Debug)]
 pub(crate) enum Typed {
     Equal,
     Refused,
@@ -113,6 +97,22 @@ pub(crate) fn their_table(recorded: &Json) -> Result<Json, String> {
         .map(Json::Object)
 }
 
+/// Whether `ours` is, as text, what a recording too large to keep whole gives as its length
+/// and hash: `{"length": .., "fnv": ..}`.
+pub(crate) fn same_as_hashed(ours: &str, hashed: Option<&Json>, what: &str) -> Result<(), String> {
+    let found = Json::Object(vec![
+        ("length".to_owned(), Json::Number(ours.len().to_string())),
+        ("fnv".to_owned(), Json::Text(crate::effects::fnv(ours))),
+    ]);
+    match hashed {
+        Some(theirs) if *theirs == found => Ok(()),
+        Some(theirs) => Err(format!(
+            "{what}: {found}, where Quint's text gives {theirs}"
+        )),
+        None => Err(format!("{what}: no hash recorded")),
+    }
+}
+
 pub(crate) fn compared_types(sample: &str, recorded: &Path, base: &Path) -> Result<Typed, String> {
     let recorded = &recorded.join(
         sample
@@ -142,6 +142,10 @@ pub(crate) fn compared_types(sample: &str, recorded: &Path, base: &Path) -> Resu
         return same_refusal(ours, first).map(|()| Typed::Refused);
     }
     let ours = ours.map_err(|problem| format!("refused: {problem}"))?;
+    if let Some(hashed) = recorded.get("hashed") {
+        same_as_hashed(&ours.to_string(), hashed.get("table"), "types")?;
+        return Ok(Typed::Equal);
+    }
     let theirs = their_table(&recorded)?;
     if let Some(difference) = first_difference(&ours, &theirs) {
         return Err(difference);
@@ -265,10 +269,10 @@ fn added_definitions_are_typed_against_the_types_already_found() {
         r#"{"id":900001,"kind":"def","name":"q::added","qualifier":"val","expr":{"id":900000,"kind":"app","opcode":"iadd","args":[{"id":899998,"kind":"int","value":1},{"id":899999,"kind":"int","value":2}]}}"#,
     )
     .expect("JSON");
-    let Json::Object(more) = parsed
+    let more = parsed
         .types_of_added(&[], &types, &[added])
-        .expect("an addition of two integers is typed")
-    else {
+        .expect("an addition of two integers is typed");
+    let Json::Object(more) = &more else {
         panic!("a table");
     };
     assert_eq!(more.len(), entries.len() + 4, "the four new ids are typed");

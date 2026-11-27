@@ -1,6 +1,9 @@
 use crate::compared::{Outcome, compared, fixtures, listed, root};
 use std::env;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 
 struct Tally {
     equal: usize,
@@ -15,8 +18,32 @@ fn every(folder: &Path, base: &Path) -> Tally {
         refused: 0,
         differences: Vec::new(),
     };
-    for each in &recorded {
-        match compared(each, base) {
+    let next = AtomicUsize::new(0);
+    let threads = thread::available_parallelism().map_or(4, NonZeroUsize::get);
+    let mut outcomes: Vec<(usize, Result<Outcome, String>)> = thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut found = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(each) = recorded.get(at) else {
+                            break found;
+                        };
+                        found.push((at, compared(each, base)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("a comparing thread ends"))
+            .collect()
+    });
+    outcomes.sort_by_key(|(at, _)| *at);
+    for (at, outcome) in outcomes {
+        let each = &recorded[at];
+        match outcome {
             Ok(Outcome::Equal) => tally.equal += 1,
             Ok(Outcome::BothRefuse) => tally.refused += 1,
             Err(found) => tally

@@ -97,7 +97,7 @@ const SAME_AS: [(&str, &str); 1] = [("Exported", "Plain")];
 
 const SMALL_RUNS: &str = ", tickTwice, tickMany, overTick, hearAny";
 
-const FALLBACKS: [&str; 2] = ["Nested", "Single"];
+const ILL_TYPED: (&str, &str) = ("val levelOk = level <= 6", "val levelOk = level <= true");
 
 fn setups(name: &str) -> String {
     let path = repository().join("tasks/quint/setups").join(name);
@@ -164,27 +164,14 @@ impl Quint {
             .collect()
     }
 
-    fn of_kind(&self, kind: &str) -> Vec<String> {
-        self.calls()
-            .into_iter()
-            .filter(|call| call.split(' ').next() == Some(kind))
-            .collect()
-    }
-
-    fn compiled_mains(&self) -> BTreeSet<String> {
-        self.of_kind("compile")
-            .iter()
-            .filter_map(|call| {
-                let mut words = call.split(' ');
-                words.find(|word| *word == "--main")?;
-                words.next().map(str::to_owned)
-            })
-            .collect()
-    }
-
-    fn forget(&self) {
-        self.sandbox.write("fake/calls", "");
-        fs::remove_dir_all(self.sandbox.path().join(".earnest")).unwrap_or_default();
+    fn flattened_by_quint(&self) -> Value {
+        let mut arguments: Vec<String> = vec!["verify".to_owned(), "--json".to_owned()];
+        arguments.extend(COMPILED.iter().map(|compiled| {
+            let main = compiled.split_once('.').map_or(*compiled, |(_, main)| main);
+            format!("fake/compiled/{main}.json")
+        }));
+        let borrowed: Vec<&str> = arguments.iter().map(String::as_str).collect();
+        self.earnest(&borrowed).json()
     }
 
     fn without_named_runs(&self) {
@@ -199,11 +186,16 @@ impl Quint {
             self.sandbox.write(file, &text.replace(SMALL_RUNS, &blank));
         }
     }
+}
 
-    fn without_typecheck(&self) {
-        fs::remove_dir_all(self.sandbox.path().join("fake/typechecked"))
-            .expect("the typechecked fixtures go");
-    }
+fn unplayed(report: &Value) -> BTreeSet<String> {
+    report["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|each| each.get("runsNotPlayed").is_some())
+        .filter_map(|each| each["name"].as_str().map(str::to_owned))
+        .collect()
 }
 
 fn names(set: &[&str]) -> BTreeSet<String> {
@@ -225,27 +217,18 @@ fn every_setup_built_from_one_typecheck_checks_as_the_model_quint_compile_flatte
     let quint = Quint::new();
     quint.without_named_runs();
     let ours = quint.earnest(&["verify", "--json", "specs"]).json();
-    assert_eq!(
-        quint.compiled_mains(),
-        names(&FALLBACKS),
-        "only the setups of other shapes are compiled: {:?}",
+    assert!(
+        quint.calls().is_empty(),
+        "no `quint` is started: {:?}",
         quint.calls()
     );
     assert_eq!(
-        quint.of_kind("typecheck").len(),
-        SPECS.len(),
-        "one typecheck per file: {:?}",
-        quint.calls()
+        unplayed(&ours),
+        names(&["Single"]),
+        "of the setups of other shapes, which are compiled, only `Single` sees a run of its spec, \
+         which it can't play; every setup built from the typecheck plays them\n{ours}"
     );
-    quint.forget();
-    quint.without_typecheck();
-    let theirs = quint.earnest(&["verify", "--json", "specs"]).json();
-    assert_eq!(
-        quint.compiled_mains().len(),
-        COMPILED.len() + SAME_AS.len(),
-        "with no typecheck, every setup is compiled: {:?}",
-        quint.calls()
-    );
+    let theirs = quint.flattened_by_quint();
     let mut compared = 0;
     let mains = COMPILED
         .iter()
@@ -372,7 +355,7 @@ fn the_runs_of_the_spec_module_are_played_in_a_setup_built_from_the_typecheck() 
 }
 
 #[test]
-fn seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never() {
+fn seventeen_setups_of_one_file_start_no_quint_and_a_second_run_comes_from_the_cache() {
     let quint = Quint::new();
     quint.sandbox.write("specs/many.qnt", &setups("many.qnt"));
     for kind in ["parsed", "typechecked"] {
@@ -387,15 +370,10 @@ fn seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never()
     );
     let run = quint.earnest(&["verify", "specs/many.qnt"]);
     run.exits(0);
-    let kinds: Vec<String> = quint
-        .calls()
-        .iter()
-        .filter_map(|call| call.split(' ').next().map(str::to_owned))
-        .collect();
     assert_eq!(
-        kinds,
-        ["--version", "parse", "typecheck"],
-        "no compile at all\n{run}"
+        quint.calls(),
+        Vec::<String>::new(),
+        "no `quint` at all\n{run}"
     );
     assert_eq!(
         run.summary_line(),
@@ -403,46 +381,67 @@ fn seventeen_setups_of_one_file_start_quint_three_times_and_a_second_run_never()
         "{run}"
     );
     assert_eq!(run.model_line("S9")[2], "20 states", "{run}");
-    quint.sandbox.write("fake/calls", "");
     let again = quint.earnest(&["verify", "specs/many.qnt"]);
     again.exits(0);
-    assert_eq!(quint.calls(), Vec::<String>::new(), "{again}");
+    assert!(
+        again
+            .model_lines()
+            .iter()
+            .all(|line| line.contains(&"(cached)".to_owned())),
+        "{again}"
+    );
 }
 
 #[test]
-fn a_setup_of_another_shape_is_compiled_and_a_second_run_compiles_nothing() {
+fn a_setup_of_another_shape_is_compiled_and_a_second_run_comes_from_the_cache() {
     let quint = Quint::new();
     let files = ["verify", "specs/clock.qnt", "specs/compiled.qnt"];
     let run = quint.earnest(&files);
     run.exits(1);
+    let json: Vec<&str> = files.iter().copied().chain(["--json"]).collect();
     assert_eq!(
-        quint.compiled_mains(),
-        names(&FALLBACKS),
-        "an instance of an instance and a name imported alone are compiled, `Small` and `Large` \
-         are built\n{run}"
+        unplayed(&quint.earnest(&json).json()),
+        names(&["Single"]),
+        "a name imported alone is compiled and can't play the spec's run; `Small` and `Large` \
+         are built and play theirs\n{run}"
     );
-    assert_eq!(quint.of_kind("typecheck").len(), 2, "{:?}", quint.calls());
-    quint.sandbox.write("fake/calls", "");
     let again = quint.earnest(&files);
     again.exits(1);
+    assert!(
+        again
+            .model_lines()
+            .iter()
+            .all(|line| line.contains(&"(cached)".to_owned())),
+        "{again}"
+    );
     assert_eq!(quint.calls(), Vec::<String>::new(), "{again}");
 }
 
 #[test]
 fn a_failed_typecheck_falls_back_to_compiling_each_setup() {
     let quint = Quint::new();
-    let mut failed: Value = serde_json::from_str(&setups("fixtures/lamp.typecheck.json"))
-        .expect("the typecheck fixture is JSON");
-    failed["errors"] = serde_json::json!([{ "code": "QNT000" }]);
-    quint
-        .sandbox
-        .write("fake/typechecked/lamp.json", &failed.to_string());
-    let run = quint.earnest(&["verify", "specs/lamp.qnt"]);
+    let lamp = quint.sandbox.read("specs/lamp.qnt");
+    assert!(lamp.contains(ILL_TYPED.0), "{lamp}");
+    quint.sandbox.write(
+        "specs/lamp.qnt",
+        &lamp.replacen(ILL_TYPED.0, ILL_TYPED.1, 1),
+    );
+    let run = quint.earnest(&["verify", "--json", "specs/lamp.qnt"]);
     run.exits(1);
+    let compiled: BTreeSet<String> = run.json()["unreadable"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|problem| {
+            let feature = problem["feature"].as_str()?;
+            let main = feature.strip_prefix("`quint compile --main ")?;
+            Some(main.trim_end_matches('`').to_owned())
+        })
+        .collect();
     assert_eq!(
-        quint.compiled_mains(),
+        compiled,
         names(&["Blinding", "Bright", "Dim"]),
-        "{run}"
+        "each setup is compiled, and refused with the compile's error\n{run}"
     );
 }
 

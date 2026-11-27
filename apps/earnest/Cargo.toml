@@ -35,6 +35,7 @@ earnest_threads.workspace = true
 earnest_diagnostics.workspace = true
 earnest_ir.workspace = true
 earnest_quint.workspace = true
+earnest_quint_syntax.workspace = true
 earnest_rs.workspace = true
 earnest_semantic.workspace = true
 earnest_tla.workspace = true

@@ -5,6 +5,35 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `earnest verify` reads `.qnt` files with no Quint and no Node
+
+`earnest verify`, `earnest changes` and `earnest chart` read a `.qnt` file themselves, as Quint 0.33.1 reads it, where they started the project's `quint` (Node) for `quint parse`, `quint typecheck` and `quint compile`. The verdicts, state counts, runs and printed lines are the same as with Quint 0.33.1 on every Quint sample in the repository.
+
+- **No install:** a project with neither Quint nor Node installed gets the same verdicts. A first run of a small model takes about 9 MB of memory and 20 ms, where starting Node took about 105 MB and a second.
+- **Quint's errors:** a file Quint 0.33.1 refuses is `unreadable` with Quint's code, line and column. A syntax error is in earnest's own words; the few other places where earnest reads otherwise, each by refusing a file, are listed in [How earnest reads a `.qnt` file](/reference/quint/#how-earnest-reads-a-qnt-file).
+- **`confirm --quint`:** it is the one command that starts the project's `quint`, found as before; with none it prints `not compared` and how to install it.
+- **Nothing kept:** `.earnest/quint/` no longer holds Quint's output, and the Quint version is no longer part of any key. A folder left by an older build can be deleted. With `--base`, a base that can't be read no longer has the reason `quintNotFound`.
+
+## November 2026: TypeScript and Rust `/` and `%` give what the language gives
+
+In a TypeScript or Rust model, a division or a remainder with a negative number or a divisor below 1 was a fault (`takes a division with a negative number or a divisor below 1`). Each now means what its own language says:
+
+- **Rust:** `/` drops the fraction and `%` has the sign of the left side: `-7 / 2 == -3`, `-7 % 2 == -1`, `7 % -2 == 1`, `-7 / -2 == 3`. A typed field keeps its type's range.
+- **TypeScript:** `m.div(a, b)` is `Math.trunc(a / b)` and `m.rem(a, b)` is JavaScript's `a % b`, the same answers as Rust, in `earnest verify` and in `@earnestjs/model`.
+- **Faults:** a zero divisor, `takes a division or a remainder by zero`, where Rust panics and JavaScript gives `NaN`; and in Rust the type's smallest number over `-1`, such as `-128_i8 / -1` or `-128_i8 % -1`, where Rust panics on overflow. A Rust setup may now write `-7 / 2`.
+- **`earnest tla`:** writes the truncated forms, so TLC, whose `\div` floors, computes the same answer and `earnest confirm --tlc` says `same`.
+- **Unchanged:** Quint models, where `/` floors. A model that never divides a negative number gets the same answers, and the search is as fast as before. See [TypeScript](/reference/typescript/#disallowed-constructs) and [Rust](/reference/rust/#integer-types-and-overflow).
+
+## November 2026: Quint `/` and `%` give one answer for every divisor but zero
+
+In a Quint model, `/` or `%` with a negative number was a fault (`takes a division with a negative number or a divisor below 1`), since Quint's own tools disagree there. Earnest now computes one rule that holds together, at any size:
+
+- **`/` floors:** `a / b` is the floor of the exact quotient, `(-7) / 2 == -4`, as TLA+ defines it and Quint's TLC run computes it.
+- **`%` follows it:** `a % b` is `a - b * (a / b)`, so `(-7) % 2 == 1` and `7 % (-2) == -1`, and `a == b * (a / b) + a % b` always holds.
+- **By zero:** still a fault, now `takes a division or a remainder by zero`.
+- **`confirm`:** `quint test` truncates (`(-7) / 2` is `-3`) and TLC refuses `%` by a negative number. `earnest confirm --quint` says `cannot` with that cause, not `differs`. `earnest tla` writes the rule with a positive divisor only, so `earnest confirm --tlc` agrees.
+- **Unchanged:** TypeScript and Rust models; a model whose numbers fit in 64 bits is searched as fast as before. See [Division and remainder](/reference/quint/#division-and-remainder).
+
 ## November 2026: Quint integers have no size limit
 
 A Quint `int` has no size, and `quint test` and `quint run` compute with integers of any size. Earnest stopped at 64 bits: a number past them was a fault (`computes a number too large to hold`), and a literal past them made the check `unreadable`. Both are now checked:
