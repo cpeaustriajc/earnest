@@ -1,14 +1,14 @@
 use super::checks::{ModeChecker, NondetChecker, TypeOf, UpdatesChecker};
 use super::signatures::{signature, standard_propagation};
 use super::{
-    Component, Effect, Entity, ErrorTree, Failure, KeyOrder, Kind, Names, Scheme, StateVariable,
+    Component, Effect, Entity, ErrorTree, Failure, KeyOrder, Kind, Scheme, StateVariable,
     Substitution, Substitutions, apply, compose, effect_text, entity_name_list, names_of,
     namespaced, unify,
 };
 use crate::json::Json;
 use crate::names::{Entry, Raised, number};
 use crate::printing_ir::expression_text;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 pub(crate) struct Crash(pub(crate) String);
@@ -84,7 +84,7 @@ struct Inferrer<'a> {
     fresh_entities: usize,
     origins: u64,
     location: Location<'a>,
-    free: Vec<Names>,
+    free: Vec<FreeNames>,
     depth: i64,
 }
 
@@ -164,11 +164,8 @@ impl<'a> Inferrer<'a> {
         apply(&substitutions, &scheme.effect)
     }
 
-    fn current_free(&self) -> Names {
-        self.free.last().map_or_else(Names::default, |names| Names {
-            effects: names.effects.clone(),
-            entities: names.entities.clone(),
-        })
+    fn current_free(&self) -> FreeNames {
+        self.free.last().cloned().unwrap_or_default()
     }
 
     fn quantify(&self, effect: Effect) -> Scheme {
@@ -196,30 +193,30 @@ impl<'a> Inferrer<'a> {
         for substitution in substitutions {
             match &**substitution {
                 Substitution::Effect(name, value) => {
+                    if !self.free.iter().any(|free| free.effects.contains(name)) {
+                        continue;
+                    }
                     let added = names_of(value);
                     for free in &mut self.free {
                         if free.effects.contains(name) {
                             for found in &added.effects {
-                                if !free.effects.contains(found) {
-                                    free.effects.push(Rc::clone(found));
-                                }
+                                free.effects.add(found);
                             }
                             for found in &added.entities {
-                                if !free.entities.contains(found) {
-                                    free.entities.push(Rc::clone(found));
-                                }
+                                free.entities.add(found);
                             }
                         }
                     }
                 }
                 Substitution::Entity(name, value) => {
+                    if !self.free.iter().any(|free| free.entities.contains(name)) {
+                        continue;
+                    }
                     let added = entity_name_list(value);
                     for free in &mut self.free {
                         if free.entities.contains(name) {
                             for found in &added {
-                                if !free.entities.contains(found) {
-                                    free.entities.push(Rc::clone(found));
-                                }
+                                free.entities.add(found);
                             }
                         }
                     }
@@ -481,9 +478,7 @@ impl<'a> Inferrer<'a> {
             } else {
                 format!("e_{name}_{}", id_of(param)).into()
             };
-            if !names.effects.contains(&variable) {
-                names.effects.push(Rc::clone(&variable));
-            }
+            names.effects.add(&variable);
             self.add(id_of(param), Ok(Scheme::plain(Effect::Variable(variable))));
         }
         self.free.push(names);
@@ -638,4 +633,25 @@ pub(crate) fn analyze_added(
     UpdatesChecker::default().check(inferrer.effects.since(0));
     NondetChecker::new(table, types).check(definitions);
     Ok(())
+}
+
+#[derive(Clone, Debug, Default)]
+struct NameSet {
+    known: HashSet<Rc<str>>,
+}
+
+impl NameSet {
+    fn contains(&self, name: &Rc<str>) -> bool {
+        self.known.contains(name)
+    }
+
+    fn add(&mut self, name: &Rc<str>) {
+        self.known.insert(Rc::clone(name));
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct FreeNames {
+    effects: NameSet,
+    entities: NameSet,
 }
