@@ -10,6 +10,7 @@ mod substitution;
 mod tests;
 mod value;
 
+use crate::effects::{TypeOf, TypePass};
 use crate::files::Parsed;
 use crate::ids::Ids;
 use crate::inference::application::Resolver;
@@ -19,7 +20,7 @@ use crate::inference::signatures::Scheme;
 use crate::inference::solver::{Context, Table};
 use crate::inference::value::Value;
 use crate::json::Json;
-use crate::names::Raised;
+use crate::names::{Entry, Raised};
 use crate::problem::Problem;
 use std::collections::BTreeMap;
 
@@ -50,8 +51,15 @@ pub(crate) struct TypeResults {
     /// The type application errors, kept apart: Quint lists them after the module's effect
     /// errors. Those of the name table's own entries belong to the first module.
     pub(crate) application_errors: Vec<(usize, Raised)>,
+    /// Each module's declarations with their type applications resolved, as `quint typecheck`
+    /// writes them in `modules`.
+    pub(crate) declarations: Vec<Vec<Json>>,
+    /// The name table with its type applications resolved, as `quint typecheck` writes it.
+    pub(crate) resolved_table: Vec<(u64, Json)>,
     /// The exception Quint's type checker throws, and the id it was working on when known.
     pub(crate) crash: Option<(String, Option<u64>)>,
+    /// The most rounds one application of a substitution took to settle.
+    pub(crate) rounds: usize,
 }
 
 fn raised(id: u64, error: &ErrorTree) -> Raised {
@@ -85,6 +93,7 @@ fn analyze(
     modules: &[&[Json]],
     previous: BTreeMap<u64, Scheme>,
 ) -> TypeResults {
+    substitution::start_counting_rounds();
     let mut lookup = Table::default();
     for (id, entry) in table {
         lookup.set(id, Value::of(&entry));
@@ -106,7 +115,18 @@ fn analyze(
         printed: BTreeMap::new(),
         errors: Vec::new(),
         application_errors: Vec::new(),
+        declarations: modules_resolved
+            .iter()
+            .map(|(declarations, _)| declarations.iter().map(Value::to_json).collect())
+            .collect(),
+        resolved_table: context
+            .table
+            .sorted()
+            .into_iter()
+            .map(|(id, entry)| (id, entry.to_json()))
+            .collect(),
         crash: None,
+        rounds: 0,
     };
     let (mut seen_errors, mut seen_applications) = (0, 0);
     for (index, (declarations, applications)) in modules_resolved.iter().enumerate() {
@@ -119,6 +139,13 @@ fn analyze(
             results.application_errors.push((index, raised(*id, error)));
         }
         seen_applications = *applications;
+    }
+    results.rounds = substitution::most_rounds();
+    if results.rounds > substitution::ROUND_LIMIT {
+        context.crash(format!(
+            "the types of this file could not be settled: a substitution was still changing after {} rounds, where Quint would run out of stack",
+            substitution::ROUND_LIMIT
+        ));
     }
     results.crash = context
         .crashed()
@@ -239,6 +266,98 @@ impl Parsed {
     ) -> Result<Json, Problem> {
         let results = types_of_added(table.to_vec(), types, declarations);
         first_problem(self.ids(), &results).map_or(Ok(results.table), Err)
+    }
+}
+
+/// A `types` table with the id of each copy given the scheme of the id it was copied from, as
+/// `quint compile`'s flattener gives the ids it copies: `copies` holds (new id, old id) pairs.
+pub fn types_with_copies(types: &Json, copies: &[(u64, u64)]) -> Json {
+    crate::effects::effects_with_copies(types, copies)
+}
+
+impl Parsed {
+    /// The whole of what `quint typecheck --out` writes for a file it accepts: `stage`,
+    /// `warnings`, the modules and the name table with type applications resolved, `types`,
+    /// `effects` and `errors`, keys in Quint's order.
+    ///
+    /// # Errors
+    ///
+    /// Quint's first error across its type, effect, type application, mode, multiple update and
+    /// nondet passes, in the order Quint lists them, at the place Quint gives; `unreadable` where
+    /// Quint's type or effect passes throw.
+    pub fn typecheck(&self) -> Result<Json, Problem> {
+        let results = types_of(self);
+        if let Some(problem) = results
+            .crash
+            .as_ref()
+            .and_then(|_| first_problem(self.ids(), &results))
+        {
+            return Err(problem);
+        }
+        let modules: Vec<Json> = self
+            .modules()
+            .iter()
+            .zip(&results.declarations)
+            .map(|(module, declarations)| match module {
+                Json::Object(fields) => Json::Object(
+                    fields
+                        .iter()
+                        .map(|(key, value)| {
+                            if key == "declarations" {
+                                (key.clone(), Json::List(declarations.clone()))
+                            } else {
+                                (key.clone(), value.clone())
+                            }
+                        })
+                        .collect(),
+                ),
+                other => other.clone(),
+            })
+            .collect();
+        let pass = TypePass {
+            types: results
+                .printed
+                .iter()
+                .map(|(id, printed)| {
+                    (
+                        *id,
+                        TypeOf {
+                            boolean: printed.boolean,
+                            text: printed.text.clone(),
+                        },
+                    )
+                })
+                .collect(),
+            errors: results.errors.clone(),
+            application_errors: results.application_errors.clone(),
+            modules: Some(modules.clone()),
+            table: Some(
+                results
+                    .resolved_table
+                    .iter()
+                    .map(|(id, entry)| (*id, Entry::of(entry)))
+                    .collect(),
+            ),
+        };
+        let effects = self.analyzed(&pass)?;
+        Ok(Json::object(vec![
+            ("stage", Json::text("typechecking")),
+            ("warnings", Json::List(Vec::new())),
+            ("modules", Json::List(modules)),
+            (
+                "table",
+                Json::Object(
+                    results
+                        .resolved_table
+                        .into_iter()
+                        .map(|(id, entry)| (id.to_string(), entry))
+                        .collect(),
+                ),
+            ),
+            ("types", results.table),
+            ("effects", effects),
+            ("errors", Json::List(Vec::new())),
+        ]))
     }
 }
 

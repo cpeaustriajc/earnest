@@ -88,13 +88,13 @@ pub(crate) enum Typed {
     Skipped,
 }
 
-fn recorded_types(recorded: &Path) -> Option<Result<Json, String>> {
+pub(crate) fn recorded_types(recorded: &Path) -> Option<Result<Json, String>> {
     let path = PathBuf::from(format!("{}.types.json", recorded.display()));
     let text = fs::read_to_string(&path).ok()?;
     Some(Json::parse(&text).map_err(|at| format!("{} is JSON up to {at}", path.display())))
 }
 
-fn their_table(recorded: &Json) -> Result<Json, String> {
+pub(crate) fn their_table(recorded: &Json) -> Result<Json, String> {
     let (Some(Json::List(schemes)), Some(Json::Object(types))) =
         (recorded.get("schemes"), recorded.get("types"))
     else {

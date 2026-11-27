@@ -36,6 +36,7 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
     samples(&base, Path::new("tasks"), &mut found);
     samples(&base, Path::new("crates"), &mut found);
     let mut compared = 0;
+    let mut most_rounds = 0;
     for sample in found {
         let path = PathBuf::from(format!("{}.types.json", recorded.join(&sample).display()));
         let Some(fixture) = fs::read_to_string(path)
@@ -60,6 +61,7 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
             continue;
         }
         let ours = types_of(&parsed);
+        most_rounds = most_rounds.max(ours.rounds);
         for (id, at) in types {
             let id: u64 = id.parse().expect("an id");
             let theirs = &printed[index(at)];
@@ -80,6 +82,12 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
             compared += 1;
         }
     }
-    println!("{compared} types printed as Quint prints them");
+    println!(
+        "{compared} types printed as Quint prints them; a substitution settled in at most {most_rounds} rounds"
+    );
+    assert!(
+        most_rounds * 100 < crate::inference::substitution::ROUND_LIMIT,
+        "the bound on rounds is far above what the samples need: {most_rounds}"
+    );
     assert!(compared > 10_000, "{compared} types compared");
 }

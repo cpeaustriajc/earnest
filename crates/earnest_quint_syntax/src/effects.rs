@@ -5,7 +5,7 @@ mod signatures;
 use crate::json::Json;
 use crate::names::Entry;
 use crate::names::Raised;
-use checks::TypeOf;
+pub(crate) use checks::TypeOf;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
@@ -920,6 +920,8 @@ pub(crate) struct TypePass {
     pub(crate) types: HashMap<u64, TypeOf>,
     pub(crate) errors: Vec<(usize, Raised)>,
     pub(crate) application_errors: Vec<(usize, Raised)>,
+    pub(crate) modules: Option<Vec<Json>>,
+    pub(crate) table: Option<BTreeMap<u64, Entry>>,
 }
 
 fn of_module(errors: &[(usize, Raised)], module: usize) -> impl Iterator<Item = &Raised> {
@@ -954,15 +956,16 @@ impl crate::files::Parsed {
                 text: found.text.clone(),
             })
         };
-        let analysis = analyze(self.modules(), self.entries(), &type_of).map_err(
-            |inference::Crash(why)| crate::Problem {
+        let modules = types.modules.as_deref().unwrap_or_else(|| self.modules());
+        let table = types.table.as_ref().unwrap_or_else(|| self.entries());
+        let analysis =
+            analyze(modules, table, &type_of).map_err(|inference::Crash(why)| crate::Problem {
                 code: "unreadable".to_owned(),
                 message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
                 source: self.main_source().to_owned(),
                 line: 1,
                 column: 1,
-            },
-        )?;
+            })?;
         for module in 0..self.modules().len() {
             let none = Vec::new();
             let errors: Vec<Raised> = of_module(&types.errors, module)

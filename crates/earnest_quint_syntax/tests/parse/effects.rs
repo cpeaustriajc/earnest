@@ -33,13 +33,13 @@ fn expanded(value: &Json, nodes: &[Json]) -> Json {
     }
 }
 
-struct Recording {
-    stage: String,
-    first_error: Option<Json>,
-    effects: Option<Vec<(String, Json)>>,
+pub(crate) struct Recording {
+    pub(crate) stage: String,
+    pub(crate) first_error: Option<Json>,
+    pub(crate) effects: Option<Vec<(String, Json)>>,
 }
 
-fn recording(recorded: &Path) -> Result<Recording, String> {
+pub(crate) fn recording(recorded: &Path) -> Result<Recording, String> {
     let path = PathBuf::from(format!("{}.effects.json", recorded.display()));
     let written = fs::read_to_string(&path).map_err(|_| "not recorded".to_owned())?;
     let fixture =
@@ -114,7 +114,7 @@ pub(crate) enum Outcome {
     QuintCrashes,
 }
 
-fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
+pub(crate) fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
     let explanation = explanation(theirs);
     let place = place(theirs);
     let at = place.map_or_else(
