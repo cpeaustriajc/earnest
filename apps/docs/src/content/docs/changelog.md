@@ -5,6 +5,19 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `--base` names why a `.qnt` file can't be read at the base
+
+A `.qnt` file that earnest can't read at the base was listed as `not compared  specs/clock.qnt  unreadable at origin/main`, with no place and no message. A PR body made with `earnest report --base` now shows where and why:
+
+```text
+rule changes since origin/main
+  not compared  specs/clock.qnt  unreadable at origin/main: 26:15 [QNT000] unexpected '{', expected a declaration
+```
+
+- **Imported files:** when the problem is in a file it imports, the line names that file, as `specs/switch.qnt:4:41`. An import from outside the repository says so.
+- **JSON:** the `notCompared` entry has `problem` with the file, line, column and whole message, as the reason `marks` has. A native file unreadable at the base is unchanged.
+- **Nothing left behind:** `--base` writes the base's `.qnt` files for the run and removes them when it ends, so `.earnest/quint/base-<hash>/` is no longer kept. Two runs at once in one repository each use their own copy. See [Rule changes](/reference/output/#quint-checks).
+
 ## November 2026: `earnest verify` reads `.qnt` files with no Quint and no Node
 
 `earnest verify`, `earnest changes` and `earnest chart` read a `.qnt` file themselves, as Quint 0.33.1 reads it, where they started the project's `quint` (Node) for `quint parse`, `quint typecheck` and `quint compile`. The verdicts, state counts, runs and printed lines are the same as with Quint 0.33.1 on every Quint sample in the repository.

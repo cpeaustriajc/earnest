@@ -714,7 +714,10 @@ impl NotRead {
 
     pub(crate) fn why(&self, base: &str) -> String {
         match self.reason {
-            Why::Unreadable => format!("unreadable at {base}"),
+            Why::Unreadable => match &self.problem {
+                Some(problem) => format!("unreadable at {base}: {}", problem.said(&self.file)),
+                None => format!("unreadable at {base}"),
+            },
             Why::UnreadableNow => "unreadable now".to_owned(),
             Why::ChecksFile => format!("an earnest.quint.json lists its checks at {base}"),
             Why::Marks => match &self.problem {
@@ -745,6 +748,7 @@ impl Compared {
             .filter(|each| each.reason != Why::UnreadableNow)
             .map(|each| {
                 if each.model.is_none()
+                    && each.reason == Why::Marks
                     && let Some(problem) = &each.problem
                 {
                     return format!(

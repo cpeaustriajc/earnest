@@ -4988,7 +4988,8 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    the way the search stood. Counted again on #93 (release build, every file): the repository's
    559 `.qnt` files need at most 6 attempts (`tests/samples/lets.qnt`; 7 before #93's search) and
    Quint's 196 at most 7 (`evaluator/fixtures/jmt/grug_ics23.qnt`; 14 before). The cap refuses
-   none of them. The earlier "7 and 26" was counted another way and is not reproduced. Smallest
+   none of them. Counted again after #98: the same, 6 for the repository's 570 files (those
+   outside `tests/samples/two_readings/`) and 7 for Quint's 196, and the cap refuses none. The earlier "7 and 26" was counted another way and is not reproduced. Smallest
    file Quint accepts that reaches the cap, fifteen nested `let`s
    whose bodies start with `-` (nine before #93):
    `module A { val v = val a = ... val a = 1 -1 ... -1 }`, `val a = ` and `-1` fifteen times each
@@ -5029,6 +5030,9 @@ way. Every place it knowingly differs, with the direction and the smallest file 
      way (samples in `tests/samples/two_readings/`, which the whole-corpus comparison leaves out
      because the crate's code there is `unreadable`, not Quint's `QNT008`; test
      `every_file_quint_reads_two_ways_is_refused_as_having_two_readings` requires both refusals).
+     The whole-corpus walk (`samples` in `tests/parse/corpus.rs`, used by the parse, types and
+     effects comparisons) leaves `tests/samples/two_readings/` out, as it leaves `samples/deep`
+     out, and that test holds the folder instead.
      Two candidates closed both files: this one, and the same without asking that the later name
      stand before `(`. The second refuses 9 more accepted files (92 instead of 83), so this one
      was kept. Extending the first check to every keyword before `(` or `{` refuses about 7%.
@@ -5132,8 +5136,12 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    - On 9000 generated actions with 1 to 3 such definitions at block level, one line or several,
      under `all`, `any`, `and`, `if` and nested blocks, each with one typo planted (a dangling
      operator; a `}`, `)`, `,`, `{` or `(` dropped or added; a stray `///` line; `=` for `==` or
-     the reverse; a `'` dropped; seeds 1 to 3, in the container only): of the 8431 Quint refuses,
+     the reverse; a `'` dropped; seeds 1 to 3, written by `tasks/quint/syntax/generate_blocks.py`
+     as `python3 -I generate_blocks.py <seed> 3000 <folder>`, committed after #98, which writes the
+     same files as the generator first used; in the container only): of the 8431 Quint refuses,
      7552 are at Quint's code, line and column (4690 before #93); none that agreed before differs.
+     After #98 the same: 7552, 879 elsewhere, 140 with another code, 103 of them a retry, and all
+     9569 files Quint accepts read with its tree, at `9871a6f6` and after; no file changes.
      The 879 left, by Quint's message: 459 `no viable alternative`, 237 `extraneous input`, 78
      `mismatched input`, 68 `missing`, 37 another code. They come from Quint's token recovery,
      which the crate does not model: the same generator without the definitions (2780 refused)
