@@ -38,7 +38,7 @@ pub(crate) struct Interner {
 }
 
 fn address<T: ?Sized>(shared: &Rc<T>) -> usize {
-    Rc::as_ptr(shared).cast::<()>() as usize
+    Rc::as_ptr(shared).cast::<()>().addr()
 }
 
 impl Interner {
@@ -136,7 +136,7 @@ impl Value {
                     .collect(),
             ),
             Json::Shared(inner) => {
-                let address = Arc::as_ptr(inner) as usize;
+                let address = Arc::as_ptr(inner).addr();
                 if let Some(known) = memo.values.get(&address) {
                     return known.clone();
                 }

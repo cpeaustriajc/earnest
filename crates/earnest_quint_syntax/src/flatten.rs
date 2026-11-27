@@ -318,7 +318,7 @@ fn inline_type(table: &Inliner<'_>, written: &Json) -> Json {
 
 fn inline_in_place(table: &Inliner<'_>, inlined: &mut Json) {
     if let Json::Shared(shared) = inlined {
-        let address = Arc::as_ptr(shared) as usize;
+        let address = Arc::as_ptr(shared).addr();
         let known = table
             .shared
             .borrow()

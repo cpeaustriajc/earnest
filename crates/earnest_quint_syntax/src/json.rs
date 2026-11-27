@@ -8,8 +8,13 @@ use std::sync::{Arc, OnceLock};
 static SHARE_EVERY_OBJECT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
-pub(crate) fn share_every_object(on: bool) {
-    SHARE_EVERY_OBJECT.store(on, Ordering::Relaxed);
+pub(crate) fn start_sharing_every_object() {
+    SHARE_EVERY_OBJECT.store(true, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn stop_sharing_every_object() {
+    SHARE_EVERY_OBJECT.store(false, Ordering::Relaxed);
 }
 
 pub(crate) fn sharing_every_object() -> bool {

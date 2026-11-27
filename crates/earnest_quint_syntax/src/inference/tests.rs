@@ -209,12 +209,12 @@ fn a_file_is_written_the_same_when_every_object_of_its_types_is_shared() {
         .iter()
         .map(|(file, main)| written_both_ways(file, main))
         .collect();
-    crate::json::share_every_object(true);
+    crate::json::start_sharing_every_object();
     let shared: Vec<(String, String)> = files
         .iter()
         .map(|(file, main)| written_both_ways(file, main))
         .collect();
-    crate::json::share_every_object(false);
+    crate::json::stop_sharing_every_object();
     for ((file, _), (usual, shared)) in files.iter().zip(usual.iter().zip(&shared)) {
         assert!(usual.0.starts_with("Ok("), "{file} typechecks: {}", usual.0);
         assert!(usual.1.starts_with("Ok("), "{file} compiles: {}", usual.1);
