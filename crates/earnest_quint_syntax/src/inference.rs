@@ -69,9 +69,13 @@ pub(crate) struct TypeResults {
     pub(crate) too_large: Option<usize>,
 }
 
-/// The most type nodes the types of one file may hold: earnest's guard on memory, which stops
-/// all type work before the table outgrows a few GiB. Quint 0.33.1 has no such bound.
-pub(crate) const TYPE_NODE_LIMIT: usize = 1_600_000;
+/// The most type nodes the types of one file may hold, counted as the text the types table is
+/// written as (a type held by many ids counts once for each): earnest's guard on memory, not a
+/// rule of Quint's, which Quint 0.33.1 does not have. The front end stores each type once, so its
+/// own memory follows the text it writes; the bound is set by what the CLI's readers need for
+/// that text, the largest round count at which `earnest verify` stays under 4 GiB on a `match` of
+/// n cases (6n² + 25n + 16 nodes): 910 cases are read, 911 refused.
+pub(crate) const TYPE_NODE_LIMIT: usize = 5_000_000;
 
 fn raised(id: u64, error: &ErrorTree) -> Raised {
     Raised {

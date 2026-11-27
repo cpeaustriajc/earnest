@@ -221,3 +221,24 @@ fn a_file_is_written_the_same_when_every_object_of_its_types_is_shared() {
         assert!(usual == shared, "{file} is written alike");
     }
 }
+
+#[test]
+fn the_bound_on_type_nodes_reads_a_match_of_910_cases_and_refuses_911() {
+    let nodes = |cases: usize| {
+        let variants: Vec<String> = (0..cases).map(|at| format!("V{at}")).collect();
+        let branches: Vec<String> = (0..cases).map(|at| format!("| V{at} => {at}")).collect();
+        let text = format!(
+            "module deep {{\n  var x: int\n  action init = x' = 0\n  action step = x' = x\n  type T = {}\n  val v = match V0 {{ {} }}\n}}\n",
+            variants.join(" | "),
+            branches.join(" ")
+        );
+        let parsed = read("deep.qnt", |_| Some(text.clone())).expect("read");
+        analyzed_within(&parsed, usize::MAX).nodes
+    };
+    let grown = |cases: usize| 6 * cases * cases + 25 * cases + 16;
+    for cases in [3, 10, 25] {
+        assert_eq!(nodes(cases), grown(cases), "{cases} cases");
+    }
+    assert!(grown(910) <= crate::inference::TYPE_NODE_LIMIT);
+    assert!(grown(911) > crate::inference::TYPE_NODE_LIMIT);
+}
