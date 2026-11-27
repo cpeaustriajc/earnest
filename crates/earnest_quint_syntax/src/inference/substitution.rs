@@ -91,17 +91,22 @@ pub(crate) const ROUND_LIMIT: usize = 100;
 
 pub(crate) const DEPTH_LIMIT: usize = 2_000;
 
+pub(crate) const UNIFY_LIMIT: usize = 5_000;
+
 thread_local! {
     static MOST_ROUNDS: Cell<usize> = const { Cell::new(0) };
     static DEPTH: Cell<usize> = const { Cell::new(0) };
     static DEEPEST: Cell<usize> = const { Cell::new(0) };
     static STOPPED: Cell<bool> = const { Cell::new(false) };
+    static UNIFYING: Cell<usize> = const { Cell::new(0) };
+    static TOO_DEEP_TO_UNIFY: Cell<bool> = const { Cell::new(false) };
 }
 
 pub(crate) fn start_counting_rounds() {
     MOST_ROUNDS.with(|most| most.set(0));
     DEEPEST.with(|deepest| deepest.set(0));
     STOPPED.with(|stopped| stopped.set(false));
+    TOO_DEEP_TO_UNIFY.with(|deep| deep.set(false));
 }
 
 pub(crate) fn most_rounds() -> usize {
@@ -127,6 +132,28 @@ fn shown(substitution: &Substitution) -> String {
 
 pub(crate) fn stop() {
     STOPPED.with(|stopped| stopped.set(true));
+}
+
+/// Runs `unify` one level deeper, or stops all type work where that is deeper than
+/// [`UNIFY_LIMIT`], as Quint's stack runs out on a long chain of aliases.
+pub(crate) fn deeper<T>(stopped: T, unify: impl FnOnce() -> T) -> T {
+    let depth = UNIFYING.with(|depth| {
+        depth.set(depth.get() + 1);
+        depth.get()
+    });
+    let result = if depth > UNIFY_LIMIT {
+        TOO_DEEP_TO_UNIFY.with(|deep| deep.set(true));
+        stop();
+        stopped
+    } else {
+        unify()
+    };
+    UNIFYING.with(|depth| depth.set(depth.get() - 1));
+    result
+}
+
+pub(crate) fn too_deep_to_unify() -> bool {
+    TOO_DEEP_TO_UNIFY.with(Cell::get)
 }
 
 pub(crate) fn stopped() -> bool {

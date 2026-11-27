@@ -90,6 +90,24 @@ fn scheme_of(written: &Json) -> Scheme {
     }
 }
 
+fn crash_on_bounds(context: &Context, results: &TypeResults) {
+    if substitution::too_deep_to_unify() {
+        context.crash(format!(
+            "Maximum call stack size exceeded: these types unify through aliases or nested types more than {} deep, deeper than earnest reads",
+            substitution::UNIFY_LIMIT
+        ));
+    }
+    if results.depth > substitution::DEPTH_LIMIT {
+        context.crash("Maximum call stack size exceeded".to_owned());
+    }
+    if results.rounds > substitution::ROUND_LIMIT {
+        context.crash(format!(
+            "the types of this file could not be settled: a substitution was still changing after {} rounds, where Quint would run out of stack",
+            substitution::ROUND_LIMIT
+        ));
+    }
+}
+
 fn analyze(
     table: Vec<(u64, Json)>,
     modules: &[&[Json]],
@@ -145,15 +163,7 @@ fn analyze(
     }
     results.rounds = substitution::most_rounds();
     results.depth = substitution::deepest();
-    if results.depth > substitution::DEPTH_LIMIT {
-        context.crash("Maximum call stack size exceeded".to_owned());
-    }
-    if results.rounds > substitution::ROUND_LIMIT {
-        context.crash(format!(
-            "the types of this file could not be settled: a substitution was still changing after {} rounds, where Quint would run out of stack",
-            substitution::ROUND_LIMIT
-        ));
-    }
+    crash_on_bounds(&context, &results);
     results.crash = context
         .crashed()
         .map(|message| (message, inferrer.crash_place));

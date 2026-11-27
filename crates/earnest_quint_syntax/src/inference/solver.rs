@@ -162,6 +162,10 @@ pub(crate) fn unify(
     if crate::inference::substitution::stopped() {
         return Ok(Vec::new());
     }
+    crate::inference::substitution::deeper(Ok(Vec::new()), || unified(context, first, second))
+}
+
+fn unified(context: &Context, first: &Value, second: &Value) -> Result<Substitutions, ErrorTree> {
     let first_text = type_text(first);
     let second_text = type_text(second);
     let location = format!("Trying to unify {first_text} and {second_text}");

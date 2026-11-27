@@ -1,5 +1,6 @@
 use crate::json::Json;
 use crate::names::{Entry, Raised, number};
+use std::collections::hash_map::Entry as Slot;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 const LARGEST_KEPT_IN_ORDER: usize = 8;
@@ -28,6 +29,7 @@ fn settle(ids: &mut [u64]) {
 struct Ids {
     order: Vec<u64>,
     known: HashSet<u64>,
+    unsettled: bool,
 }
 
 impl Ids {
@@ -45,49 +47,118 @@ impl Ids {
     fn add(&mut self, id: u64) {
         if self.known.insert(id) {
             self.order.push(id);
+            self.unsettled |= self.order.len() > LARGEST_KEPT_IN_ORDER;
+        }
+    }
+
+    fn settled(&mut self) -> &[u64] {
+        if self.unsettled {
             settle(&mut self.order);
+            self.unsettled = false;
         }
+        &self.order
     }
 
-    fn union(&self, other: &Self) -> Self {
-        if other.order.is_empty() {
-            return self.clone();
+    fn add_all(&mut self, other: &mut Self) {
+        for id in other.settled() {
+            self.add(*id);
         }
-        if self.order.is_empty() {
-            return other.clone();
-        }
-        Self::of(self.order.iter().chain(&other.order).copied())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.order.is_empty()
     }
 }
 
 #[derive(Debug, Default)]
 struct Graph {
-    order: Vec<u64>,
+    order: Ids,
     uses: HashMap<u64, Ids>,
 }
 
 impl Graph {
     fn set(&mut self, id: u64, uses: Ids) {
         if self.uses.insert(id, uses).is_none() {
-            self.order.push(id);
-            settle(&mut self.order);
+            self.order.add(id);
         }
     }
 
+    fn callees(&mut self, id: u64) -> &mut Ids {
+        if !self.uses.contains_key(&id) {
+            self.set(id, Ids::default());
+        }
+        self.uses.entry(id).or_default()
+    }
+
     fn add_one(&mut self, id: u64, callee: u64) {
-        let mut callees = self.uses.get(&id).cloned().unwrap_or_default();
-        callees.add(callee);
-        self.set(id, callees);
+        self.callees(id).add(callee);
     }
 
     fn add_all(&mut self, id: u64, added: &Ids) {
-        let callees = self.uses.get(&id).cloned().unwrap_or_default().union(added);
-        self.set(id, callees);
+        let mut added = added.clone();
+        self.callees(id).add_all(&mut added);
     }
+}
+
+struct Buckets {
+    by_hash: BTreeMap<[u32; 7], Vec<u64>>,
+    known: HashSet<u64>,
+}
+
+impl Buckets {
+    fn of(settled: &[u64]) -> Self {
+        let mut by_hash: BTreeMap<[u32; 7], Vec<u64>> = BTreeMap::new();
+        for id in settled {
+            by_hash.entry(chunks(*id)).or_default().push(*id);
+        }
+        Self {
+            by_hash,
+            known: settled.iter().copied().collect(),
+        }
+    }
+
+    fn put_first(&mut self, settled: &[u64]) {
+        let mut touched: BTreeMap<[u32; 7], Vec<u64>> = BTreeMap::new();
+        for id in settled {
+            touched.entry(chunks(*id)).or_default().push(*id);
+        }
+        for (hash, first) in touched {
+            let firsts: HashSet<u64> = first.iter().copied().collect();
+            let bucket = self.by_hash.entry(hash).or_default();
+            let rest: Vec<u64> = bucket
+                .iter()
+                .copied()
+                .filter(|id| !firsts.contains(id))
+                .collect();
+            *bucket = first;
+            bucket.extend(rest);
+        }
+        self.known.extend(settled.iter().copied());
+    }
+
+    fn order(&self) -> Vec<u64> {
+        self.by_hash.values().flatten().copied().collect()
+    }
+}
+
+fn every_used(keys: &[u64], uses: &mut HashMap<u64, Ids>, unsorted: &Ids) -> Vec<u64> {
+    let mut small = unsorted.clone();
+    let mut keys = keys.iter();
+    loop {
+        if small.order.len() > LARGEST_KEPT_IN_ORDER {
+            break;
+        }
+        let Some(key) = keys.next() else {
+            return small.settled().to_vec();
+        };
+        let first = uses
+            .get_mut(key)
+            .map_or_else(Vec::new, |found| found.settled().to_vec());
+        small = Ids::of(first.into_iter().chain(small.settled().iter().copied()));
+    }
+    let mut large = Buckets::of(small.settled());
+    for key in keys {
+        if let Some(used) = uses.get_mut(key) {
+            large.put_first(used.settled());
+        }
+    }
+    large.order()
 }
 
 struct Context {
@@ -347,45 +418,53 @@ fn sorted(graph: Graph, declarations: &[Json]) -> (Vec<u64>, Vec<u64>) {
         order: mut keys,
         mut uses,
     } = graph;
-    let mut every = unsorted.clone();
+    let every = every_used(keys.settled(), &mut uses, &unsorted);
+    for id in every {
+        if let Slot::Vacant(slot) = uses.entry(id) {
+            slot.insert(Ids::default());
+            keys.add(id);
+        }
+    }
+    let keys = keys.settled().to_vec();
+    let mut waiting: HashMap<u64, usize> = HashMap::new();
+    let mut users: HashMap<u64, Vec<u64>> = HashMap::new();
     for key in &keys {
-        every = uses[key].union(&every);
-    }
-    for id in &every.order {
-        if !uses.contains_key(id) {
-            uses.insert(*id, Ids::default());
-            keys.push(*id);
-            settle(&mut keys);
+        let used = &uses[key];
+        waiting.insert(*key, used.order.len());
+        for id in &used.order {
+            users.entry(*id).or_default().push(*key);
         }
     }
+    let mut ready: Vec<u64> = keys
+        .iter()
+        .copied()
+        .filter(|key| waiting[key] == 0)
+        .collect();
+    let mut alive: HashSet<u64> = keys.iter().copied().collect();
     let mut done = Vec::new();
-    loop {
-        let (sinks, rest): (Vec<u64>, Vec<u64>) = keys.iter().partition(|id| uses[*id].is_empty());
-        keys = rest;
-        settle(&mut keys);
-        if sinks.is_empty() {
-            break;
-        }
-        let mut layer: Vec<u64> = sinks
+    while !ready.is_empty() {
+        let mut layer: Vec<u64> = ready
             .iter()
             .copied()
             .filter(|id| unsorted.known.contains(id))
             .collect();
         layer.sort_by_key(u64::to_string);
         done.extend(layer);
-        let gone: HashSet<u64> = sinks.iter().copied().collect();
-        for sink in &sinks {
-            uses.remove(sink);
-        }
-        for key in &keys {
-            if let Some(used) = uses.get_mut(key) {
-                used.order.retain(|id| !gone.contains(id));
-                used.known.retain(|id| !gone.contains(id));
+        let mut next = Vec::new();
+        for sink in &ready {
+            alive.remove(sink);
+            for user in users.get(sink).map_or(&[][..], Vec::as_slice) {
+                if let Some(count) = waiting.get_mut(user) {
+                    *count -= 1;
+                    if *count == 0 {
+                        next.push(*user);
+                    }
+                }
             }
         }
+        ready = next;
     }
-    let mut cycles = keys;
-    settle(&mut cycles);
+    let cycles = keys.into_iter().filter(|key| alive.contains(key)).collect();
     (done, cycles)
 }
 
