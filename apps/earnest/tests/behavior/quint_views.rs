@@ -62,7 +62,7 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 15] = [
+const SETS: [&str; 16] = [
     "labels",
     "bare",
     "kinds",
@@ -75,6 +75,7 @@ const SETS: [&str; 15] = [
     "numbers",
     "numbers_bare",
     "defs",
+    "defs_bare",
     "override",
     "near",
     "quintrefuses",
@@ -645,23 +646,11 @@ fn a_label_keeps_every_number_of_the_compiled_module_as_quint_wrote_it() {
 }
 
 #[test]
-fn a_def_is_refused_as_a_label_whether_its_check_is_built_from_the_typecheck_or_compiled() {
+fn a_def_with_no_parameters_labels_the_chart_whether_its_check_is_built_from_the_typecheck_or_compiled()
+ {
     let quint = Quint::new();
-    let run = quint.earnest(&["verify", "defs", "--json"]);
-    run.exits(1);
-    let report = run.json();
-    let found = problems(&report);
-    assert_eq!(
-        problem_at(&found, 12),
-        "`stage` `stage` is declared with `def`, and a chart label is a `val`: write `val stage = \
-         ...` and mark it `/// @view state`"
-    );
-    assert!(
-        problem_at(&found, 33).starts_with("`label` `label` is declared with `def`"),
-        "{found:?}"
-    );
-    assert_eq!(model(&report, "Small")["status"], "pass");
-    assert_eq!(model(&report, "plain")["status"], "pass");
+    let marked = quint.earnest(&["verify", "defs", "--no-cache"]);
+    marked.exits(0);
     let compiled: Vec<String> = quint
         .calls()
         .into_iter()
@@ -670,7 +659,35 @@ fn a_def_is_refused_as_a_label_whether_its_check_is_built_from_the_typecheck_or_
     assert_eq!(
         compiled.len(),
         1,
-        "only `plain` is compiled; `Small` is built from the typecheck: {compiled:?}"
+        "only `plain` is compiled; `Small`, whose spec's label is a `def`, is built from the \
+         typecheck: {compiled:?}"
+    );
+    assert!(
+        compiled.iter().all(|call| call.contains("--main plain")),
+        "{compiled:?}"
+    );
+    let bare = quint.earnest(&["verify", "defs_bare", "--no-cache"]);
+    bare.exits(0);
+    for name in ["Small", "plain"] {
+        assert_eq!(
+            result_line(&marked, name),
+            result_line(&bare, name),
+            "{marked}\n{bare}"
+        );
+    }
+    assert_eq!(
+        result_line(&marked, "Small"),
+        ["pass", "Small", "4 states", "1 rule, 1 run"],
+        "the spec's run is played"
+    );
+    let small = quint.earnest(&["chart", "defs", "--model", "Small"]);
+    assert_eq!(states_drawn(&small.stdout), ["start", "running"], "{small}");
+    let plain = quint.earnest(&["chart", "defs", "--model", "plain"]);
+    assert_eq!(states_drawn(&plain.stdout), ["zero", "more"], "{plain}");
+    assert_eq!(
+        groups_drawn(&plain.stdout),
+        ["counter"],
+        "a `pure def` labels the box: {plain}"
     );
 }
 
@@ -701,20 +718,16 @@ fn a_label_leaves_a_setup_built_from_the_typecheck_and_its_imported_runs_played(
 #[test]
 fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_not_judged() {
     let quint = Quint::new();
-    let fixture =
-        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    let fixture = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
     let text = quint.sandbox.read(fixture);
-    let last = r#"{"id":251,"kind":"name","name":"retried"}]"#;
+    let last = r#"{"id":255,"kind":"app","opcode":"eq","args":[{"id":253,"kind":"name","name":"retried"},{"id":254,"kind":"name","name":"retried"}]}"#;
     assert!(
         text.contains(last),
         "the fixture ends its invariants with the group label"
     );
     quint.sandbox.write(
         fixture,
-        &text.replace(
-            last,
-            r#"{"id":251,"kind":"name","name":"acceptedWasPlaced"}]"#,
-        ),
+        &text.replace(last, r#"{"id":253,"kind":"name","name":"retried"}"#),
     );
     let run = quint.earnest(&["verify", "labels", "--json"]);
     run.exits(1);
@@ -736,8 +749,7 @@ fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_
 #[test]
 fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
     let quint = Quint::new();
-    let labelled =
-        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    let labelled = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
     fs::remove_file(quint.sandbox.path().join(labelled)).expect("the fixture is there");
     let plain = quint
         .sandbox
@@ -756,8 +768,9 @@ fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
     let said = problem_at(&problems(&report), 74);
     assert!(
         said.starts_with(
-            "`seen` `quint compile --main shop` fails when the chart label `seen` and \
-             `retried` follows the invariants, and compiles the check without it"
+            "`seen` `quint compile --main shop` fails when it is asked to keep the chart label \
+             `seen` and `retried`, written `name == name` after the invariants, and compiles the \
+             check without it"
         ),
         "{said}"
     );
@@ -877,7 +890,7 @@ fn a_view_mark_in_another_case_or_in_a_comment_quint_drops_is_unreadable_at_its_
     assert_eq!(
         problem_at(&found, 2),
         "`x` `x` is a `nondet` definition, which gives no value to label the chart with: mark a \
-         `val` with no parameters `/// @view state`"
+         `val`, or a `def` with no parameters, `/// @view state`"
     );
     assert_eq!(
         found.len(),
@@ -906,5 +919,40 @@ fn a_label_quint_itself_refuses_is_named_in_quints_error() {
              'oneOf' must be used inside a nondet definition"
                 .to_owned()
         )]
+    );
+}
+
+#[test]
+fn the_invariant_a_label_is_compiled_into_is_one_quint_typecheck_accepts() {
+    let read = |name: &str| -> Value {
+        let path = views().join(format!("fixtures/typechecked/typed/{name}.json"));
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()));
+        serde_json::from_str(&text).expect("quint typecheck wrote JSON")
+    };
+    let written = |name: &str| {
+        fs::read_to_string(views().join(format!("typed/{name}.qnt")))
+            .expect("the typed model can be read")
+    };
+    assert!(written("welltyped").contains(
+        "val synthesized = and(shownWasAccepted, acceptedWasPlaced, seen == seen, retried == \
+         retried)"
+    ));
+    assert_eq!(
+        read("welltyped")["errors"],
+        serde_json::json!([]),
+        "quint 0.33.1 typechecks the invariants with each label as `name == name`"
+    );
+    assert!(
+        written("illtyped")
+            .contains("val synthesized = and(shownWasAccepted, acceptedWasPlaced, seen, retried)")
+    );
+    let refused = read("illtyped")["errors"][0]["explanation"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        refused.starts_with("[QNT000] Couldn't unify bool and str"),
+        "a label written bare beside the invariants is ill-typed: {refused}"
     );
 }

@@ -5,8 +5,8 @@ use super::{
 use crate::marks::Doc;
 use crate::places::Marked;
 use crate::view_marks::{
-    Part, ViewMark, def_label, imported_views, no_label, read_views, second_view, two_views,
-    unspaced_view, unspaced_view_mark, view_on_module, view_unseen,
+    Part, ViewMark, imported_views, no_label, read_views, second_view, two_views, unspaced_view,
+    unspaced_view_mark, view_on_module, view_unseen,
 };
 use earnest_diagnostics::{Place, Problem};
 use std::collections::BTreeSet;
@@ -64,16 +64,11 @@ impl Viewing {
     }
 }
 
-const DEFS: [&str; 2] = ["def", "puredef"];
-const A_DEF: &str = "a `def`";
-
 fn not_a_label(locator: &Placer<'_>, id: u64) -> Option<String> {
     let places = locator.places;
     let defined = places.kind_of(id) == Some("def");
     let what = match places.qualifier_of(id) {
-        Some(qualifier) if VALUES.contains(&qualifier) && defined => {
-            what_is(places, id).or_else(|| DEFS.contains(&qualifier).then_some(A_DEF))?
-        }
+        Some(qualifier) if VALUES.contains(&qualifier) && defined => what_is(places, id)?,
         Some(TEMPORAL) if defined => "a `temporal` definition",
         Some(RUN) if defined => "a `run`",
         Some("action") if defined => "an `action`",
@@ -114,12 +109,7 @@ fn mark_problems(locator: &Placer<'_>, each: &Marked<'_>, marks: &[ViewMark]) ->
     }) = marks.first()
         && let Some(what) = not_a_label(locator, each.id)
     {
-        let message = if what == A_DEF {
-            def_label(&each.name, *part)
-        } else {
-            no_label(&each.name, &what, *part)
-        };
-        found.push(at(*line, &message));
+        found.push(at(*line, &no_label(&each.name, &what, *part)));
     }
     found
 }

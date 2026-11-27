@@ -3,7 +3,7 @@ use crate::{Labelled, Views, split_views};
 const COMPILED: &str = r#"{"stage":"compiling", "modules": [{"name":"m","declarations":[
   {"kind":"def","name":"big","qualifier":"val","expr":{"id":1,"kind":"int","value":18446744073709551616}},
   {"kind":"def","name":"q::inv","qualifier":"val","expr":{"id":4,"kind":"app","opcode":"and","args":[
-    {"id":2,"kind":"name","name":"ok"} , {"id":3,"kind":"name","name":"m::A::shown"}]}}
+    {"id":2,"kind":"name","name":"ok"} , {"id":5,"kind":"app","opcode":"eq","args":[{"id":3,"kind":"name","name":"m::A::shown"},{"id":6,"kind":"name","name":"m::A::shown"}]}]}}
 ]}], "table": {}}"#;
 
 fn labelled(state: Option<&str>, group: Option<&str>) -> Labelled {
@@ -26,7 +26,7 @@ fn the_labels_are_cut_out_of_the_text_and_every_other_byte_is_kept() {
     );
     assert_eq!(
         text,
-        COMPILED.replace(r#" , {"id":3,"kind":"name","name":"m::A::shown"}"#, ""),
+        COMPILED.replace(r#" , {"id":5,"kind":"app","opcode":"eq","args":[{"id":3,"kind":"name","name":"m::A::shown"},{"id":6,"kind":"name","name":"m::A::shown"}]}"#, ""),
         "the number beyond 64 bits and the spacing are as Quint wrote them"
     );
 }
@@ -53,4 +53,23 @@ fn invariants_that_do_not_end_with_the_labels_are_not_split() {
     assert_eq!(split_views(COMPILED, &labelled(Some("a"), Some("b"))), None);
     let unlabelled = split_views(COMPILED, &Labelled::default());
     assert_eq!(unlabelled.map(|(text, _)| text), Some(COMPILED.to_owned()));
+}
+
+#[test]
+fn only_a_name_equal_to_itself_is_taken_for_a_label() {
+    let equality = r#"{"id":5,"kind":"app","opcode":"eq","args":[{"id":3,"kind":"name","name":"m::A::shown"},{"id":6,"kind":"name","name":"m::A::shown"}]}"#;
+    for other in [
+        r#"{"id":3,"kind":"name","name":"m::A::shown"}"#,
+        r#"{"id":5,"kind":"app","opcode":"eq","args":[{"id":3,"kind":"name","name":"m::A::shown"},{"id":6,"kind":"name","name":"ok"}]}"#,
+        r#"{"id":5,"kind":"app","opcode":"neq","args":[{"id":3,"kind":"name","name":"m::A::shown"},{"id":6,"kind":"name","name":"m::A::shown"}]}"#,
+        r#"{"id":5,"kind":"app","opcode":"eq","args":[{"id":3,"kind":"name","name":"m::A::shown"}]}"#,
+    ] {
+        let written = COMPILED.replace(equality, other);
+        assert_ne!(written, COMPILED, "{other}");
+        assert_eq!(
+            split_views(&written, &labelled(Some("shown"), None)),
+            None,
+            "{other}"
+        );
+    }
 }
