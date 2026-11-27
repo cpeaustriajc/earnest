@@ -262,3 +262,140 @@ fn a_renamed_file_is_shown_by_its_new_name() {
         "{run}"
     );
 }
+
+const CHECKED: &[u8] = b"/// @check
+module A {
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 3) x + 1 else 0
+  /// @check
+  val ok = x <= 3
+}
+";
+
+fn with_bytes(files: &[(&str, Vec<u8>)]) -> Sandbox {
+    let sandbox = Sandbox::empty();
+    for (name, bytes) in files {
+        let path = sandbox.path().join(name);
+        if let Some(folder) = path.parent() {
+            fs::create_dir_all(folder).expect("the folder can be made");
+        }
+        fs::write(&path, bytes).expect("the file can be written");
+    }
+    sandbox
+}
+
+fn replaced(text: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
+    let at = text
+        .windows(from.len())
+        .position(|window| window == from)
+        .expect("the text holds what is replaced");
+    [&text[..at], to, &text[at + from.len()..]].concat()
+}
+
+fn passes(sandbox: &Sandbox) {
+    let run = with_no_programs(sandbox, &["verify", "specs"]);
+    run.exits(0);
+    assert_eq!(
+        run.model_line("A")[..3],
+        ["pass", "A", "4 states"],
+        "Quint 0.33.1 reads a byte that is not UTF-8 as U+FFFD, and so does earnest\n{run}"
+    );
+}
+
+#[test]
+fn a_byte_that_is_not_utf_8_in_a_comment_is_read_as_quint_reads_it() {
+    passes(&with_bytes(&[(
+        "specs/a.qnt",
+        [b"// caf\xe9\n".as_slice(), CHECKED].concat(),
+    )]));
+}
+
+#[test]
+fn a_byte_that_is_not_utf_8_in_a_string_is_read_as_quint_reads_it() {
+    passes(&with_bytes(&[(
+        "specs/a.qnt",
+        replaced(
+            CHECKED,
+            b"val ok = x <= 3",
+            b"val ok = x <= 3 and \"\xff\" == \"\xff\"",
+        ),
+    )]));
+}
+
+#[test]
+fn a_byte_that_is_not_utf_8_in_an_imported_file_is_read_as_quint_reads_it() {
+    let importing = replaced(
+        &replaced(
+            &replaced(
+                CHECKED,
+                b"module A {\n",
+                b"module A {\n  import lib.* from \"./lib\"\n",
+            ),
+            b"x < 3",
+            b"x < Top",
+        ),
+        b"x <= 3",
+        b"x <= Top",
+    );
+    passes(&with_bytes(&[
+        ("specs/a.qnt", importing),
+        (
+            "specs/lib.qnt",
+            b"// \xe9\nmodule lib {\n  pure val Top = 3\n}\n".to_vec(),
+        ),
+    ]));
+}
+
+#[test]
+fn a_place_after_bytes_that_are_not_utf_8_is_quints_line_and_column() {
+    for (written, column) in [
+        (
+            b"if (\"\xe9\xe2\x82\" == \"\xff\") x + true else 0".as_slice(),
+            39,
+        ),
+        (
+            b"if (\"\xc0\xaf\xe0\x80\xaf\" == \"\") x + true else 0".as_slice(),
+            41,
+        ),
+    ] {
+        let sandbox = with_bytes(&[(
+            "specs/a.qnt",
+            replaced(CHECKED, b"if (x < 3) x + 1 else 0", written),
+        )]);
+        let run = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+        run.exits(1);
+        let found = problems(&run);
+        assert_eq!(
+            (found[0].1, found[0].2, found[0].4.as_str()),
+            (5, column, "Error [QNT000]: Couldn't unify int and bool"),
+            "a truncated sequence is one U+FFFD and an overlong one a U+FFFD for each byte, \
+             as Quint 0.33.1 reads them\n{run}"
+        );
+    }
+}
+
+#[test]
+fn an_import_of_a_file_that_is_not_there_is_refused_as_quint_refuses_it() {
+    let sandbox = with_bytes(&[(
+        "specs/a.qnt",
+        replaced(
+            CHECKED,
+            b"module A {\n",
+            b"module A {\n  import lib.* from \"./nothere\"\n",
+        ),
+    )]);
+    let run = with_no_programs(&sandbox, &["verify", "--json", "specs"]);
+    run.exits(1);
+    assert_eq!(
+        problems(&run),
+        [(
+            "specs/a.qnt".to_owned(),
+            3,
+            3,
+            "`quint parse`".to_owned(),
+            "[QNT013] import ... from './nothere': could not load".to_owned()
+        )],
+        "as Quint 0.33.1 prints it, with the file as shown\n{run}"
+    );
+}

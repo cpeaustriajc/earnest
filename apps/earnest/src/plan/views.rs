@@ -4,13 +4,13 @@ use super::{
 };
 use crate::marks::Doc;
 use crate::places::Marked;
+use crate::quint::quint_text;
 use crate::view_marks::{
     Part, ViewMark, imported_views, no_label, read_views, second_view, two_views, unspaced_view,
     unspaced_view_mark, view_on_module, view_unseen,
 };
 use earnest_diagnostics::{Place, Problem};
 use std::collections::BTreeSet;
-use std::fs;
 use std::path::Path;
 
 mod near;
@@ -266,7 +266,7 @@ fn seen_by(locator: &Placer<'_>, main: &str, viewing: &mut Viewing) {
 
 fn written_lines(locator: &Placer<'_>, id: u64) -> Option<(String, u32, u32)> {
     let (file, line, column) = locator.places.spot_of(id)?;
-    let text = fs::read_to_string(file).ok()?;
+    let text = quint_text(file).ok()?;
     let lines: Vec<&str> = text.lines().collect();
     let first = usize::try_from(line).ok()?;
     let indent = usize::try_from(column).ok()?;

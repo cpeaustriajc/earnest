@@ -7,7 +7,7 @@ use crate::checks::CHECKS_FILE;
 use crate::discovery::{discover, is_skipped_folder};
 use crate::places::Places;
 use crate::plan::{Plan, planned};
-use crate::quint::{cache_path, parsed};
+use crate::quint::{cache_path, parsed, quint_text};
 use earnest_diagnostics::Problem;
 use earnest_quint::Runs;
 use serde_json::{Map, Value};
@@ -233,12 +233,10 @@ struct Texts {
 
 impl Texts {
     fn of(&mut self, (file, start, end): (&str, usize, usize)) -> String {
-        let text = self.read.entry(file.to_owned()).or_insert_with(|| {
-            fs::read_to_string(file)
-                .unwrap_or_default()
-                .chars()
-                .collect()
-        });
+        let text = self
+            .read
+            .entry(file.to_owned())
+            .or_insert_with(|| quint_text(file).unwrap_or_default().chars().collect());
         let written: String = text
             .get(start..=end.min(text.len().saturating_sub(1)))
             .unwrap_or_default()

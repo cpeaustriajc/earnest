@@ -16,6 +16,7 @@ use earnest_quint_syntax::{Parsed, Target, read};
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 mod labels;
@@ -203,10 +204,12 @@ fn normalized(path: &Path) -> String {
     shown_string(&parts.iter().collect::<PathBuf>()).replace('\\', "/")
 }
 
+pub(crate) fn quint_text(path: impl AsRef<Path>) -> io::Result<String> {
+    fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+}
+
 pub(crate) fn front_end(shown: &str) -> Result<Parsed, earnest_quint_syntax::Problem> {
-    read(&normalized(Path::new(shown)), |path| {
-        fs::read_to_string(path).ok()
-    })
+    read(&normalized(Path::new(shown)), |path| quint_text(path).ok())
 }
 
 fn placed(
@@ -239,14 +242,14 @@ fn parse_failed(shown: &str, real_file: &Path, problem: &earnest_quint_syntax::P
 
 fn compile_said(problem: &earnest_quint_syntax::Problem) -> (String, bool) {
     let first = problem.message.lines().next().unwrap_or_default();
-    if problem.message.starts_with(FLATTENER_STOPPED) {
+    if problem.code == NOT_READ {
+        (first.to_owned(), !problem.source.is_empty())
+    } else if problem.message.starts_with(FLATTENER_STOPPED) {
         (format!("Error: {first}"), false)
     } else if problem.source.is_empty() && problem.code == MISSING_MODULE {
         (format!("error: {first}"), false)
     } else if problem.source.is_empty() {
         (format!("error: [{}] {first}", problem.code), false)
-    } else if problem.code == NOT_READ {
-        (first.to_owned(), true)
     } else {
         (format!("Error [{}]: {first}", problem.code), true)
     }
@@ -1051,6 +1054,15 @@ mod tests {
             )),
             ("Quint's type checker throws here".to_owned(), true),
             "a file the front end refuses where Quint throws, in its own words"
+        );
+        assert_eq!(
+            compile_said(&problem(
+                "unreadable",
+                "earnest could not start the thread",
+                ""
+            )),
+            ("earnest could not start the thread".to_owned(), false),
+            "a refusal of earnest's own with no place, in its own words and with no code"
         );
     }
 }
