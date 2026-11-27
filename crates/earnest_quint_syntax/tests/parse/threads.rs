@@ -83,10 +83,16 @@ fn eight_threads_read_typecheck_and_compile_at_once() {
     assert!(refused.is_empty(), "{refused:?}");
 }
 
-fn refused_under(kib: u64, inline: bool) -> usize {
+#[derive(Clone, Copy, Debug)]
+enum Callers {
+    Small,
+    Large,
+}
+
+fn refused_under(kib: u64, callers: Callers) -> usize {
     let binary = env::current_exe().expect("the test binary");
     let mut command = Command::new("sh");
-    if inline {
+    if matches!(callers, Callers::Large) {
         command.env(CHILD_INLINE, "1");
     }
     let output = command
@@ -110,7 +116,7 @@ fn refused_under(kib: u64, inline: bool) -> usize {
 #[cfg(target_os = "linux")]
 fn eight_threads_at_once_fit_in_four_gibibytes_of_address_space() {
     assert_eq!(
-        refused_under(4 * 1024 * 1024, false),
+        refused_under(4 * 1024 * 1024, Callers::Small),
         0,
         "nothing is refused under 4 GiB"
     );
@@ -120,7 +126,7 @@ fn eight_threads_at_once_fit_in_four_gibibytes_of_address_space() {
 #[cfg(target_os = "linux")]
 fn eight_threads_of_256_mib_calling_the_crate_inline_fit_in_four_gibibytes_of_address_space() {
     assert_eq!(
-        refused_under(4 * 1024 * 1024, true),
+        refused_under(4 * 1024 * 1024, Callers::Large),
         0,
         "nothing is refused under 4 GiB"
     );
@@ -130,12 +136,12 @@ fn eight_threads_of_256_mib_calling_the_crate_inline_fit_in_four_gibibytes_of_ad
 #[ignore = "measures the lowest limit on address space that holds: cargo test -p earnest_quint_syntax --test parse threads::lowest -- --ignored --nocapture"]
 #[cfg(target_os = "linux")]
 fn lowest_limit_on_address_space_that_holds() {
-    for inline in [false, true] {
+    for callers in [Callers::Small, Callers::Large] {
         let mut mib = 1024;
-        while !(0..10).all(|_| refused_under(mib * 1024, inline) == 0) {
+        while !(0..10).all(|_| refused_under(mib * 1024, callers) == 0) {
             mib += 128;
         }
-        println!("inline {inline}: nothing refused at {mib} MiB, ten times over");
+        println!("{callers:?} callers: nothing refused at {mib} MiB, ten times over");
     }
 }
 
