@@ -631,7 +631,7 @@ fn a_mark_in_another_case_or_in_a_plain_comment_above_a_declaration_is_unreadabl
     let found: Vec<(u64, String)> = problems(&report)
         .into_iter()
         .map(|(_, line, feature, _)| (line, feature))
-        .filter(|(_, feature)| !feature.starts_with("`quint compile"))
+        .filter(|(_, feature)| !feature.starts_with("compiling `"))
         .collect();
     let expected: Vec<(u64, String)> = [
         (6, "`upper`"),

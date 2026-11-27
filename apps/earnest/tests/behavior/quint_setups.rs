@@ -434,8 +434,8 @@ fn a_failed_typecheck_falls_back_to_compiling_each_setup() {
         .flatten()
         .filter_map(|problem| {
             let feature = problem["feature"].as_str()?;
-            let main = feature.strip_prefix("`quint compile --main ")?;
-            Some(main.trim_end_matches('`').to_owned())
+            let main = feature.strip_prefix("compiling `")?;
+            Some(main.strip_suffix("` as Quint")?.to_owned())
         })
         .collect();
     assert_eq!(

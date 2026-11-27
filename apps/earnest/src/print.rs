@@ -283,7 +283,8 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
     }
     Some(format!(
         "{INDENT}note{INDENT}runs not played: {} (written in a module this one imports, whose \
-         runs `quint compile` drops: the checker plays them only in a setup it builds itself; \
+         runs are dropped when it is compiled as Quint: the checker plays them only in a setup it \
+         builds itself; \
          as a last resort, write them in this module to play them here)",
         one_line(&result.runs_not_played.join(", "))
     ))

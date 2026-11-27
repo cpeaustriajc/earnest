@@ -441,7 +441,10 @@ fn first_problem(ids: &Ids, results: &TypeResults) -> Option<Problem> {
         return Some(placed(
             ids,
             "unreadable",
-            format!("quint typecheck 0.33.1 stops with an internal error here: {message}"),
+            format!(
+                "Quint 0.33.1 stops with an internal error here when it typechecks the file: \
+                 {message}"
+            ),
             *id,
         ));
     }
