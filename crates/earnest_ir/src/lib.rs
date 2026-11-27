@@ -473,6 +473,29 @@ pub struct Plan {
     pub steps: Vec<Stage>,
     /// Whether a branch that gets through every step breaks the plan: the run is false there.
     pub must_not_finish: bool,
+    /// What a branch on which the run is false does to the script.
+    pub falls: Falls,
+}
+
+/// What a branch of a [`Plan`] on which the run is false does, as against one that ends in
+/// an error. An error always breaks the script.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Falls {
+    /// It breaks the script.
+    Breaks,
+    /// The plan is one combination of the values the `nondet`s at the top of the run pick,
+    /// and Quint tries other values where the run is false: the script holds when no plan
+    /// ends in an error and the combinations give the run `true` on every sample.
+    Retried {
+        /// Whether the run is false, not in error, where its last step can't happen, or,
+        /// in a run of one action, where that action can't: the step is the last part of the
+        /// run, not the first part of a `then`, a `reps` or an `expect`.
+        last_step: bool,
+        /// For each value of [`Plan::chosen`], whether Quint tries the other values of its
+        /// set when the run is false for it: it does when the set has fewer than 100 values.
+        retried: Vec<bool>,
+    },
 }
 
 /// A generalised witness: steps that each choose among alternatives, with conditions after
@@ -492,7 +515,8 @@ pub struct Script {
     /// actions, conditions and start states read and change these, by position, and its paths
     /// print these. Empty plays it over the model's fields.
     pub fields: Vec<Field>,
-    /// The plans. The script holds when every plan holds.
+    /// The plans. The script holds when every plan holds, or, for plans whose run is
+    /// [`Falls::Retried`], as Quint judges the combinations.
     pub plans: Vec<Plan>,
     /// How many local slots the conditions of the plans need.
     pub slots: usize,

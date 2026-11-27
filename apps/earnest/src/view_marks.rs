@@ -181,16 +181,8 @@ pub(crate) fn view_on_module(name: &str) -> String {
 
 pub(crate) fn no_label(name: &str, what: &str, part: Part) -> String {
     format!(
-        "`{name}` is {what}, which gives no value to label the chart with: mark a `val` with \
-         no parameters `/// {VIEW} {}`",
-        part.word()
-    )
-}
-
-pub(crate) fn def_label(name: &str, part: Part) -> String {
-    format!(
-        "`{name}` is declared with `def`, and a chart label is a `val`: write `val {name} = ...` \
-         and mark it `/// {VIEW} {}`",
+        "`{name}` is {what}, which gives no value to label the chart with: mark a `val`, or a \
+         `def` with no parameters, `/// {VIEW} {}`",
         part.word()
     )
 }

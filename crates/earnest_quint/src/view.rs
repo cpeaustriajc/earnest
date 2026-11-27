@@ -12,13 +12,12 @@ const QUALIFIED: &str = "::";
 /// `--invariant` list, the state's label first, then the group's, after every invariant the
 /// check judges.
 ///
-/// The labels are listed there so that the compiled module keeps their definitions:
-/// `quint compile` flattens the main module and keeps only the definitions of an instance that
-/// `q::init`, `q::step`, `q::inv` or `q::temporalProps` reach. Quint 0.33.1 accepts a label that
-/// is a text or a record there, because `compile` writes `val q::inv = and(...)` from the list,
-/// checks only that each name resolves, and drops what its type and effect inference says of
-/// that definition (`analyzeInc` in `cliCommands.js`, whose result is not read). A Quint that
-/// refuses a label there fails the compile, and the check is refused at the label.
+/// Each label is listed there as `name == name` so that the compiled module keeps its
+/// definition: `quint compile` flattens the main module and keeps only the definitions of an
+/// instance that `q::init`, `q::step`, `q::inv` or `q::temporalProps` reach. The equality is a
+/// well-typed `bool` for a value of any type and true in every state, so the invariant Quint
+/// writes, `and(inv, eq(name, name))`, is one `quint typecheck` accepts and means what the
+/// invariants alone mean.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Labelled {
     /// The `val` that labels a state, as the check sees it: `stage` or `S::stage`.
@@ -41,6 +40,19 @@ fn names_alike(compiled: &str, seen: &str) -> bool {
     let compiled: Vec<&str> = compiled.split(QUALIFIED).collect();
     let seen: Vec<&str> = seen.split(QUALIFIED).collect();
     compiled.ends_with(&seen)
+}
+
+fn equal_to_itself(source: &str, span: Span, seen: &str) -> Option<String> {
+    let text = |key: &str, within: Span| text_of(source, member(source, within, key)?);
+    if text("kind", span)? != "app" || text("opcode", span)? != "eq" {
+        return None;
+    }
+    let [left, right] = items(source, member(source, span, "args")?)?[..] else {
+        return None;
+    };
+    let named = |each: Span| (text("kind", each)? == "name").then(|| text("name", each))?;
+    let name = named(left)?;
+    (named(right)? == name && names_alike(&name, seen)).then_some(name)
 }
 
 fn invariants(source: &str) -> Option<(Vec<Span>, usize, Vec<Span>)> {
@@ -68,13 +80,13 @@ fn cut(declarations: &[Span], at: usize, (args, kept): (&[Span], usize)) -> Opti
     }
 }
 
-/// Takes the chart labels that `labelled` names out of the end of the invariants of the
-/// compiled JSON in `source`, and gives the JSON without them, with the names the compiled
+/// Takes the chart labels that `labelled` names, each written `eq(name, name)`, out of the end
+/// of the invariants of the compiled JSON in `source`, and gives the JSON without them, with the names the compiled
 /// module gives the labels. Every other byte of the JSON is kept as it was written, numbers
 /// among them. The JSON is given back unchanged when `labelled` names none.
 ///
-/// `None` when the invariants do not end with a name for each label, in order, that is the
-/// label's name or ends with it after `::`: the JSON is not what the check was compiled as,
+/// `None` when the invariants do not end with `eq(name, name)` for each label, in order, of
+/// one name that is the label's or ends with it after `::`: the JSON is not what the check was compiled as,
 /// and no invariant is taken for a label.
 #[must_use]
 pub fn split_views(source: &str, labelled: &Labelled) -> Option<(String, Views)> {
@@ -91,11 +103,7 @@ pub fn split_views(source: &str, labelled: &Labelled) -> Option<(String, Views)>
     let kept = args.len().checked_sub(wanted.len())?;
     let mut compiled = Vec::with_capacity(wanted.len());
     for (span, seen) in args.get(kept..)?.iter().zip(&wanted) {
-        let name = text_of(source, member(source, *span, "name")?)?;
-        if !names_alike(&name, seen) {
-            return None;
-        }
-        compiled.push(name);
+        compiled.push(equal_to_itself(source, *span, seen)?);
     }
     let text = without(source, cut(&declarations, at, (&args, kept))?)?;
     let mut compiled = compiled.into_iter();

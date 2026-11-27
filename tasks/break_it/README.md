@@ -3362,3 +3362,23 @@ pass's project model as committed (four checks, 0 to 2733 states): `same` with b
 Windows. Apalache's own checking. Quint's Rust evaluator. `quint test` samples beyond the one
 shape above. `@view` on native models. A `confirm --tlc` sweep of the seeds (done for the
 projects only).
+
+### A `nondet` at the top of a run (issue #86)
+
+`models/quint_sixth/nondet_runs/nondet_runs.qnt` holds 35 runs that start with a `nondet`, each
+recorded from Quint 0.33.1 (`parse.json`, `sourcemap.json` with the file name made relative,
+`compile.nondetRuns.json`). `quint test --backend typescript --main nondetRuns` passes 17 of them
+and fails 18; the tests in `tests/break_it/quint_sixth.rs` from
+`a_run_with_one_nondet_at_its_top_skips_a_value_it_is_false_for` on hold each verdict, shape by
+shape. Quint's rule, read in `runtime/impl/nondet.js` and `builtins.js`: a `nondet` over a set of
+fewer than 100 values tries the next value, cycling from a random start, while the body gives
+`false`, and stops on `true` or on an error. `false` comes from a last step or a lone action that
+can't happen, `A.fail()` where `A` gets through, a false condition, and an empty set. An error
+comes from a `then` whose first part is false and a false round of `reps` (QNT513), an `expect`
+whose action or condition is false and a false `assert` (QNT508).
+
+`models/quint_sixth/nondet_random/generate.py SEED` prints a module `SSEED` with one run of one or
+two `nondet`s, an optional `val`, a first action, up to three `then` steps (`reps`, a helper that
+chains two steps, a guarded step), `expect` and `fail()`; one in five also picks inside a step.
+Seeds 1 to 400, `quint test` against `earnest verify --json`: 400 agree (319 without a pick inside
+a step, 81 with one; 120 hold, 280 broken), none differ.

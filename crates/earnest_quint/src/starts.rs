@@ -109,7 +109,7 @@ pub(crate) fn start_states(
     fields: &[String],
     slots: usize,
     asserts: Asserts,
-) -> Read<Vec<Vec<Value>>> {
+) -> Read<Option<Vec<Vec<Value>>>> {
     let mut found = BTreeSet::new();
     for path in paths {
         for picked in combinations((path, what), slots)? {
@@ -118,9 +118,9 @@ pub(crate) fn start_states(
                     found.insert(state);
                 }
                 Start::NotPossible => {}
-                Start::Asserted => return Ok(Vec::new()),
+                Start::Asserted => return Ok(None),
             }
         }
     }
-    Ok(found.into_iter().collect())
+    Ok(Some(found.into_iter().collect()))
 }

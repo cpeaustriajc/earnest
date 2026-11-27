@@ -270,3 +270,242 @@ fn a_run_that_is_false_or_fails_an_assert_is_broken_in_a_check_of_runs_only() {
     );
     assert_eq!(checked["status"], "fail", "{report:#}");
 }
+
+fn nondet_verdicts(runs: &[&'static str]) -> (Vec<(&'static str, String)>, Value) {
+    let report = verified("nondet_runs", &[]);
+    let checked = model(&report, "nondetRuns");
+    let verdicts = runs
+        .iter()
+        .map(|run| {
+            let verdict = rule(checked, run)["verdict"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned();
+            (*run, verdict)
+        })
+        .collect();
+    (verdicts, checked.clone())
+}
+
+fn expected(pairs: &[(&'static str, &str)]) -> Vec<(&'static str, String)> {
+    pairs
+        .iter()
+        .map(|(run, verdict)| (*run, (*verdict).to_owned()))
+        .collect()
+}
+
+#[test]
+fn a_run_with_one_nondet_at_its_top_skips_a_value_it_is_false_for() {
+    let runs = [
+        "expectOneOfThreeTest",
+        "thenGuardTest",
+        "firstGuardThenTest",
+        "firstGuardOnlyTest",
+        "allFalseTest",
+    ];
+    let (verdicts, checked) = nondet_verdicts(&runs);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("expectOneOfThreeTest", "broken"),
+            ("thenGuardTest", "holds"),
+            ("firstGuardThenTest", "broken"),
+            ("firstGuardOnlyTest", "holds"),
+            ("allFalseTest", "broken"),
+        ]),
+        "`quint test --backend typescript --main nondetRuns` (Quint 0.33.1) prints `ok \
+         thenGuardTest passed 10000 test(s)` and `ok firstGuardOnlyTest passed 10000 test(s)`: \
+         where the last step, or the only action, can't happen for `n` = 3, the run is false and \
+         Quint tries the next value. It prints `expectOneOfThreeTest failed after 1 test(s)` (a \
+         false `expect` is an error), `firstGuardThenTest failed after 2 test(s)` (the first \
+         part of a `then` is false, QNT513) and `allFalseTest failed after 1 test(s)` (false for \
+         every value). Issue #86\n{checked:#}"
+    );
+    let why = rule(&checked, "firstGuardThenTest")["reason"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        why.contains("with `n` = 3"),
+        "the broken run names the value that ends in an error\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_step_that_can_t_happen_in_the_middle_of_a_chain_is_an_error_and_at_its_end_is_false() {
+    let (verdicts, checked) = nondet_verdicts(&["threeStepTest", "expectLastTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[("threeStepTest", "holds"), ("expectLastTest", "broken")]),
+        "`quint test` prints `ok threeStepTest passed 10000 test(s)`: the guard `n == 2` is on \
+         the last step of three. It prints `expectLastTest failed after 2 test(s)`: the guarded \
+         step is the action of an `expect`, and Quint stops with QNT508 (`Cannot continue to \
+         \"expect\"`) when it is false\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_run_with_two_nondets_one_inside_the_other_skips_a_combination_it_is_false_for() {
+    let runs = [
+        "twoNestedTest",
+        "twoNestedAllFalseTest",
+        "twoNestedErrTest",
+        "nestedEmptyTest",
+    ];
+    let (verdicts, checked) = nondet_verdicts(&runs);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("twoNestedTest", "holds"),
+            ("twoNestedAllFalseTest", "broken"),
+            ("twoNestedErrTest", "broken"),
+            ("nestedEmptyTest", "holds"),
+        ]),
+        "`quint test` prints `ok twoNestedTest passed 10000 test(s)` and `ok nestedEmptyTest \
+         passed 10000 test(s)` (the inner `nondet` over an empty set is false, so the outer one \
+         tries `n` = 2), and `twoNestedAllFalseTest failed after 1 test(s)` and \
+         `twoNestedErrTest failed after 1 test(s)`\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_nondet_followed_by_a_val_skips_a_value_it_is_false_for() {
+    let (verdicts, checked) = nondet_verdicts(&["valTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[("valTest", "holds")]),
+        "`quint test` prints `ok valTest passed 10000 test(s)`\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_step_of_reps_that_can_t_happen_is_an_error_after_a_nondet() {
+    let (verdicts, checked) =
+        nondet_verdicts(&["repsLastTest", "repsThenTest", "repsBodyThenTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("repsLastTest", "broken"),
+            ("repsThenTest", "holds"),
+            ("repsBodyThenTest", "broken"),
+        ]),
+        "`quint test` prints `repsLastTest failed after 2 test(s)` and `repsBodyThenTest failed \
+         after 2 test(s)`: a false round of `reps` stops it with QNT513 (`Reps loop could not \
+         continue`), even the last round. It prints `ok repsThenTest passed 10000 test(s)`, \
+         where the false step comes after the `reps`\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_run_ending_in_fail_after_a_nondet_is_false_where_its_action_gets_through() {
+    let runs = [
+        "failTest",
+        "failAllTrueTest",
+        "failExpectTest",
+        "failOnlyTest",
+        "failOnlyAllTest",
+    ];
+    let (verdicts, checked) = nondet_verdicts(&runs);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("failTest", "holds"),
+            ("failAllTrueTest", "broken"),
+            ("failExpectTest", "broken"),
+            ("failOnlyTest", "holds"),
+            ("failOnlyAllTest", "broken"),
+        ]),
+        "`A.fail()` is `not(A)`: where `A` gets through the run is false and Quint tries the \
+         next value. `quint test` prints `ok failTest passed 10000 test(s)` and `ok failOnlyTest \
+         passed 10000 test(s)` (`n` = 3 can't take the step), and `failAllTrueTest failed after \
+         1 test(s)`, `failExpectTest failed after 1 test(s)` and `failOnlyAllTest failed after 1 \
+         test(s)`, where every value gets through\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_helper_that_chains_steps_after_a_nondet_is_false_only_at_the_run_s_last_step() {
+    let (verdicts, checked) = nondet_verdicts(&["helperTest", "helperMidTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[("helperTest", "holds"), ("helperMidTest", "broken")]),
+        "`chain2(k)` is `step.then(guarded(k))`. `quint test` prints `ok helperTest passed 10000 \
+         test(s)`, where `guarded(3)` is the run's last step, and `helperMidTest failed after 1 \
+         test(s)`, where a `then(step)` follows it\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_run_that_calls_a_run_with_a_nondet_skips_a_value_as_that_run_does() {
+    let (verdicts, checked) = nondet_verdicts(&["calledTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[("calledTest", "holds")]),
+        "`run calledTest = thenGuardTest`, and `quint test` prints `ok calledTest passed 10000 \
+         test(s)`\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_nondet_inside_a_step_with_one_at_the_top_holds_only_when_some_value_always_gets_through() {
+    let runs = [
+        "innerTopTest",
+        "innerTopFalseTest",
+        "startMixTest",
+        "startMixOneTest",
+    ];
+    let (verdicts, checked) = nondet_verdicts(&runs);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("innerTopTest", "broken"),
+            ("innerTopFalseTest", "holds"),
+            ("startMixTest", "broken"),
+            ("startMixOneTest", "holds"),
+        ]),
+        "`quint test` prints `innerTopTest failed after 9 test(s)` and `startMixTest failed \
+         after 2 test(s)`: for each `n` one value picked inside a step gets the run through and \
+         the others leave it false, so a sample can be false for every `n`. It prints `ok \
+         innerTopFalseTest passed 10000 test(s)` and `ok startMixOneTest passed 10000 test(s)`, \
+         where `n` = 1 and `n` = 2 get through whatever is picked inside\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_false_assert_an_empty_set_and_a_false_value_after_a_nondet_are_judged_as_quint_does() {
+    let runs = [
+        "assertFirstTest",
+        "emptyTest",
+        "pureTest",
+        "pureFalseTest",
+        "boolTest",
+    ];
+    let (verdicts, checked) = nondet_verdicts(&runs);
+    assert_eq!(
+        verdicts,
+        expected(&[
+            ("assertFirstTest", "broken"),
+            ("emptyTest", "broken"),
+            ("pureTest", "holds"),
+            ("pureFalseTest", "broken"),
+            ("boolTest", "holds"),
+        ]),
+        "`quint test` prints `assertFirstTest failed after 9 test(s)` (QNT508, Assertion failed, \
+         an error and not a false run), `emptyTest failed after 1 test(s)`, `ok pureTest passed \
+         10000 test(s)`, `pureFalseTest failed after 1 test(s)` and `ok boolTest passed 10000 \
+         test(s)`\n{checked:#}"
+    );
+}
+
+#[test]
+fn a_nondet_over_a_set_of_100_values_or_more_tries_no_other_value() {
+    let (verdicts, checked) = nondet_verdicts(&["bigTest", "bigNestTest"]);
+    assert_eq!(
+        verdicts,
+        expected(&[("bigTest", "broken"), ("bigNestTest", "holds")]),
+        "Quint retries a `nondet` only over a set of fewer than 100 values \
+         (`QUINT_RETRY_NONDET_SMALLER_THAN`). `quint test` prints `bigTest failed after 14 \
+         test(s)`, where `1.to(150)` gives a false run for `n` of 140 or more, and `ok \
+         bigNestTest passed 10000 test(s)`, where the inner `nondet k` over two values is \
+         retried for every `n`\n{checked:#}"
+    );
+}

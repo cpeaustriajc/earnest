@@ -5,9 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
-## November 2026: clearer messages for a badly written Quint mark
+## November 2026: a `nondet` at the top of a Quint run skips a value the run is false for
 
-Four messages about a mark sent the author the wrong way. A file with a marked module and a bad mark elsewhere says only the bad mark, not that no module is checked. A comma that ends a doc comment with no name after it says that the comma makes the list go on and no names follow. A name written twice in one mark says it is listed twice, not that it is under two marks. A mark on a `val` that does not give a boolean is still a fault, and the message names the definition and its mark. No verdict changes.
+A run that starts with a `nondet` was `broken` when any value did not get it through, such as `nondet n = Set(1, 2, 3).oneOf() init.then(all { n < 3, x' = n })` with ``with `n` = 3: step 1 … can't happen here``. `quint test` passes it: where the run is false for the value it picked, it tries the next one. Earnest now judges it the same way:
+
+- **Skipped:** a value for which the run's last step or only action can't happen, its `A.fail()` gets through, or its condition is false.
+- **Broken, as before:** a value that ends in an error, such as a step in the middle of a chain or a round of `reps` that can't happen, a false `expect` or a false `assert`, and a run that is false for every value. So `init.then(all { n < 3, x' = n }).then(step)` is still `broken`, as `quint test` fails it.
+- **Where Quint samples:** a run whose steps pick values of their own holds only when some value of its `nondet` gets it through whatever the steps pick, so earnest never says `holds` where a sample of `quint test` can fail. Over a set of 100 values or more, Quint tries no other value, and a false one still breaks the run.
+
+Runs with no `nondet` at their top, and TypeScript and Rust models, are unchanged. See [A `nondet` at the top of a run](/reference/quint/#a-nondet-at-the-top-of-a-run).
 
 ## November 2026: Quint runs and assumptions judged as Quint judges them
 
@@ -16,6 +22,10 @@ Where earnest and Quint gave different answers on the same `.qnt` file, earnest 
 - **A false run in a check of runs only:** a run that is one condition, such as `run sumsTest = total([1]) == 2`, passed in a check that judges no property. It is `broken`, as `quint test` fails it. In a check that searches states it was already `broken`.
 - **A false `assert` in a run's first action, or as the whole run:** `run t = all { assert(total([1, 2]) == 4) }` and `run t = assert(total([1]) == 2)` made the check `unreadable`. The run is `broken`, as `quint test` fails it with `Assertion failed`. With a `nondet` in that action, one value that fails the `assert` breaks the run.
 - **An `assume` in the spec of a setup:** a false one made the check `unreadable`. It is left out, as `quint compile` leaves it out and Quint's TLC run never sees it, so the setup is checked. A false `assume` in a module checked directly still makes the check `unreadable`, as Quint's TLC run stops on it.
+
+## November 2026: clearer messages for a badly written Quint mark
+
+Four messages about a mark sent the author the wrong way. A file with a marked module and a bad mark elsewhere says only the bad mark, not that no module is checked. A comma that ends a doc comment with no name after it says that the comma makes the list go on and no names follow. A name written twice in one mark says it is listed twice, not that it is under two marks. A mark on a `val` that does not give a boolean is still a fault, and the message names the definition and its mark. No verdict changes.
 
 ## November 2026: charts draw the states the rules are about
 
@@ -32,9 +42,11 @@ val seen = if (screen.size() > 0) "some shown" else if (base.size() > 0) "placed
 val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
 ```
 
+- Each label reaches `quint compile` as an equality of the label with itself, `--invariant "inv,seen == seen"`, which Quint type-checks, and is taken out of the invariants again before they are read. A check with a label compiles once more after updating to this build, since its compile has a new argument.
+- A label is a `val`, `pure val`, `def` or `pure def` with no parameters: Quint treats a `def` with no parameters like a `val`, so earnest does too, and no longer refuses it.
 - A text prints without quotes, and any other value as Quint's REPL writes it. States with the same label and group are drawn as one box.
 - A check uses the labels it sees, its own and those its imports bring, as it sees marked properties. A label of the check's own module wins over imported ones, so one setup can label its chart its own way while another takes the spec's; two imported labels of one kind, as from two instances of one spec, and no label of its own make the check `unreadable`. The labels change no verdict, state count or result line, and `confirm` and `earnest tla` leave them out.
-- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, `@View` in another letter case, `// @view` or `/** @view */` above a declaration, a second `@view` in one doc comment, `@view` on anything but a `val` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read or that `quint compile` fails on, and a label no check that searches sees. A label is never judged as an invariant.
+- **Unreadable at the mark's line:** `@view` with no word or a word other than `state` or `group`, anything after the word, `///@view` with no space, `@View` in another letter case, `// @view` or `/** @view */` above a declaration, a second `@view` in one doc comment, `@view` on anything but a `val` or `def` with no parameters (a module among them), a check that sees two labels of one kind (both are named), a label that reads a variable the check does not search, a label the reader can't read or that `quint compile` fails on, and a label no check that searches sees. A label is never judged as an invariant.
 
 ## November 2026: `--base` lists the rule changes of Quint checks
 
