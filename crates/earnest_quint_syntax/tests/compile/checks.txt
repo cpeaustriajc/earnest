@@ -185,6 +185,7 @@ compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	tasks/q
 compile	--target	json	--main	endless	--init	init	--step	step	--invariant	small	tasks/break_it/models/quint_third/output/output.qnt
 compile	--target	json	--main	falseRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
 compile	--target	json	--main	fault	--init	init	--step	step	--invariant	P::annBelowFive	tasks/quint/imports/printing.qnt
+compile	--target	json	--main	floored	--init	init	--step	step	--invariant	rebuilt,between,literals,wideLiterals	tasks/break_it/models/quint_integers/floored/floored.qnt
 compile	--target	json	--main	halves	--init	init	--step	step	--invariant	halfAbove	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	house	--init	init	--step	step	--invariant	tickBound,neverLit	tasks/quint/samples/parts.qnt
 compile	--target	json	--main	huge	--init	init	--step	step	--invariant	mutex,holderKnown,bounded,grantsBounded	--temporal	drains,someGrant,served	tasks/break_it/models/quint_second/project/setups.qnt
@@ -223,6 +224,7 @@ compile	--target	json	--main	setups	--init	init	--step	step	--invariant	mutex,ho
 compile	--target	json	--main	sg2	--init	init	--step	step	--invariant	ok	--temporal	t,v	tasks/break_it/models/quint_fifth/unknown_same/sg2.qnt
 compile	--target	json	--main	shop	--init	init	--step	step	--invariant	shownWasAccepted,acceptedWasPlaced	tasks/quint/views/bare/shop.qnt
 compile	--target	json	--main	shop	--init	init	--step	step	--invariant	shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried	tasks/quint/views/labels/shop.qnt
+compile	--target	json	--main	signs	--init	init	--step	step	--invariant	rebuilt,literals	tasks/break_it/models/quint_integers/signs/signs.qnt
 compile	--target	json	--main	small	--init	init	--step	step	--invariant	inRange	tasks/break_it/models/quint_fourth/named_helpers/named_helpers.qnt
 compile	--target	json	--main	starts	--init	init	--step	step	--invariant	small	tasks/quint/checks/starts/starts.qnt
 compile	--target	json	--main	stuck	--init	init	--step	step	--invariant	ok	tasks/quint/checks/broken/stuck.qnt

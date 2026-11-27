@@ -509,7 +509,9 @@ fn built_and_compiled(set: &str, main: &str) {
     assert_eq!(
         searched(ours),
         searched(theirs),
-        "{set}: each property, its verdict and its path, as `quint compile` gives them"
+        "{set}: each property, its verdict and its path, as `quint compile` gives them; the \
+         set's `@check reachable` and `@check broken` marks are read as `@check` here, since \
+         Quint's compiled JSON carries no marks"
     );
     assert!(
         ours["runsNotPlayed"].is_null()

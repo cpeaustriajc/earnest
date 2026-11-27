@@ -265,10 +265,10 @@ fn added_definitions_are_typed_against_the_types_already_found() {
         r#"{"id":900001,"kind":"def","name":"q::added","qualifier":"val","expr":{"id":900000,"kind":"app","opcode":"iadd","args":[{"id":899998,"kind":"int","value":1},{"id":899999,"kind":"int","value":2}]}}"#,
     )
     .expect("JSON");
-    let Json::Object(more) = parsed
+    let more = parsed
         .types_of_added(&[], &types, &[added])
-        .expect("an addition of two integers is typed")
-    else {
+        .expect("an addition of two integers is typed");
+    let Json::Object(more) = &more else {
         panic!("a table");
     };
     assert_eq!(more.len(), entries.len() + 4, "the four new ids are typed");

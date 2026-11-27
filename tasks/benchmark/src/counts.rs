@@ -138,12 +138,23 @@ fn recorded_for(record: &[(String, u64)], case: &Case) -> Option<u64> {
         .map(|(_, count)| *count)
 }
 
+const UNNAMED: &str = "???";
+
 /// Sums the instructions that callgrind's output gives to `object`, the path of one file.
 ///
 /// The output names each file once in full, as `ob=(n) path`, and by its number after that. A cost
 /// line after a `calls=` line is the cost of the call, which the callee's own lines count already,
 /// so it is skipped.
+///
+/// Valgrind 3.22 names a program `???` when the linker laid its two writable segments end to
+/// end in the file, which happens when the first one's contents stop on a page boundary. So
+/// when no line names `object`, the instructions of the file named `???` are summed: the
+/// libraries are still named, and the program is the one file that is not.
 pub(crate) fn instructions_in(out: &str, object: &str) -> Result<u64, String> {
+    named(out, object).or_else(|unnamed| named(out, UNNAMED).map_err(|_| unnamed))
+}
+
+fn named(out: &str, object: &str) -> Result<u64, String> {
     let mut names: Vec<(String, String)> = Vec::new();
     let mut inside = false;
     let mut call_cost_next = false;
@@ -363,6 +374,27 @@ fn=(1)
 * 3
 summary: 130
 ";
+
+    #[test]
+    fn a_program_callgrind_could_not_name_is_counted_as_the_file_with_no_name() {
+        let unnamed = OUT.replace("ob=(1) /bin/earnest", "ob=(1) ???");
+        assert_eq!(
+            instructions_in(&unnamed, "/bin/earnest"),
+            Ok(123),
+            "valgrind 3.22 writes `???` for a program whose writable segments lie end to end; \
+             the libraries keep their names, so the file with no name is the program"
+        );
+        assert_eq!(
+            instructions_in(&unnamed, "/lib/libc.so.6"),
+            Ok(7),
+            "a named file is still counted by its name"
+        );
+        assert_eq!(
+            instructions_in(OUT, "/bin/earnest"),
+            Ok(123),
+            "a program that is named is counted by its name, not as `???`"
+        );
+    }
 
     #[test]
     fn the_count_of_one_file_skips_the_cost_of_its_calls_and_the_other_files() {

@@ -21,6 +21,7 @@
 //! it writes, or the first type error it reports.
 
 mod compile;
+mod depth;
 mod effects;
 mod files;
 mod flatten;
@@ -34,6 +35,7 @@ mod order;
 mod parser;
 mod printing_ir;
 mod problem;
+mod stack;
 mod types;
 
 pub use compile::{Compiled, Target};

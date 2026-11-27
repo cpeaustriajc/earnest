@@ -35,20 +35,20 @@ fn their_output(recorded: &Path) -> Result<Option<Json>, String> {
         return Err("types: no patches recorded".to_owned());
     };
     let parsed = quint_output(&fixture(recorded, "phases")?, &fixture(recorded, "parse")?)?;
-    let Json::Object(fields) = parsed else {
+    let Json::Object(fields) = &parsed else {
         return Err("parse: not an object".to_owned());
     };
     let mut written = Json::Object(Vec::new());
     if let Json::Object(output) = &mut written {
         for (key, value) in fields {
             match key.as_str() {
-                "stage" => output.push((key, Json::Text("typechecking".to_owned()))),
+                "stage" => output.push((key.clone(), Json::Text("typechecking".to_owned()))),
                 "errors" => {
                     output.push(("types".to_owned(), their_table(&types)?));
                     output.push(("effects".to_owned(), Json::Object(effects.clone())));
-                    output.push((key, value));
+                    output.push((key.clone(), value.clone()));
                 }
-                _ => output.push((key, value)),
+                _ => output.push((key.clone(), value.clone())),
             }
         }
     }

@@ -89,7 +89,7 @@ fn applied_to_substitutions(
 
 pub(crate) const ROUND_LIMIT: usize = 100;
 
-pub(crate) const DEPTH_LIMIT: usize = 300;
+pub(crate) const DEPTH_LIMIT: usize = 2_000;
 
 thread_local! {
     static MOST_ROUNDS: Cell<usize> = const { Cell::new(0) };

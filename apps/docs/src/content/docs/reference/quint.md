@@ -284,7 +284,7 @@ stateDiagram-v2
 - A text prints without quotes. Any other value prints as in [How values print](#how-values-print): `(Red, 0)` for a tuple, `{ retried: 1 }` for a record.
 - States with the same label and the same group are drawn as one box, so a label that leaves out a part of the state merges the states that differ only there. A box is drawn as broken when any of its states breaks a rule, and as an end when any of them is one.
 - A chart draws 20 arrows unless `--max-arrows` says otherwise, and the boxes those arrows reach. A label that merges many states may still need more: pass `--max-arrows 50` to see every box of a small chart.
-- A label that faults in a state, by earnest's own rules for integers (a `/` or `%` by a number below 1 or of a negative number) or `getOnlyElement` of a set that is not of one item, prints `?` for that state, and every such state of one group shares one `?` box. `earnest verify` is not affected: a label is evaluated only to draw the chart.
+- A label that faults in a state, by earnest's own rules for integers (a `/` or `%` by zero) or `getOnlyElement` of a set that is not of one item, prints `?` for that state, and every such state of one group shares one `?` box. `earnest verify` is not affected: a label is evaluated only to draw the chart.
 - Quint has no way to join texts or to write a number as text, so a label is either a record or a tuple of the parts to show, or an `if` or `match` that gives a text:
 
 ```quint
@@ -403,11 +403,33 @@ The reader takes variables of every type but operators: integers, booleans, text
 
 An integer has no size limit, as in `quint test` and `quint run`: sums, products, powers, comparisons, the ends of a range, map keys, set items, paths, the chart, the JSON and `earnest tla` all keep every digit, and a literal past 64 bits is read as written. `assert(2^70 > 2^64)` holds, and a counter that passes `9223372036854775807` goes on to `9223372036854775808`. A model whose numbers fit in 64 bits is searched as fast as before; a number past them is held in a form of its own only where one appears. Three things still stop a check:
 
-- `/` and `%` with a negative number or a divisor below 1 are a fault, since Quint's backends disagree there (`quint test` gives `(-7) / 2 == -3`, Quint's TLC run `-4`).
+- `/` or `%` by zero is a fault (`takes a division or a remainder by zero`), as it has no value.
 - A power whose exponent is past 32 bits, such as `2^(2^32)`, is a fault (`computes a number too large to hold`).
 - The caps that keep a search finite: a range of more than 1,000,000 numbers built in an expression, a `nondet` over more than 1,000,000 values and `powerset` of 20 items or more.
 
 A TypeScript model keeps JavaScript's safe integers and a Rust model its integer types; see [TypeScript models](/reference/typescript/) and [Rust models](/reference/rust/). TLC holds 32 bits, so `earnest confirm` says `cannot` for a model past them ([When it prints `cannot`](#when-it-prints-cannot)).
+
+### Division and remainder
+
+For every divisor but zero, at any size, `/` and `%` follow one rule:
+
+- `a / b` is the floor of the exact quotient: `(-7) / 2 == -4`, `7 / (-2) == -4`, `(-7) / (-2) == 3`. This is how TLA+ defines `\div` and how Quint's TLC run computes `/`.
+- `a % b` is `a - b * (a / b)`, so `a == b * (a / b) + a % b` always holds and the remainder has the sign of `b`: `(-7) % 2 == 1`, `7 % (-2) == -1`, `(-7) % (-2) == -1`.
+
+Quint 0.33.1's own tools disagree with each other where a number is negative:
+
+| Expression | Earnest | `quint test --backend typescript` | `quint verify --backend tlc` |
+|---|---|---|---|
+| `(-7) / 2` | `-4` | `-3` | `-4` |
+| `(-7) % 2` | `1` | `-1` | `1` |
+| `7 / (-2)` | `-4` | `-3` | `-4` |
+| `(-7) / (-2)` | `3` | `3` | `3` |
+| `7 % (-2)` | `-1` | `1` | stops: `The second argument of % should be a positive number` |
+| `(-7) % (-2)` | `-1` | `-1` | stops, as above |
+| `(-18446744073709551617) / 2` | `-9223372036854775809` | `-9223372036854775808` | stops: `TLC can't handle a number this big.` |
+| `7 / 0`, `7 % 0` | fault | stops: `Division by zero` | stops: `The second argument of \div is 0.`, and for `%` the message above |
+
+`quint test` truncates toward zero, at every size. `earnest confirm --quint` names that cause on each run it compares, and names TLC's refusal of `%` by a negative number on each property ([When it prints `cannot`](#when-it-prints-cannot)). `earnest tla` writes `/` and `%` with a positive divisor only, which TLA+ defines (`FlooredDivision(a, b)`, with `(-a) \div (-b)` for a negative `b`), so TLC computes earnest's answers.
 
 Actions may be joined with `all`, `any`, `if (c) A else B` and `match`. Where Quint reads a condition (a `val`, a `def`, an invariant, a guard, an `expect`, an argument, inside `forall` or `filter`), an `all { … }` whose items assign nothing is `and`, and an `any { … }` is `or`, as both `quint run` and `quint verify --backend tlc` read them: `val TypeOK = all { n >= 0, n <= 3 }`. A `match` whose branches are actions, in `init`, in a step or in a run step, is one action for each branch, which can happen only when the value has that branch's variant, with the variant's value bound to the branch's name; a `_` branch covers the variants the earlier branches do not name:
 
@@ -674,7 +696,9 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 | Java is not on `PATH` | `Java was not found on PATH, and quint verify --backend tlc needs it ...` |
 | `quint` stops with an error, such as Quint 0.33.1 on `import X as A` inside an instantiated spec | `Quint stopped:` and Quint's error |
 | The model declares, or the search computes, a number outside 32 bits, such as `2^64` | TLC's integers hold 32 bits; when Quint's TLC run stops on the number, `Quint stopped: TLC can't handle a number this big.` |
-| The checker could not judge a property or a run, such as `/` or `%` of a negative number, which is a fault | `the checker could not judge it` |
+| The checker could not judge a property or a run, such as `/` or `%` by zero, which is a fault | `the checker could not judge it` |
+| Quint's TLC run meets `%` by a negative number or zero, which TLC refuses | `Quint stopped: TLC refuses % by a divisor below 1 ...`, where the checker takes `a % b` as `a - b * (a / b)` |
+| A run the check plays reaches `/` or `%`; only the comparison with `quint test` | `quint test` truncates toward zero, where the checker takes the floor ([Division and remainder](#division-and-remainder)) |
 | A run `quint test` passed after more than one sample, which the checker breaks | `quint test` tries random choices of a run, and the checker tries every choice |
 | A run the check plays reaches `range`; only the comparison with `quint test` | `quint test` answers otherwise when `range` starts above its end ([listed above](#where-quints-backends-differ)) |
 | `init`, `step`, a property or a run reaches a `fold` over a set of anything but numbers or booleans, or over a set whose kind of items is not in Quint's types | TLC may take the set in another order than the checker |
@@ -682,7 +706,7 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 | The search stopped at `--max-states` or `--time-limit` | there is no full result to compare |
 | A model that is not a Quint check | Quint has nothing to run |
 
-Only what the check reaches counts: a `range` or a `fold` in another module of the file, or in a definition nothing calls, changes nothing. Any other difference prints `differs`. A run with no choice is played once by `quint test` (`passed 1 test(s)`), so a run the checker breaks and Quint passes once differs.
+Only what the check reaches counts: a `range`, a `/`, a `%` or a `fold` in another module of the file, or in a definition nothing calls, changes nothing. Any other difference prints `differs`. A run with no choice is played once by `quint test` (`passed 1 test(s)`), so a run the checker breaks and Quint passes once differs.
 
 ## The cache
 

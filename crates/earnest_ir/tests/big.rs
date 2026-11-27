@@ -13,8 +13,12 @@ fn quint() -> Notation {
     Notation::Quint(Quint::default())
 }
 
+fn big(text: &str) -> BigInt {
+    text.parse().expect("digits")
+}
+
 fn number(text: &str) -> Value {
-    Value::whole(text.parse().expect("digits"))
+    Value::whole(big(text))
 }
 
 fn apply(op: Op, arguments: Vec<Expr>) -> Expr {
@@ -50,16 +54,55 @@ fn both(expr: &Expr, state: &[Value]) -> Gave {
 
 fn exact(math: Math, left: i64, right: i64) -> Option<BigInt> {
     let (left, right) = (BigInt::from(left), BigInt::from(right));
-    let negative = left < BigInt::ZERO || right < BigInt::from(1);
     match math {
         Math::Add => Some(left + right),
         Math::Subtract => Some(left - right),
         Math::Multiply => Some(left * right),
-        Math::Remainder | Math::Divide if negative => None,
-        Math::Remainder => Some(left % right),
-        Math::Divide => Some(left / right),
         _ => None,
     }
+}
+
+fn whole(found: &Result<Value, Fault>) -> BigInt {
+    found
+        .as_ref()
+        .ok()
+        .and_then(Value::whole_number)
+        .unwrap_or_else(|| panic!("a whole number, not {found:?}"))
+}
+
+fn floored_laws(left: &BigInt, right: &BigInt, quotient: &BigInt, remainder: &BigInt) -> bool {
+    let rebuilt = right * quotient + remainder == *left;
+    let between = if *right > BigInt::ZERO {
+        BigInt::ZERO <= *remainder && remainder < right
+    } else {
+        right < remainder && *remainder <= BigInt::ZERO
+    };
+    rebuilt && between
+}
+
+fn divided(left: &BigInt, right: &BigInt) -> (Result<Value, Fault>, Result<Value, Fault>) {
+    let (first, second) = (Value::whole(left.clone()), Value::whole(right.clone()));
+    let state = [first, second];
+    let of = |math| apply(Op::Math(math), vec![Expr::Field(0), Expr::Field(1)]);
+    (
+        both(&of(Math::Divide), &state).0,
+        both(&of(Math::Remainder), &state).0,
+    )
+}
+
+fn holds_floored(left: &BigInt, right: &BigInt) -> Result<(), TestCaseError> {
+    let (quotient, remainder) = divided(left, right);
+    if *right == BigInt::ZERO {
+        prop_assert_eq!(quotient, Err(Fault::ByZero));
+        prop_assert_eq!(remainder, Err(Fault::ByZero));
+        return Ok(());
+    }
+    let (quotient, remainder) = (whole(&quotient), whole(&remainder));
+    prop_assert!(
+        floored_laws(left, right, &quotient, &remainder),
+        "{left} / {right} gave {quotient} and {left} % {right} gave {remainder}"
+    );
+    Ok(())
 }
 
 fn maths() -> impl Strategy<Value = Math> {
@@ -94,10 +137,21 @@ proptest! {
         let expr = apply(Op::Math(math), vec![Expr::Field(0), Expr::Field(1)]);
         let state = [Value::Int(left), Value::Int(right)];
         let found = both(&expr, &state).0;
-        match exact(math, left, right) {
-            Some(answer) => prop_assert_eq!(found, Ok(Value::whole(answer))),
-            None => prop_assert!(found.is_err(), "{found:?}"),
+        if let Some(answer) = exact(math, left, right) {
+            prop_assert_eq!(found, Ok(Value::whole(answer)));
         }
+    }
+
+    #[test]
+    fn division_and_remainder_floor_for_every_sign_and_size(
+        left in edges(),
+        right in edges(),
+        wide in 0_u32..3,
+    ) {
+        let scale = BigInt::from(i64::MAX).pow(wide);
+        holds_floored(&(BigInt::from(left) * &scale), &BigInt::from(right))?;
+        holds_floored(&(BigInt::from(left) * &scale), &(BigInt::from(right) * &scale))?;
+        holds_floored(&BigInt::from(left), &(BigInt::from(right) * &scale))?;
     }
 
     #[test]
@@ -112,13 +166,14 @@ proptest! {
         let found = both(&expr, &state).0;
         let (first, second) = (&wide + left, &wide + right);
         let answer = match math {
-            Math::Add => first + second,
-            Math::Subtract => first - second,
-            Math::Multiply => first * second,
-            Math::Remainder => first % second,
-            _ => first / second,
+            Math::Add => Some(first + second),
+            Math::Subtract => Some(first - second),
+            Math::Multiply => Some(first * second),
+            _ => None,
         };
-        prop_assert_eq!(found, Ok(Value::whole(answer)));
+        if let Some(answer) = answer {
+            prop_assert_eq!(found, Ok(Value::whole(answer)));
+        }
     }
 
     #[test]
@@ -187,20 +242,76 @@ fn negation_and_powers_leave_64_bits() {
 }
 
 #[test]
-fn division_with_a_negative_number_past_64_bits_stays_a_fault() {
-    for (math, fault) in [
-        (Math::Divide, Fault::Division),
-        (Math::Remainder, Fault::Remainder),
-    ] {
-        let expr = apply(
-            Op::Math(math),
-            vec![
-                constant(number("-18446744073709551616")),
-                constant(Value::Int(3)),
-            ],
-        );
-        assert_eq!(both(&expr, &[]).0, Err(fault));
+fn division_floors_and_the_remainder_follows_for_all_four_signs() {
+    let past = "18446744073709551616";
+    let cases = [
+        ("-7", "2", "-4", "1"),
+        ("7", "-2", "-4", "-1"),
+        ("-7", "-2", "3", "-1"),
+        ("7", "2", "3", "1"),
+        ("-18446744073709551617", "2", "-9223372036854775809", "1"),
+        ("18446744073709551617", "-2", "-9223372036854775809", "-1"),
+        ("-18446744073709551617", "-2", "9223372036854775808", "-1"),
+        ("-7", past, "-1", "18446744073709551609"),
+        ("7", "-18446744073709551616", "-1", "-18446744073709551609"),
+        ("-9223372036854775808", "-1", "9223372036854775808", "0"),
+    ];
+    for (left, right, quotient, remainder) in cases {
+        let (found_quotient, found_remainder) = divided(&big(left), &big(right));
+        assert_eq!(found_quotient, Ok(number(quotient)), "{left} / {right}");
+        assert_eq!(found_remainder, Ok(number(remainder)), "{left} % {right}");
     }
+}
+
+#[test]
+fn a_negative_field_by_a_constant_floors_in_values_and_in_tests() {
+    for (math, answer) in [(Math::Divide, -4), (Math::Remainder, 1)] {
+        let part = apply(
+            Op::Math(math),
+            vec![Expr::Field(0), constant(Value::Int(2))],
+        );
+        let state = [Value::Int(-7)];
+        assert_eq!(both(&part, &state).0, Ok(Value::Int(answer)));
+        let test = apply(Op::Equal, vec![part, constant(Value::Int(answer))]);
+        let reference = truth(&test, &mut Frame::new(&state, SLOTS).numbers_of(quint()));
+        let prepared = Code::new(test)
+            .of_any_size()
+            .truth(&mut Frame::new(&state, SLOTS));
+        assert_eq!((reference, prepared), (Ok(true), Ok(true)));
+    }
+}
+
+#[test]
+fn division_by_zero_stays_a_fault_at_every_size() {
+    for left in [
+        "-7",
+        "0",
+        "7",
+        "-18446744073709551616",
+        "18446744073709551616",
+    ] {
+        assert_eq!(
+            divided(&big(left), &BigInt::ZERO),
+            (Err(Fault::ByZero), Err(Fault::ByZero)),
+            "{left} by zero"
+        );
+    }
+}
+
+#[test]
+fn a_plain_code_still_faults_on_a_negative_division() {
+    let expr = apply(
+        Op::Math(Math::Divide),
+        vec![constant(Value::Int(-7)), constant(Value::Int(2))],
+    );
+    assert_eq!(
+        Code::new(expr.clone()).eval(&mut Frame::new(&[], SLOTS)),
+        Err(Fault::Division)
+    );
+    assert_eq!(
+        eval(&expr, &mut Frame::new(&[], SLOTS)),
+        Err(Fault::Division)
+    );
 }
 
 #[test]

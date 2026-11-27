@@ -1,6 +1,6 @@
 use crate::json::Json;
 use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
+use std::sync::Arc;
 
 const BUILT_IN: [&str; 103] = [
     "Bool",
@@ -114,7 +114,7 @@ pub(crate) fn built_in(name: &str) -> bool {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Entry {
-    fields: Vec<(String, Option<Rc<Json>>)>,
+    fields: Vec<(String, Option<Arc<Json>>)>,
 }
 
 impl Entry {
@@ -124,7 +124,7 @@ impl Entry {
                 fields: fields
                     .iter()
                     .map(|(key, value)| {
-                        let kept = (*value != Json::Null).then(|| Rc::new(value.clone()));
+                        let kept = (*value != Json::Null).then(|| Arc::new(value.clone()));
                         (key.clone(), kept)
                     })
                     .collect(),
@@ -141,7 +141,7 @@ impl Entry {
     }
 
     pub(crate) fn set(&mut self, key: &str, value: Option<Json>) {
-        let value = value.map(Rc::new);
+        let value = value.map(Arc::new);
         match self.fields.iter_mut().find(|(name, _)| name == key) {
             Some((_, slot)) => *slot = value,
             None => self.fields.push((key.to_owned(), value)),

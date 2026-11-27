@@ -440,6 +440,7 @@ version = "0.1.0"
 dependencies = [
  "earnest_check",
  "earnest_quint",
+ "earnest_threads",
 ]
 
 [[package]]

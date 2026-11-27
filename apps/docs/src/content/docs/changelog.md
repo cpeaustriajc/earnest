@@ -14,6 +14,16 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **`confirm --quint`:** it is the one command that starts the project's `quint`, found as before; with none it prints `not compared` and how to install it.
 - **Nothing kept:** `.earnest/quint/` no longer holds Quint's output, and the Quint version is no longer part of any key. A folder left by an older build can be deleted. With `--base`, a base that can't be read no longer has the reason `quintNotFound`.
 
+## November 2026: Quint `/` and `%` give one answer for every divisor but zero
+
+In a Quint model, `/` or `%` with a negative number was a fault (`takes a division with a negative number or a divisor below 1`), since Quint's own tools disagree there. Earnest now computes one rule that holds together, at any size:
+
+- **`/` floors:** `a / b` is the floor of the exact quotient, `(-7) / 2 == -4`, as TLA+ defines it and Quint's TLC run computes it.
+- **`%` follows it:** `a % b` is `a - b * (a / b)`, so `(-7) % 2 == 1` and `7 % (-2) == -1`, and `a == b * (a / b) + a % b` always holds.
+- **By zero:** still a fault, now `takes a division or a remainder by zero`.
+- **`confirm`:** `quint test` truncates (`(-7) / 2` is `-3`) and TLC refuses `%` by a negative number. `earnest confirm --quint` says `cannot` with that cause, not `differs`. `earnest tla` writes the rule with a positive divisor only, so `earnest confirm --tlc` agrees.
+- **Unchanged:** TypeScript and Rust models; a model whose numbers fit in 64 bits is searched as fast as before. See [Division and remainder](/reference/quint/#division-and-remainder).
+
 ## November 2026: Quint integers have no size limit
 
 A Quint `int` has no size, and `quint test` and `quint run` compute with integers of any size. Earnest stopped at 64 bits: a number past them was a fault (`computes a number too large to hold`), and a literal past them made the check `unreadable`. Both are now checked:

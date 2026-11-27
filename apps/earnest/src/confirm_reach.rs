@@ -9,6 +9,11 @@ const TESTS_END_WITH: &str = "Test";
 const ORDERED_THE_SAME: [&str; 2] = ["int", "bool"];
 const RANGE: &str = "the check's runs use `range`, which `quint test` answers otherwise than \
                      Quint's TLC run and the checker when it starts above its end";
+const DIVIDES: [&str; 2] = ["idiv", "imod"];
+const TRUNCATES: &str = "the check's runs use `/` or `%`, which `quint test` truncates toward \
+                         zero, where the checker and Quint's TLC run take the floor of the \
+                         quotient: with a negative number they answer otherwise, as `(-7) / 2` \
+                         is -3 in `quint test` and -4 in the checker";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Reasons {
@@ -188,12 +193,19 @@ pub(crate) fn where_backends_differ(source: &str, quint: &QuintCheck) -> Reasons
     let by_search = reached(&found, &searched);
     let by_runs = reached(&found, &played_runs(&found, &quint.runs));
     let mut ranges = Vec::new();
+    let mut divisions = Vec::new();
     for body in &by_runs {
         uses(body, "range", &mut ranges);
+        for opcode in DIVIDES {
+            uses(body, opcode, &mut divisions);
+        }
     }
     let mut runs = fold_reasons(&compiled, &by_runs);
     if !ranges.is_empty() {
         runs.push(RANGE.to_owned());
+    }
+    if !divisions.is_empty() {
+        runs.push(TRUNCATES.to_owned());
     }
     Reasons {
         search: fold_reasons(&compiled, &by_search),

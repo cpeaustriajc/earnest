@@ -1,6 +1,8 @@
 import json
 import sys
 
+sys.setrecursionlimit(1_000_000)
+
 root = sys.argv[1].rstrip("/") + "/"
 typecheck_name, effects_name = sys.argv[2:4]
 
