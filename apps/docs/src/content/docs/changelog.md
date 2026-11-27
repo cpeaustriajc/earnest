@@ -33,6 +33,7 @@ A `nondet` inside a step of a run, `init.then(nondet n = 0.to(199).oneOf() all {
 
 - **No install:** a project with neither Quint nor Node installed gets the same verdicts. A first run of a small model takes about 9 MB of memory and 20 ms, where starting Node took about 105 MB and a second.
 - **Quint's errors:** a file Quint 0.33.1 refuses is `unreadable` with Quint's code, line and column. A syntax error is in earnest's own words; the few other places where earnest reads otherwise, each by refusing a file, are listed in [How earnest reads a `.qnt` file](/reference/quint/#how-earnest-reads-a-qnt-file).
+- **Wording:** a file earnest refuses names what earnest was doing, `parsing as Quint` or ``compiling `Small` as Quint``, where it named `quint parse` or `quint compile --main Small`, in the text and in the `feature` of `--json`; the code, text, line and column stay Quint's.
 - **`confirm --quint`:** it is the one command that starts the project's `quint`, found as before; with none it prints `not compared` and how to install it.
 - **Nothing kept:** `.earnest/quint/` no longer holds Quint's output, and the Quint version is no longer part of any key. A folder left by an older build can be deleted. With `--base`, a base that can't be read no longer has the reason `quintNotFound`.
 

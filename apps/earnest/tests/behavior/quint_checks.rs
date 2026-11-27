@@ -316,7 +316,7 @@ fn a_failed_compile_makes_its_check_unreadable_at_the_place_quint_gives() {
             "models/dead.qnt".to_owned(),
             4,
             22,
-            "`quint compile --main dead`".to_owned()
+            "compiling `dead` as Quint".to_owned()
         )],
         "{report}"
     );
@@ -360,7 +360,7 @@ fn a_name_not_found_is_refused_by_the_parse_at_its_place_and_nothing_is_compiled
             "models/dead.qnt".to_owned(),
             4,
             22,
-            "`quint parse`".to_owned()
+            "parsing as Quint".to_owned()
         )],
         "{report}"
     );

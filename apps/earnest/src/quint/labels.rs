@@ -54,7 +54,7 @@ pub(super) fn label_unbuilt(job: &Job) -> Problem {
     at_label(
         job,
         &format!(
-            "the check `{}` is built from what `quint typecheck` wrote, and it can't be built \
+            "the check `{}` is built from the file typechecked as Quint, and it can't be built \
              with the chart label {}: the label would make earnest compile the check instead, \
              which changes the runs it plays. Write the label as a `val` that reads what the \
              check's own definitions read",
@@ -88,8 +88,8 @@ fn in_label(job: &Job, problem: Problem) -> Problem {
     match inside {
         Some(label) => Problem {
             message: format!(
-                "`quint compile --main {}` fails in the chart label `{}`: {}",
-                job.check.main, label.name, problem.message
+                "the chart label `{}` does not compile: {}",
+                label.name, problem.message
             ),
             ..problem
         },
@@ -110,9 +110,8 @@ pub(super) fn blamed(
                     Ok(_) => Err(at_label(
                         job,
                         &format!(
-                            "`quint compile --main {}` fails when it is asked to keep the chart \
-                             label {}, written `name == name` after the invariants, and compiles \
-                             the check without it. Quint said: {}",
+                            "the check `{}` compiles without the chart label {} but not with \
+                             it, written `name == name` after the invariants: {}",
                             job.check.main,
                             names(job),
                             problem.message

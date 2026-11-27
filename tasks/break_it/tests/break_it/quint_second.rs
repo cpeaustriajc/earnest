@@ -298,7 +298,7 @@ fn a_compiled_module_that_drops_an_imported_run_is_unfinished_and_names_it() {
             &serde_json::json!(["Single::Base::upTest"]),
             Some(
                 "runs not played: Single::Base::upTest: the checker does not build `import \
-                 Limit.L` at `compiled.qnt:32` from `quint typecheck`"
+                 Limit.L` at `compiled.qnt:32` from the file typechecked as Quint"
             )
         ),
         "`Single` imports one name alone, a shape the checker leaves to the compile, which \

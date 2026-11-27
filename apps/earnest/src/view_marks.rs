@@ -135,12 +135,12 @@ pub(crate) fn near_mark(kind: Near, written: &str, rest: &str) -> String {
              letters, `{mark}`, or it is read as a sentence and the chart is not labelled"
         ),
         Near::LineComment => format!(
-            "`// {written}` is a comment that `quint parse` does not hand over, so the chart is \
+            "`// {written}` is a comment, which Quint does not keep, so the chart is \
              not labelled: write the mark in a doc comment, with three slashes, `{mark}`, on the \
              line above the `val`"
         ),
         Near::BlockComment => format!(
-            "`{written}` is in a `/* */` comment, which `quint parse` does not hand over, so the \
+            "`{written}` is in a `/* */` comment, which Quint does not keep, so the \
              chart is not labelled: write the mark in a doc comment, with three slashes, \
              `{mark}`, on the line above the `val`"
         ),

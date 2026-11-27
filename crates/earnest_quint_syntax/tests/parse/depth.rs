@@ -110,7 +110,7 @@ fn a_type_deeper_than_the_bound_on_substitutions_is_refused_before_the_type_chec
             refusal(&problem),
             (
                 "unreadable",
-                "quint typecheck 0.33.1 stops with an internal error here: Maximum call stack size exceeded: a type here is nested more than 2100 deep, deeper than earnest reads"
+                "Quint 0.33.1 stops with an internal error here when it typechecks the file: Maximum call stack size exceeded: a type here is nested more than 2100 deep, deeper than earnest reads"
             ),
             "the bound on substitutions"
         );
