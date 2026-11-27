@@ -7,7 +7,7 @@ use std::thread;
 
 /// The stack of the thread the crate reads and checks a file on. Every recursive pass refuses a
 /// file nested deeper than its bound before it can spend this.
-pub(crate) const STACK: usize = 256 * 1024 * 1024;
+pub(crate) const STACK: usize = 32 * 1024 * 1024;
 
 thread_local! {
     static ON_LARGE_STACK: Cell<bool> = const { Cell::new(false) };
@@ -16,7 +16,9 @@ thread_local! {
 fn not_started(error: &std::io::Error) -> Problem {
     Problem {
         code: "unreadable".to_owned(),
-        message: format!("earnest could not start the thread it reads Quint files on: {error}"),
+        message: format!(
+            "earnest could not start the thread it reads Quint files on ({error}): run fewer jobs at once with --jobs, or raise the limit on address space (ulimit -v)"
+        ),
         source: String::new(),
         line: 0,
         column: 0,
@@ -26,11 +28,15 @@ fn not_started(error: &std::io::Error) -> Problem {
 /// Runs `work` on a thread with a stack of [`STACK`] bytes, or on this thread when it is one
 /// already. A panic of `work` is passed on as it is.
 pub(crate) fn on_large_stack<T: Send>(work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
+    on_stack_of(STACK, work)
+}
+
+fn on_stack_of<T: Send>(stack: usize, work: impl FnOnce() -> T + Send) -> Result<T, Problem> {
     if ON_LARGE_STACK.with(Cell::get) {
         return Ok(work());
     }
     thread::scope(|scope| {
-        let worker = start(scope, Some(STACK), || {
+        let worker = start(scope, Some(stack), || {
             ON_LARGE_STACK.with(|large| large.set(true));
             work()
         })
@@ -77,4 +83,22 @@ pub(crate) fn reading_on_large_stack<T: Send>(
 /// when no thread can be started.
 pub(crate) fn built_on_large_stack<T: Send>(work: impl Fn() -> T + Sync) -> T {
     on_large_stack(&work).unwrap_or_else(|_| work())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_stack_of;
+
+    #[test]
+    fn a_thread_the_system_cannot_start_is_a_refusal_that_says_what_to_do() {
+        let refused = on_stack_of(usize::MAX / 2, || 1).expect_err("no such stack is granted");
+        assert_eq!(refused.code, "unreadable", "refused, not a panic");
+        assert!(
+            refused.message.ends_with(
+                "run fewer jobs at once with --jobs, or raise the limit on address space (ulimit -v)"
+            ),
+            "{}",
+            refused.message
+        );
+    }
 }
