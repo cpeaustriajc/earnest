@@ -101,3 +101,11 @@ fn a_minus_before_an_if_whose_else_branch_ends_before_an_and_list_is_read_as_qui
         Ok(())
     );
 }
+
+#[test]
+fn a_dangling_operator_in_a_local_defs_value_is_refused_as_a_syntax_error_where_quint_finds_it() {
+    assert_eq!(
+        place(&refusal("def_value_with_dangling_operator")),
+        ("QNT000", 3, 35)
+    );
+}
