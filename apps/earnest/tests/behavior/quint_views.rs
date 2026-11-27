@@ -701,20 +701,16 @@ fn a_label_leaves_a_setup_built_from_the_typecheck_and_its_imported_runs_played(
 #[test]
 fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_not_judged() {
     let quint = Quint::new();
-    let fixture =
-        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    let fixture = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
     let text = quint.sandbox.read(fixture);
-    let last = r#"{"id":251,"kind":"name","name":"retried"}]"#;
+    let last = r#"{"id":255,"kind":"app","opcode":"eq","args":[{"id":253,"kind":"name","name":"retried"},{"id":254,"kind":"name","name":"retried"}]}"#;
     assert!(
         text.contains(last),
         "the fixture ends its invariants with the group label"
     );
     quint.sandbox.write(
         fixture,
-        &text.replace(
-            last,
-            r#"{"id":251,"kind":"name","name":"acceptedWasPlaced"}]"#,
-        ),
+        &text.replace(last, r#"{"id":253,"kind":"name","name":"retried"}"#),
     );
     let run = quint.earnest(&["verify", "labels", "--json"]);
     run.exits(1);
@@ -736,8 +732,7 @@ fn a_compiled_module_whose_invariants_do_not_end_with_the_labels_is_refused_and_
 #[test]
 fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
     let quint = Quint::new();
-    let labelled =
-        "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen,retried@.json";
+    let labelled = "fake/fixtures/compiled/labels/shop@shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried@.json";
     fs::remove_file(quint.sandbox.path().join(labelled)).expect("the fixture is there");
     let plain = quint
         .sandbox
@@ -756,8 +751,9 @@ fn a_label_quint_does_not_compile_is_refused_at_its_mark_naming_it() {
     let said = problem_at(&problems(&report), 74);
     assert!(
         said.starts_with(
-            "`seen` `quint compile --main shop` fails when the chart label `seen` and \
-             `retried` follows the invariants, and compiles the check without it"
+            "`seen` `quint compile --main shop` fails when it is asked to keep the chart label \
+             `seen` and `retried`, written `name == name` after the invariants, and compiles the \
+             check without it"
         ),
         "{said}"
     );
@@ -906,5 +902,40 @@ fn a_label_quint_itself_refuses_is_named_in_quints_error() {
              'oneOf' must be used inside a nondet definition"
                 .to_owned()
         )]
+    );
+}
+
+#[test]
+fn the_invariant_a_label_is_compiled_into_is_one_quint_typecheck_accepts() {
+    let read = |name: &str| -> Value {
+        let path = views().join(format!("fixtures/typechecked/typed/{name}.json"));
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()));
+        serde_json::from_str(&text).expect("quint typecheck wrote JSON")
+    };
+    let written = |name: &str| {
+        fs::read_to_string(views().join(format!("typed/{name}.qnt")))
+            .expect("the typed model can be read")
+    };
+    assert!(written("welltyped").contains(
+        "val synthesized = and(shownWasAccepted, acceptedWasPlaced, seen == seen, retried == \
+         retried)"
+    ));
+    assert_eq!(
+        read("welltyped")["errors"],
+        serde_json::json!([]),
+        "quint 0.33.1 typechecks the invariants with each label as `name == name`"
+    );
+    assert!(
+        written("illtyped")
+            .contains("val synthesized = and(shownWasAccepted, acceptedWasPlaced, seen, retried)")
+    );
+    let refused = read("illtyped")["errors"][0]["explanation"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        refused.starts_with("[QNT000] Couldn't unify bool and str"),
+        "a label written bare beside the invariants is ill-typed: {refused}"
     );
 }
