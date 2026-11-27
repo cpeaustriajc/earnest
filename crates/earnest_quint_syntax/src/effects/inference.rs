@@ -5,9 +5,9 @@ use super::{
     Substitution, Substitutions, apply, compose, effect_text, entity_name_list, names_of,
     namespaced, unify,
 };
-use crate::expression_text::expression_text;
 use crate::json::Json;
 use crate::names::{Entry, Raised, number};
+use crate::printing_ir::expression_text;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 

@@ -89,3 +89,72 @@ fn write_expression(expression: &Json, out: &mut String) {
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::expression_text;
+    use crate::files::read;
+    use crate::json::Json;
+    use std::fs;
+    use std::path::Path;
+
+    const SAMPLE: &str = "crates/earnest_quint_syntax/tests/samples/printing.qnt";
+
+    fn expressions<'a>(value: &'a Json, found: &mut Vec<&'a Json>) {
+        match value {
+            Json::Object(fields) => {
+                let kind = match value.get("kind") {
+                    Some(Json::Text(kind)) => kind.as_str(),
+                    _ => "",
+                };
+                let expression = match kind {
+                    "name" | "lambda" | "let" => true,
+                    "bool" | "int" | "str" => value.get("value").is_some(),
+                    "app" => value.get("opcode").is_some(),
+                    _ => false,
+                };
+                if expression && value.get("id").is_some() {
+                    found.push(value);
+                }
+                for (_, inner) in fields {
+                    expressions(inner, found);
+                }
+            }
+            Json::List(items) => {
+                for inner in items {
+                    expressions(inner, found);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn every_expression_of_the_sample_is_printed_as_quint_prints_it() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let recorded = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/quint")
+            .join(format!("{SAMPLE}.printing.json"));
+        let printed = Json::parse(&fs::read_to_string(recorded).expect("the recording is read"))
+            .expect("the recording is JSON");
+        let parsed = read(SAMPLE, |path| fs::read_to_string(root.join(path)).ok())
+            .expect("the sample is read");
+        let mut found = Vec::new();
+        for module in parsed.modules() {
+            expressions(module, &mut found);
+        }
+        let Json::Object(entries) = &printed else {
+            panic!("the recording is an object");
+        };
+        assert!(entries.len() > 90, "the recording has every expression");
+        for expression in found {
+            let id = expression
+                .get("id")
+                .map_or_else(String::new, ToString::to_string);
+            let Some(Json::Text(theirs)) = printed.get(&id) else {
+                panic!("id {id} is printed by Quint");
+            };
+            assert_eq!(&expression_text(expression), theirs, "id {id}");
+        }
+    }
+}

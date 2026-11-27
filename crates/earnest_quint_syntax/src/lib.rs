@@ -18,7 +18,6 @@
 //! file `quint parse --source-map` writes.
 
 mod effects;
-mod expression_text;
 mod files;
 mod ids;
 mod json;
@@ -27,6 +26,7 @@ mod names;
 mod number;
 mod order;
 mod parser;
+mod printing_ir;
 mod problem;
 mod types;
 

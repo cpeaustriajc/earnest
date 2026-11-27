@@ -3,9 +3,9 @@ use super::{
     Effect, Entity, Kind, Scheme, StateVariable, effect_text, entity_name_list, entity_text,
     state_variable_list,
 };
-use crate::expression_text::qualifier_text;
 use crate::json::Json;
 use crate::names::{Entry, Raised, number};
+use crate::printing_ir::qualifier_text;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
