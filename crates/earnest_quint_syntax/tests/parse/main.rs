@@ -8,6 +8,7 @@ mod effects;
 mod names;
 mod refusals;
 mod review;
+mod threads;
 mod typecheck;
 mod types;
 mod typing_review;
