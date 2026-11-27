@@ -4,6 +4,8 @@ mod signatures;
 
 use crate::json::Json;
 use crate::names::Raised;
+use checks::TypeOf;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub(crate) use inference::analyze;
@@ -912,6 +914,20 @@ pub(crate) fn namespaced(effect: &Effect, namespaces: &[String], origins: &mut u
     }
 }
 
+#[derive(Default)]
+pub(crate) struct TypePass {
+    pub(crate) types: HashMap<u64, TypeOf>,
+    pub(crate) errors: Vec<(usize, Raised)>,
+    pub(crate) application_errors: Vec<(usize, Raised)>,
+}
+
+fn of_module(errors: &[(usize, Raised)], module: usize) -> impl Iterator<Item = &Raised> {
+    errors
+        .iter()
+        .filter(move |(index, _)| *index == module)
+        .map(|(_, raised)| raised)
+}
+
 impl crate::files::Parsed {
     /// The `effects` table `quint typecheck --out` writes: for every id Quint infers an effect
     /// for, its effect scheme as Quint writes it, names of effect and entity variables included.
@@ -924,8 +940,20 @@ impl crate::files::Parsed {
     /// qualifier does not allow (`QNT200`), an instance override that is not pure (`QNT201`), a
     /// variable updated twice in one step (`QNT202`), a misused `nondet` (`QNT203`, `QNT204`,
     /// `QNT206`). A file on which Quint stops with an internal error is refused as `unreadable`.
+    /// Until the crate checks types, a file Quint's type checker refuses may be read, and a
+    /// `nondet` whose body is not boolean (`QNT205`) is not refused.
     pub fn effects(&self) -> Result<Json, crate::Problem> {
-        let analysis = analyze(self.modules(), self.entries(), &|_| None).map_err(
+        self.analyzed(&TypePass::default())
+    }
+
+    pub(crate) fn analyzed(&self, types: &TypePass) -> Result<Json, crate::Problem> {
+        let type_of = |id: u64| {
+            types.types.get(&id).map(|found| TypeOf {
+                boolean: found.boolean,
+                text: found.text.clone(),
+            })
+        };
+        let analysis = analyze(self.modules(), self.entries(), &type_of).map_err(
             |inference::Crash(why)| crate::Problem {
                 code: "unreadable".to_owned(),
                 message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
@@ -934,8 +962,14 @@ impl crate::files::Parsed {
                 column: 1,
             },
         )?;
-        for (inferred, checked) in analysis.inference.iter().zip(&analysis.checks) {
-            let errors: Vec<Raised> = inferred.iter().chain(checked).cloned().collect();
+        for module in 0..self.modules().len() {
+            let none = Vec::new();
+            let errors: Vec<Raised> = of_module(&types.errors, module)
+                .chain(analysis.inference.get(module).unwrap_or(&none))
+                .chain(of_module(&types.application_errors, module))
+                .chain(analysis.checks.get(module).unwrap_or(&none))
+                .cloned()
+                .collect();
             if let Some(first) = errors.first() {
                 return Err(self.problem(&errors, first));
             }
@@ -943,3 +977,6 @@ impl crate::files::Parsed {
         Ok(analysis.effects)
     }
 }
+
+#[cfg(test)]
+mod tests;

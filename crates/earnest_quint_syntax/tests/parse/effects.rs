@@ -328,6 +328,7 @@ const REFUSALS: &[(&str, &str)] = &[
     ("effects_any_different_updates", "QNT000"),
     ("effects_order_mode_then_update", "QNT200"),
     ("effects_union_not_covered", "QNT000"),
+    ("effects_first_of_two_modules", "QNT200"),
     ("effects_unions_of_entities", "QNT000"),
     ("effects_def_updates_listed_twice", "QNT200"),
 ];
