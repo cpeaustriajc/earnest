@@ -165,6 +165,9 @@ compile	--target	json	--main	UseB	--init	init	--step	step	--invariant	small	task
 compile	--target	json	--main	Uses	--init	init	--step	step	--invariant	later	tasks/quint/marked/faults/faults.qnt
 compile	--target	json	--main	W3	--init	init	--step	step	--invariant	ok	tasks/quint/review/barecomma/barecomma.qnt
 compile	--target	json	--main	Whole	--init	init	--step	step	--invariant	small	tasks/quint/review/twosetups/twosetups.qnt
+compile	--target	json	--main	ands_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ands_100.qnt
+compile	--target	json	--main	ands_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ands_300.qnt
+compile	--target	json	--main	ands_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ands_500.qnt
 compile	--target	json	--main	assertAfterNondet	--init	init	--step	step	tasks/break_it/models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt
 compile	--target	json	--main	assertFail	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/assert_fail.qnt
 compile	--target	json	--main	bank	--init	init	--step	step	--invariant	nonNegative	tasks/quint/marked/specs/bank.qnt
@@ -189,6 +192,9 @@ compile	--target	json	--main	counter	--init	init	--step	step	--invariant	inRange
 compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	--temporal	later,sooner	tasks/quint/checks/temporal/dead.qnt
 compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	tasks/quint/checks/dead/dead.qnt
 compile	--target	json	--main	divisionBlamed	--init	init	--step	step	tasks/break_it/models/quint_seventh/division_blamed/division_blamed.qnt
+compile	--target	json	--main	elseifs_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/elseifs_100.qnt
+compile	--target	json	--main	elseifs_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/elseifs_300.qnt
+compile	--target	json	--main	elseifs_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/elseifs_500.qnt
 compile	--target	json	--main	endless	--init	init	--step	step	--invariant	small	tasks/break_it/models/quint_third/output/output.qnt
 compile	--target	json	--main	falseRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
 compile	--target	json	--main	fault	--init	init	--step	step	--invariant	P::annBelowFive	tasks/quint/imports/printing.qnt
@@ -197,10 +203,22 @@ compile	--target	json	--main	floored	--init	init	--step	step	--invariant	rebuilt
 compile	--target	json	--main	halves	--init	init	--step	step	--invariant	halfAbove	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	house	--init	init	--step	step	--invariant	tickBound,neverLit	tasks/quint/samples/parts.qnt
 compile	--target	json	--main	huge	--init	init	--step	step	--invariant	mutex,holderKnown,bounded,grantsBounded	--temporal	drains,someGrant,served	tasks/break_it/models/quint_second/project/setups.qnt
+compile	--target	json	--main	ifs_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ifs_100.qnt
+compile	--target	json	--main	ifs_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ifs_300.qnt
+compile	--target	json	--main	ifs_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ifs_500.qnt
 compile	--target	json	--main	illtyped	--init	init	--step	step	--invariant	shownWasAccepted,acceptedWasPlaced	tasks/quint/views/typed/illtyped.qnt
 compile	--target	json	--main	illtyped	--init	init	--step	step	--invariant	shownWasAccepted,acceptedWasPlaced,seen == seen,retried == retried	tasks/quint/views/typed/illtyped.qnt
+compile	--target	json	--main	implies_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/implies_100.qnt
+compile	--target	json	--main	implies_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/implies_300.qnt
+compile	--target	json	--main	implies_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/implies_500.qnt
+compile	--target	json	--main	lambdas_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lambdas_100.qnt
+compile	--target	json	--main	lambdas_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lambdas_300.qnt
+compile	--target	json	--main	lambdas_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lambdas_500.qnt
 compile	--target	json	--main	lamp	--init	init	--step	step	--invariant	litOrDark	tasks/quint/changes/lamp.qnt
 compile	--target	json	--main	ledger	--init	init	--step	step	--invariant	conserved,noDebt,someoneEmpty	tasks/quint/samples/ledger.qnt
+compile	--target	json	--main	lets_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lets_100.qnt
+compile	--target	json	--main	lets_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lets_300.qnt
+compile	--target	json	--main	lets_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/lets_500.qnt
 compile	--target	json	--main	lift	--init	init	--step	step	--invariant	inside,low	--temporal	reachesTop	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	light	--init	init	--step	step	--invariant	fewCars,shown == shown,side == side	tasks/quint/views/kinds/light.qnt
 compile	--target	json	--main	lost	--init	init	--step	step	--invariant	zero	tasks/quint/marked/lost/lost.qnt
@@ -211,9 +229,18 @@ compile	--target	json	--main	named	--init	init	--step	step	--invariant	fresh,D::
 compile	--target	json	--main	near	--init	init	--step	step	--invariant	small	tasks/quint/views/near/near.qnt
 compile	--target	json	--main	nested	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/nested.qnt
 compile	--target	json	--main	nondetRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/nondet_runs/nondet_runs.qnt
+compile	--target	json	--main	nots_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_100.qnt
+compile	--target	json	--main	nots_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_300.qnt
+compile	--target	json	--main	nots_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_500.qnt
 compile	--target	json	--main	once	--init	init	--step	step	--invariant	inRange,parity == parity,sign == sign	tasks/quint/views/twice/twice.qnt
+compile	--target	json	--main	ors_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ors_100.qnt
+compile	--target	json	--main	ors_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ors_300.qnt
+compile	--target	json	--main	ors_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ors_500.qnt
 compile	--target	json	--main	outside	--init	init	--step	step	--invariant	small,shown == shown	tasks/quint/views/outside/outside.qnt
 compile	--target	json	--main	pair	--init	init	--step	step	--invariant	bothMutex,fewGrants	tasks/break_it/models/quint_third/project/setups.qnt
+compile	--target	json	--main	parens_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/parens_100.qnt
+compile	--target	json	--main	parens_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/parens_300.qnt
+compile	--target	json	--main	parens_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/parens_500.qnt
 compile	--target	json	--main	plain	--init	init	--step	step	--invariant	small	tasks/quint/views/defs_bare/defs.qnt
 compile	--target	json	--main	plain	--init	init	--step	step	--invariant	small,label == label,kind == kind	tasks/quint/views/defs/defs.qnt
 compile	--target	json	--main	played	--init	init	--step	step	tasks/quint/views/checked/checked.qnt
@@ -222,12 +249,18 @@ compile	--target	json	--main	problems	--init	init	--step	step	--invariant	small,
 compile	--target	json	--main	ranges	--init	init	--step	step	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	reachableOnly	--init	init	--step	step	--invariant	two	tasks/break_it/models/quint_sixth/reachable_only/reachable_only.qnt
 compile	--target	json	--main	reads	--init	init	--step	step	--invariant	natural,booleans,names,only,operators,folded,small	tasks/quint/checks/reads/reads.qnt
+compile	--target	json	--main	records_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/records_100.qnt
+compile	--target	json	--main	records_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/records_300.qnt
+compile	--target	json	--main	records_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/records_500.qnt
 compile	--target	json	--main	refused	--init	init	--step	step	--invariant	small	tasks/quint/views/quintrefuses/refused.qnt
 compile	--target	json	--main	refused	--init	init	--step	step	--invariant	small,shown == shown	tasks/quint/views/quintrefuses/refused.qnt
 compile	--target	json	--main	repeated	--init	init	--step	step	--invariant	small,listed	--temporal	strong,fairPick	tasks/quint/checks/problems/problems.qnt
 compile	--target	json	--main	reportMarks	--init	init	--step	step	--invariant	belowTwo,belowNine,atFive,atOne	tasks/break_it/models/quint_sixth/report_marks/report_marks.qnt
 compile	--target	json	--main	runplace	--init	init	--step	step	tasks/quint/checks/runplace/runplace.qnt
 compile	--target	json	--main	scenarios	--init	S::init	--step	S::step	tasks/quint/imports/setups.qnt
+compile	--target	json	--main	sets_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sets_100.qnt
+compile	--target	json	--main	sets_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sets_300.qnt
+compile	--target	json	--main	sets_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sets_500.qnt
 compile	--target	json	--main	setup	--init	init	--step	step	--invariant	ok	tasks/quint/confirm/fixtures/skipped/skipped.qnt
 compile	--target	json	--main	setups	--init	init	--step	step	--invariant	mutex,holderKnown,Two::bounded	--temporal	Two::drains,Two::someGrant,Two::served	tasks/break_it/models/quint_second/project/setups.qnt
 compile	--target	json	--main	sg2	--init	init	--step	step	--invariant	ok	--temporal	t,v	tasks/break_it/models/quint_fifth/unknown_same/sg2.qnt
@@ -238,6 +271,9 @@ compile	--target	json	--main	small	--init	init	--step	step	--invariant	inRange	t
 compile	--target	json	--main	starts	--init	init	--step	step	--invariant	small	tasks/quint/checks/starts/starts.qnt
 compile	--target	json	--main	stuck	--init	init	--step	step	--invariant	ok	tasks/quint/checks/broken/stuck.qnt
 compile	--target	json	--main	stuck	--init	init	--step	step	--invariant	ok	tasks/quint/checks/stuck/stuck.qnt
+compile	--target	json	--main	sums_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_100.qnt
+compile	--target	json	--main	sums_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_300.qnt
+compile	--target	json	--main	sums_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_500.qnt
 compile	--target	json	--main	tally	--init	init	--step	step	tasks/quint/samples/tally.qnt
 compile	--target	json	--main	tallyfails	--init	init	--step	step	tasks/quint/samples/tallyfails.qnt
 compile	--target	json	--main	three	--init	init	--step	step	--invariant	bounded,counted	--temporal	drains	tasks/quint/imports/setups.qnt
