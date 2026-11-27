@@ -2,7 +2,7 @@ use crate::ids::{Ids, Place};
 use crate::json::Json;
 use crate::lexer::{Kind, Token};
 use crate::problem::Problem;
-use crate::types::unbound_type_variables;
+use crate::types::{type_text, unbound_type_variables};
 
 type Span = (usize, usize);
 
@@ -93,6 +93,7 @@ pub(crate) struct Parsed {
     pub(crate) listened: Option<Problem>,
 }
 
+#[derive(Clone)]
 pub(crate) struct Reported {
     pub(crate) problem: Problem,
     pub(crate) token: usize,
@@ -138,6 +139,9 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         modules: Vec::new(),
         reported: None,
         listened: None,
+        edge: false,
+        candidates: Vec::new(),
+        stops: Vec::new(),
     };
     let outcome = parser.file();
     match (parser.reported.take(), outcome) {
@@ -158,6 +162,17 @@ struct Parser<'a> {
     modules: Vec<Json>,
     reported: Option<Reported>,
     listened: Option<Problem>,
+    edge: bool,
+    candidates: Vec<usize>,
+    stops: Vec<usize>,
+}
+
+struct Mark {
+    at: usize,
+    ids: (u64, usize),
+    reported: Option<Reported>,
+    listened: Option<Problem>,
+    candidates: usize,
 }
 
 fn id(value: u64) -> Json {
@@ -380,6 +395,52 @@ impl Parser<'_> {
             });
             self.listened = Some(Problem::coded(code, message, line, column));
         }
+    }
+
+    fn mark(&self) -> Mark {
+        Mark {
+            at: self.at,
+            ids: self.ids.mark(),
+            reported: self.reported.clone(),
+            listened: self.listened.clone(),
+            candidates: self.candidates.len(),
+        }
+    }
+
+    fn rewind(&mut self, mark: &Mark) {
+        self.at = mark.at;
+        self.ids.rewind(mark.ids);
+        self.reported.clone_from(&mark.reported);
+        self.listened.clone_from(&mark.listened);
+        self.candidates.truncate(mark.candidates);
+    }
+
+    fn goes_on(&mut self, at: usize) -> bool {
+        if !self.edge {
+            return true;
+        }
+        if self.stops.contains(&at) {
+            return false;
+        }
+        self.candidates.push(at);
+        true
+    }
+
+    fn may_start_body(&self, kind: Kind) -> bool {
+        let next = self.kind_at(self.at + 1);
+        match kind {
+            Kind::Minus | Kind::LeftBracket => true,
+            Kind::And | Kind::Or => matches!(next, Kind::LeftBrace | Kind::LeftParen),
+            Kind::Iff | Kind::Implies | Kind::LeadsTo => next == Kind::LeftParen,
+            _ => false,
+        }
+    }
+
+    fn enclosed(&mut self) -> Result<Json, Reported> {
+        let edge = std::mem::replace(&mut self.edge, false);
+        let value = self.expr(0);
+        self.edge = edge;
+        value
     }
 
     fn file(&mut self) -> Result<(), Reported> {
@@ -1164,8 +1225,11 @@ impl Parser<'_> {
                     continue;
                 }
                 Kind::LeftBracket if INDEX >= precedence => {
+                    if self.may_start_body(kind) && !self.goes_on(self.at) {
+                        break;
+                    }
                     self.advance();
-                    let index = self.expr(0)?;
+                    let index = self.enclosed()?;
                     self.expect(Kind::RightBracket, "]")?;
                     let app_id = self.placed(self.span(start));
                     left = app(app_id, "nth", vec![left, index]);
@@ -1192,7 +1256,7 @@ impl Parser<'_> {
                 Kind::Arrow => (PAIR, "Tup", PAIR + 1),
                 _ => break,
             };
-            if level < precedence {
+            if level < precedence || (self.may_start_body(kind) && !self.goes_on(self.at)) {
                 break;
             }
             self.advance();
@@ -1227,7 +1291,8 @@ impl Parser<'_> {
             self.qualified_name()?;
         }
         let name = self.text(self.span(name_start));
-        if self.eat(Kind::LeftParen) {
+        if self.kind() == Kind::LeftParen && self.goes_on(self.at) {
+            self.advance();
             let mut args = vec![callee];
             if self.kind() != Kind::RightParen {
                 args.extend(self.arguments()?);
@@ -1256,19 +1321,19 @@ impl Parser<'_> {
     }
 
     fn arguments(&mut self) -> Result<Vec<Json>, Reported> {
-        let mut args = vec![self.expr(0)?];
+        let mut args = vec![self.enclosed()?];
         while self.kind() == Kind::Comma && !matches!(self.kind_at(self.at + 1), Kind::RightParen) {
             self.advance();
-            args.push(self.expr(0)?);
+            args.push(self.enclosed()?);
         }
         Ok(args)
     }
 
     fn listed(&mut self, close: Kind, shown: &str) -> Result<Vec<Json>, Reported> {
-        let mut values = vec![self.expr(0)?];
+        let mut values = vec![self.enclosed()?];
         while self.kind() == Kind::Comma && self.kind_at(self.at + 1) != close {
             self.advance();
-            values.push(self.expr(0)?);
+            values.push(self.enclosed()?);
         }
         self.eat(Kind::Comma);
         self.expect(close, shown)?;
@@ -1321,9 +1386,9 @@ impl Parser<'_> {
             Kind::If => {
                 self.advance();
                 self.expect(Kind::LeftParen, "(")?;
-                let condition = self.expr(0)?;
+                let condition = self.enclosed()?;
                 self.expect(Kind::RightParen, ")")?;
-                let then = self.expr(0)?;
+                let then = self.enclosed()?;
                 self.expect(Kind::Else, "else")?;
                 let otherwise = self.expr(ELSE_BRANCH)?;
                 Ok(self.application(self.span(start), "ite", vec![condition, then, otherwise]))
@@ -1411,7 +1476,7 @@ impl Parser<'_> {
                 let params = vec![self.parameter()?];
                 self.lambda_rest(start, params)
             }
-            Kind::LeftParen => {
+            Kind::LeftParen if self.goes_on(after) => {
                 self.qualified_name()?;
                 self.call(start)
             }
@@ -1480,7 +1545,7 @@ impl Parser<'_> {
             let unit_id = self.placed(self.span(start));
             return Ok(unit(unit_id));
         }
-        let first = self.expr(0)?;
+        let first = self.enclosed()?;
         if self.eat(Kind::RightParen) {
             return Ok(first);
         }
@@ -1529,7 +1594,7 @@ impl Parser<'_> {
                 && self.kind_at(self.after_qualified(next)) == Kind::Colon);
         self.advance();
         if !is_record {
-            let inner = self.expr(0)?;
+            let inner = self.enclosed()?;
             self.expect(Kind::RightBrace, "}")?;
             return Ok(inner);
         }
@@ -1538,11 +1603,11 @@ impl Parser<'_> {
         loop {
             let element_start = self.at;
             if self.eat(Kind::Spread) {
-                spreads.push(self.expr(0)?);
+                spreads.push(self.enclosed()?);
             } else {
                 let field = self.simple_name("record")?;
                 self.expect(Kind::Colon, ":")?;
-                let value = self.expr(0)?;
+                let value = self.enclosed()?;
                 let field_id = self.placed(self.span(element_start));
                 pairs.push((
                     literal(field_id, "str", Json::text(&self.text(field))),
@@ -1613,7 +1678,7 @@ impl Parser<'_> {
 
     fn match_expression(&mut self, start: usize) -> Result<Json, Reported> {
         self.advance();
-        let scrutinee = self.expr(0)?;
+        let scrutinee = self.enclosed()?;
         self.expect(Kind::LeftBrace, "{")?;
         self.eat(Kind::Pipe);
         let mut cases = Vec::new();
@@ -1634,7 +1699,7 @@ impl Parser<'_> {
                 (self.text(label), binding)
             };
             self.expect(Kind::FatArrow, "=>")?;
-            let body = self.expr(0)?;
+            let body = self.enclosed()?;
             cases.push((self.span(case_start), label, binding, body));
             if !self.eat(Kind::Pipe) {
                 break;
@@ -1658,9 +1723,38 @@ impl Parser<'_> {
         Ok(app(match_id, "matchVariant", args))
     }
 
+    fn let_parts(&mut self) -> Result<(Definition, Json), (Reported, Vec<usize>)> {
+        let outer_edge = std::mem::replace(&mut self.edge, true);
+        let outer = std::mem::take(&mut self.candidates);
+        let definition = self.operator_definition(Within::Let);
+        let mine = std::mem::replace(&mut self.candidates, outer);
+        self.edge = outer_edge;
+        let definition = definition.map_err(|failure| (failure, mine.clone()))?;
+        let body = self.expr(LET_BODY).map_err(|failure| (failure, mine))?;
+        Ok((definition, body))
+    }
+
     fn let_expression(&mut self, start: usize) -> Result<Json, Reported> {
-        let definition = self.operator_definition(Within::Let)?;
-        let body = self.expr(LET_BODY)?;
+        let mark = self.mark();
+        let (definition, body) = match self.let_parts() {
+            Ok(parts) => parts,
+            Err((failure, candidates)) => {
+                let mut found = None;
+                for candidate in candidates.into_iter().rev() {
+                    self.rewind(&mark);
+                    self.stops.push(candidate);
+                    if let Ok(parts) = self.let_parts() {
+                        found = Some(parts);
+                        break;
+                    }
+                    self.stops.pop();
+                }
+                match found {
+                    Some(parts) => parts,
+                    None => return Err(failure),
+                }
+            }
+        };
         let span = self.span(start);
         match definition {
             Definition::Plain(definition) => {
@@ -1887,9 +1981,11 @@ impl Parser<'_> {
         let type_id = self.placed(span);
         let constructor_id = self.placed(span);
         if name == "Map" && args.len() == 2 {
+            let key = type_text(&args[0]);
+            let value = type_text(&args[1]);
             self.listen(
                 "QNT015",
-                "Use 'a -> b' instead of 'Map[a, b]' for map types".to_owned(),
+                format!("Use '{key} -> {value}' instead of 'Map[{key}, {value}]' for map types"),
                 type_id,
             );
             let mut args = args.into_iter();

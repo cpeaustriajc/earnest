@@ -51,6 +51,15 @@ impl Ids {
         self.sources.len() - 1
     }
 
+    pub(crate) fn mark(&self) -> (u64, usize) {
+        (self.last, self.places.len())
+    }
+
+    pub(crate) fn rewind(&mut self, (last, places): (u64, usize)) {
+        self.last = last;
+        self.places.truncate(places);
+    }
+
     pub(crate) fn unplaced(&mut self) -> u64 {
         self.last += 1;
         self.last

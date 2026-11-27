@@ -72,3 +72,90 @@ fn collect_row(written: &Json, types: &mut Vec<String>, rows: &mut Vec<String>) 
         _ => {}
     }
 }
+
+fn text_field<'a>(written: &'a Json, key: &str) -> &'a str {
+    match written.get(key) {
+        Some(Json::Text(text)) => text,
+        _ => "",
+    }
+}
+
+fn listed(written: Option<&Json>) -> Vec<String> {
+    match written {
+        Some(Json::List(items)) => items.iter().map(type_text).collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub(crate) fn type_text(written: &Json) -> String {
+    let inner = |key: &str| written.get(key).map_or_else(String::new, type_text);
+    match text_field(written, "kind") {
+        kind @ ("bool" | "int" | "str") => kind.to_owned(),
+        "const" | "var" => text_field(written, "name").to_owned(),
+        "set" => format!("Set[{}]", inner("elem")),
+        "list" => format!("List[{}]", inner("elem")),
+        "fun" => format!("({} -> {})", inner("arg"), inner("res")),
+        "oper" => format!(
+            "({}) => {}",
+            listed(written.get("args")).join(", "),
+            inner("res")
+        ),
+        "tup" => format!(
+            "({})",
+            row_text(written.get("fields").unwrap_or(&Json::Null), Labels::Hidden)
+        ),
+        "rec" => {
+            let fields = row_text(written.get("fields").unwrap_or(&Json::Null), Labels::Shown);
+            if fields.is_empty() {
+                "{}".to_owned()
+            } else {
+                format!("{{ {fields} }}")
+            }
+        }
+        "app" => format!(
+            "{}[{}]",
+            written.get("ctor").map_or_else(String::new, type_text),
+            listed(written.get("args")).join(", ")
+        ),
+        _ => String::new(),
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Labels {
+    Shown,
+    Hidden,
+}
+
+fn row_text(written: &Json, labels: Labels) -> String {
+    match text_field(written, "kind") {
+        "var" => format!("| {}", text_field(written, "name")),
+        "row" => {
+            let mut fields: Vec<String> = match written.get("fields") {
+                Some(Json::List(fields)) => fields
+                    .iter()
+                    .map(|field| {
+                        let shown = field.get("fieldType").map_or_else(String::new, type_text);
+                        if labels == Labels::Shown {
+                            format!("{}: {shown}", text_field(field, "fieldName"))
+                        } else {
+                            shown
+                        }
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let other = written.get("other").unwrap_or(&Json::Null);
+            let rest = row_text(other, Labels::Shown);
+            match text_field(other, "kind") {
+                "row" => {
+                    fields.push(rest);
+                    fields.join(", ")
+                }
+                "var" => format!("{} {rest}", fields.join(", ")),
+                _ => fields.join(", "),
+            }
+        }
+        _ => String::new(),
+    }
+}
