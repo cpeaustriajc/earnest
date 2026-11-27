@@ -31,8 +31,7 @@ fn body_of(compiled: &Compiled, name: &str) -> String {
         .iter()
         .find(|declaration| declaration.get("name") == Some(&Json::Text(name.to_owned())))
         .and_then(|declaration| declaration.get("expr"))
-        .map(ToString::to_string)
-        .unwrap_or_default()
+        .map_or_default(ToString::to_string)
 }
 
 #[test]
