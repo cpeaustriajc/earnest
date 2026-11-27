@@ -133,6 +133,12 @@ enum Unfollowed {
     Refused,
 }
 
+#[derive(Default)]
+struct Found {
+    following: Option<Vec<usize>>,
+    parsing: Option<Vec<usize>>,
+}
+
 enum Follow {
     Declaration,
     Body,
@@ -183,6 +189,8 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
+        forced: None,
+        doubtful: Vec::new(),
     };
     let outcome = parser.file();
     if let Some(refusal) = parser.too_deep.take() {
@@ -193,10 +201,92 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
     }
     match (parser.reported.take(), outcome) {
         (Some(first), _) | (None, Err(first)) => Err(first),
-        (None, Ok(())) => Ok(Parsed {
-            modules: parser.modules,
-            listened: parser.listened,
-        }),
+        (None, Ok(())) => {
+            let doubtful = std::mem::take(&mut parser.doubtful);
+            let mut points: Vec<usize> = doubtful.iter().map(|doubt| doubt.at).collect();
+            points.sort_unstable();
+            points.dedup();
+            if let Some(&point) = points
+                .iter()
+                .find(|&&point| reads_with_a_name_at(tokens, source, point))
+            {
+                let value = doubtful
+                    .iter()
+                    .rev()
+                    .find(|doubt| doubt.at == point)
+                    .and_then(|doubt| doubt.value);
+                return Err(two_readings(tokens, point, value));
+            }
+            Ok(Parsed {
+                modules: parser.modules,
+                listened: parser.listened,
+            })
+        }
+    }
+}
+
+fn reads_with_a_name_at(tokens: &[Token], source: usize, doubt: usize) -> bool {
+    let mut ids = Ids::default();
+    let mut parser = Parser {
+        tokens,
+        at: 0,
+        ids: &mut ids,
+        source,
+        declarations: Vec::new(),
+        modules: Vec::new(),
+        reported: None,
+        listened: None,
+        edge: false,
+        reached: Cell::new(0),
+        searches: 0,
+        exhausted: None,
+        nesting: 0,
+        too_deep: None,
+        root: false,
+        follows: Vec::new(),
+        candidates: Vec::new(),
+        stops: Vec::new(),
+        forced: Some(doubt),
+        doubtful: Vec::new(),
+    };
+    let outcome = parser.file();
+    outcome.is_ok()
+        && parser.too_deep.is_none()
+        && parser.exhausted.is_none()
+        && parser.reported.is_some_and(|reported| {
+            reported.token == doubt + 1 && reported.problem.code == "QNT008"
+        })
+}
+
+fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported {
+    let place = |at: usize| {
+        let token = &tokens[at.min(tokens.len() - 1)];
+        (token.line, token.column + 1)
+    };
+    let token = &tokens[doubt.min(tokens.len() - 1)];
+    let advice = value.map_or_else(
+        || "put the value of the definition before it in parentheses".to_owned(),
+        |(start, end)| {
+            let (from_line, from_column) = place(start);
+            let (to_line, to_column) = place(end);
+            let to_column = to_column + tokens[end.min(tokens.len() - 1)].text.chars().count();
+            format!(
+                "put that definition's value, from {from_line}:{from_column} to before {to_line}:{to_column}, in parentheses"
+            )
+        },
+    );
+    Reported {
+        problem: Problem::coded(
+            "unreadable",
+            format!(
+                "Quint's grammar reads this `{}` two ways: as written here, or as a name that starts the body of the definition before it, which Quint refuses; earnest can't tell which Quint takes, so {advice}",
+                token.text
+            ),
+            token.line - 1,
+            token.column,
+        ),
+        token: doubt,
+        seen: doubt,
     }
 }
 
@@ -219,6 +309,13 @@ struct Parser<'a> {
     follows: Vec<Follow>,
     candidates: Vec<usize>,
     stops: Vec<usize>,
+    forced: Option<usize>,
+    doubtful: Vec<Doubt>,
+}
+
+struct Doubt {
+    at: usize,
+    value: Option<Span>,
 }
 
 struct Mark {
@@ -498,6 +595,25 @@ impl Parser<'_> {
         }
         self.candidates.push(decision);
         true
+    }
+
+    fn doubts(&mut self, at: usize) -> bool {
+        if self.forced == Some(at) {
+            return true;
+        }
+        self.doubtful.push(Doubt { at, value: None });
+        false
+    }
+
+    fn definition_value(&mut self, within: Within) -> Result<Json, Reported> {
+        let start = self.at;
+        let recorded = self.doubtful.len();
+        let value = self.followed_expr(within.follow());
+        let end = self.last();
+        for doubt in self.doubtful.iter_mut().skip(recorded) {
+            doubt.value.get_or_insert((start, end));
+        }
+        value
     }
 
     fn may_start_body(&self, kind: Kind) -> bool {
@@ -1309,7 +1425,7 @@ impl Parser<'_> {
             }
         }
         let body = if self.eat(Kind::Assign) {
-            Some(self.followed_expr(within.follow())?)
+            Some(self.definition_value(within)?)
         } else {
             None
         };
@@ -1370,7 +1486,7 @@ impl Parser<'_> {
             self.expect(Kind::RightBrace, "}")?;
         }
         self.expect(Kind::Assign, "=")?;
-        let value = self.followed_expr(within.follow())?;
+        let value = self.definition_value(within)?;
         self.eat(Kind::Semicolon);
         let temporary_id = self.placed(self.span(start));
         let temporary_name = format!("quintDestructTemp{temporary_id}");
@@ -1525,6 +1641,13 @@ impl Parser<'_> {
                 break;
             }
             if kind == Kind::Minus && fallback == Fallback::Allowed && !self.operand_starts() {
+                break;
+            }
+            if INFIX_NAMES.contains(&kind)
+                && self.edge
+                && !self.may_start_body(kind)
+                && self.doubts(self.at)
+            {
                 break;
             }
             self.advance();
@@ -1760,6 +1883,9 @@ impl Parser<'_> {
                     None => self.plain_name(start),
                 }
             }
+            Kind::Match if self.kind_at(self.at + 1) == Kind::LeftParen && self.doubts(self.at) => {
+                self.named(start)
+            }
             Kind::Match if self.reads_keyword(self.at) => {
                 match self.attempt(|parser| parser.match_expression(start)) {
                     Some(matched) => Ok(matched),
@@ -1837,7 +1963,7 @@ impl Parser<'_> {
     }
 
     fn named(&mut self, start: usize) -> Result<Json, Reported> {
-        if self.edge && self.stops.contains(&(self.at * 2 + 1)) {
+        if self.edge && self.kind() != Kind::Match && self.stops.contains(&(self.at * 2 + 1)) {
             return self.plain_name(start);
         }
         let after = self.after_qualified(self.at);
@@ -2197,39 +2323,70 @@ impl Parser<'_> {
     fn choose(
         &mut self,
         mark: &Mark,
-        mut candidates: Vec<usize>,
+        candidates: Vec<usize>,
         unfollowed: Unfollowed,
     ) -> Option<(Definition, Json)> {
+        let mut found = Found::default();
+        self.search(mark, &[], candidates, unfollowed, &mut found);
+        self.rewind(mark);
+        let chosen = match (found.following, unfollowed) {
+            (Some(stops), _) => stops,
+            (None, Unfollowed::TakenBeyond(_)) => found.parsing?,
+            (None, Unfollowed::Refused) => return None,
+        };
+        self.stops.extend(chosen);
+        self.let_parts(mark.candidates).ok()
+    }
+
+    fn search(
+        &mut self,
+        mark: &Mark,
+        earlier: &[usize],
+        mut candidates: Vec<usize>,
+        unfollowed: Unfollowed,
+        found: &mut Found,
+    ) {
         candidates.sort_unstable();
         candidates.dedup();
-        let mut following = Vec::new();
-        let mut parsing = None;
         for candidate in candidates.into_iter().rev() {
-            if !self.searching() || !following.is_empty() {
-                break;
+            if found.following.is_some() || !self.searching() {
+                return;
             }
+            let mut stops = earlier.to_vec();
+            stops.push(candidate);
             self.rewind(mark);
-            self.stops.push(candidate);
+            self.stops.extend(stops.iter().copied());
             let reached = self.reached.replace(0);
             let tried = self.let_parts(mark.candidates);
             let reach = self.reached.get().max(self.at);
             self.reached.set(reached.max(self.reached.get()));
-            if tried.is_ok() {
-                if self.can_follow() {
-                    following.push(candidate);
-                } else if matches!(unfollowed, Unfollowed::TakenBeyond(failed) if reach >= failed) {
-                    parsing = parsing.or(Some(candidate));
+            let pushed = match tried {
+                Err((_, pushed)) => pushed,
+                Ok(_) if self.can_follow() => {
+                    found.following = Some(stops);
+                    return;
                 }
-            }
+                Ok(_) => {
+                    if matches!(unfollowed, Unfollowed::TakenBeyond(failed) if reach >= failed)
+                        && earlier.is_empty()
+                        && found.parsing.is_none()
+                    {
+                        found.parsing = Some(stops.clone());
+                    }
+                    self.candidates
+                        .get(mark.candidates..)
+                        .unwrap_or_default()
+                        .to_vec()
+                }
+            };
+            let at = candidate / 2;
+            let called = self.kind_at(at + 1) == Kind::LeftParen;
+            let later: Vec<usize> = pushed
+                .into_iter()
+                .filter(|later| later / 2 > at || (called && *later > candidate))
+                .collect();
+            self.search(mark, &stops, later, unfollowed, found);
         }
-        self.rewind(mark);
-        let chosen = match (following.as_slice(), unfollowed) {
-            ([first, ..], _) => *first,
-            ([], Unfollowed::TakenBeyond(_)) => parsing?,
-            ([], Unfollowed::Refused) => return None,
-        };
-        self.stops.push(chosen);
-        self.let_parts(mark.candidates).ok()
     }
 
     fn let_expression(&mut self, start: usize) -> Result<Json, Reported> {
