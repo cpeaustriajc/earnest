@@ -5065,3 +5065,113 @@ Every production of `Quint.g4` at `v0.33.1` and the sample that has it (all in
 - Phase 2 is done, including its refusals `QNT013` (an import that can't be loaded), `QNT098` (a
   cyclic import), `QNT408` (two paths that differ only in case), and the two its module sort
   makes, `QNT101` (two modules of one name) and `QNT405` (an unknown module).
+
+## Quint front end, slice 2: names (#85): report
+
+`crates/earnest_quint_syntax` now does all four phases of `quint parse`: `Parsed::output` is the
+whole of what `quint parse --out` writes (`stage`, `warnings`, `modules`, `table`, `errors`), and a
+file Quint's name phases refuse is refused with the first error's code, place and text. Nothing
+calls it yet. The code is `src/names.rs` (phase 3) and `src/order.rs` (phase 4).
+
+### What Quint's name phases do [read: `dist/src/names/`, `static/callgraph.js`, `static/toposort.js`; then ran]
+
+Phase 3 walks the modules in phase 2's order. For each module a collector first takes its
+top-level definitions and what its imports, instances and exports bring; then a resolver walks
+every declaration, binds parameters, `let`s and `nondet`s as it enters them, and looks up every
+name. The table maps an id to a copy of the definition it reaches, as the resolver held it then.
+
+- A table key is the id of a `name`, of an `app` whose operator is not built in, of a type name
+  (`const` type), of a constant an instance sets, and of every operator definition (mapped to
+  itself). Keys are written in numeric order (a JavaScript object with integer keys).
+- An entry is the definition's own keys, then the ones Quint adds: `depth`, `importedFrom` (the
+  whole `import`, `instance` or `export` declaration), `hidden`, `namespaces` and `shadowing`.
+  Their order follows JavaScript's object spread, including keys set to `undefined` that are not
+  written but keep their place: an imported entry has `importedFrom` before `hidden`.
+- A lambda's parameter becomes `kind: "param"`. A top-level operator reached by a name has no
+  `typeAnnotation` (the collector drops it); the entry under the operator's own id keeps it.
+- `depth` is 0 at the top. A lambda adds 1; a `let` adds 2 (the `let` and its definition), so a
+  lambda in a `let`'s body has the `let`'s depth, and its parameter and the `let`'s name conflict
+  when they are the same (`refused/names_same_depth.qnt`). Two names at one depth conflict
+  (`QNT101`); at different depths the later shadows, `shadowing: true`. A name bound before whose
+  scope has ended gets `shadowing: false`.
+- `depth: 0` is also written into the declaration itself for every `const`, `var`, `type` and
+  `assume` (not for `assume _`): the collector sets it on the object the module holds.
+- What an import, instance or export copies is `hidden: true`, except through `export`, which
+  copies as they are. An instance's constant that the instance sets is `hidden: false` in the
+  instance's own table, so it shows through `export I.*` of an instance named `I`.
+- `namespaces` is the qualifier of an import, and for an instance its name (or the module's) and
+  the importing module, innermost first.
+- 103 names are built in (`base.ts`'s list: `Bool`, `Nat`, `Int`, `Set`, every operator of
+  `builtin.qnt`, `q::debug`, ...): never in the table, and defining one is `QNT101`.
+
+Phase 4 builds a call graph per module (a definition uses what its names reach, and the imports
+of the module that defines it; an export uses the imports of its module) and sorts the
+declarations by Kahn's algorithm, each layer sorted by id as text (`"10" < "9"`). What is left is
+a cycle: one `QNT099` per id left, in the order of immutable.js's map, which is insertion order up
+to 8 keys and the order of the keys' hashes above (reproduced, `order.rs`).
+
+The codes the name phases raise, every one reproduced with Quint's message:
+
+| Code | Message | Sample |
+| --- | --- | --- |
+| `QNT404` | `Name 'x' not found` | `refused/names_not_found.qnt`, `names_type_as_value.qnt` |
+| `QNT404` | `Type alias 'T' not found` | `refused/names_type_not_found.qnt` |
+| `QNT404` | `Name 'M::x' not found` (an import or export of one name) | `refused/names_member_not_found.qnt` |
+| `QNT101` | `Conflicting definitions found for name 'x' in module 'M'` (reported at both) | `names_twice.qnt`, `names_twice_by_import.qnt`, `names_param_twice.qnt`, `names_same_depth.qnt` |
+| `QNT101` | `Built-in name 'x' is redefined in module 'M'` | `refused/names_built_in.qnt` |
+| `QNT099` | `Found cyclic declarations. Use fold and foldl instead of recursion` | `names_cycle.qnt`, `names_recursion.qnt` |
+| `QNT406` | `Instantiation error: 'x' is not a constant in 'M'` | `refused/names_override_not_constant.qnt` |
+| `QNT406` | `Instantiation error: 'x' not found in 'M'` | `refused/names_override_not_found.qnt` |
+| `QNT102` | `Module with name 'M' was already defined` (a module named as an earlier import's qualifier) | `refused/names_module_twice.qnt` |
+| `QNT407` | `Cannot export 'M' inside 'M'` | `refused/names_export_self.qnt` |
+| `QNT405` | `Module 'M' not found` (an export: phase 2 already refuses an import or instance) | `refused/names_export_unknown.qnt` |
+
+`QNT407` for an import or instance of the module itself, and `QNT405` for an import or instance
+of an unknown module, are in the code too, but phase 2 refuses those files first (`QNT098`, and
+`QNT405` with phase 2's message).
+
+### How it is compared [ran]
+
+`tasks/quint/syntax/condense.py` now keeps the whole `quint parse --out` in `<file>.parse.json`:
+`stage`, `warnings`, `errors`, the order of each module's declarations, `depth` by id, and the
+`table` with each entry stored as a reference to the node of `<file>.phases.json` it copies, the
+keys it drops and the keys it adds. When recording it rebuilds Quint's output from that and
+checks it equals the file `quint parse` wrote, as text. The test rebuilds it the same way and
+compares ours key by key (the first path that differs is named) and then as text, so the order
+of keys is Quint's too. The fixtures come to 11 MB in 812 files.
+
+To record again: as for slice 1 (`record.sh`). Generated programs:
+`python3 -I tasks/quint/syntax/generate_names.py <folder> 300 1`.
+
+### Results [ran]
+
+| Corpus | Files | Equal | Notes |
+| --- | --- | --- | --- |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 406 | 406 | the whole output, as text; 16 refused by the name phases and 34 by phases 1 and 2, each with Quint's first code, place and text |
+| Quint's repository at `v0.33.1`, in the container only | 196 | 196 | 177 accepted, all equal as text; 11 refused by phases 1 and 2; the 8 its name phases refuse are refused with the same code, place and text: `builtin.qnt` (`QNT101` built-in `Nat`), `_0100cyclicDefs` and `_0101noRecursion` (`QNT099`), `_1011nameOutOfScope`, `_1012unknownType`, `_1013unknownTypeLetIn` (`QNT404`), `_1014conflictingNames` (`QNT101`), `_1016nonConstOverride` (`QNT406`) |
+| GENERATED |
+
+The command for the two last rows: `QUINT_EXAMPLES=<folder of .qnt> QUINT_EXAMPLES_RECORDED=<folder
+of their recordings> cargo test -p earnest_quint_syntax every_file_of -- --include-ignored
+--nocapture`.
+
+Only the first error of a refused file is compared: earnest reports one problem. Quint's later
+errors (both places of a conflict, every id of a cycle) are not checked.
+
+### Where Quint looks wrong, and what the crate does
+
+- A lambda's parameter in a `let`'s body conflicts with the `let`'s name (`names_same_depth.qnt`):
+  the depth counts a `let` twice. Refused, as Quint does.
+- `shadowing: false` on a name whose earlier binding has gone out of scope, and `shadowing: true`
+  on a top-level name imported twice the same way: written as Quint writes them.
+- Name phase 3 runs on modules phase 2 already refused, and `quint parse` writes all errors; the
+  crate stops at the first.
+- The two key orders of slice 1's parser that differed from Quint's (a `match` case's lambda and
+  parameter, a sum type constructor's `__XParam` name) were only visible as text; fixed in
+  `parser.rs`.
+
+### Left to slices 3 and 4
+
+- The `types` and `effects` Quint's `typecheck` adds, and the table as `quint typecheck` and
+  `quint compile` write it, where it differs from `quint parse`'s (slice 4 says what differs).
+- Nothing in the table needed the type or effect passes.
