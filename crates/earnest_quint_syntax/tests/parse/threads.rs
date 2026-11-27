@@ -78,7 +78,7 @@ fn refused_under(kib: u64) -> usize {
         .expect("the test runs under a limit");
     let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
-        .find_map(|line| line.strip_prefix("refused "))
+        .find_map(|line| line.split_once("refused ").map(|(_, rest)| rest))
         .and_then(|rest| rest.split(' ').next())
         .and_then(|count| count.parse().ok())
         .unwrap_or(JOBS)
