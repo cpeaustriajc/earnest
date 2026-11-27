@@ -8,6 +8,7 @@ mod eighth;
 mod fifth_a;
 mod fourth_a;
 mod fourth_b;
+mod native_division;
 mod ninth;
 mod quint_division;
 mod quint_fifth;

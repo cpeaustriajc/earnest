@@ -27,14 +27,17 @@ pub enum Fault {
     /// number holds exactly. A Quint model's numbers have no size, so it gets this only for a
     /// power whose exponent is past 32 bits.
     Overflow,
-    /// A remainder with a negative number or a divisor below 1, where languages disagree. A
-    /// Quint model takes the floored remainder instead and has [`Fault::ByZero`] for zero.
+    /// A remainder of Quint's `imod` with a negative number or a divisor below 1, on the 64-bit
+    /// path. A Quint frame evaluates it again with whole numbers of any size, which take the
+    /// floored remainder and have [`Fault::ByZero`] for zero, so a model never reports it.
     Remainder,
-    /// A division with a negative number or a divisor below 1, where languages disagree on the
-    /// result and Rust panics on a divisor of zero. A Quint model takes the floor of the exact
-    /// quotient instead and has [`Fault::ByZero`] for zero.
+    /// A division of Quint's `idiv` with a negative number or a divisor below 1, on the 64-bit
+    /// path. A Quint frame evaluates it again with whole numbers of any size, which take the
+    /// floor of the exact quotient and have [`Fault::ByZero`] for zero, so a model never
+    /// reports it.
     Division,
-    /// A division or a remainder by zero in a Quint model, which has no value.
+    /// A division or a remainder by zero, which has no value in any of the languages: Rust
+    /// panics, JavaScript gives a number that is not whole, and Quint leaves it undefined.
     ByZero,
     /// A number is outside the integer type the model file gives it, where Rust stops a test
     /// build and wraps around in a release build.
@@ -698,9 +701,15 @@ fn whole_arithmetic(math: Math, left: BigInt, right: BigInt) -> Evaluated {
         Math::Add => left + right,
         Math::Subtract => left - right,
         Math::Multiply => left * right,
-        Math::Remainder | Math::Divide if right == BigInt::ZERO => return Err(Fault::ByZero),
+        Math::Remainder | Math::Divide | Math::TruncatedDivide | Math::TruncatedRemainder(_)
+            if right == BigInt::ZERO =>
+        {
+            return Err(Fault::ByZero);
+        }
         Math::Remainder => floored(left, &right).1,
         Math::Divide => floored(left, &right).0,
+        Math::TruncatedDivide => left / right,
+        Math::TruncatedRemainder(_) => left % right,
     };
     Ok(Value::whole(answer))
 }
@@ -828,6 +837,21 @@ pub(crate) fn arithmetic(math: Math, left: i64, right: i64) -> Result<i64, Fault
                 return Err(Fault::Division);
             }
             left.checked_div(right)
+        }
+        Math::TruncatedDivide | Math::TruncatedRemainder(_) if right == 0 => {
+            return Err(Fault::ByZero);
+        }
+        Math::TruncatedDivide => left.checked_div(right),
+        Math::TruncatedRemainder(ty) => {
+            if let Some(ty) = ty
+                && right == -1
+                && left
+                    .checked_neg()
+                    .is_some_and(|quotient| quotient > ty.highest())
+            {
+                return Err(Fault::Outside(ty));
+            }
+            left.checked_rem(right)
         }
     };
     answer.ok_or(Fault::Overflow)

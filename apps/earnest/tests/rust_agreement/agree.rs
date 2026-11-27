@@ -10,11 +10,16 @@ struct Fixture {
     model: &'static str,
 }
 
-const FIXTURES: [Fixture; 5] = [
+const FIXTURES: [Fixture; 6] = [
     Fixture {
         folder: "twins",
         module: "quotient",
         model: "Quotient",
+    },
+    Fixture {
+        folder: "twins",
+        module: "signed",
+        model: "Signed",
     },
     Fixture {
         folder: "twins",

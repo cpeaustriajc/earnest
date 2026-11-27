@@ -114,16 +114,20 @@ impl Step {
             (Math::Multiply, _, _) => Self::Multiply,
             (Math::Subtract, Side::LeafSecond, _) => Self::Subtract,
             (Math::Subtract, Side::LeafFirst, _) => Self::SubtractFrom,
-            (Math::Divide, Side::LeafFirst, _) => Self::DivideInto,
-            (Math::Remainder, Side::LeafFirst, _) => Self::RemainderOf,
-            (Math::Divide, Side::LeafSecond, Leaf::Int(number)) => {
+            (Math::Divide | Math::TruncatedDivide, Side::LeafFirst, _) => Self::DivideInto,
+            (Math::Remainder | Math::TruncatedRemainder(_), Side::LeafFirst, _) => {
+                Self::RemainderOf
+            }
+            (Math::Divide | Math::TruncatedDivide, Side::LeafSecond, Leaf::Int(number)) => {
                 Divisor::of(number).map_or(Self::Divide, Self::DivideBy)
             }
-            (Math::Remainder, Side::LeafSecond, Leaf::Int(number)) => {
-                Divisor::of(number).map_or(Self::Remainder, Self::RemainderBy)
-            }
-            (Math::Divide, Side::LeafSecond, _) => Self::Divide,
-            (Math::Remainder, Side::LeafSecond, _) => Self::Remainder,
+            (
+                Math::Remainder | Math::TruncatedRemainder(_),
+                Side::LeafSecond,
+                Leaf::Int(number),
+            ) => Divisor::of(number).map_or(Self::Remainder, Self::RemainderBy),
+            (Math::Divide | Math::TruncatedDivide, Side::LeafSecond, _) => Self::Divide,
+            (Math::Remainder | Math::TruncatedRemainder(_), Side::LeafSecond, _) => Self::Remainder,
         }
     }
 

@@ -10,11 +10,12 @@ The numbers come from the Rust walk, never from the checker.
 | File | Model | Covers |
 |---|---|---|
 | `../twins/quotient.rs` | `Quotient` | `/` on `u8`. `../twins/quotient.model.ts` is its twin with `m.div`, and both give 58 states and break `smaller` after one step |
+| `../twins/signed.rs` | `Signed` | `/` and `%` on `i8` with a negative number or divisor, for all four signs. `../twins/signed.model.ts` is its twin with `m.div` and `m.rem`, and both give 8 states and break `floored` after one step |
 | `../twins/basket.rs` | `Basket` | The value inside an `Option`: `if let` in a helper and at the end of an action, `let x = value?;`, `unwrap_or`, `map_or`, `== Some(..)` and a record in an `Option` |
 | `../twins/phases.rs` | `Phases` | `match` on an enum and on a pair of enums, with `|` and `_`, as a value, as a `let` and as the end of an action, `matches!`, and `#[initial(A, B)]` |
 | `../twins/builder.rs` | `Builder` | Helpers that return `Self`, a record built with struct update and a `&'static str`; `u8::from(bool)` and `u16::from(u8)`; a `#[view]` block that calls the helpers of the `#[model]` block |
 | `tried.rs` | `Tried` | `let Some(x) = value else { return None; };` and a function that returns the model by its name. Clippy asks for `value?` in place of the first, so the file is not one a project that denies warnings would keep |
-| `division.model.ts`, `division_fault.rs` | `Split`, `Below` | The faults of `m.div` and of `/`: a divisor of zero, where Rust panics, and a negative number, where Rust truncates and the checker declines to guess. Node's `explore` reports the same sentence and path as the checker |
+| `division.model.ts`, `division_fault.rs` | `Split`, `Below` | The fault of `m.div` and of `/` by zero, where Rust panics, and a negative number, which Rust truncates as the checker and `m.div` do. Node's `explore` reports the same sentence and path as the checker |
 
 The files in `../twins` are also built in a crate by `apps/earnest/tests/rust_models`, with
 `cargo clippy -- -D warnings` under the lint table of this repository and `rustfmt --check`, and

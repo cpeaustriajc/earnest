@@ -158,8 +158,8 @@ Allowed inside functions:
 Any construct outside the allowed subset makes the file `unreadable`, including:
 
 - `await`, loops, `let`, assignments, `new`, classes, `fetch`, `Date`, `Math.random`, value imports other than `@earnestjs/model`, duplicate keys in an object literal, duplicate values in `m.enum` or `m.oneOf`, and undefined names (even inside unused constants).
-- **`%` and `%=`:** Use `m.rem(a, b)` instead. Languages disagree on signed remainder, so `m.rem` faults when `a < 0` or `b < 1` in both `earnest verify` and `@earnestjs/model`.
-- **`/` and `/=`:** Use `m.div(a, b)` instead. JavaScript `/` produces fractions while Rust `/` truncates; `m.div` computes whole-number division and faults when `a < 0` or `b < 1` in both `earnest verify` and `@earnestjs/model`.
+- **`%` and `%=`:** Use `m.rem(a, b)` instead. `m.rem` is JavaScript's `a % b`, with the sign of `a` (`m.rem(-7, 2)` is `-1`, `m.rem(7, -2)` is `1`), and faults on a zero divisor (`"takes a division or a remainder by zero"`) where `%` gives `NaN`, in both `earnest verify` and `@earnestjs/model`.
+- **`/` and `/=`:** Use `m.div(a, b)` instead. JavaScript `/` produces fractions; `m.div` is `Math.trunc(a / b)`, exact for every safe integer and the same as Rust's `/` (`m.div(-7, 2)` is `-3`, `m.div(-7, -2)` is `3`), and faults on a zero divisor in both `earnest verify` and `@earnestjs/model`. A Quint model floors instead; see [Division and remainder](/reference/quint/#division-and-remainder).
 - **Type assertions (`as`, `satisfies`, `<Type>value`) except `as const`, and postfix `!`:** These erase `null` at compile time without checking at runtime (`(s.o as number) < 3` evaluates `null < 3` as `true` in JavaScript). Use `m.some(value)` instead, which faults on `null` in both `earnest verify` and `@earnestjs/model`.
 
 ## Running a model in Node

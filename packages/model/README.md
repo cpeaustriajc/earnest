@@ -112,12 +112,13 @@ value listed twice in `m.enum` or `m.oneOf`, an optional of an optional, and a l
 owner as a map value or a sequence or queue item, whose free state `null` could not be told from
 a missing entry. `earnest verify` refuses the same.
 
-`m.rem(a, b)` is the remainder of whole numbers: `%` is not allowed in a model file, and `m.rem` of a
-negative `a` or a `b` below 1 is a fault that `explore` and `replay` report as `earnest verify`
-does. `m.div(a, b)` is the whole number of times `b` goes into `a`, as Rust's `/` on integers
-(`m.div(7, 2)` is 3): `/` is not allowed in a model file, since JavaScript's gives a fraction, and
-`m.div` of a negative `a` or a `b` below 1 is the same kind of fault, "takes a division with a
-negative number or a divisor below 1". `m.some(value)` is the value inside an optional: `%`'s sibling for `!`, and for `as`, `satisfies` and `<Type>value`, which a model
+`m.rem(a, b)` is JavaScript's `a % b`, with the sign of `a` as Rust's `%` has it (`m.rem(-7, 2)`
+is -1, `m.rem(7, -2)` is 1): `%` is not allowed in a model file, and `m.rem` by zero is a fault
+that `explore` and `replay` report as `earnest verify` does, "takes a division or a remainder by
+zero", where `%` would give `NaN`. `m.div(a, b)` is `Math.trunc(a / b)`, the whole number of
+times `b` goes into `a` as Rust's `/` on integers (`m.div(7, 2)` is 3, `m.div(-7, 2)` is -3),
+exact for every safe integer: `/` is not allowed in a model file, since JavaScript's gives a
+fraction, and `m.div` by zero is the same fault. A `NaN` given to either is a fault too. `m.some(value)` is the value inside an optional: `%`'s sibling for `!`, and for `as`, `satisfies` and `<Type>value`, which a model
 file may not write (only `as const` is read). `m.some(null)` is a fault that `explore` and `replay` report as `earnest
 verify` does ("reads a value that is null"), where JavaScript would go on with `null` as 0, so
 a number read from an optional goes through it. `m.setOf(a, b)`, `m.seqOf(a, b)` and `m.mapOf([k, v])` write collection values; a queue's
@@ -260,7 +261,7 @@ caller's own values, `{ start, steps: [{ move, state }] }`.
   order of the field names, collections item by item. A quantifier over a set stops at the first
   item in that order. `replay` still accepts the members of a set in any order. See the
   [primitives reference](https://earnest.cpeaustriajc.dev/reference/primitives/#order-of-sets-maps-and-records) for the rule for each kind.
-- A fault is a `TypeError` thrown by the model, `m.rem` of a negative number, or `m.some(null)`:
+- A fault is a `TypeError` thrown by the model, `m.rem` or `m.div` by zero, or `m.some(null)`:
   reading a field of `null` or `m.some(null)` reports "reads a value that is null", any other
   `TypeError` reports "uses a value of the wrong kind". Where a model file reads a number from
   an optional it must use `m.some`, because JavaScript would give `null < 3` as true and `null +
