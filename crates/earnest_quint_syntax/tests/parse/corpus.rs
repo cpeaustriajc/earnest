@@ -13,7 +13,7 @@ pub(crate) fn recorded() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint")
 }
 
-fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
+pub(crate) fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(base.join(directory)) else {
         return;
     };

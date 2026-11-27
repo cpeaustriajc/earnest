@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT098] Cyclic imports among: CycleB, CycleA","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/cycle_b.qnt","start":{"line":0,"col":0,"index":0},"end":{"line":2,"col":51,"index":51}}]}]}

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] val operators may not have parameters, but operator `v` has 1 parameter. Use def instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_val_parameters.qnt","start":{"line":2,"col":6,"index":51},"end":{"line":2,"col":6,"index":51}}]}]}

@@ -5393,3 +5393,158 @@ types, `assume`, `temporal`, `run`, instances with constants), `builtins.qnt` (e
   in Quint's list. The crate does not check effects (#88), so on a file with both and no type error,
   Quint's first error is the effect error and the crate's the type application error. Both refuse.
   No sample has it.
+
+## Quint front end, slice 3b: effects and modes (#88): report
+
+`crates/earnest_quint_syntax` now gives what `quint typecheck` adds for effects: `Parsed::effects`
+is the `effects` table `quint typecheck --out` writes, and a file Quint's effect passes refuse is
+refused with Quint's first error: code, place and text. Nothing calls it yet. The code is
+`src/effects.rs` (effects, simplification, substitutions, unification), `src/effects/inference.rs`
+(the walk), `src/effects/signatures.rs` (the built-ins), `src/effects/checks.rs` (the mode,
+multiple-updates and `nondet` checks) and `src/printing_ir.rs` (Quint's printing of an
+expression, which the text of a `QNT000` needs).
+
+### What `quint typecheck` runs, and in which order [read: `quintAnalyzer.ts`, `cliCommands.ts`; ran]
+
+After the four phases of `quint parse`, `analyzeModules` takes each module in phase 2's order and
+runs, in this order: the type-application resolver, type inference, effect inference, the
+multiple-updates checker, the `nondet` checker, the mode checker. A module's errors join one list
+in this order: type errors, effect-inference errors (both `QNT000`), type-application errors
+(`QNT000`), then mode errors (`QNT200`, `QNT201`), multiple updates (`QNT202`), `nondet` errors
+(`QNT203` to `QNT206`). Modules are appended in turn, so the first error is the first of the first
+module that has any. One effect inferrer serves the whole file: the fresh names `_e0`, `_v0`, ...
+count across modules, and once it has an error it stops inferring names, applications, definitions
+and lambdas, in later modules too.
+
+Effect inference needs nothing from the type checker: it reads the table (`id`, `importedFrom`,
+`namespaces`) and, for a `const`, whether its annotation is an operator type once type
+applications are resolved. That resolution is done from the syntax in
+`src/effects/inference.rs` (`operator_arity`); the type checker needs the same resolver, and one
+of the two goes at the merge.
+
+The analyzer is `Parsed::analyzed` (`src/effects.rs`). It takes the type pass from outside, as a
+`TypePass`: the type scheme of each id as Quint prints it (with whether it is `bool`), and the type
+errors and the type-application errors, each with its module's index. Module by module, in phase
+2's order, it puts a module's errors in Quint's order: type errors, effect-inference errors,
+type-application errors, then mode, multiple-updates and `nondet` errors; the first is the
+problem. Until the type checker (#87) gives a `TypePass`, `Parsed::effects` gives an empty one, so:
+
+- `QNT205` (`nondet bindings can only be used with boolean expressions, but expression has type:
+  T`) is built and is raised only when the type of the `let`'s body is given
+  (`refused/effects_nondet_not_boolean.qnt` is read by `Parsed::effects` today).
+- A module with a type error and an effect or mode error is refused with the type error only when
+  the type errors are given (`refused/effects_order_type_then_mode.qnt`).
+
+Both are tested in `src/effects/tests.rs` with a `TypePass` filled by hand from Quint's
+recordings, as are a type-application error placed between effect inference and the checks, and
+modules taken in turn (`refused/effects_first_of_two_modules.qnt`: phase 2 sorts the modules by
+id as text).
+
+`src/printing_ir.rs` is Quint's `expressionToString`, which the text of a `QNT000` needs; the type
+checker uses the same file. Its test compares the 101 expressions of `tests/samples/printing.qnt`
+with what Quint prints (`tasks/quint/syntax/printing.js` records them).
+
+### After flattening: what `quint compile` does with effects [read: `cliCommands.ts` `compile`, `ir/idRefresher.ts`; ran]
+
+`quint compile` does not analyze the flattened module again. Each id its flattener makes gets the
+effect scheme of the id it copies, the same object (`effects_with_copies` does that on the table,
+given the pairs of ids). The definitions it adds (`q::init`, `q::step`, `q::inv`,
+`q::temporalProps`, ...) go through `analyzeInc`, whose result is dropped: its effect inferrer works
+on a copy of the table and counts fresh names from zero again, and its errors are not reported.
+So `quint compile` writes no effect for the added definitions, and `quint compile --invariant
+"x' = 1"` is not refused, although `val q::inv = x' = 1` is a `QNT200` in a file. Only an
+internal error of Quint can stop it there. `Parsed::analyze_added` runs those passes the same way
+and refuses only on such an error.
+
+### How it is compared [ran]
+
+`record.sh` now also runs `quint typecheck --out` and `condense_effects.py` keeps, in
+`<file>.effects.json`, the stage, Quint's first error, and the `effects` table with every repeated
+object stored once (`nodes`, referred to as `{"#": n}`, ids as differences). When recording it
+rebuilds the table from that and checks it equals Quint's as text. A file on which `quint
+typecheck` crashes is recorded as `{"stage":"crashed"}`. The fixtures come to 3.0 MB in 482 files.
+The test (`tests/parse/effects.rs`) compares every entry of the table, in Quint's order of ids, as
+text, and names the first id that differs. A refused file must be refused with Quint's
+`[code] message` and, where Quint gives one, its line and column.
+
+To record again: as for slice 1 (`record.sh`). Another root, such as a clone of Quint's
+repository: `RECORD_ROOT=<folder>`. Generated programs:
+`python3 -I tasks/quint/syntax/generate_effects.py <folder> 420 7` (14 kinds of planted mistake in
+turn; a fourth argument such as `none,override_impure` chooses the kinds).
+
+### Results [ran]
+
+| Corpus | Files | Equal | Notes |
+| --- | --- | --- | --- |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 482 | 405 | 363 accepted, every entry equal as text; 42 refused by the effect passes alike; the other 77 are not effect cases: 63 refused by the parse phases, 13 by the type checker or `QNT205` (left to #87), and on 1 (`tests/samples/matching.qnt`) Quint's type checker crashes (`Impossible: sum type fields transformed into non-row`) |
+| Quint's repository at `v0.33.1`, in the container only | 196 | 173 | 172 accepted, all equal as text; `_1015noToplevelNondet` (`QNT206`) refused alike; 19 refused by the parse phases, 4 by the type checker |
+| 420 generated programs with a planted mistake (`generate_effects.py <folder> 420 7`), in the container only | 420 | 420 | 48 accepted, all equal; 372 refused alike: `QNT200` 170 (an action in a `val`, in a `def`, in an `and`; a temporal formula in an action; a read in a `pure val`; a `nondet` bound to an action), `QNT202` 60 (a second update in an `all` and on one path of an `any`), `QNT201` 30, `QNT203` 30, `QNT204` 30, `QNT206` 30, `QNT000` 22 (two paths of an `any` that update different variables) |
+| 200 more, mostly without a mistake (`generate_effects.py <folder> 200 11 none,none,none,override_impure,update_twice_in_any`), in the container only | 200 | 200 | 120 accepted, all equal; 80 refused alike |
+
+The command for the three last rows: `QUINT_EXAMPLES=<folder of .qnt>
+QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax
+every_file_of -- --include-ignored --nocapture`. No file of Quint's is committed.
+
+The samples (`tests/samples/effects/`): `pure.qnt` (literals, sets, records, maps, lambdas, pure
+operators), `reads.qnt` (one variable, several, through a definition, a lambda, a fold, a `let`),
+`updates.qnt` (assignments; `all`, `any`, `if`, `match`, `nondet`; an action given as an argument;
+an action called with arguments), `temporal.qnt` (every temporal operator and fairness),
+`runs.qnt` (`then`, `expect`, `fail`, `reps`, `assert`, `q::debug`, `q::lastTrace`, `q::test`,
+`q::testOnce`), `instances.qnt` (two instances of one module, whose variables are named apart, and
+`.*`), `builtins.qnt`. A test checks that every built-in with an effect signature of its own is
+used by one of them.
+
+### Every message of `dist/src/effects/`
+
+| Message | Where | Reproduced | Sample |
+| --- | --- | --- | --- |
+| `QNT200` `<qualifier> operators <constraint>, but operator `x` <explanation>. Use <mode> instead.` | mode checker | yes, for every qualifier and effect that can raise it | `refused/effects_{pure_val,val,pure_def,def}_*.qnt`, `effects_action_temporal.qnt`, `effects_nondet_updates.qnt` |
+| `QNT200` `Using an action as an argument of `op` is only allowed in temporal definitions, but it is used in <qualifier> `x`.<hint>` | mode checker | yes, with each hint (`and`, `or`, `exists`) and none | `refused/effects_action_in_*.qnt` |
+| `QNT201` `Instance overrides must be pure, but the value for N <explanation>` | mode checker | yes | `refused/effects_instance_override_*.qnt` |
+| `QNT202` `Multiple updates of variable x`, placed at the variable | multiple updates | yes | `refused/effects_update_twice*.qnt` |
+| `QNT203` `'oneOf' must be used inside a nondet definition` (and `apalache::generate`) | `nondet` | yes | `refused/effects_{one_of,generate}_outside_nondet.qnt` |
+| `QNT204` `the outermost expression in a nondet definition must be ...` | `nondet` | yes | `refused/effects_nondet_not_one_of.qnt` |
+| `QNT205` `nondet bindings can only be used with boolean expressions, but expression has type: T` | `nondet` | built, waits for the types of #87 | `refused/effects_nondet_not_boolean.qnt` |
+| `QNT206` `'nondet' can only be used inside actions, not at the top level` | `nondet` | yes | `refused/effects_nondet_top_level.qnt` |
+| `QNT000` `Result cannot be an operator` | inferrer | yes | `refused/effects_result_operator.qnt` |
+| `QNT000` `Expected [x] and [x,y] to be the same` | entity unification | yes | `refused/effects_any_different_updates.qnt` |
+| `QNT000` `Expected [y] to be in [x]` | entity unification | yes | `refused/effects_union_not_covered.qnt` |
+| `QNT000` `Unification for unions of entities is not implemented` | entity unification | yes | `refused/effects_unions_of_entities.qnt` |
+| `QNT000` `Signature not found for name: x` | inferrer | yes; on a file Quint's type checker refuses first | `refused/effects_signature_not_found_types_first.qnt` |
+| `QNT000` `Expected n arguments, got m` | arrow unification | yes; no file found where the type checker does not refuse it first | `refused/effects_arguments_types_first.qnt` |
+| `QNT000` `Can't bind e to E: cyclical binding` | unification | yes; no file found where the type checker does not refuse it first | |
+| `QNT000` `Can't unify different types of effects` | unification | yes; no file found that reaches it | |
+| `Can't unify <kind> ... and <kind> ...` | concrete unification | not needed: two different kinds always coexist, so it is never raised | |
+| `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; no file found that reaches them | |
+| `Arrow effect after substitution should be an arrow`, `Error applying fresh names substitution`, `Impossible: all cases should be covered`, `Unexpected error while formatting effect scheme` | thrown | can't happen: the substitutions they guard never fail | |
+
+Each `QNT000` text is the whole error tree, with every unification tried and the expressions in
+Quint's printing.
+
+### Where the crate knowingly does other than Quint's effect passes
+
+- `QNT205` and the order across passes, until #87 gives the type pass: above. A file Quint refuses
+  for either is read by `Parsed::effects` today. Smallest: `refused/effects_nondet_not_boolean.qnt`,
+  `refused/effects_order_type_then_mode.qnt`.
+- The analysis stops at the first module with an error, where Quint goes on: the first error is
+  the same, and a refused file has no table.
+- In the text of a `QNT000`, a `let` annotated with a type application is printed as written;
+  Quint prints it with the application resolved. No sample has one.
+- A file on which `quint typecheck` throws is refused as `unreadable`, where Quint stops with a
+  stack trace.
+
+### Where Quint looks wrong, and what the crate does
+
+- `QNT200` for an operator with parameters can list a variable more than once:
+  `operator `f` updates variables 'x', 'y', 'x', 'y'` (`refused/effects_def_updates_listed_twice.qnt`).
+  The mode checker's filter of what the parameters bring compares an entity with a state
+  variable, which are never equal, so it filters nothing. Written as Quint writes it.
+- A `def` whose parameter feeds a comparison inside `always` is refused as "an action as an
+  argument of `igt`" (`refused/effects_def_temporal.qnt`): a parameter's effect may update. As
+  Quint does.
+- The `nondet` check of `oneOf` keeps the qualifier of the last definition entered, not of the
+  enclosing one, across modules too; a `oneOf` in the body of a `nondet` is accepted
+  (`effects/updates.qnt`, `chosenInside`). As Quint does.
+- A variable is read twice in one place (`x + x`) and listed once, because Quint removes repeated
+  state variables by object identity: the crate keeps each variable's identity to do the same.
+- `QNT202` is placed at the variable's declaration, not at the second update. As Quint does.

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT202] Multiple updates of variable a","locs":[{"source":"tasks/quint/probe/twice.qnt","start":{"line":1,"col":2,"index":17},"end":{"line":1,"col":11,"index":26}}]}]}

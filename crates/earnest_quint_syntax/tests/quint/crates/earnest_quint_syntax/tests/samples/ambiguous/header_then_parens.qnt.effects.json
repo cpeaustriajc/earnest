@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify tup and oper\nTrying to unify () and (_t1) => ()\nTrying to unify (bool, _t3, _t3) => _t3 and (bool, (), (_t1) => ()) => _t4\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/ambiguous/header_then_parens.qnt","start":{"line":3,"col":19,"index":147},"end":{"line":3,"col":42,"index":170}}]}]}
