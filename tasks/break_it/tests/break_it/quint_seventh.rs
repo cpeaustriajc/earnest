@@ -45,7 +45,12 @@ fn a_step_that_picks_from_100_values_or_more_is_not_retried_so_a_false_pick_brea
         verdicts(
             &report,
             "bigStepPick",
-            &["midPickTest", "lastPickTest", "firstPickTest", "smallPickTest"]
+            &[
+                "midPickTest",
+                "lastPickTest",
+                "firstPickTest",
+                "smallPickTest"
+            ]
         ),
         vec![
             ("midPickTest".to_owned(), "broken"),
@@ -130,11 +135,42 @@ fn confirm_names_the_division_cause_only_on_a_run_that_reaches_a_division() {
         .take(2)
         .collect();
     assert!(
-        !pick.is_empty() && !pick.iter().any(|line| line.contains("truncates toward zero")),
+        !pick.is_empty()
+            && !pick
+                .iter()
+                .any(|line| line.contains("truncates toward zero")),
         "`pickTest` reaches no `/` and no `%`: `quint test` fails it (`pickTest failed after 1 \
          test(s)`, `Error [QNT513]: Cannot continue in `then``) for a reason that is not \
          division, and the docs give the division cause to \"a run the check plays [that] \
          reaches `/` or `%`\" (\"only what the check reaches counts\"). Naming it on every run \
          of a check where one run divides turns a real `differs` into `cannot`\n{printed}"
+    );
+}
+
+#[test]
+fn a_false_assert_that_is_the_whole_run_after_a_nondet_is_an_error_not_a_skipped_value() {
+    let report = verified(
+        "assert_after_nondet.qnt",
+        include_str!("../../models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt"),
+        &[],
+    );
+    assert_eq!(
+        verdicts(
+            &report,
+            "assertAfterNondet",
+            &["wholeTest", "andTest", "valTest", "stepTest"]
+        ),
+        vec![
+            ("wholeTest".to_owned(), "broken"),
+            ("andTest".to_owned(), "broken"),
+            ("valTest".to_owned(), "broken"),
+            ("stepTest".to_owned(), "broken"),
+        ],
+        "`quint test --backend typescript` of Quint 0.33.1 fails all four runs within a few \
+         samples, each with `Error [QNT508]: Assertion failed`: a false `assert` is an error, \
+         which stops the run at once, and is never a value to skip. The docs say so too (\"an \
+         error, which breaks the run …, on a false `assert`\"). Earnest breaks `stepTest`, \
+         where the `assert` sits in a step, and passes the three where it is the run itself\n\
+         {report}"
     );
 }

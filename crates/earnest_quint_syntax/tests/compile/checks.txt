@@ -165,6 +165,7 @@ compile	--target	json	--main	UseB	--init	init	--step	step	--invariant	small	task
 compile	--target	json	--main	Uses	--init	init	--step	step	--invariant	later	tasks/quint/marked/faults/faults.qnt
 compile	--target	json	--main	W3	--init	init	--step	step	--invariant	ok	tasks/quint/review/barecomma/barecomma.qnt
 compile	--target	json	--main	Whole	--init	init	--step	step	--invariant	small	tasks/quint/review/twosetups/twosetups.qnt
+compile	--target	json	--main	assertAfterNondet	--init	init	--step	step	tasks/break_it/models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt
 compile	--target	json	--main	bank	--init	init	--step	step	--invariant	nonNegative	tasks/quint/marked/specs/bank.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	belowBig	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	mutex,holderKnown,bounded,grantsBounded	--temporal	drains,someGrant,served	tasks/break_it/models/quint_second/project/setups.qnt
