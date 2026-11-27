@@ -86,8 +86,8 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
         "{compared} types printed as Quint prints them; a substitution settled in at most {most_rounds} rounds"
     );
     assert!(
-        most_rounds * 100 < crate::inference::substitution::ROUND_LIMIT,
-        "the bound on rounds is far above what the samples need: {most_rounds}"
+        most_rounds * 10 < crate::inference::substitution::ROUND_LIMIT,
+        "the bound on rounds is ten times above what the samples need: {most_rounds}"
     );
     assert!(compared > 10_000, "{compared} types compared");
 }

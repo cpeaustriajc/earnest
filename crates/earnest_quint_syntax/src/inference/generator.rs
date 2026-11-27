@@ -337,6 +337,9 @@ impl<'a> Inferrer<'a> {
     }
 
     fn declaration(&mut self, declaration: &'a Value) {
+        if crate::inference::substitution::stopped() {
+            return;
+        }
         match declaration.kind() {
             "instance" => {
                 for pair in declaration.items("overrides") {
@@ -473,6 +476,9 @@ impl<'a> Inferrer<'a> {
     }
 
     fn expression(&mut self, expression: &'a Value) {
+        if crate::inference::substitution::stopped() {
+            return;
+        }
         self.location = Some(expression);
         let id = expression.id().unwrap_or(0);
         match expression.kind() {
@@ -551,7 +557,7 @@ impl<'a> Inferrer<'a> {
                 }
                 Ok(Scheme::plain(Value::object(vec![
                     ("kind", Value::text("oper")),
-                    ("args", Value::List(params)),
+                    ("args", Value::list(params)),
                     ("res", result_type.value),
                 ])))
             }
@@ -600,7 +606,7 @@ impl<'a> Inferrer<'a> {
                         ("kind", Value::text("oper")),
                         (
                             "args",
-                            Value::List(typed.iter().map(|(_, found)| found.clone()).collect()),
+                            Value::list(typed.iter().map(|(_, found)| found.clone()).collect()),
                         ),
                         ("res", result.clone()),
                     ]);

@@ -12,7 +12,7 @@ pub(crate) fn simplify_type(context: &Context, written: &Value) -> Value {
         "oper" => {
             copy.set(
                 "args",
-                Value::List(
+                Value::list(
                     written
                         .items("args")
                         .iter()
@@ -32,7 +32,7 @@ pub(crate) fn simplify_type(context: &Context, written: &Value) -> Value {
         }
         "app" => copy.set(
             "args",
-            Value::List(
+            Value::list(
                 written
                     .items("args")
                     .iter()
@@ -50,7 +50,7 @@ pub(crate) fn simplify_row(context: &Context, row: &Value) -> Value {
     if row.kind() == "row" {
         copy.set(
             "fields",
-            Value::List(
+            Value::list(
                 row.items("fields")
                     .iter()
                     .map(|field| {
@@ -81,5 +81,5 @@ fn flattened(row: Value) -> Value {
     let mut fields = row.items("fields").to_vec();
     fields.extend(other.items("fields").iter().cloned());
     let rest = other.get("other").clone();
-    row.spread(vec![("fields", Value::List(fields)), ("other", rest)])
+    row.spread(vec![("fields", Value::list(fields)), ("other", rest)])
 }

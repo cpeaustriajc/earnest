@@ -60,6 +60,8 @@ pub(crate) struct TypeResults {
     pub(crate) crash: Option<(String, Option<u64>)>,
     /// The most rounds one application of a substitution took to settle.
     pub(crate) rounds: usize,
+    /// The deepest nesting of applications of a substitution.
+    pub(crate) depth: usize,
 }
 
 fn raised(id: u64, error: &ErrorTree) -> Raised {
@@ -127,6 +129,7 @@ fn analyze(
             .collect(),
         crash: None,
         rounds: 0,
+        depth: 0,
     };
     let (mut seen_errors, mut seen_applications) = (0, 0);
     for (index, (declarations, applications)) in modules_resolved.iter().enumerate() {
@@ -141,6 +144,10 @@ fn analyze(
         seen_applications = *applications;
     }
     results.rounds = substitution::most_rounds();
+    results.depth = substitution::deepest();
+    if results.depth > substitution::DEPTH_LIMIT {
+        context.crash("Maximum call stack size exceeded".to_owned());
+    }
     if results.rounds > substitution::ROUND_LIMIT {
         context.crash(format!(
             "the types of this file could not be settled: a substitution was still changing after {} rounds, where Quint would run out of stack",

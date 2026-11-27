@@ -1,4 +1,5 @@
 use crate::json::Json;
+use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Value {
@@ -7,11 +8,11 @@ pub(crate) enum Value {
     Bool(bool),
     Number(String),
     Text(String),
-    List(Vec<Value>),
-    Object(Vec<(String, Value)>),
+    List(Rc<[Value]>),
+    Object(Rc<[(String, Value)]>),
 }
 
-pub(crate) static UNDEFINED: Value = Value::Undefined;
+pub(crate) const UNDEFINED: &Value = &Value::Undefined;
 
 impl Value {
     pub(crate) fn of(json: &Json) -> Self {
@@ -47,6 +48,10 @@ impl Value {
         }
     }
 
+    pub(crate) fn list(items: Vec<Value>) -> Self {
+        Self::List(items.into())
+    }
+
     pub(crate) fn object(fields: Vec<(&str, Value)>) -> Self {
         Self::Object(
             fields
@@ -65,8 +70,8 @@ impl Value {
             Self::Object(fields) => fields
                 .iter()
                 .find(|(name, _)| name == key)
-                .map_or(&UNDEFINED, |(_, value)| value),
-            _ => &UNDEFINED,
+                .map_or(UNDEFINED, |(_, value)| value),
+            _ => UNDEFINED,
         }
     }
 
@@ -118,17 +123,19 @@ impl Value {
 
     pub(crate) fn set(&mut self, key: &str, value: Value) {
         if let Self::Object(fields) = self {
-            match fields.iter_mut().find(|(name, _)| name == key) {
+            let mut owned = fields.to_vec();
+            match owned.iter_mut().find(|(name, _)| name == key) {
                 Some((_, slot)) => *slot = value,
-                None => fields.push((key.to_owned(), value)),
+                None => owned.push((key.to_owned(), value)),
             }
+            *fields = owned.into();
         }
     }
 
     pub(crate) fn spread(&self, overrides: Vec<(&str, Value)>) -> Value {
         let mut copy = match self {
             Self::Object(_) => self.clone(),
-            _ => Self::Object(Vec::new()),
+            _ => Self::Object(Rc::from(Vec::new())),
         };
         for (key, value) in overrides {
             copy.set(key, value);
@@ -138,9 +145,14 @@ impl Value {
 
     pub(crate) fn same(&self, other: &Value) -> bool {
         match (self, other) {
+            (Self::List(left), Self::List(right)) if Rc::ptr_eq(left, right) => true,
+            (Self::Object(left), Self::Object(right)) if Rc::ptr_eq(left, right) => true,
             (Self::List(left), Self::List(right)) => {
                 left.len() == right.len()
-                    && left.iter().zip(right).all(|(left, right)| left.same(right))
+                    && left
+                        .iter()
+                        .zip(right.iter())
+                        .all(|(left, right)| left.same(right))
             }
             (Self::Object(left), Self::Object(right)) => {
                 left.len() == right.len()
