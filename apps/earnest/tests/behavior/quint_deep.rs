@@ -11,7 +11,7 @@ use std::fs;
 use crate::support::{Run, Sandbox, model, repository, rule};
 
 /// Every shape the CLI is tested on at 100 deep. Nested past about 60, any of them was refused
-/// by the 128 levels of serde_json's limit, which no longer apply to the front end's JSON.
+/// by the 128 levels of `serde_json`'s limit, which no longer apply to the front end's JSON.
 const AT_100: [&str; 9] = [
     "nots_100",
     "parens_100",

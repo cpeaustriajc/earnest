@@ -286,28 +286,32 @@ fn report(counted: &Tally, total: usize, corpus: &str) -> String {
 
 #[test]
 fn every_sample_in_the_repository_has_the_effects_quint_typecheck_writes() {
-    crate::on_a_large_stack(|| {
-        let base = root();
-        let mut found = Vec::new();
-        samples(&base, Path::new("tasks"), &mut found);
-        samples(&base, Path::new("crates"), &mut found);
-        found.sort();
-        let counted = tally(&found, &recorded(), &base);
-        assert!(
-            counted.unrecorded.is_empty(),
-            "{} samples have no recording of Quint's typecheck. Record them: {RECORD_COMMAND}\n{}",
-            counted.unrecorded.len(),
-            counted.unrecorded.join("\n")
-        );
-        println!("{}", report(&counted, found.len(), "the repository"));
-        assert!(
-            counted.different.is_empty(),
-            "{} of {} differ:\n{}",
-            counted.different.len(),
-            found.len(),
-            counted.different.join("\n")
-        );
-    });
+    if crate::ran_on_a_stack_of(
+        earnest_quint_syntax::STACK_NEEDED,
+        every_sample_in_the_repository_has_the_effects_quint_typecheck_writes,
+    ) {
+        return;
+    }
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new("tasks"), &mut found);
+    samples(&base, Path::new("crates"), &mut found);
+    found.sort();
+    let counted = tally(&found, &recorded(), &base);
+    assert!(
+        counted.unrecorded.is_empty(),
+        "{} samples have no recording of Quint's typecheck. Record them: {RECORD_COMMAND}\n{}",
+        counted.unrecorded.len(),
+        counted.unrecorded.join("\n")
+    );
+    println!("{}", report(&counted, found.len(), "the repository"));
+    assert!(
+        counted.different.is_empty(),
+        "{} of {} differ:\n{}",
+        counted.different.len(),
+        found.len(),
+        counted.different.join("\n")
+    );
 }
 
 #[test]

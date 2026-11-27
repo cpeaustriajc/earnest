@@ -184,36 +184,40 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 #[test]
 fn every_sample_in_the_repository_has_the_types_quint_typecheck_writes() {
-    crate::on_a_large_stack(|| {
-        let base = root();
-        let mut found = Vec::new();
-        samples(&base, Path::new("tasks"), &mut found);
-        samples(&base, Path::new("crates"), &mut found);
-        found.sort();
-        let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint");
-        let Tally {
-            equal,
-            refused,
-            different,
-            unrecorded,
-        } = tally(&found, &recorded, &base);
-        assert!(
-            unrecorded.is_empty(),
-            "{} samples have no recording of Quint's types. Record them: {RECORD_COMMAND}\n{}",
-            unrecorded.len(),
-            unrecorded.join("\n")
-        );
-        println!(
-            "{equal} samples with the whole types table of quint typecheck 0.33.1, {refused} refused by its type checker at Quint's place with Quint's explanation, {} differ",
-            different.len()
-        );
-        assert!(
-            different.is_empty(),
-            "{} differ:\n{}",
-            different.len(),
-            different.join("\n")
-        );
-    });
+    if crate::ran_on_a_stack_of(
+        earnest_quint_syntax::STACK_NEEDED,
+        every_sample_in_the_repository_has_the_types_quint_typecheck_writes,
+    ) {
+        return;
+    }
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new("tasks"), &mut found);
+    samples(&base, Path::new("crates"), &mut found);
+    found.sort();
+    let recorded = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint");
+    let Tally {
+        equal,
+        refused,
+        different,
+        unrecorded,
+    } = tally(&found, &recorded, &base);
+    assert!(
+        unrecorded.is_empty(),
+        "{} samples have no recording of Quint's types. Record them: {RECORD_COMMAND}\n{}",
+        unrecorded.len(),
+        unrecorded.join("\n")
+    );
+    println!(
+        "{equal} samples with the whole types table of quint typecheck 0.33.1, {refused} refused by its type checker at Quint's place with Quint's explanation, {} differ",
+        different.len()
+    );
+    assert!(
+        different.is_empty(),
+        "{} differ:\n{}",
+        different.len(),
+        different.join("\n")
+    );
 }
 
 #[test]
