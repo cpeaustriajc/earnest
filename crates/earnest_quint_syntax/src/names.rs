@@ -112,9 +112,11 @@ pub(crate) fn built_in(name: &str) -> bool {
     BUILT_IN.contains(&name)
 }
 
+type Field = (Arc<str>, Option<Arc<Json>>);
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Entry {
-    fields: Vec<(String, Option<Arc<Json>>)>,
+    fields: Arc<[Field]>,
 }
 
 impl Entry {
@@ -125,7 +127,7 @@ impl Entry {
                     .iter()
                     .map(|(key, value)| {
                         let kept = (*value != Json::Null).then(|| Arc::new(value.clone()));
-                        (key.clone(), kept)
+                        (Arc::from(key.as_str()), kept)
                     })
                     .collect(),
             },
@@ -136,16 +138,18 @@ impl Entry {
     pub(crate) fn get(&self, key: &str) -> Option<&Json> {
         self.fields
             .iter()
-            .find(|(name, _)| name == key)
+            .find(|(name, _)| &**name == key)
             .and_then(|(_, value)| value.as_deref())
     }
 
     pub(crate) fn set(&mut self, key: &str, value: Option<Json>) {
         let value = value.map(Arc::new);
-        match self.fields.iter_mut().find(|(name, _)| name == key) {
+        let mut fields = self.fields.to_vec();
+        match fields.iter_mut().find(|(name, _)| &**name == key) {
             Some((_, slot)) => *slot = value,
-            None => self.fields.push((key.to_owned(), value)),
+            None => fields.push((Arc::from(key), value)),
         }
+        self.fields = fields.into();
     }
 
     pub(crate) fn with(&self, key: &str, value: Option<Json>) -> Self {
@@ -172,7 +176,7 @@ impl Entry {
                 .filter_map(|(key, value)| {
                     value
                         .as_ref()
-                        .map(|value| (key.clone(), Json::clone(value)))
+                        .map(|value| ((**key).to_owned(), Json::clone(value)))
                 })
                 .collect(),
         )
