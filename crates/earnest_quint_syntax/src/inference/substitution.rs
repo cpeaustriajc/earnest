@@ -220,25 +220,27 @@ fn kept(changed: Option<Value>, original: &Value, any: &mut bool) -> Value {
 /// The items with the substitutions applied to each, in order; the list itself, not a copy,
 /// when no item changed.
 fn applied_list(substitutions: &[Substitution], items: &Value, any: &mut bool) -> Value {
-    let changed: Vec<Option<Value>> = items
-        .as_items()
-        .iter()
-        .map(|item| applied(substitutions, item))
-        .collect();
-    if changed.iter().all(Option::is_none) {
-        return match items {
-            Value::List(_) => items.clone(),
-            _ => Value::list(Vec::new()),
-        };
+    let mut built: Option<Vec<Value>> = None;
+    for (at, item) in items.as_items().iter().enumerate() {
+        let changed = applied(substitutions, item);
+        match (&mut built, changed) {
+            (Some(built), changed) => built.push(changed.unwrap_or_else(|| item.clone())),
+            (None, Some(changed)) => {
+                let mut started = items.as_items()[..at].to_vec();
+                started.push(changed);
+                built = Some(started);
+            }
+            (None, None) => {}
+        }
     }
-    *any = true;
-    Value::list(
-        changed
-            .into_iter()
-            .zip(items.as_items())
-            .map(|(changed, item)| changed.unwrap_or_else(|| item.clone()))
-            .collect(),
-    )
+    match (built, items) {
+        (Some(built), _) => {
+            *any = true;
+            Value::list(built)
+        }
+        (None, Value::List(_)) => items.clone(),
+        (None, _) => Value::list(Vec::new()),
+    }
 }
 
 fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
