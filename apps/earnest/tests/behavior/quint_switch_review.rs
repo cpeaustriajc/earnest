@@ -1,6 +1,8 @@
 #![cfg(unix)]
 
+use std::ffi::OsStr;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 
 use crate::support::{Run, Sandbox};
 
@@ -78,4 +80,40 @@ fn a_string_with_a_byte_that_is_not_utf8_is_read_as_quint_reads_it_and_the_check
          1 model: 1 pass, 0 fail, 0 unfinished\n{run}"
     );
     run.exits(0);
+}
+
+#[test]
+fn a_qnt_file_whose_name_is_not_utf8_is_refused_with_the_message_and_place_of_the_build_before_the_switch()
+ {
+    let sandbox = Sandbox::empty();
+    let folder = sandbox.path().join("specs");
+    fs::create_dir_all(&folder).expect("the folder can be made");
+    fs::write(
+        folder.join(OsStr::from_bytes(b"caf\xe9.qnt")),
+        COUNTER.as_bytes(),
+    )
+    .expect("the file can be written");
+    let run = with_no_programs(&sandbox, &["verify", "--no-cache", "--json", "specs"]);
+    run.exits(1);
+    let report = run.json();
+    let problem = &report["unreadable"][0];
+    assert_eq!(
+        (
+            problem["file"].as_str(),
+            problem["line"].as_u64(),
+            problem["column"].as_u64(),
+            problem["feature"].as_str(),
+            problem["message"].as_str(),
+        ),
+        (
+            Some("specs/caf\u{fffd}.qnt"),
+            Some(1),
+            Some(1),
+            Some("`quint parse`"),
+            Some("the Quint file can't be parsed"),
+        ),
+        "the build before the switch, with Quint 0.33.1, printed:\n\
+         unreadable  specs/caf\u{fffd}.qnt\n  \
+         specs/caf\u{fffd}.qnt:1:1  `quint parse`  the Quint file can't be parsed\n{run}"
+    );
 }
