@@ -1,5 +1,5 @@
 use crate::discovery::{Found, Language, Text};
-use crate::quint::QuintCheck;
+use crate::quint::{QuintCheck, READER};
 use crate::workers::stack_of_this_worker;
 use earnest_ast::{Draft, Reading};
 use earnest_diagnostics::{Place, Problem};
@@ -224,7 +224,7 @@ fn quint(path: String, source: String) -> ModelFile {
         Err(vec![Problem::new(
             &path,
             Place { line: 1, column: 1 },
-            "the reader",
+            READER,
             &refused.message,
         )])
     });

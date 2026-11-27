@@ -30,7 +30,9 @@ const QUALIFIED: &str = "::";
 const PARSE: &str = "`quint parse`";
 const NOT_PARSED: &str = "the Quint file can't be parsed";
 const NOT_READ: &str = "unreadable";
-const READER: &str = "the reader";
+/// The feature of a problem the reading of a compiled module meets outside the reader itself,
+/// such as a thread the system refuses. `reading.rs` names it so for a `compiled.json`.
+pub(crate) const READER: &str = "the reader";
 const MISSING_MODULE: &str = "QNT405";
 const FLATTENER_STOPPED: &str = "Internal error while flattening";
 
