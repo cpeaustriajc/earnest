@@ -175,60 +175,7 @@ pub(crate) fn row_names(row: &Value) -> Vec<String> {
 }
 
 pub(crate) fn expression_text(expression: &Value) -> String {
-    match expression.kind() {
-        "name" => expression.str("name").to_owned(),
-        "bool" | "int" => match expression.get("value") {
-            Value::Bool(value) => value.to_string(),
-            Value::Number(digits) => digits.clone(),
-            _ => String::new(),
-        },
-        "str" => format!("\"{}\"", expression.str("value")),
-        "app" => format!(
-            "{}({})",
-            expression.str("opcode"),
-            expression
-                .items("args")
-                .iter()
-                .map(expression_text)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        "lambda" => format!(
-            "(({}) => {})",
-            expression
-                .items("params")
-                .iter()
-                .map(|param| param.str("name"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            expression_text(expression.get("expr"))
-        ),
-        "let" => format!(
-            "{} {{ {} }}",
-            definition_text(expression.get("opdef")),
-            expression_text(expression.get("expr"))
-        ),
-        _ => String::new(),
-    }
-}
-
-fn definition_text(definition: &Value) -> String {
-    let annotation = definition.get("typeAnnotation");
-    let annotation = if annotation.is_defined() {
-        format!(": {}", type_text(annotation))
-    } else {
-        String::new()
-    };
-    let qualifier = match definition.str("qualifier") {
-        "puredef" => "pure def",
-        "pureval" => "pure val",
-        other => other,
-    };
-    format!(
-        "{qualifier} {}{annotation} = {}",
-        definition.str("name"),
-        expression_text(definition.get("expr"))
-    )
+    crate::printing_ir::expression_text(&expression.to_json())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -284,4 +231,37 @@ pub(crate) fn error_text(error: &ErrorTree) -> String {
     out.push_str(&error.location);
     out.push('\n');
     out
+}
+
+pub(crate) fn scheme_text(scheme: &crate::inference::signatures::Scheme) -> String {
+    use crate::inference::solver::Context;
+    use crate::inference::substitution::{Substitution, apply, compose};
+    let mut names = Vec::new();
+    let renamed = |prefix: &str, found: &[String], row: bool, names: &mut Vec<String>| {
+        found
+            .iter()
+            .enumerate()
+            .map(|(at, name)| {
+                let shown = format!("{prefix}{at}");
+                names.push(shown.clone());
+                Substitution {
+                    row,
+                    name: name.clone(),
+                    value: Value::object(vec![
+                        ("kind", Value::text("var")),
+                        ("name", Value::Text(shown)),
+                    ]),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let types = renamed("t", &scheme.types, false, &mut names);
+    let rows = renamed("r", &scheme.rows, true, &mut names);
+    let substitutions = compose(&Context::default(), &types, &rows);
+    let shown = type_text(&apply(&substitutions, &scheme.value));
+    if names.is_empty() {
+        shown
+    } else {
+        format!("∀ {} . {shown}", names.join(", "))
+    }
 }

@@ -29,6 +29,7 @@ mod names;
 mod number;
 mod order;
 mod parser;
+mod printing_ir;
 mod problem;
 mod types;
 

@@ -8,6 +8,7 @@ const { jsonStringOfOutputStage } = require(path.join(dist, 'cliReporting.js'));
 const { TypeApplicationResolver } = require(path.join(dist, 'types', 'typeApplicationResolution.js'));
 const { TypeInferrer } = require(path.join(dist, 'types', 'inferrer.js'));
 const { errorTreeToString } = require(path.join(dist, 'errorTree.js'));
+const { typeSchemeToString } = require(path.join(dist, 'types', 'printing.js'));
 
 const [file, out] = process.argv.slice(2);
 const main = path.resolve(file);
@@ -37,4 +38,5 @@ try {
 } catch (error) {
   failure = String(error.message);
 }
-fs.writeFileSync(out, jsonStringOfOutputStage({ types, errors, failure }));
+const printed = Object.fromEntries([...types.entries()].map(([id, scheme]) => [String(id), typeSchemeToString(scheme)]));
+fs.writeFileSync(out, jsonStringOfOutputStage({ types, printed, errors, failure }));

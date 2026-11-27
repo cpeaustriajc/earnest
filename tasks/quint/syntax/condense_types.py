@@ -31,6 +31,7 @@ if os.path.exists(inferred_name):
     if "types" in written and not inferred["errors"] and "failure" not in inferred:
         assert text(inferred["types"]) == text(written["types"]), typecheck_name
     schemes = []
+    printed = []
     index = {}
     types = {}
     for key, scheme in inferred["types"].items():
@@ -38,8 +39,10 @@ if os.path.exists(inferred_name):
         if shown not in index:
             index[shown] = len(schemes)
             schemes.append(scheme)
+            printed.append(inferred["printed"][key])
+        assert printed[index[shown]] == inferred["printed"][key], key
         types[key] = index[shown]
-    condensed = {"schemes": schemes, "types": types, "errors": inferred["errors"][:3]}
+    condensed = {"schemes": schemes, "printed": printed, "types": types, "errors": inferred["errors"][:3]}
     if "failure" in inferred:
         condensed["failure"] = inferred["failure"]
     if "errors" in written:

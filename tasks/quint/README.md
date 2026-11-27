@@ -5278,6 +5278,19 @@ built-in signatures, parsed by the crate's own parser with fresh ids, as Quint p
 time), `generator.rs` (the constraint generator and inferrer) and `printing.rs` (`typeToString`,
 `expressionToString`, error trees).
 
+For the passes after inference (#88's effect, mode and nondet checks) `inference::types_of`
+gives, module by module, the type errors in the order Quint raised them, the type application
+errors apart, the exception if Quint throws, the whole table, and each id's scheme printed as
+`typeSchemeToString` prints it with whether it is `bool` (54,526 printed alike on the
+repository's samples: `every_type_is_printed_as_quint_prints_its_scheme`). For definitions added
+after the types were checked (#89's flattener), `Parsed::types_of_added` runs Quint's
+`analyzeInc`: a fresh type application resolver over the given name table, an inferrer that
+starts from the given `types` with its own counter of fresh names. It is tested only for its
+contract (nothing added keeps the table; an added definition gets its types), not yet against
+`quint compile`'s own output. Error text prints expressions with `src/printing_ir.rs`, taken
+from #88's branch, and its types with the type checker's printer, which `types::type_text` now
+calls: the crate has one printer of types, as Quint's IR has.
+
 Two small changes outside these files: `names.rs` keeps the order in which the name resolver
 inserts entries into the table, and `files.rs` gives it (and the source map) to the type checker.
 
@@ -5294,7 +5307,7 @@ thrown. The type errors are recorded apart because Quint gives effect errors the
 `condense_types.py` checks, when the file has no type error, that its `types` equals that of
 `types.js` as text, then stores `<file>.types.json`: each distinct scheme once, the id of each
 type pointing at its scheme, the first three type errors, and `quint typecheck`'s first three
-explanations. The 405 recordings come to 2.5 MB.
+explanations. Each scheme is stored with Quint's `typeSchemeToString` of it. The 406 recordings come to 2.7 MB.
 
 `tests/parse/types.rs` compares the whole table key by key (the first id that differs is named)
 and then as text; a refused file must be refused with `QNT000`, Quint's explanation (`[QNT000]` and
@@ -5308,7 +5321,7 @@ for files outside the repository. Generated programs:
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax --test parse`) | 468 | 405 | 368 typed with the whole table equal as text; 37 refused by the type checker, each with Quint's explanation at Quint's place, one of them (`types_crash_wildcard_only.qnt`) where Quint throws; the other 63 are refused before types, by the parse and name phases (slice 1 and 2) |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax --test parse`) | 469 | 406 | 369 typed with the whole table equal as text; 37 refused by the type checker, each with Quint's explanation at Quint's place, one of them (`types_crash_wildcard_only.qnt`) where Quint throws; the other 63 are refused before types, by the parse and name phases (slice 1 and 2) |
 | Quint's repository at `v0.33.1`, in the container only | 196 | 177 | 173 typed, all equal as text; 4 refused alike; 19 refused before types (slice 2's count) |
 | 300 generated programs (`generate_types.py <folder> 300 1`: polymorphic definitions used at many types, records through several definitions, sum types in collections, a planted type error in about 3 of 10), in the container only | 300 | 300 | 209 typed, all equal; 91 refused alike |
 | 1000 more, seed 2, with local polymorphic definitions and higher-order chains, in the container only | 1000 | 1000 | 696 typed, all equal; 304 refused alike |
