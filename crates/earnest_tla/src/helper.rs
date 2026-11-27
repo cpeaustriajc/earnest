@@ -7,6 +7,8 @@ pub(crate) enum Helper {
     Division,
     FlooredRemainder,
     FlooredDivision,
+    TruncatedRemainder,
+    TruncatedDivision,
     EmptyMap,
     MapSet,
     MapDelete,
@@ -34,12 +36,14 @@ pub(crate) enum Helper {
     Ascending,
 }
 
-pub(crate) const EVERY_HELPER: [Helper; 30] = [
+pub(crate) const EVERY_HELPER: [Helper; 32] = [
     Helper::Fault,
     Helper::Remainder,
     Helper::Division,
     Helper::FlooredRemainder,
     Helper::FlooredDivision,
+    Helper::TruncatedRemainder,
+    Helper::TruncatedDivision,
     Helper::EmptyMap,
     Helper::MapSet,
     Helper::MapDelete,
@@ -79,6 +83,8 @@ impl Helper {
             Self::Division => "Division",
             Self::FlooredRemainder => "FlooredRemainder",
             Self::FlooredDivision => "FlooredDivision",
+            Self::TruncatedRemainder => "TruncatedRemainder",
+            Self::TruncatedDivision => "TruncatedDivision",
             Self::EmptyMap => "EmptyMap",
             Self::MapSet => "MapSet",
             Self::MapDelete => "MapDelete",
@@ -109,9 +115,12 @@ impl Helper {
 
     pub(crate) fn needs(self) -> Option<Self> {
         match self {
-            Self::Remainder | Self::Division | Self::FlooredRemainder | Self::FlooredDivision => {
-                Some(Self::Fault)
-            }
+            Self::Remainder
+            | Self::Division
+            | Self::FlooredRemainder
+            | Self::FlooredDivision
+            | Self::TruncatedRemainder
+            | Self::TruncatedDivision => Some(Self::Fault),
             other if crate::faulting::faults(other) => Some(Self::Fault),
             _ => None,
         }
@@ -156,6 +165,28 @@ impl Helper {
                 format!(
                     "{name}({left}, {right}) == IF {right} > 0 THEN {left} \\div {right} \
                      ELSE IF {right} < 0 THEN (-{left}) \\div (-{right}) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
+                )
+            }
+            Self::TruncatedRemainder => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN \
+                     (IF {left} >= 0 THEN {left} % {right} ELSE -((-{left}) % {right})) \
+                     ELSE IF {right} < 0 THEN \
+                     (IF {left} >= 0 THEN {left} % (-{right}) ELSE -((-{left}) % (-{right}))) \
+                     ELSE Fault(\"{BY_ZERO_FAULT}\")"
+                )
+            }
+            Self::TruncatedDivision => {
+                let left = names.claim("left");
+                let right = names.claim("right");
+                format!(
+                    "{name}({left}, {right}) == IF {right} > 0 THEN \
+                     (IF {left} >= 0 THEN {left} \\div {right} ELSE -((-{left}) \\div {right})) \
+                     ELSE IF {right} < 0 THEN \
+                     (IF {left} >= 0 THEN -({left} \\div (-{right})) ELSE (-{left}) \\div (-{right})) \
                      ELSE Fault(\"{BY_ZERO_FAULT}\")"
                 )
             }

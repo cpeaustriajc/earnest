@@ -368,8 +368,7 @@ fn a_rule_about_runs_that_faults_is_unknown_with_a_fault_naming_it() {
     );
     let fault = finding(found, "fault");
     assert_eq!(
-        fault["message"],
-        "the rule `halves` takes a division with a negative number or a divisor below 1 in this state",
+        fault["message"], "the rule `halves` takes a division or a remainder by zero in this state",
         "the fault names the rule\n{run}"
     );
     assert_eq!(

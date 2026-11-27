@@ -17,6 +17,7 @@ None of these files has a `pub` item, a comment or a line that `rustfmt` would c
 | `upload.rs` | `../models/upload.model.ts` | `Upload` | 16 | `quiet`, `waiting`, `counted` hold | none |
 | `ticket.rs` | `../models/ticket.model.ts` | `Ticket` | 12 | `seated` holds | none |
 | `pick.rs` | `pick.model.ts` | `Pick` | 9 | `fits` broken, `listed` holds | `sell[who = "Kim"]` from the start with `size = 9` |
+| `signed.rs` | `signed.model.ts` | `Signed` | 8 | `rebuilt`, `truncated`, `signs` hold; `floored` broken | `divide` from the start with `a = -7, b = 2` |
 
 What each file is there for:
 
@@ -27,6 +28,7 @@ What each file is there for:
 | `upload.rs` | `Timer`, `Request` and `Retry` with every operation of each. The test also tightens `counted` to `attempts <= 1` in both languages and compares the path, `send`, `fail`, `wait`, `wake`, `rearm`, `send`, `fail`, `wait`, and the whole result |
 | `ticket.rs` | A `#[one_of("Kim", "Lee")]` text in an `Option` and in an action's parameter, a record with a ranged number, and an action that nothing can stop, which returns `Self` |
 | `pick.rs` | A `#[one_of(1, 5, 9)]` number as a field and as a parameter, next to a listed text. It has no TypeScript model in `../models`, so `pick.model.ts` is its twin. 3 sizes times 3 owners (none, Kim, Lee) are 9 states. `fits` breaks in the 2 states that have size 9 and an owner, and the start with size 9 is the one from which one `sell` reaches it |
+| `signed.rs` | `/` and `%` on `i8` for all four signs of `-7` or `7` over `-2` or `2`, with `signed.model.ts` as its twin with `m.div` and `m.rem`: 4 pairs, each before and after the division, are 8 states. The quotient is 3 or -3 and the remainder has the sign of the number, as `rustc` and JavaScript compute them, so `floored` breaks after one `divide` from `a = -7, b = 2` |
 
 The TLA+ export of `pick.rs` and of `upload.rs` is the same text as the export of their twins, and
 `earnest confirm --tlc` finds the same states and verdicts for each file here. The others differ

@@ -252,11 +252,9 @@ beside the deep one and asserts that it is still reported.
 ### `explore` and `%` of a negative number
 
 `third_b/remainder.model.ts`, model `Rem`, `n` from 0 to 2 (3 states). The rule `below` is
-`(s.n - 1) % 3 !== 99`. At `n = 0` the left side is `-1 % 3`. The root `README.md` makes `%` on
-a negative number a fault, so `below` is `unknown` with a fault after 0 steps, which is what the
-checker reports. `explore` runs the file as JavaScript and reports `holds`, and no finding.
-`explore` cannot intercept `%`, so the smallest fix may be one sentence in the contract that it
-does not. Test: `explore_in_node_gives_unknown_for_a_remainder_of_a_negative_number`.
+`m.rem(s.n - 1, 3) !== 99`. At `n = 0` the left side is `m.rem(-1, 3)`. Since issue 94, `m.rem`
+is JavaScript's `%` in the checker as in `explore`: `-1 % 3` is -1, so `below` holds in both, with
+no finding. Test: `explore_in_node_and_the_checker_agree_on_a_remainder_of_a_negative_number`.
 
 ### Suspected, no test
 
