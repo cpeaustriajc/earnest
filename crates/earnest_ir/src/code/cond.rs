@@ -1,3 +1,4 @@
+use super::again;
 use super::num::{Operand, Stop, int_at, pair};
 use super::shared::Shared;
 use super::val::{Binding, Place, Val};
@@ -64,6 +65,7 @@ pub(super) enum Cond {
     Choose(Box<(Self, Self, Self)>),
     Bind(Box<Binding<Self>>),
     Value(Box<Val>),
+    AnySize(Box<(Self, Expr)>),
 }
 
 impl Cond {
@@ -246,6 +248,10 @@ impl Cond {
                 binding.body.eval(frame)
             }
             Self::Value(inner) => as_bool(&inner.eval(frame)?),
+            Self::AnySize(within) => match within.0.eval(frame) {
+                Err(fault) => again(fault, frame, |frame| crate::truth(&within.1, frame)),
+                found => found,
+            },
         }
     }
 }

@@ -1,4 +1,5 @@
 use crate::Runs;
+use crate::code;
 use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
@@ -6,7 +7,7 @@ use crate::reader::{
     Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run, refusal,
 };
 use crate::starts::{Asserts, start_states};
-use earnest_ir::{Action, Code, Expr, Field, Pick, Plan, Script, Stage};
+use earnest_ir::{Action, Expr, Field, Pick, Plan, Script, Stage};
 use earnest_value::{Domain, Value};
 use std::collections::BTreeSet;
 
@@ -252,15 +253,15 @@ impl<'a> Run<'_, 'a> {
         self.walk(expr, Place::Last, &mut drawn)?;
         let plan = Plan {
             chosen: chosen.to_vec(),
-            start: drawn.start.map(Code::new),
+            start: drawn.start.map(code),
             starts: drawn.starts,
             steps: drawn
                 .steps
                 .into_iter()
                 .map(|step| Stage {
                     choices: step.choices,
-                    asserts: step.asserts.map(Code::new),
-                    expect: step.expect.map(Code::new),
+                    asserts: step.asserts.map(code),
+                    expect: step.expect.map(code),
                     refused: step.refused,
                 })
                 .collect(),

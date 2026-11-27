@@ -1,5 +1,7 @@
+use num_bigint::{BigInt, Sign};
 use rustc_hash::FxHashMap;
 use serde_json::Value as Json;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -17,14 +19,17 @@ pub struct Sym(u32);
 /// An optional value has no wrapper: it is [`Value::Null`] when absent and the plain value when
 /// present. A queue is a [`Value::Seq`], an owned lock is its owner or `Null`, and a timer or a
 /// request is the [`Value::Str`] naming its stage. Collections are shared, so a clone is cheap.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+///
+/// Values of two kinds sort in the order the kinds are listed here, except that a
+/// [`Value::Big`] sorts among the [`Value::Int`]s by its size, so whole numbers sort as numbers.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[non_exhaustive]
 pub enum Value {
     /// An absent optional value.
     Null,
     /// True or false.
     Bool(bool),
-    /// A whole number.
+    /// A whole number that fits in 64 bits.
     Int(i64),
     /// A text value or an enum value.
     Str(Sym),
@@ -36,9 +41,104 @@ pub enum Value {
     Map(Arc<BTreeMap<Value, Value>>),
     /// Items in the order they were added.
     Seq(Arc<Vec<Value>>),
+    /// A whole number that does not fit in 64 bits, which only a Quint model gives. Build one
+    /// with [`Value::whole`], so that every number that fits is a [`Value::Int`].
+    Big(Big),
+}
+
+/// A whole number outside 64 bits: what a Quint `int` holds past `-2^63` and `2^63 - 1`.
+///
+/// [`Value::whole`] is the only way to make one, so no `Big` holds a number that fits in an
+/// `i64`, and a number has one value.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+pub struct Big(Arc<BigInt>);
+
+impl Big {
+    /// The number.
+    #[must_use]
+    pub fn number(&self) -> &BigInt {
+        &self.0
+    }
+
+    fn below_every_int(&self) -> bool {
+        self.0.sign() == Sign::Minus
+    }
+}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Self::Int(left), Self::Int(right)) => left.cmp(right),
+            (Self::Str(left), Self::Str(right)) => left.cmp(right),
+            (Self::Bool(left), Self::Bool(right)) => left.cmp(right),
+            (Self::Null, Self::Null) => Ordering::Equal,
+            (Self::Record(left), Self::Record(right)) => left.cmp(right),
+            (Self::Set(left), Self::Set(right)) => left.cmp(right),
+            (Self::Map(left), Self::Map(right)) => left.cmp(right),
+            (Self::Seq(left), Self::Seq(right)) => left.cmp(right),
+            (Self::Big(left), Self::Big(right)) => left.cmp(right),
+            (Self::Big(big), Self::Int(_)) => {
+                if big.below_every_int() {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+            (Self::Int(_), Self::Big(big)) => {
+                if big.below_every_int() {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                }
+            }
+            _ => self.rank().cmp(&other.rank()),
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl Value {
+    fn rank(&self) -> u8 {
+        match self {
+            Self::Null => 0,
+            Self::Bool(_) => 1,
+            Self::Int(_) | Self::Big(_) => 2,
+            Self::Str(_) => 3,
+            Self::Record(_) => 4,
+            Self::Set(_) => 5,
+            Self::Map(_) => 6,
+            Self::Seq(_) => 7,
+        }
+    }
+
+    /// `number` as a value: a [`Value::Int`] when it fits in 64 bits, a [`Value::Big`] when
+    /// it does not.
+    #[must_use]
+    pub fn whole(number: BigInt) -> Self {
+        i64::try_from(&number).map_or_else(|_| Self::Big(Big(Arc::new(number))), Self::Int)
+    }
+
+    /// The whole number this value is, of any size. `None` when it is not a number.
+    #[must_use]
+    pub fn whole_number(&self) -> Option<BigInt> {
+        match self {
+            Self::Int(number) => Some(BigInt::from(*number)),
+            Self::Big(big) => Some(big.number().clone()),
+            Self::Null
+            | Self::Bool(_)
+            | Self::Str(_)
+            | Self::Record(_)
+            | Self::Set(_)
+            | Self::Map(_)
+            | Self::Seq(_) => None,
+        }
+    }
+
     /// A record of `fields`, in any order. Two records with the same fields are equal however
     /// they were listed.
     #[must_use]
@@ -77,6 +177,7 @@ impl Value {
             Self::Null
             | Self::Bool(_)
             | Self::Int(_)
+            | Self::Big(_)
             | Self::Str(_)
             | Self::Set(_)
             | Self::Map(_)
@@ -130,6 +231,7 @@ const TUPLE_ITEMS_START_WITH: char = '_';
 const VARIANT_TAG: &str = "tag";
 const VARIANT_VALUE: &str = "value";
 const ITF_TUPLE: &str = "#tup";
+const ITF_BIG: &str = "#bigint";
 
 impl Symbols {
     /// The name for `text`. Interning the same text again gives the same name back.
@@ -253,6 +355,7 @@ impl Symbols {
             Value::Null
             | Value::Bool(_)
             | Value::Int(_)
+            | Value::Big(_)
             | Value::Record(_)
             | Value::Set(_)
             | Value::Map(_)
@@ -265,6 +368,7 @@ impl Symbols {
             Value::Null => out.push_str("null"),
             Value::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
             Value::Int(number) => out.push_str(&number.to_string()),
+            Value::Big(big) => out.push_str(&big.number().to_string()),
             Value::Str(sym) => write_quoted(self.name(*sym), out),
             Value::Record(fields) => match self.shape(fields) {
                 Some(Shape::Tuple(items)) => {
@@ -307,13 +411,20 @@ impl Symbols {
 
     /// `value` as the JSON output holds it: a set and a sequence are arrays, a map is an array
     /// of `[key, value]` pairs and a record is an object. In [`Notation::Quint`] a tuple is
-    /// `{"#tup": [...]}`, as Quint's ITF traces write it.
+    /// `{"#tup": [...]}`, as Quint's ITF traces write it. A [`Value::Big`] is
+    /// `{"#bigint": "digits"}`, as ITF writes every integer, since a JSON number past 64 bits
+    /// is not read back exactly.
     #[must_use]
     pub fn json(&self, value: &Value) -> Json {
         match value {
             Value::Null => Json::Null,
             Value::Bool(flag) => Json::Bool(*flag),
             Value::Int(number) => Json::from(*number),
+            Value::Big(big) => Json::Object(
+                [(ITF_BIG.to_owned(), Json::String(big.number().to_string()))]
+                    .into_iter()
+                    .collect(),
+            ),
             Value::Str(sym) => Json::String(self.name(*sym).to_owned()),
             Value::Record(fields) => match self.shape(fields) {
                 Some(Shape::Tuple(items)) => Json::Object(
@@ -362,6 +473,7 @@ impl Symbols {
             Value::Null
             | Value::Bool(_)
             | Value::Int(_)
+            | Value::Big(_)
             | Value::Str(_)
             | Value::Set(_)
             | Value::Map(_)

@@ -1,21 +1,26 @@
 use earnest_ir::{Expr, Model};
-use earnest_value::{Domain, Symbols, Value};
+use earnest_value::{BigInt, Domain, Symbols, Value};
 
 #[derive(Default)]
 struct Found {
-    widest: Option<i64>,
+    widest: Option<BigInt>,
     text: Option<String>,
 }
 
 impl Found {
     fn number(&mut self, number: i64) {
-        let out = i32::try_from(number).is_err();
-        if out
-            && self
-                .widest
-                .is_none_or(|known| number.unsigned_abs() > known.unsigned_abs())
+        if i32::try_from(number).is_err() {
+            self.wide(&BigInt::from(number));
+        }
+    }
+
+    fn wide(&mut self, number: &BigInt) {
+        if self
+            .widest
+            .as_ref()
+            .is_none_or(|known| number.magnitude() > known.magnitude())
         {
-            self.widest = Some(number);
+            self.widest = Some(number.clone());
         }
     }
 
@@ -29,6 +34,7 @@ impl Found {
     fn value(&mut self, symbols: &Symbols, value: &Value) {
         match value {
             Value::Int(number) => self.number(*number),
+            Value::Big(big) => self.wide(big.number()),
             Value::Str(sym) => self.name(symbols, *sym),
             Value::Record(fields) => {
                 for (name, inner) in fields.iter() {

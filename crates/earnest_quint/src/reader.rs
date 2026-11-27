@@ -3,7 +3,7 @@ use crate::data::{ANY_OTHER_TAG, TAG, VALUE, data_builtin};
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint, Param, Scheme};
 use crate::names::shortest;
 use crate::reach::variables_reached;
-use earnest_ir::{Expr, Fault, Frame, Op, eval};
+use earnest_ir::{Expr, Fault, Op, eval};
 use earnest_value::{Domain, MOST_VALUES_LISTED, Symbols, Value};
 use std::collections::{BTreeSet, HashMap};
 
@@ -159,16 +159,6 @@ pub(crate) fn endless(name: &str) -> Option<&'static str> {
         .map(|(_, what)| *what)
 }
 
-fn written_out(value: &serde_json::Number) -> String {
-    if value.is_u64() {
-        return value.to_string();
-    }
-    value
-        .as_f64()
-        .filter(|number| number.is_finite())
-        .map_or_else(|| value.to_string(), |number| format!("{number:.0}"))
-}
-
 pub(crate) struct Reader<'a> {
     table: &'a HashMap<String, Entry>,
     defs: HashMap<u64, &'a Def>,
@@ -272,7 +262,7 @@ pub(crate) fn constant_of_a_run(expr: &Expr, slots: usize) -> Read<Option<Value>
     if reads_state(expr, &[]) {
         return Ok(None);
     }
-    match eval(expr, &mut Frame::new(&[], slots)) {
+    match eval(expr, &mut crate::frame(&[], slots)) {
         Ok(value) => Ok(Some(value)),
         Err(Fault::Asserted) => Ok(Some(Value::Bool(false))),
         Err(fault) => Err(fault_refusal(fault)),
@@ -283,7 +273,7 @@ pub(crate) fn constant(expr: &Expr, slots: usize) -> Read<Option<Value>> {
     if reads_state(expr, &[]) {
         return Ok(None);
     }
-    eval(expr, &mut Frame::new(&[], slots))
+    eval(expr, &mut crate::frame(&[], slots))
         .map(Some)
         .map_err(fault_refusal)
 }
@@ -656,13 +646,9 @@ impl<'a> Reader<'a> {
 
     pub(crate) fn pure(&mut self, expr: &'a Quint) -> Read<Expr> {
         match expr {
-            Quint::Int { value } => match value.as_i64() {
-                Some(number) => Ok(Expr::Const(Value::Int(number))),
-                None => self.refuse(
-                    &format!("`{}`", written_out(value)),
-                    "an integer beyond 64 bits, which the checker does not hold: it holds \
-                     integers from -2^63 to 2^63 - 1, so write a smaller number",
-                ),
+            Quint::Int { value } => match value.whole() {
+                Some(number) => Ok(Expr::Const(Value::whole(number))),
+                None => self.refuse(&format!("`{value}`"), "a number that is not a whole number"),
             },
             Quint::Bool { value } => Ok(Expr::Const(Value::Bool(*value))),
             Quint::Str { value } => Ok(Expr::Const(Value::Str(self.text(value)))),
@@ -1163,11 +1149,11 @@ impl<'a> Reader<'a> {
             for each in &ends {
                 match constant(each, self.slots)? {
                     Some(Value::Int(number)) => numbers.push(number),
+                    Some(Value::Big(_)) | None => {
+                        return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
+                    }
                     Some(_) => {
                         return self.refuse("`to`", "a range whose ends are not integers");
-                    }
-                    None => {
-                        return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
                     }
                 }
             }

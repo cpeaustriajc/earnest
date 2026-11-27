@@ -1,6 +1,6 @@
 use crate::model::assigned;
 use crate::reader::{Choice, Path, Read, refusal};
-use earnest_ir::{Fault, Frame, eval, truth};
+use earnest_ir::{Fault, eval, truth};
 use earnest_value::{MOST_VALUES_LISTED, Value};
 use std::collections::BTreeSet;
 
@@ -22,7 +22,7 @@ fn values_of(
     let Some(set) = &choice.from else {
         return Ok(choice.values.clone());
     };
-    let mut frame = Frame::new(&[], slots);
+    let mut frame = crate::frame(&[], slots);
     for (earlier, value) in path.choices.iter().zip(picked) {
         frame.put(earlier.slot, value.clone());
     }
@@ -84,7 +84,7 @@ fn start_of(
     (fields, slots): (&[String], usize),
     asserts: Asserts,
 ) -> Read<Start> {
-    let mut frame = Frame::new(&[], slots_of(path, slots));
+    let mut frame = crate::frame(&[], slots_of(path, slots));
     for (choice, value) in path.choices.iter().zip(picked) {
         frame.put(choice.slot, value.clone());
     }

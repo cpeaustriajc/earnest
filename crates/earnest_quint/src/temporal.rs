@@ -1,8 +1,9 @@
+use crate::code;
 use crate::json::{Def, Entry, Expr as Quint, Param};
 use crate::reach::defs_reached;
 use crate::reader::{Choice, Path, Read, Reader, Refusal, all_of, constant, reads_state};
 use earnest_ir::{
-    Action, Alone, Code, Eventually, Expr, FairStep, Fairness, Frame, Input, Op, Pick, Rule, truth,
+    Action, Alone, Eventually, Expr, FairStep, Fairness, Input, Op, Pick, Rule, truth,
 };
 use earnest_value::Value;
 use std::collections::HashMap;
@@ -276,7 +277,7 @@ impl<'a> Properties<'_, 'a> {
         let condition = self.reader.pure(given)?;
         let mut found = Vec::with_capacity(step.starts.len());
         for state in step.starts {
-            let mut frame = Frame::new(state, self.reader.slots);
+            let mut frame = crate::frame(state, self.reader.slots);
             match truth(&condition, &mut frame) {
                 Ok(holds) => found.push(holds),
                 Err(fault) => {
@@ -530,7 +531,7 @@ impl<'a> Properties<'_, 'a> {
                 let mut updates = vec![None; fields];
                 for (field, expr) in &path.assigns {
                     if let Some(slot @ None) = updates.get_mut(*field) {
-                        *slot = Some(Code::new(expr.clone()));
+                        *slot = Some(code(expr.clone()));
                     }
                 }
                 for (input, choice) in path.choices.iter().enumerate() {
@@ -539,7 +540,7 @@ impl<'a> Properties<'_, 'a> {
                             script: None,
                             action: position,
                             input,
-                            from: Code::new(from.clone()),
+                            from: code(from.clone()),
                         });
                     }
                 }
@@ -557,7 +558,7 @@ impl<'a> Properties<'_, 'a> {
                             values: choice.values.clone(),
                         })
                         .collect(),
-                    guard: Code::new(all_of(path.guards.clone())),
+                    guard: code(all_of(path.guards.clone())),
                     updates,
                     slots: self.reader.slots,
                 }
@@ -999,8 +1000,8 @@ pub(crate) fn temporal<'a>(
                     id,
                     says,
                     line: DECLARED_ON,
-                    after: after.map(Code::new),
-                    reaches: Code::new(reaches),
+                    after: after.map(code),
+                    reaches: code(reaches),
                     slots,
                     fair: Some(fair),
                 }),
@@ -1009,7 +1010,7 @@ pub(crate) fn temporal<'a>(
                     says: format!("{says} in every start state"),
                     line: DECLARED_ON,
                     after: None,
-                    reaches: Code::new(holds),
+                    reaches: code(holds),
                     slots,
                     fair: Some(Fairness::default()),
                 }),
@@ -1018,7 +1019,7 @@ pub(crate) fn temporal<'a>(
                     says,
                     line: DECLARED_ON,
                     text: name.clone(),
-                    holds: Code::new(holds),
+                    holds: code(holds),
                     slots,
                 }),
             }

@@ -382,10 +382,17 @@ fn verdict_of(verified: &Verified) -> &'static str {
     }
 }
 
+fn stopped_why(error: &str, limits: &[String]) -> String {
+    match limits.first() {
+        Some(limit) => format!("{limit}; Quint stopped: {error}"),
+        None => format!("Quint stopped: {error}"),
+    }
+}
+
 fn compared_property(
     property: &Property,
     verified: &Verified,
-    reasons: &[String],
+    (reasons, limits): (&[String], &[String]),
 ) -> Option<Difference> {
     let theirs = verdict_of(verified);
     if property.verdict == theirs {
@@ -396,7 +403,7 @@ fn compared_property(
         property.id, property.verdict
     );
     Some(match verified {
-        Verified::Stopped(error) => cannot(said, &format!("Quint stopped: {error}")),
+        Verified::Stopped(error) => cannot(said, &stopped_why(error, limits)),
         _ if property.verdict == UNKNOWN => cannot(said, "the checker could not judge it"),
         _ => unless(said, reasons),
     })
@@ -406,7 +413,7 @@ fn searched(
     checked: &Checked,
     runner: &Runner<'_>,
     properties: &[Property],
-    reasons: &[String],
+    (reasons, limits): (&[String], &[String]),
 ) -> Vec<Difference> {
     let (expected, rest): (Vec<&Property>, Vec<&Property>) =
         properties.iter().partition(|property| property.expected);
@@ -448,7 +455,7 @@ fn searched(
     if counts.is_empty() {
         let why = stopped.map_or_else(
             || "Quint printed no state count".to_owned(),
-            |error| format!("Quint stopped: {error}"),
+            |error| stopped_why(&error, limits),
         );
         found.push(cannot(
             format!("states: the checker found {ours}, `quint verify` gave no count"),
@@ -466,7 +473,7 @@ fn searched(
     }
     for (judged, verified) in &runs {
         for property in judged {
-            found.extend(compared_property(property, verified, reasons));
+            found.extend(compared_property(property, verified, (reasons, limits)));
         }
     }
     found
@@ -638,7 +645,12 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
         let (properties, unmatched) = properties(checked, quint, asked.expected);
         found.extend(unmatched);
         if java_on_path() {
-            found.extend(searched(checked, &runner, &properties, &reasons));
+            found.extend(searched(
+                checked,
+                &runner,
+                &properties,
+                (&reasons, &asked.beyond_tlc),
+            ));
         } else {
             found.push(cannot(
                 "states and properties: not compared".to_owned(),

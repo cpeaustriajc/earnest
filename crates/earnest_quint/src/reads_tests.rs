@@ -151,12 +151,8 @@ fn a_used_helper_the_reader_does_not_take_is_refused_with_the_names_that_reach_i
 }
 
 #[test]
-fn a_literal_past_64_bits_shows_the_number_as_written() {
-    let problem = the_problem(BIG, "`100000000000000000000`");
-    assert!(
-        problem.message.contains("write a smaller number"),
-        "the message says what to write instead: {problem:?}"
-    );
+fn a_literal_past_64_bits_is_compared_as_the_number_written() {
+    holds(&model(BIG), "below");
 }
 
 #[test]
