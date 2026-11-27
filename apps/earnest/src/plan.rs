@@ -1,8 +1,8 @@
 use crate::marks::{
-    Doc, Kind, Mark, commented_mark, constant_unset, misplaced_mark, module_mark_alone,
-    named_twice, names_alone, names_off_module, names_unended, no_init_or_step, not_judged,
-    not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark, starts_a_mark, unknown_mark,
-    unspaced_source,
+    Doc, Kind, Mark, commented_mark, constant_unset, listed_twice, misplaced_mark,
+    module_mark_alone, named_twice, names_alone, names_off_module, names_unended, no_init_or_step,
+    not_judged, not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark, starts_a_mark,
+    unknown_mark, unspaced_source,
 };
 use crate::places::{Marked, Places};
 use crate::quint::shown_in_folder;
@@ -46,6 +46,7 @@ pub(crate) struct Planned {
     pub(crate) seen: BTreeSet<Spot>,
     pub(crate) marked: Vec<(Spot, Problem)>,
     pub(crate) viewing: Viewing,
+    pub(crate) module_marked: bool,
 }
 
 struct Judged {
@@ -388,15 +389,20 @@ fn module_doc_names(
     judged: &mut Vec<Judged>,
     problems: &mut Vec<Problem>,
 ) {
-    let mut listed: Vec<&str> = Vec::new();
-    for mark in &doc.marks {
+    let mut listed: Vec<(&str, usize)> = Vec::new();
+    for (index, mark) in doc.marks.iter().enumerate() {
         let mut once = mark.clone();
         once.names.clear();
         for name in &mark.names {
-            if listed.contains(&name.as_str()) {
-                problems.push(locator.at_module((main, doc_text), mark.line, &named_twice(name)));
+            if let Some((_, first)) = listed.iter().find(|(each, _)| *each == name.as_str()) {
+                let message = if *first == index {
+                    listed_twice(name)
+                } else {
+                    named_twice(name)
+                };
+                problems.push(locator.at_module((main, doc_text), mark.line, &message));
             } else {
-                listed.push(name);
+                listed.push((name, index));
                 once.names.push(name.clone());
             }
         }
@@ -557,6 +563,7 @@ pub(crate) fn planned(places: &Places, real_file: &Path, shown: &str) -> Planned
             continue;
         };
         let doc = read_doc(text);
+        planned.module_marked |= doc.is_marked();
         let at = |line: usize, message: &str| locator.at_module((module.name, text), line, message);
         let mut problems: Vec<Problem> = doc
             .wrong

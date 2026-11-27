@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: clearer messages for a badly written Quint mark
+
+Four messages about a mark sent the author the wrong way. A file with a marked module and a bad mark elsewhere says only the bad mark, not that no module is checked. A comma that ends a doc comment with no name after it says that the comma makes the list go on and no names follow. A name written twice in one mark says it is listed twice, not that it is under two marks. A mark on a `val` that does not give a boolean is still a fault, and the message names the definition and its mark. No verdict changes.
+
 ## November 2026: charts draw the states the rules are about
 
 A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).

@@ -193,6 +193,7 @@ fn searched<'a>(targets: &[Target<'a>], rule: Option<&'a str>, stops: Stops) -> 
                 only_rule: rule,
             },
             expected: &target.readable.expected,
+            reachable: &target.readable.reachable,
             stops,
         })
         .collect()

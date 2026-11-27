@@ -136,7 +136,13 @@ pub(crate) fn read_doc(doc: &str) -> Doc {
                 read.marks.push(Mark { kind, names, line });
             } else {
                 let on_its_line = rest.trim_end().strip_suffix(',').unwrap_or(rest);
+                let without_comma = written.strip_suffix(',');
                 let message = match went_on {
+                    _ if spaced
+                        && without_comma.is_some_and(|names| words_after(names).is_some()) =>
+                    {
+                        comma_ends_the_doc(&format!("{MARK}{written}"))
+                    }
                     Some(next) if spaced && words_after(on_its_line).is_some() => {
                         list_goes_on(trimmed, next)
                     }
@@ -183,6 +189,33 @@ fn list_goes_on(written: &str, next: &str) -> String {
         "the mark `{written}` ends with a comma, so its list of names goes on over the next doc \
          line, and `{next}` is not a list of names: take the comma away to end the list there, or \
          write the rest of the names on the next line"
+    )
+}
+
+fn comma_ends_the_doc(written: &str) -> String {
+    format!(
+        "the mark `{written}` ends with a comma, which makes its list of names go on, and no \
+         names follow it: take the comma away to end the list, or write the next name on the \
+         next doc line"
+    )
+}
+
+pub(crate) fn not_a_boolean(name: &str, kind: Kind) -> String {
+    let written = match kind {
+        Kind::Holds => MARK.to_owned(),
+        Kind::Broken => format!("{MARK} {BROKEN}"),
+        Kind::Reachable => format!("{MARK} {REACHABLE}"),
+    };
+    format!(
+        "the definition `{name}` is marked `{written}` and does not give a boolean in this \
+         state: a mark judges a value that is true or false, so mark a `val` of that kind"
+    )
+}
+
+pub(crate) fn listed_twice(name: &str) -> String {
+    format!(
+        "the doc comment lists `{name}` twice in one mark: a name is judged once in a check, so \
+         write it once"
     )
 }
 

@@ -962,7 +962,7 @@ fn marked_checks(
             files.push(unreadable_of(&shown, module, problems));
         }
         jobs.extend(found.plans.into_iter().map(|plan| job_of(candidate, plan)));
-        if checks == 0 && refused == 0 && candidate.named {
+        if checks == 0 && refused == 0 && !found.module_marked && candidate.named {
             files.push(not_a_model(&candidate.shown));
         }
     }
