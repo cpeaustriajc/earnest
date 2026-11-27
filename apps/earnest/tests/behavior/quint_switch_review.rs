@@ -3,6 +3,7 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
+use std::time::{Duration, Instant};
 
 use crate::support::{Run, Sandbox};
 
@@ -218,5 +219,47 @@ module A {
          unreadable  specs/a.qnt\n  \
          specs/a.qnt:9:3  `quint parse`  [QNT000] extraneous input '/// @check\\n' expecting {{'{{', 'val', ...}}\n\
          where the switched build prints 7:3 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
+    );
+}
+
+#[test]
+fn a_chain_of_twenty_thousand_method_calls_is_refused_within_a_minute_as_quint_refuses_it() {
+    let sandbox = Sandbox::empty();
+    let chain = ".union(Set(1))".repeat(20_000);
+    sandbox.write(
+        "specs/a.qnt",
+        &format!(
+            "/// @check
+module A {{
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 1) x + 1 else 0
+  /// @check
+  val ok = Set(1){chain} != Set()
+}}
+"
+        ),
+    );
+    let empty = sandbox.path().join("no-programs");
+    fs::create_dir_all(&empty).expect("an empty folder can be made");
+    let started = Instant::now();
+    let output = sandbox
+        .command()
+        .env_remove("EARNEST_QUINT")
+        .env("PATH", &empty)
+        .args(["verify", "--no-cache", "specs/a.qnt"])
+        .timeout(Duration::from_mins(2))
+        .output();
+    let took = started.elapsed();
+    let stdout = output
+        .as_ref()
+        .map(|done| String::from_utf8_lossy(&done.stdout).into_owned())
+        .unwrap_or_default();
+    assert!(
+        took < Duration::from_mins(1) && stdout.starts_with("unreadable  specs/a.qnt"),
+        "the build before the switch, with Quint 0.33.1, printed in 7 s:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:1:1  `quint parse`  the Quint file can't be parsed\n\
+         the switched build took {took:?} and printed:\n{stdout}"
     );
 }
