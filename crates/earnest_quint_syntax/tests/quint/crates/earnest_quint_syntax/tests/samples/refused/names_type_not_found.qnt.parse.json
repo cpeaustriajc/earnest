@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT404] Type alias 'Unknown' not found","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_type_not_found.qnt","start":{"line":2,"col":13,"index":54},"end":{"line":2,"col":19,"index":60}}]}],"order":[[2,5]],"depth":{"2":0,"5":0},"table":{}}

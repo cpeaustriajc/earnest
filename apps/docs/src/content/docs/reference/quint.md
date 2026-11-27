@@ -113,7 +113,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from what `quint parse` gives, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
 - When `quint compile` itself fails on a check's module, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
-- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
+- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
 ### What a checks file said
 
@@ -448,14 +448,14 @@ The reader also takes:
 - An action given as an argument, such as `action between(changes: bool): bool = all { b' = b + 1, changes }` called as `between(all { a' = true })`. The argument (an `all { … }`, an assignment, a named action, an action call, a `nondet` block) is put in wherever the parameter stands as an action, also when it is passed on to another action, in a run step, or as a lambda `f: int => bool` called with `v => all { flag' = v > 2 }`.
 - `q::debug(message, value)`, read as `value`.
 
-An `assume Positive = N > 0`, in a module checked directly or in the spec of a setup, is worked out from the constants when the file is read. A true one changes nothing. A false one makes the check `unreadable`, at the assumption, as Quint's TLC run (`quint verify --backend tlc`) stops on a false assumption of the module it checks:
+An `assume Positive = N > 0` is read as Quint's TLC run (`quint verify --backend tlc`) reads it. In a module checked directly it is worked out from the constants when the file is read: a true one changes nothing, and a false one makes the check `unreadable`, at the assumption, as Quint's TLC run stops there:
 
 ```text
-unreadable  specs/lock.qnt  Bad
+unreadable  specs/lock.qnt  Direct
   specs/lock.qnt:14:3  `assume Positive`  the assumption `Positive` is false, so no state is checked. ...
 ```
 
-Quint itself reads it unevenly: `quint test` and `quint run` never check it, and `quint compile` drops the spec's assumptions from a setup, so `quint verify --main Bad` passes there. Earnest checks it in both places. A setup that earnest leaves to `quint compile` loses its spec's assumptions in the same way.
+The assumptions of the spec of a setup are left out, as `quint compile` leaves them out: `quint verify --main Bad`, where `Bad` is `import Lock(N = 0).*` and `Lock` assumes `N > 0`, checks every state and says nothing of the assumption, and so does earnest. `quint test` and `quint run` never check an assumption.
 
 The searched state holds only the variables that `init`, `step`, the listed invariants and the listed temporal properties reach. A variable that only a run reaches is no field of the search: `init` need not give it a value, the TLA+ export leaves it out, and the run plays it (see [Runs](#runs)). A variable that `step` or a listed property reads and `init` does not give a value makes the check `unreadable`, as Quint's TLC run stops there.
 
@@ -521,7 +521,8 @@ Earnest reads these run operators as `quint test` judges them:
 | `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
 | `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
 | `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
-| `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step |
+| `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step. In the run's first action, or as the whole run (`run t = assert(f(1) == 2)`), a false `P` breaks the run, as `quint test` fails it |
+| a condition with no step, such as `run t = f(1) == 1` | The run holds when the condition is true and is broken when it is false |
 | `nondet` and `val` at the top of the run | Each value of the `nondet` is played; a `val` is a constant |
 | a run's name | That run, played in place |
 | a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |

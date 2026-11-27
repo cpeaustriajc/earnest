@@ -9,6 +9,14 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 Four messages about a mark sent the author the wrong way. A file with a marked module and a bad mark elsewhere says only the bad mark, not that no module is checked. A comma that ends a doc comment with no name after it says that the comma makes the list go on and no names follow. A name written twice in one mark says it is listed twice, not that it is under two marks. A mark on a `val` that does not give a boolean is still a fault, and the message names the definition and its mark. No verdict changes.
 
+## November 2026: Quint runs and assumptions judged as Quint judges them
+
+Where earnest and Quint gave different answers on the same `.qnt` file, earnest now gives Quint's:
+
+- **A false run in a check of runs only:** a run that is one condition, such as `run sumsTest = total([1]) == 2`, passed in a check that judges no property. It is `broken`, as `quint test` fails it. In a check that searches states it was already `broken`.
+- **A false `assert` in a run's first action, or as the whole run:** `run t = all { assert(total([1, 2]) == 4) }` and `run t = assert(total([1]) == 2)` made the check `unreadable`. The run is `broken`, as `quint test` fails it with `Assertion failed`. With a `nondet` in that action, one value that fails the `assert` breaks the run.
+- **An `assume` in the spec of a setup:** a false one made the check `unreadable`. It is left out, as `quint compile` leaves it out and Quint's TLC run never sees it, so the setup is checked. A false `assume` in a module checked directly still makes the check `unreadable`, as Quint's TLC run stops on it.
+
 ## November 2026: charts draw the states the rules are about
 
 A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
@@ -35,13 +43,15 @@ val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
 ```text
 rule changes since origin/main
   added      Small.inRange  "The time stays between zero and the limit."  specs/clock.qnt
-  added      Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+  added      Small.tickTest (witness)  specs/clock.qnt
 ```
 
 - Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
 - A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
 - The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
 - A file that can't be read at the base, native or Quint, is named on a `not compared` line under `rule changes since <base>`, with why, and in a new `notCompared` key in JSON, so the section no longer says `none` for it. A check whose marks are unreadable at the base is named alone, and the other checks of its file are compared; a mark that belongs to no check, such as a `/// @View` typo, is named with its line and column, and every check is compared. The stderr warning stays.
+- A file or a Quint check that is unreadable now is `not compared` with `unreadable now`, native or Quint, and the rules it had at the base are no longer listed as `removed`. A deleted file, and a module whose mark was taken off, still list theirs as `removed`.
+- A rule with no sentence of its own prints no quoted sentence in the rule changes, as its result line does.
 - A folder given twice under two spellings no longer lists the rules of its files as `removed`, for native and Quint models alike.
 - `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
 

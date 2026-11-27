@@ -1,22 +1,51 @@
 use crate::ids::Ids;
 use crate::json::Json;
 use crate::lexer::lex;
+use crate::names::{Entry, Raised, resolve};
+use crate::order::sort;
 use crate::parser::{Reported, parse};
 use crate::problem::Problem;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 /// The modules of a file and of every file it imports, and the source map of their ids.
 #[derive(Debug)]
 pub struct Parsed {
     modules: Vec<Json>,
+    table: BTreeMap<u64, Entry>,
     ids: Ids,
 }
 
 impl Parsed {
     /// The modules in the order Quint sorts them: a module after the modules it imports, and
-    /// otherwise by id. Each is the JSON object Quint writes for it in `modules`.
+    /// otherwise by id. Each is the JSON object Quint writes for it in `modules`: its
+    /// declarations sorted so that each comes after what it uses, ties broken by their ids
+    /// compared as text, and `depth` on every constant, variable, type and assumption.
     pub fn modules(&self) -> &[Json] {
         &self.modules
+    }
+
+    /// The `table` Quint writes: for the id of every name, every application of an operator
+    /// that is not built in, every type name and every constant an instance sets, the
+    /// definition it names, with `depth`, and `importedFrom`, `hidden`, `namespaces` and
+    /// `shadowing` where Quint sets them. Keys are the ids as text, in numeric order.
+    pub fn table(&self) -> Json {
+        Json::Object(
+            self.table
+                .iter()
+                .map(|(id, entry)| (id.to_string(), entry.to_json()))
+                .collect(),
+        )
+    }
+
+    /// The whole of what `quint parse --out` writes for a file it accepts.
+    pub fn output(&self) -> Json {
+        Json::object(vec![
+            ("stage", Json::text("parsing")),
+            ("warnings", Json::List(Vec::new())),
+            ("modules", Json::List(self.modules.clone())),
+            ("table", self.table()),
+            ("errors", Json::List(Vec::new())),
+        ])
     }
 
     /// The source map, as `quint parse --source-map` writes it: `sourceIndex` names each file,
@@ -42,7 +71,11 @@ struct Pending {
 ///
 /// The first problem Quint reports for the file, when it refuses it: a syntax error, an error
 /// its parser reports (such as a type name in lowercase), an import it can't load, a cyclic
-/// import, two modules of one name or an import of a module no file has. A syntax error in an
+/// import, two modules of one name or an import of a module no file has; then the first error
+/// of its name phases, at the place Quint gives it: a name not found (`QNT404`), two definitions
+/// of one name (`QNT101`), a cycle of declarations (`QNT099`), an instance's override that is
+/// not a constant (`QNT406`), a module and an import's name that clash (`QNT102`), an export of
+/// the module itself (`QNT407`) or of an unknown module (`QNT405`). A syntax error in an
 /// imported file is refused too, under the code `unreadable`: Quint ignores it there and reads
 /// on in a tree its parser repaired, which is not reproduced.
 pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<Parsed, Problem> {
@@ -121,8 +154,30 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
             visited.push((lower, target));
         }
     }
-    let modules = sorted(by_file.into_iter().flatten().collect(), &ids)?;
-    Ok(Parsed { modules, ids })
+    let mut modules = sorted(by_file.into_iter().flatten().collect(), &ids)?;
+    let mut resolution = resolve(&mut modules);
+    sort(&mut modules, &resolution.table, &mut resolution.errors);
+    if let Some(first) = resolution.errors.first() {
+        return Err(raised_at(&ids, first));
+    }
+    Ok(Parsed {
+        modules,
+        table: resolution.table,
+        ids,
+    })
+}
+
+fn raised_at(ids: &Ids, raised: &Raised) -> Problem {
+    match raised.reference.and_then(|id| ids.place(id)) {
+        Some(place) => Problem::coded(
+            raised.code,
+            raised.message.clone(),
+            place.start.line,
+            usize::try_from(place.start.column).unwrap_or(0),
+        )
+        .in_source(ids.source_name(place.source)),
+        None => Problem::coded(raised.code, raised.message.clone(), 0, 0),
+    }
 }
 
 fn placed(ids: &Ids, at: &Json, code: &str, message: String) -> Problem {

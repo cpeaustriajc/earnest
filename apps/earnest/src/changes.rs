@@ -647,6 +647,7 @@ pub(crate) enum Why {
     ChecksFile,
     QuintNotFound,
     Marks,
+    UnreadableNow,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -715,6 +716,7 @@ impl NotRead {
     pub(crate) fn why(&self, base: &str) -> String {
         match self.reason {
             Why::Unreadable => format!("unreadable at {base}"),
+            Why::UnreadableNow => "unreadable now".to_owned(),
             Why::ChecksFile => format!("an earnest.quint.json lists its checks at {base}"),
             Why::QuintNotFound => format!("no quint was found to read it at {base}"),
             Why::Marks => match &self.problem {
@@ -735,9 +737,14 @@ pub(crate) struct Compared {
 }
 
 impl Compared {
+    pub(crate) fn lists_nothing(&self) -> bool {
+        self.changes.is_empty() && self.not_compared.is_empty()
+    }
+
     pub(crate) fn warnings(&self, base: &str) -> Vec<String> {
         self.not_compared
             .iter()
+            .filter(|each| each.reason != Why::UnreadableNow)
             .map(|each| {
                 if each.model.is_none()
                     && let Some(problem) = &each.problem
@@ -847,9 +854,11 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
         if !file.problems().is_empty() {
             match at_base(compare.base, language, &file.path) {
                 AtBase::Models(drafts) => {
-                    compared
-                        .changes
-                        .extend(removed_with_their_model(compare, &drafts, &[]));
+                    if drafts.iter().any(|draft| compare.selects(draft)) {
+                        compared
+                            .not_compared
+                            .push(NotRead::file(file.path.clone(), Why::UnreadableNow));
+                    }
                 }
                 AtBase::Unreadable => compared
                     .not_compared
@@ -930,7 +939,8 @@ pub(crate) fn rule_changes(compare: &Compare<'_>, targets: &[Target<'_>]) -> Com
 #[cfg(test)]
 mod tests {
     use super::{
-        Compare, Difference, Kind, NotRead, Why, Wording, git, model_changes, rule_changes,
+        Compare, Compared, Difference, Kind, NotRead, Why, Wording, git, model_changes,
+        rule_changes,
     };
     use crate::discovery::discover;
     use crate::reading::{ModelFile, load};
@@ -1375,6 +1385,10 @@ mod tests {
     }
 
     fn differences_since_the_base(root: &Path, model: Option<&str>) -> Vec<Difference> {
+        compared_since_the_base(root, model).changes
+    }
+
+    fn compared_since_the_base(root: &Path, model: Option<&str>) -> Compared {
         let roots = [root.to_path_buf()];
         let files: Vec<ModelFile> = discover(&roots)
             .expect("the root exists")
@@ -1399,7 +1413,7 @@ mod tests {
             "every file is readable at the base: {:?}",
             compared.warnings("HEAD")
         );
-        compared.changes
+        compared
     }
 
     fn change(model: &str, id: &str, kind: Kind) -> (String, String, Kind) {
@@ -1502,7 +1516,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_that_became_unreadable_lists_its_base_rules_as_removed() {
+    fn a_file_that_became_unreadable_is_not_compared_and_its_base_rules_are_not_removed() {
         let folder = repository_with_a_base_commit();
         let root = folder.path();
         put(
@@ -1510,19 +1524,27 @@ mod tests {
             "kept.model.ts",
             "import { m } from \"@earnestjs/model\";\nexport const now = Date.now();\n",
         );
+        let file = root.join("kept.model.ts").to_string_lossy().into_owned();
+        let compared = compared_since_the_base(root, None);
         assert_eq!(
-            changes_since_the_base(root, None),
-            [
-                change("Tank", "capped", Kind::Removed),
-                change("Lamp", "dim", Kind::Removed),
-            ],
-            "the rules the run can no longer read are gone from it, and the file is listed as \
-             unreadable beside them"
+            compared.changes,
+            [],
+            "the file is there and this build can't read it, so none of its rules is removed"
         );
         assert_eq!(
-            changes_since_the_base(root, Some("Lamp")),
-            [change("Lamp", "dim", Kind::Removed)],
-            "`--model` narrows them as it does the others"
+            compared.not_compared,
+            [NotRead::file(file.clone(), Why::UnreadableNow)],
+            "it is named as not compared, unreadable now"
+        );
+        assert_eq!(
+            compared_since_the_base(root, Some("Lamp")).not_compared,
+            [NotRead::file(file, Why::UnreadableNow)],
+            "`--model` keeps it for a model it had at the base"
+        );
+        assert_eq!(
+            compared_since_the_base(root, Some("Vase")).not_compared,
+            [],
+            "and leaves it out for a model it did not have"
         );
     }
 

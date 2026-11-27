@@ -3,4 +3,5 @@
 mod compare;
 mod corpus;
 mod docs;
+mod names;
 mod refusals;
