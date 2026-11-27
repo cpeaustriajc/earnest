@@ -3155,9 +3155,19 @@ reason is false as well. A check with one `broken` and one `reachable` mark stop
 of 11 states, the same counter with `val three = x == 3` marked `reachable`), and so does `--rule`
 naming a `reachable` mark, which prints the same reason. Cause: `apps/earnest/src/run.rs` gives
 `stop_once_broken` every expected name, `reachable` ones among them. Right result: 11 states and
-no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test,
-turned to the behaviour that was kept:
-`a_check_whose_only_mark_is_reachable_stops_once_the_state_is_reached`.
+no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test, as written in the pass:
+`a_check_whose_only_mark_is_reachable_searches_every_state_as_the_docs_say`. Settled on the
+integration branch at 35e0e79 as behaviour to keep: a state marked `reachable` is looked for as a
+counterexample of its negation, as the old checks file stopped for it under
+`expectCounterexample`, and a model with no end must still pass. The docs now say `broken` or
+`reachable`, and the test is
+`a_check_whose_only_mark_is_reachable_stops_once_the_state_is_reached`. Attacked after the
+decision, on this branch after the merge: a `reachable` mark beside an invariant that holds, beside
+`weakFair(step, x).implies(eventually(x == 10))`, beside a temporal property marked `broken`, and
+beside a never-reached mark (`fail`): each searches all 11 states; a mark first met at the last
+level (`x == 9`) alone: 11 states; `--max-states 5` before the state: `unfinished  … 5 states so
+far` and `unknown  nine`; a `reachable` mark beside a run: stops at 4 states, as documented, since
+runs need no search. `confirm --quint` and `confirm --tlc` search every state: 11, `same`, after the merge.
 
 ### The leftover-file message gives lines that `quint parse` refuses for a copied setup
 
@@ -3183,6 +3193,20 @@ not ending in `Test`, expressions with and without `name`, `expectCounterexample
 property in parts and of an expression) give the states and property verdicts of 6dceb43 (9, 9,
 16 and 16 states); the runs differ only as the message says they will.
 
+Both fixed on the integration branch at 35e0e79 (`apps/earnest/src/migrate.rs`: an expression is
+written in the copy's names, and a chosen `init` or `step` the copy declares is written in place of
+its own); both tests pass on this branch after the merge. Attacked after the fix, against 6dceb43
+and `quint verify --backend tlc`: a `match` whose branch binds a name of the spec's (`| Some(x) =>
+x == 5`), a tuple lambda that binds one (`((a, x)) => x < 0`), a field and a record label of that
+name (`r.x`, `{ x: 3 }.x`), a block's own `val x`, a free name inside a lambda (`p._2 < x`), the
+setup's own `val local`, and variant constructors (`None`, `Some(5)`, written `V::None` and
+`V::Some(5)`): each line as written gives `2 distinct states found` and `[ok]` with Quint, and
+`pass  SmallR  2 states` with earnest, as 6dceb43 gives from the checks file. A name both bound and
+free in one expression (`pairs.forall(x => x._1 > 0) and x >= 1`, nested, in a tuple pattern, in
+`map`) is left as `x`, as the integration branch chose, and `quint parse` then stops with
+`[QNT404] Name 'x' not found`: loud, never a line that means something else. No rewrite that
+changes a line's meaning without an error was found.
+
 ### The report of a check failed by its marks names no reason and calls the met marks `broken`
 
 `models/quint_sixth/report_marks/report_marks.qnt`: `x` counts from 0 to 3; `belowTwo = x < 2` and
@@ -3199,7 +3223,10 @@ the report "the shortest path to each broken rule": the paths are there, but the
 met mark from a broken rule, and the unmet marks, are not. Right result: the report says what
 `earnest verify` says, `(expected)`, `reached`, `holds … a counterexample was expected` and
 `never reached`. Test:
-`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`.
+`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`. Fixed on the integration branch at 4102d68: the report prints `earnest verify`'s lines for
+marked rules, with the path under a met mark; on this branch after the merge `report` prints
+`broken  belowTwo  (expected)`, `holds  belowNine  a counterexample was expected`, `never
+reached  atFive` and `reached  atOne`.
 
 ### A run marked `@check broken` that a compiled check can't play makes the check unreadable
 
@@ -3218,7 +3245,10 @@ that should not, but a project whose setups import names one by one loses every 
 known-failing run. Naming the run in `One`'s doc, `/// @check broken badRun`, does the same; `/// @check
 badRun` there gives `unfinished`. Right result: `unfinished`, `small` holds, `badRun` and `fineTest` not played.
 Test:
-`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`.
+`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`. Fixed
+on the integration branch at 4102d68: such a run is one of the runs not played. After the merge,
+with the mark on the run and with `/// @check broken badRun` in `One`'s doc: `unfinished  One  3
+states … (runs not played: fineTest, badRun …)`, `small` judged.
 
 ### Marks and legal Quint that are refused or ignored
 
