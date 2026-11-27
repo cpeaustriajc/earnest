@@ -7,7 +7,7 @@ use std::thread;
 
 /// The stack of the thread the crate reads and checks a file on. Every recursive pass refuses a
 /// file nested deeper than its bound before it can spend this.
-pub(crate) const STACK: usize = 32 * 1024 * 1024;
+pub(crate) const STACK: usize = 64 * 1024 * 1024;
 
 thread_local! {
     static ON_LARGE_STACK: Cell<bool> = const { Cell::new(false) };

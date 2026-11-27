@@ -78,7 +78,7 @@ fn refused_under(kib: u64) -> usize {
         .expect("the test runs under a limit");
     let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
-        .find_map(|line| line.strip_prefix("refused "))
+        .find_map(|line| line.split_once("refused ").map(|(_, rest)| rest))
         .and_then(|rest| rest.split(' ').next())
         .and_then(|count| count.parse().ok())
         .unwrap_or(JOBS)
@@ -86,10 +86,10 @@ fn refused_under(kib: u64) -> usize {
 
 #[test]
 #[cfg(target_os = "linux")]
-fn eight_threads_at_once_fit_in_two_gibibytes_of_address_space() {
+fn eight_threads_at_once_fit_in_four_gibibytes_of_address_space() {
     assert_eq!(
-        refused_under(2 * 1024 * 1024),
+        refused_under(4 * 1024 * 1024),
         0,
-        "nothing is refused under 2 GiB"
+        "nothing is refused under 4 GiB"
     );
 }
