@@ -1,4 +1,4 @@
-use super::checks::{ModeChecker, NondetChecker, UpdatesChecker};
+use super::checks::{ModeChecker, NondetChecker, TypeOf, UpdatesChecker};
 use super::signatures::{signature, standard_propagation};
 use super::{
     Component, Effect, Entity, ErrorTree, Failure, KeyOrder, Kind, Names, Scheme, StateVariable,
@@ -563,7 +563,11 @@ pub(crate) struct Analysis {
     pub(crate) checks: Vec<Vec<Raised>>,
 }
 
-pub(crate) fn analyze(modules: &[Json], table: &BTreeMap<u64, Entry>) -> Result<Analysis, Crash> {
+pub(crate) fn analyze(
+    modules: &[Json],
+    table: &BTreeMap<u64, Entry>,
+    types: &dyn Fn(u64) -> Option<TypeOf>,
+) -> Result<Analysis, Crash> {
     let mut inferrer = Inferrer {
         table,
         effects: Ordered::default(),
@@ -578,7 +582,7 @@ pub(crate) fn analyze(modules: &[Json], table: &BTreeMap<u64, Entry>) -> Result<
     };
     let mut modes = ModeChecker::default();
     let mut updates = UpdatesChecker::default();
-    let mut nondets = NondetChecker::new(table);
+    let mut nondets = NondetChecker::new(table, types);
     let mut inference = Vec::new();
     let mut checks = Vec::new();
     for module in modules {

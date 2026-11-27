@@ -924,18 +924,15 @@ impl crate::files::Parsed {
     /// variable updated twice in one step (`QNT202`), a misused `nondet` (`QNT203`, `QNT204`,
     /// `QNT206`). A file on which Quint stops with an internal error is refused as `unreadable`.
     pub fn effects(&self) -> Result<Json, crate::Problem> {
-        let analysis =
-            analyze(self.modules(), self.entries()).map_err(|inference::Crash(why)| {
-                crate::Problem {
-                    code: "unreadable".to_owned(),
-                    message: format!(
-                        "quint typecheck 0.33.1 stops with an internal error here: {why}"
-                    ),
-                    source: String::new(),
-                    line: 1,
-                    column: 1,
-                }
-            })?;
+        let analysis = analyze(self.modules(), self.entries(), &|_| None).map_err(
+            |inference::Crash(why)| crate::Problem {
+                code: "unreadable".to_owned(),
+                message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
+                source: String::new(),
+                line: 1,
+                column: 1,
+            },
+        )?;
         let first = analysis
             .inference
             .iter()

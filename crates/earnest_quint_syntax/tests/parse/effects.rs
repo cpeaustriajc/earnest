@@ -151,7 +151,9 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Out
     let ours = parsed.effects();
     if let Some(first) = &recording.first_error {
         let explanation = explanation(first);
-        if explanation.starts_with("[QNT000]") && !from_effect_inference(&explanation) {
+        let needs_types = explanation.starts_with("[QNT205]")
+            || (explanation.starts_with("[QNT000]") && !from_effect_inference(&explanation));
+        if needs_types {
             return Ok(Outcome::RefusedByTypes);
         }
         return same_refusal(ours, first);
@@ -221,7 +223,7 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 fn report(counted: &Tally, total: usize, corpus: &str) -> String {
     format!(
-        "{corpus}: {} of {total} with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker, not compared here; {} on which Quint's type checker crashes",
+        "{corpus}: {} of {total} with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker or by QNT205, which needs types, not compared here; {} on which Quint's type checker crashes",
         counted.equal, counted.refused_alike, counted.earlier, counted.by_types, counted.crashes
     )
 }
@@ -279,4 +281,255 @@ fn every_file_of_quint_s_repository_has_the_effects_quint_typecheck_writes() {
         found.len(),
         counted.different.join("\n")
     );
+}
+
+const KINDS: &str = "crates/earnest_quint_syntax/tests/samples/effects";
+const REFUSED: &str = "crates/earnest_quint_syntax/tests/samples/refused";
+
+const REFUSALS: &[(&str, &str)] = &[
+    ("effects_pure_val_reads", "QNT200"),
+    ("effects_pure_val_updates", "QNT200"),
+    ("effects_pure_val_temporal", "QNT200"),
+    ("effects_pure_val_parameters", "QNT200"),
+    ("effects_val_updates", "QNT200"),
+    ("effects_val_temporal", "QNT200"),
+    ("effects_val_parameters", "QNT200"),
+    ("effects_pure_def_reads", "QNT200"),
+    ("effects_pure_def_updates", "QNT200"),
+    ("effects_pure_def_temporal", "QNT200"),
+    ("effects_pure_def_temporal_direct", "QNT200"),
+    ("effects_def_updates", "QNT200"),
+    ("effects_def_temporal", "QNT200"),
+    ("effects_def_temporal_direct", "QNT200"),
+    ("effects_action_temporal", "QNT200"),
+    ("effects_nondet_updates", "QNT200"),
+    ("effects_action_in_and", "QNT200"),
+    ("effects_action_in_or", "QNT200"),
+    ("effects_action_in_exists", "QNT200"),
+    ("effects_action_in_not", "QNT200"),
+    ("effects_action_in_val", "QNT200"),
+    ("effects_action_in_def", "QNT200"),
+    ("effects_instance_override_reads", "QNT201"),
+    ("effects_instance_override_updates", "QNT201"),
+    ("effects_update_twice", "QNT202"),
+    ("effects_update_twice_in_all", "QNT202"),
+    ("effects_update_twice_by_call", "QNT202"),
+    ("effects_update_twice_in_any", "QNT202"),
+    ("effects_one_of_outside_nondet", "QNT203"),
+    ("effects_generate_outside_nondet", "QNT203"),
+    ("effects_nondet_not_one_of", "QNT204"),
+    ("effects_nondet_top_level", "QNT206"),
+    ("effects_result_operator", "QNT000"),
+    ("effects_any_different_updates", "QNT000"),
+    ("effects_order_mode_then_update", "QNT200"),
+];
+
+const WAITING_FOR_TYPES: &[&str] = &[
+    "effects_nondet_not_boolean",
+    "effects_order_type_then_mode",
+    "effects_arguments_types_first",
+    "effects_signature_not_found_types_first",
+];
+
+#[test]
+fn each_refusal_of_the_effect_passes_is_refused_with_quint_s_code_place_and_text() {
+    let base = root();
+    for (name, code) in REFUSALS {
+        let sample = format!("{REFUSED}/{name}.qnt");
+        let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+        let parsed = read(&sample, load).unwrap_or_else(|problem| panic!("{name}: {problem}"));
+        let problem = parsed
+            .effects()
+            .err()
+            .unwrap_or_else(|| panic!("{name} is refused"));
+        assert_eq!(problem.code, *code, "{name} is refused with {code}");
+        assert!(
+            matches!(
+                compared(&sample, &recorded(), &base),
+                Ok(Outcome::RefusedAlike)
+            ),
+            "{name} is refused as Quint refuses it"
+        );
+    }
+}
+
+#[test]
+fn a_file_refused_by_quint_s_type_checker_or_by_qnt205_is_left_to_the_type_checker() {
+    let base = root();
+    for name in WAITING_FOR_TYPES {
+        let sample = format!("{REFUSED}/{name}.qnt");
+        assert!(
+            matches!(
+                compared(&sample, &recorded(), &base),
+                Ok(Outcome::RefusedByTypes)
+            ),
+            "{name} is refused by Quint's type checker or by QNT205"
+        );
+    }
+}
+
+#[test]
+fn every_kind_of_effect_has_a_sample_with_quint_s_effects_table() {
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new(KINDS), &mut found);
+    found.sort();
+    assert_eq!(found.len(), 7, "seven samples of effects");
+    for sample in &found {
+        let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+        let parsed = read(sample, load).unwrap_or_else(|problem| panic!("{sample}: {problem}"));
+        let effects = parsed
+            .effects()
+            .unwrap_or_else(|problem| panic!("{sample} is refused as {problem}"));
+        assert!(
+            matches!(&effects, Json::Object(entries) if !entries.is_empty()),
+            "{sample} has effects"
+        );
+        assert!(
+            matches!(compared(sample, &recorded(), &base), Ok(Outcome::Equal)),
+            "{sample} has Quint's effects table"
+        );
+    }
+}
+
+const WITH_SIGNATURES: &[&str] = &[
+    "Nat",
+    "Int",
+    "Bool",
+    "eq",
+    "neq",
+    "not",
+    "iff",
+    "implies",
+    "exists",
+    "forall",
+    "in",
+    "contains",
+    "union",
+    "intersect",
+    "exclude",
+    "subseteq",
+    "filter",
+    "map",
+    "fold",
+    "powerset",
+    "flatten",
+    "allLists",
+    "allListsUpTo",
+    "getOnlyElement",
+    "chooseSome",
+    "oneOf",
+    "isFinite",
+    "size",
+    "get",
+    "keys",
+    "mapBy",
+    "setToMap",
+    "setOfMaps",
+    "set",
+    "setBy",
+    "put",
+    "field",
+    "fieldNames",
+    "with",
+    "item",
+    "append",
+    "concat",
+    "head",
+    "tail",
+    "length",
+    "nth",
+    "indices",
+    "replaceAt",
+    "slice",
+    "range",
+    "select",
+    "foldl",
+    "foldr",
+    "iadd",
+    "isub",
+    "iuminus",
+    "imul",
+    "idiv",
+    "imod",
+    "ipow",
+    "ilt",
+    "igt",
+    "ilte",
+    "igte",
+    "to",
+    "always",
+    "eventually",
+    "next",
+    "orKeep",
+    "mustChange",
+    "enabled",
+    "weakFair",
+    "strongFair",
+    "leadsTo",
+    "assign",
+    "then",
+    "expect",
+    "reps",
+    "fail",
+    "assert",
+    "q::debug",
+    "apalache::generate",
+    "q::lastTrace",
+    "q::test",
+    "q::testOnce",
+    "ite",
+    "variant",
+    "List",
+    "Set",
+    "Map",
+    "Rec",
+    "Tup",
+    "tuples",
+    "and",
+    "or",
+    "matchVariant",
+    "actionAll",
+    "actionAny",
+];
+
+fn used(value: &Json, found: &mut Vec<String>) {
+    match value {
+        Json::Object(fields) => {
+            for key in ["opcode", "name"] {
+                if let Some(Json::Text(name)) = value.get(key) {
+                    found.push(name.clone());
+                }
+            }
+            for (_, inner) in fields {
+                used(inner, found);
+            }
+        }
+        Json::List(items) => {
+            for inner in items {
+                used(inner, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn every_built_in_with_an_effect_signature_is_used_by_a_sample_of_effects() {
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new(KINDS), &mut found);
+    let mut names = Vec::new();
+    for sample in &found {
+        let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+        let parsed = read(sample, load).unwrap_or_else(|problem| panic!("{sample}: {problem}"));
+        for module in parsed.modules() {
+            used(module, &mut names);
+        }
+    }
+    let missing: Vec<&&str> = WITH_SIGNATURES
+        .iter()
+        .filter(|name| !names.iter().any(|known| known == *name))
+        .collect();
+    assert!(missing.is_empty(), "no sample uses {missing:?}");
 }

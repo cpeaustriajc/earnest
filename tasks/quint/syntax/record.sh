@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-root="$(cd "$here/../../.." && pwd)"
+root="${RECORD_ROOT:-$(cd "$here/../../.." && pwd)}"
 out="$1"
 shift
 quint="$QUINT_PACKAGE/../../.bin/quint"

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT203] 'apalache::generate' must be used inside a nondet definition","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_generate_outside_nondet.qnt","start":{"line":2,"col":18,"index":77},"end":{"line":2,"col":38,"index":97}}]}]}

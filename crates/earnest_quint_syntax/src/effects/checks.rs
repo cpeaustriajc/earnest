@@ -476,16 +476,26 @@ impl UpdatesChecker {
     }
 }
 
+pub(crate) struct TypeOf {
+    pub(crate) boolean: bool,
+    pub(crate) text: String,
+}
+
 pub(crate) struct NondetChecker<'a> {
     table: &'a BTreeMap<u64, Entry>,
+    types: &'a dyn Fn(u64) -> Option<TypeOf>,
     last_qualifier: String,
     errors: Vec<Raised>,
 }
 
 impl<'a> NondetChecker<'a> {
-    pub(crate) fn new(table: &'a BTreeMap<u64, Entry>) -> Self {
+    pub(crate) fn new(
+        table: &'a BTreeMap<u64, Entry>,
+        types: &'a dyn Fn(u64) -> Option<TypeOf>,
+    ) -> Self {
         Self {
             table,
+            types,
             last_qualifier: "def".to_owned(),
             errors: Vec::new(),
         }
@@ -559,7 +569,7 @@ impl<'a> NondetChecker<'a> {
             }
             "let" => {
                 if let Some(definition) = expression.get("opdef") {
-                    self.enter_let(definition);
+                    self.enter_let(expression, definition);
                     self.definition(definition);
                 }
                 if let Some(body) = expression.get("expr") {
@@ -570,7 +580,7 @@ impl<'a> NondetChecker<'a> {
         }
     }
 
-    fn enter_let(&mut self, definition: &Json) {
+    fn enter_let(&mut self, expression: &Json, definition: &Json) {
         if text(definition, "qualifier") != "nondet" {
             return;
         }
@@ -585,6 +595,19 @@ impl<'a> NondetChecker<'a> {
                 code: "QNT204",
                 message: "the outermost expression in a nondet definition must be either 'oneOf' or 'apalache::generate'".to_owned(),
                 reference: Some(id_of(value)),
+            });
+        }
+        let body = expression.get("expr").map_or(0, id_of);
+        if let Some(found) = (self.types)(body)
+            && !found.boolean
+        {
+            self.errors.push(Raised {
+                code: "QNT205",
+                message: format!(
+                    "nondet bindings can only be used with boolean expressions, but expression has type: {}",
+                    found.text
+                ),
+                reference: Some(id_of(expression)),
             });
         }
     }
