@@ -8,7 +8,7 @@ pub(crate) fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn recorded() -> PathBuf {
+pub(crate) fn recorded() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint")
 }
 
