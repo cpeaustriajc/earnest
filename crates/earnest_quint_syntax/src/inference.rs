@@ -98,7 +98,10 @@ fn crash_on_bounds(context: &Context, results: &TypeResults) {
         ));
     }
     if results.depth > substitution::DEPTH_LIMIT {
-        context.crash("Maximum call stack size exceeded".to_owned());
+        context.crash(format!(
+            "Maximum call stack size exceeded: a type here is nested more than {} deep, deeper than earnest reads",
+            substitution::DEPTH_LIMIT
+        ));
     }
     if results.rounds > substitution::ROUND_LIMIT {
         context.crash(format!(

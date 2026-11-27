@@ -275,12 +275,10 @@ impl<'a> Inliner<'a> {
         entry.get("type").map(|aliased| (id, aliased))
     }
 
-    fn resolved(&self, written: &Json) -> Json {
-        let Some((first, mut aliased)) = self.aliased(written) else {
-            return written.clone();
-        };
+    fn resolved(&self, written: &Json) -> Option<Json> {
+        let (first, mut aliased) = self.aliased(written)?;
         if let Some(known) = self.resolved.borrow().get(&first) {
-            return known.clone();
+            return Some(known.clone());
         }
         let mut chain = vec![first];
         let mut known = None;
@@ -297,42 +295,49 @@ impl<'a> Inliner<'a> {
         for id in chain {
             resolved.insert(id, found.clone());
         }
-        found
+        Some(found)
     }
 }
 
 fn inline_type(table: &Inliner<'_>, written: &Json) -> Json {
-    let mut inlined = table.resolved(written);
-    match text(&inlined, "kind") {
-        "set" | "list" => inline_at(table, &mut inlined, "elem"),
+    let mut inlined = written.clone();
+    inline_in_place(table, &mut inlined);
+    inlined
+}
+
+fn inline_in_place(table: &Inliner<'_>, inlined: &mut Json) {
+    if let Some(resolved) = table.resolved(inlined) {
+        *inlined = resolved;
+    }
+    match text(inlined, "kind") {
+        "set" | "list" => inline_at(table, inlined, "elem"),
         "fun" => {
-            inline_at(table, &mut inlined, "arg");
-            inline_at(table, &mut inlined, "res");
+            inline_at(table, inlined, "arg");
+            inline_at(table, inlined, "res");
         }
         "oper" => {
-            for argument in list_mut(&mut inlined, "args") {
-                *argument = inline_type(table, argument);
+            for argument in list_mut(inlined, "args") {
+                inline_in_place(table, argument);
             }
-            inline_at(table, &mut inlined, "res");
+            inline_at(table, inlined, "res");
         }
         "tup" | "rec" | "sum" => {
-            if let Some(row) = field_mut(&mut inlined, "fields") {
+            if let Some(row) = field_mut(inlined, "fields") {
                 inline_row(table, row);
             }
         }
         "app" => {
-            for argument in list_mut(&mut inlined, "args") {
-                *argument = inline_type(table, argument);
+            for argument in list_mut(inlined, "args") {
+                inline_in_place(table, argument);
             }
         }
         _ => {}
     }
-    inlined
 }
 
 fn inline_at(table: &Inliner<'_>, value: &mut Json, key: &str) {
     if let Some(inner) = field_mut(value, key) {
-        *inner = inline_type(table, inner);
+        inline_in_place(table, inner);
     }
 }
 

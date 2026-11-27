@@ -91,3 +91,35 @@ fn every_type_is_printed_as_quint_prints_its_scheme() {
     );
     assert!(compared > 10_000, "{compared} types compared");
 }
+
+fn nested(levels: usize) -> bool {
+    if levels == 0 {
+        return true;
+    }
+    crate::inference::substitution::deeper(false, || nested(levels - 1))
+}
+
+#[test]
+fn unification_deeper_than_its_bound_stops_all_type_work() {
+    use crate::inference::substitution::{
+        UNIFY_LIMIT, start_counting_rounds, stopped, too_deep_to_unify,
+    };
+    let within = crate::stack::on_large_stack(|| {
+        start_counting_rounds();
+        (nested(UNIFY_LIMIT), stopped())
+    });
+    assert_eq!(
+        within.ok(),
+        Some((true, false)),
+        "the bound itself is within it"
+    );
+    let past = crate::stack::on_large_stack(|| {
+        start_counting_rounds();
+        (nested(UNIFY_LIMIT + 1), stopped(), too_deep_to_unify())
+    });
+    assert_eq!(
+        past.ok(),
+        Some((false, true, true)),
+        "one level past it stops"
+    );
+}

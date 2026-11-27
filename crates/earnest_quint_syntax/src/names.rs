@@ -245,7 +245,7 @@ impl Names {
                         || entry.get("kind") == Some(&Json::text("const"))
                 })
                 .map(|entry| {
-                    if copy_as == Copy::Hidden {
+                    if copy_as == Copy::Hidden && entry.get("hidden") != Some(&Json::Bool(true)) {
                         entry.with("hidden", Some(Json::Bool(true)))
                     } else {
                         entry.clone()
