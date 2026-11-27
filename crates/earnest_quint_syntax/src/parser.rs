@@ -581,7 +581,23 @@ impl Parser<'_> {
     fn operand_starts(&mut self) -> bool {
         let mark = self.mark();
         self.advance();
-        let started = self.primary().is_ok();
+        let operand = self.mark();
+        let mut started = self.primary().is_ok();
+        let mut candidates = self
+            .candidates
+            .get(operand.candidates..)
+            .unwrap_or_default()
+            .to_vec();
+        candidates.sort_unstable();
+        candidates.dedup();
+        for candidate in candidates.into_iter().rev() {
+            if started || !self.searching() {
+                break;
+            }
+            self.rewind(&operand);
+            self.stops.push(candidate);
+            started = self.primary().is_ok();
+        }
         self.rewind(&mark);
         started
     }
