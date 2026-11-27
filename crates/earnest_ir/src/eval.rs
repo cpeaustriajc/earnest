@@ -43,6 +43,8 @@ pub enum Fault {
     /// An operation got a value of a kind it has no meaning for, too few arguments, or a field
     /// or slot that does not exist.
     WrongKind,
+    /// A rule gives a value that is not a boolean.
+    NotBoolean,
     /// `setToMap` of a Quint model met two pairs with one key and different values, which
     /// Quint's backends turn into different maps.
     KeyTwice,
@@ -77,6 +79,7 @@ impl Fault {
                 "computes a power or a run of numbers that is not defined".to_owned()
             }
             Self::WrongKind => "uses a value of the wrong kind".to_owned(),
+            Self::NotBoolean => "does not give a boolean".to_owned(),
             Self::KeyTwice => "gives `setToMap` two pairs with one key, which Quint's backends \
                                keep differently (TLC the first in its order, the evaluator the \
                                last written)"

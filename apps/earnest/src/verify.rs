@@ -144,6 +144,7 @@ fn check_all(
                 only_rule: rule,
             },
             expected: &target.readable.expected,
+            reachable: &target.readable.reachable,
             stops: Stops::Early,
         })
         .collect();

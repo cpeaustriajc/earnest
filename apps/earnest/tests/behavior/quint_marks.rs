@@ -55,9 +55,9 @@ case "$1" in
 esac
 "##;
 
-const SETS: [&str; 12] = [
+const SETS: [&str; 16] = [
     "specs", "failing", "typo", "lost", "runs", "rules", "old", "names", "faults", "written",
-    "blank", "cased",
+    "blank", "cased", "mixed", "comma", "twice", "nonbool",
 ];
 
 fn marked() -> PathBuf {
@@ -670,4 +670,75 @@ fn a_mark_in_another_case_or_in_a_plain_comment_above_a_declaration_is_unreadabl
         ),
         "{messages:?}"
     );
+}
+
+#[test]
+fn a_bad_mark_in_a_file_with_a_marked_module_is_the_only_problem_said() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "mixed", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(file, line, feature, message)] = found.as_slice() else {
+        panic!("one problem, at the mark: {run}");
+    };
+    assert_eq!(
+        (file.as_str(), *line, feature.as_str()),
+        ("mixed/mixed.qnt", 7, "`p1`"),
+        "{run}"
+    );
+    assert!(message.contains("`@check:`"), "{message}");
+    assert!(
+        !run.to_string().contains("no module of the Quint file"),
+        "{run}"
+    );
+}
+
+#[test]
+fn a_comma_that_ends_a_doc_with_no_name_after_it_is_said_to_make_the_list_go_on() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "comma", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(_, line, _, message)] = found.as_slice() else {
+        panic!("one problem: {run}");
+    };
+    assert_eq!(*line, 2, "{run}");
+    assert_eq!(
+        message,
+        "the mark `@check p1,` ends with a comma, which makes its list of names go on, and no \
+         names follow it: take the comma away to end the list, or write the next name on the \
+         next doc line"
+    );
+}
+
+#[test]
+fn a_name_listed_twice_in_one_mark_is_refused_as_listed_twice_not_as_two_marks() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "twice", "--json"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(_, _, _, message)] = found.as_slice() else {
+        panic!("one problem: {run}");
+    };
+    assert_eq!(
+        message,
+        "the doc comment lists `p1` twice in one mark: a name is judged once in a check, so \
+         write it once"
+    );
+}
+
+#[test]
+fn a_mark_on_a_val_that_is_not_a_boolean_is_a_fault_that_names_the_definition_and_the_mark() {
+    let quint = Quint::new();
+    let run = quint.earnest(&["verify", "nonbool", "--json"]);
+    run.exits(1);
+    let report = run.json();
+    let findings = model(&report, "M")["findings"].clone();
+    assert_eq!(
+        findings[0]["message"],
+        "the definition `K` is marked `@check` and does not give a boolean in this state: a \
+         mark judges a value that is true or false, so mark a `val` of that kind",
+        "{run}"
+    );
+    assert_eq!(findings[0]["kind"], "fault", "{run}");
 }
