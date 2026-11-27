@@ -25,3 +25,10 @@ fn a_hundred_nested_vals_of_ever_deeper_sets_are_typed_in_no_more_time_than_quin
     assert_eq!(as_quint_types("hundred_nested_vals_of_sets"), Ok(()));
     assert!(started.elapsed() < QUINT_S_TIME, "{:?}", started.elapsed());
 }
+
+#[test]
+fn a_set_nested_a_hundred_deep_is_typed_in_no_more_time_than_quint_takes() {
+    let started = Instant::now();
+    assert_eq!(as_quint_types("set_nested_a_hundred_deep"), Ok(()));
+    assert!(started.elapsed() < QUINT_S_TIME, "{:?}", started.elapsed());
+}
