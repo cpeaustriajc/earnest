@@ -58,8 +58,12 @@ impl Parsed {
         &self.table
     }
 
-    pub(crate) fn problem(&self, raised: &Raised) -> Problem {
-        raised_at(&self.ids, raised)
+    pub(crate) fn problem(&self, errors: &[Raised], first: &Raised) -> Problem {
+        raised_at(&self.ids, &self.modules, errors, first, self.main_source())
+    }
+
+    pub(crate) fn main_source(&self) -> &str {
+        self.ids.source_name(0)
     }
 }
 

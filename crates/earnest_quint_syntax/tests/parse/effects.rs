@@ -94,16 +94,16 @@ fn from_effect_inference(explanation: &str) -> bool {
     })
 }
 
-fn place(error: &Json) -> (usize, usize) {
-    let start = match error.get("locs") {
-        Some(Json::List(locs)) => locs.first().and_then(|loc| loc.get("start")),
-        _ => None,
+fn place(error: &Json) -> Option<(usize, usize)> {
+    let Some(Json::List(locs)) = error.get("locs") else {
+        return None;
     };
-    let number = |key: &str| match start.and_then(|start| start.get(key)) {
+    let start = locs.first()?.get("start")?;
+    let number = |key: &str| match start.get(key) {
         Some(Json::Number(digits)) => digits.parse::<usize>().unwrap_or(0),
         _ => 0,
     };
-    (number("line") + 1, number("col") + 1)
+    Some((number("line") + 1, number("col") + 1))
 }
 
 pub(crate) enum Outcome {
@@ -116,20 +116,25 @@ pub(crate) enum Outcome {
 
 fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
     let explanation = explanation(theirs);
-    let (line, column) = place(theirs);
+    let place = place(theirs);
+    let at = place.map_or_else(
+        || "no place".to_owned(),
+        |(line, column)| format!("{line}:{column}"),
+    );
     let Err(problem) = ours else {
         return Err(format!(
-            "Quint refuses it at {line}:{column} with {explanation}, and we read it"
+            "Quint refuses it at {at} with {explanation}, and we read it"
         ));
     };
+    let same_place = place.is_none_or(|place| (problem.line, problem.column) == place);
     if format!("[{}] {}", problem.code, problem.message) == explanation
-        && problem.line == line
-        && problem.column == column
+        && same_place
+        && !problem.source.is_empty()
     {
         Ok(Outcome::RefusedAlike)
     } else {
         Err(format!(
-            "refused as {problem}, where Quint refuses it at {line}:{column} with {explanation}"
+            "refused as {problem}, where Quint refuses it at {at} with {explanation}"
         ))
     }
 }
@@ -223,7 +228,7 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 fn report(counted: &Tally, total: usize, corpus: &str) -> String {
     format!(
-        "{corpus}: {} of {total} with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker or by QNT205, which needs types, not compared here; {} on which Quint's type checker crashes",
+        "{corpus}: {} of {total} files with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker or by QNT205, which needs types, not compared here; {} on which Quint's type checker crashes",
         counted.equal, counted.refused_alike, counted.earlier, counted.by_types, counted.crashes
     )
 }

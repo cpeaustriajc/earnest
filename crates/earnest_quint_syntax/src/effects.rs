@@ -3,6 +3,7 @@ mod inference;
 mod signatures;
 
 use crate::json::Json;
+use crate::names::Raised;
 use std::rc::Rc;
 
 pub(crate) use inference::analyze;
@@ -928,19 +929,17 @@ impl crate::files::Parsed {
             |inference::Crash(why)| crate::Problem {
                 code: "unreadable".to_owned(),
                 message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
-                source: String::new(),
+                source: self.main_source().to_owned(),
                 line: 1,
                 column: 1,
             },
         )?;
-        let first = analysis
-            .inference
-            .iter()
-            .zip(&analysis.checks)
-            .find_map(|(inferred, checked)| inferred.first().or_else(|| checked.first()));
-        match first {
-            Some(raised) => Err(self.problem(raised)),
-            None => Ok(analysis.effects),
+        for (inferred, checked) in analysis.inference.iter().zip(&analysis.checks) {
+            let errors: Vec<Raised> = inferred.iter().chain(checked).cloned().collect();
+            if let Some(first) = errors.first() {
+                return Err(self.problem(&errors, first));
+            }
         }
+        Ok(analysis.effects)
     }
 }
