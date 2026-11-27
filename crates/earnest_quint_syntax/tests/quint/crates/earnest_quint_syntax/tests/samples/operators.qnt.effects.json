@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify bool and int\nTrying to unify bool and int\nTrying to unify (bool, bool) => bool and (int, bool) => _t28\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/operators.qnt","start":{"line":24,"col":21,"index":641},"end":{"line":24,"col":27,"index":647}}]}]}

@@ -3,6 +3,9 @@
 mod compare;
 mod corpus;
 mod docs;
+mod effects;
 mod names;
 mod refusals;
 mod review;
+mod typecheck;
+mod types;

@@ -311,14 +311,14 @@ fn with_namespaces(entry: &Entry, namespaces: &[String]) -> Entry {
 #[derive(Debug, Default)]
 pub(crate) struct Resolution {
     pub(crate) table: BTreeMap<u64, Entry>,
-    pub(crate) order: Vec<u64>,
+    pub(crate) inserted: Vec<u64>,
     pub(crate) errors: Vec<Raised>,
 }
 
 impl Resolution {
     fn insert(&mut self, id: u64, entry: Entry) {
         if self.table.insert(id, entry).is_none() {
-            self.order.push(id);
+            self.inserted.push(id);
         }
     }
 }

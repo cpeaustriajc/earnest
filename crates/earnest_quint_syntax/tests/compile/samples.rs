@@ -124,23 +124,48 @@ fn the_two_shapes_quint_s_flattener_stops_on_are_refused_with_its_error() {
 }
 
 #[test]
-fn a_variable_s_type_is_its_written_type_with_aliases_inlined_under_the_ids_it_was_copied_from() {
+fn the_record_a_call_gives_has_its_field_names_in_the_types_the_reader_reads() {
     let compiled =
         flattened("Main", "--init init --step step", "fieldnames").expect("Main is flattened");
-    let types = compiled.variable_types();
-    let Json::Object(entries) = &types else {
-        panic!("{types}");
-    };
-    assert_eq!(entries.len(), 2, "{types}");
-    let slot = entries
-        .iter()
-        .map(|(_, scheme)| scheme.to_string())
-        .find(|scheme| scheme.contains("\"rec\""))
-        .unwrap_or_default();
-    assert!(
-        slot.contains("\"fieldName\":\"at\"") && slot.contains("\"fieldName\":\"on\""),
-        "{slot}"
-    );
+    let mut arguments = Vec::new();
+    field_names_arguments(compiled.main_module(), &mut arguments);
+    assert!(arguments.len() >= 5, "{arguments:?}");
+    for (opcode, id) in &arguments {
+        let scheme = compiled
+            .types()
+            .get(id)
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        assert!(scheme.contains("\"rec\""), "{opcode} {id}: {scheme}");
+    }
+}
+
+fn field_names_arguments(value: &Json, found: &mut Vec<(String, String)>) {
+    match value {
+        Json::Object(fields) => {
+            if value.get("opcode") == Some(&Json::Text("fieldNames".to_owned()))
+                && let Some(Json::List(args)) = value.get("args")
+                && let Some(argument) = args.first()
+                && let Some(id) = argument.get("id")
+            {
+                let named = argument
+                    .get("opcode")
+                    .or_else(|| argument.get("name"))
+                    .map(ToString::to_string)
+                    .unwrap_or_default();
+                found.push((named, id.to_string()));
+            }
+            for (_, inner) in fields {
+                field_names_arguments(inner, found);
+            }
+        }
+        Json::List(items) => {
+            for inner in items {
+                field_names_arguments(inner, found);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[test]

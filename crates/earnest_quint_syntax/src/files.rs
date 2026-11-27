@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, VecDeque};
 pub struct Parsed {
     pub(crate) modules: Vec<Json>,
     pub(crate) table: BTreeMap<u64, Entry>,
-    pub(crate) order: Vec<u64>,
+    pub(crate) inserted: Vec<u64>,
     pub(crate) ids: Ids,
 }
 
@@ -53,6 +53,29 @@ impl Parsed {
     /// and `map` gives each id its file, its start and its end, lines counted from 0.
     pub fn source_map(&self) -> Json {
         self.ids.compact()
+    }
+
+    pub(crate) fn entries(&self) -> &BTreeMap<u64, Entry> {
+        &self.table
+    }
+
+    pub(crate) fn problem(&self, errors: &[Raised], first: &Raised) -> Problem {
+        raised_at(&self.ids, &self.modules, errors, first, self.main_source())
+    }
+
+    pub(crate) fn main_source(&self) -> &str {
+        self.ids.source_name(0)
+    }
+
+    pub(crate) fn table_in_order(&self) -> Vec<(u64, Json)> {
+        self.inserted
+            .iter()
+            .filter_map(|id| self.table.get(id).map(|entry| (*id, entry.to_json())))
+            .collect()
+    }
+
+    pub(crate) fn ids(&self) -> &Ids {
+        &self.ids
     }
 }
 
@@ -167,7 +190,7 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
     Ok(Parsed {
         modules,
         table: resolution.table,
-        order: resolution.order,
+        inserted: resolution.inserted,
         ids,
     })
 }

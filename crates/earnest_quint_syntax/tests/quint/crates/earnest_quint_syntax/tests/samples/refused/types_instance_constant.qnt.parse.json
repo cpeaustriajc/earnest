@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[],"order":[[2,4],[8]],"depth":{"2":0},"table":{"3":{"$":2,"+":[["depth",0]]},"4":{"$":4,"+":[["depth",0]]},"7":{"$":2,"+":[["depth",0],["importedFrom",{"$":8}],["hidden",true],["namespaces",["L","types_instance_constant"]]]}}}

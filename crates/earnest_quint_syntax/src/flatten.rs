@@ -13,7 +13,7 @@ impl Table {
     pub(crate) fn of(resolution: Resolution) -> Self {
         Self {
             entries: resolution.table,
-            order: resolution.order,
+            order: resolution.inserted,
         }
     }
 
@@ -1109,12 +1109,13 @@ pub(crate) struct Flat {
     pub(crate) modules: Vec<Json>,
     pub(crate) table: Table,
     pub(crate) copies: Vec<(u64, u64)>,
-    pub(crate) declared: HashMap<u64, Json>,
+    pub(crate) types: Json,
 }
 
 pub(crate) fn flatten_modules(
     modules: &[Json],
     table: &Table,
+    types: &Json,
     ids: &mut Ids,
 ) -> Result<Flat, String> {
     let mut copies = Vec::new();
@@ -1124,17 +1125,22 @@ pub(crate) fn flatten_modules(
         .map(|module| unshadow(module, &mut table))
         .collect();
     let (inlined, mut flat_table) = inline_aliases(&unique, &table);
-    let declared = inlined
-        .iter()
-        .flat_map(|module| items(module, "declarations"))
-        .filter(|declaration| text(declaration, "kind") == "var")
-        .filter_map(|declaration| {
-            Some((
-                id_of(declaration)?,
-                declaration.get("typeAnnotation")?.clone(),
-            ))
-        })
-        .collect();
+    let types = match types {
+        Json::Object(schemes) => Json::Object(
+            schemes
+                .iter()
+                .map(|(id, scheme)| {
+                    let mut scheme = scheme.clone();
+                    if let Some(written) = scheme.get("type") {
+                        let inlined = inline_type(&table, written);
+                        put(&mut scheme, "type", inlined);
+                    }
+                    (id.clone(), scheme)
+                })
+                .collect(),
+        ),
+        other => other.clone(),
+    };
     let mut state = Modules {
         aliases: inlined
             .iter()
@@ -1179,6 +1185,6 @@ pub(crate) fn flatten_modules(
         modules: state.flattened,
         table: flat_table,
         copies,
-        declared,
+        types,
     })
 }

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] pure def operators may not interact with state variables, but operator `f` updates variables 'x'. Use action instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_pure_def_updates.qnt","start":{"line":2,"col":11,"index":58},"end":{"line":2,"col":11,"index":58}}]}]}

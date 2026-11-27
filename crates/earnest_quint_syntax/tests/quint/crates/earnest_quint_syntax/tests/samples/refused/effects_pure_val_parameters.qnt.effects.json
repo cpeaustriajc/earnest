@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] pure val operators may not have parameters, but operator `v` has 1 parameter. Use pure def instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_pure_val_parameters.qnt","start":{"line":1,"col":11,"index":48},"end":{"line":1,"col":11,"index":48}}]}]}

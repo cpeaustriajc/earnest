@@ -6,8 +6,6 @@ const SYNTAX: &str = "QNT000";
 
 const FLATTENER_STOPPED: &str = "Internal error while flattening";
 
-pub(crate) const LEFT_OUT: [&str; 2] = ["types", "effects"];
-
 pub(crate) fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -50,8 +48,6 @@ pub(crate) fn check_of(name: &str, line: &str) -> Result<Check, String> {
 pub(crate) struct Recorded {
     pub(crate) check: Check,
     pub(crate) quint: Result<Json, String>,
-    pub(crate) variable_types: Json,
-    pub(crate) field_names_types: Json,
 }
 
 fn decoded(value: &Json, pool: &[Json]) -> Result<Json, String> {
@@ -123,20 +119,7 @@ pub(crate) fn listed(folder: &Path) -> Result<Vec<Recorded>, String> {
                 (None, Some(Json::Text(error))) => Err(error.clone()),
                 _ => return Err(format!("{args}: neither output nor error")),
             };
-            let variable_types = match each.get("variableTypes") {
-                Some(types) => decoded(types, pool)?,
-                None => Json::Object(Vec::new()),
-            };
-            let field_names_types = match each.get("fieldNamesTypes") {
-                Some(types) => decoded(types, pool)?,
-                None => Json::Object(Vec::new()),
-            };
-            listed.push(Recorded {
-                check,
-                quint,
-                variable_types,
-                field_names_types,
-            });
+            listed.push(Recorded { check, quint });
         }
     }
     Ok(listed)
@@ -205,23 +188,9 @@ pub(crate) fn first_difference(ours: &Json, theirs: &Json, path: &str) -> Option
     }
 }
 
-pub(crate) fn without_left_out(value: &Json) -> Json {
-    match value {
-        Json::Object(fields) => Json::Object(
-            fields
-                .iter()
-                .filter(|(key, _)| !LEFT_OUT.contains(&key.as_str()))
-                .cloned()
-                .collect(),
-        ),
-        other => other.clone(),
-    }
-}
-
 pub(crate) enum Outcome {
     Equal,
     BothRefuse,
-    TypesLeft,
 }
 
 pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, String> {
@@ -254,34 +223,17 @@ pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, Stri
                     "refused with `{}`, where Quint stops with `{error}`",
                     problem.message
                 )),
-                Ok(_) if error.starts_with("Error [") => Ok(Outcome::TypesLeft),
                 Ok(_) => Err(format!("Quint stops with `{error}`, and we flatten it")),
             };
         }
     };
     let ours = ours.map_err(|problem| format!("refused: {problem}"))?;
-    let theirs = without_left_out(theirs);
     let output = ours.output();
-    if let Some(found) = first_difference(&output, &theirs, "") {
+    if let Some(found) = first_difference(&output, theirs, "") {
         return Err(found);
     }
     if output.to_string() != theirs.to_string() {
         return Err("equal key by key, and not as text".to_owned());
-    }
-    let types = ours.variable_types();
-    let Json::Object(given) = &types else {
-        return Err("the variables' types are not an object".to_owned());
-    };
-    for (id, scheme) in given {
-        let Some(their_scheme) = recorded.variable_types.get(id) else {
-            return Err(format!("types.{id}: only ours has it"));
-        };
-        if let Some(found) = first_difference(scheme, their_scheme, &format!("types.{id}")) {
-            return Err(found);
-        }
-        if scheme.to_string() != their_scheme.to_string() {
-            return Err(format!("types.{id}: equal key by key, and not as text"));
-        }
     }
     Ok(Outcome::Equal)
 }

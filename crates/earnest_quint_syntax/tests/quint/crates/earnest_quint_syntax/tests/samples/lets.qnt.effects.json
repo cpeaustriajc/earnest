@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify set and rec\nTrying to unify Set[int] and { size: _t37 | tail__t37 }\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/lets.qnt","start":{"line":51,"col":12,"index":968},"end":{"line":51,"col":22,"index":978}}]}]}

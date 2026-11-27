@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 struct Tally {
     equal: usize,
     refused: usize,
-    types_left: usize,
     differences: Vec<String>,
 }
 
@@ -14,14 +13,12 @@ fn every(folder: &Path, base: &Path) -> Tally {
     let mut tally = Tally {
         equal: 0,
         refused: 0,
-        types_left: 0,
         differences: Vec::new(),
     };
     for each in &recorded {
         match compared(each, base) {
             Ok(Outcome::Equal) => tally.equal += 1,
             Ok(Outcome::BothRefuse) => tally.refused += 1,
-            Ok(Outcome::TypesLeft) => tally.types_left += 1,
             Err(found) => tally
                 .differences
                 .push(format!("{}: {found}", each.check.args)),
@@ -32,10 +29,9 @@ fn every(folder: &Path, base: &Path) -> Tally {
 
 fn said(tally: &Tally) -> String {
     format!(
-        "{} equal, {} refused by both, {} refused by Quint's type or effect pass (left to it), {} differ",
+        "{} equal, {} refused by both, {} differ",
         tally.equal,
         tally.refused,
-        tally.types_left,
         tally.differences.len()
     )
 }

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] too many arguments supplied: F only accepts 1 parameters\napplying type constructor F to arguments int, int\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_application_before_mode.qnt","start":{"line":3,"col":11,"index":86},"end":{"line":3,"col":21,"index":96}}]}]}

@@ -1,4 +1,3 @@
-use crate::applications::Applications;
 use crate::files::Parsed;
 use crate::flatten::{Table, field_mut, flatten_modules, id_of, text, without_cleared};
 use crate::ids::Ids;
@@ -7,39 +6,7 @@ use crate::lexer::lex;
 use crate::names::{Raised, resolve};
 use crate::parser::parse;
 use crate::problem::Problem;
-use std::collections::{HashMap, HashSet};
-
-fn written_plainly(written: &Json) -> bool {
-    match written {
-        Json::Object(fields) => {
-            !matches!(text(written, "kind"), "app" | "var")
-                && fields.iter().all(|(_, inner)| written_plainly(inner))
-        }
-        Json::List(items) => items.iter().all(written_plainly),
-        _ => true,
-    }
-}
-
-fn plain_variables(modules: &[Json]) -> HashSet<u64> {
-    modules
-        .iter()
-        .flat_map(|module| items_of(module, "declarations"))
-        .filter(|declaration| text(declaration, "kind") == "var")
-        .filter(|declaration| {
-            declaration
-                .get("typeAnnotation")
-                .is_some_and(written_plainly)
-        })
-        .filter_map(id_of)
-        .collect()
-}
-
-fn items_of<'a>(value: &'a Json, key: &str) -> &'a [Json] {
-    match value.get(key) {
-        Some(Json::List(items)) => items,
-        _ => &[],
-    }
-}
+use crate::{effects_with_copies, types_with_copies};
 
 /// What `quint compile --target json` is told to flatten and check: `--main`, `--init`,
 /// `--step`, `--invariant` and `--temporal`, each as the text given on the command line.
@@ -69,8 +36,8 @@ pub struct Compiled {
     table: Table,
     main: String,
     copies: Vec<(u64, u64)>,
-    declared: HashMap<u64, Json>,
-    plain: HashSet<u64>,
+    types: Json,
+    effects: Json,
 }
 
 impl Compiled {
@@ -100,68 +67,32 @@ impl Compiled {
         &self.copies
     }
 
-    /// The entries of Quint's `types` for the variables of the main module: each variable's
-    /// declared type with its aliases inlined, as Quint's type pass gives it, under the ids of the
-    /// definition it was copied from. The reader reads these for `fieldNames` of a variable.
-    ///
-    /// A variable whose written type applies a type constructor (`Option[int]`) or has a type
-    /// variable is left out: Quint's type pass gives it a type of its own making, which only that
-    /// pass reproduces. The rest of `types` is the type pass's.
-    pub fn variable_types(&self) -> Json {
-        let copied_from: HashMap<u64, u64> = self.copies.iter().copied().collect();
-        let mut found = Vec::new();
-        for declaration in items_of(self.main_module(), "declarations") {
-            if text(declaration, "kind") != "var" {
-                continue;
-            }
-            let Some(id) = id_of(declaration) else {
-                continue;
-            };
-            let key = id.to_string();
-            if found.iter().any(|(known, _)| *known == key) {
-                continue;
-            }
-            let mut original = id;
-            while !self.declared.contains_key(&original) {
-                match copied_from.get(&original) {
-                    Some(earlier) => original = *earlier,
-                    None => break,
-                }
-            }
-            if !self.plain.contains(&original) {
-                continue;
-            }
-            if let Some(written) = self.declared.get(&original) {
-                found.push((
-                    key,
-                    Json::object(vec![
-                        ("typeVariables", Json::List(Vec::new())),
-                        ("rowVariables", Json::List(Vec::new())),
-                        ("type", written.clone()),
-                    ]),
-                ));
-            }
-        }
-        found.sort_by_key(|(key, _)| key.parse::<u64>().unwrap_or(0));
-        Json::Object(found)
+    /// The `types` `quint compile` writes: the type of every id of the file as Quint's type pass
+    /// gives it, with the added `q::*` definitions, aliases inlined, and each copied id given the
+    /// type of the id it copies.
+    pub fn types(&self) -> &Json {
+        &self.types
     }
 
-    /// The whole of what `quint compile --target json` writes to stdout, without `types` and
-    /// `effects`, which the type and effect passes add.
+    /// The `effects` `quint compile` writes: the effect of every id as Quint's effect pass gives
+    /// it, and each copied id given the effect of the id it copies.
+    pub fn effects(&self) -> &Json {
+        &self.effects
+    }
+
+    /// The whole of what `quint compile --target json` writes to stdout.
     pub fn output(&self) -> Json {
         Json::object(vec![
             ("stage", Json::text("compiling")),
             ("warnings", Json::List(Vec::new())),
             ("modules", Json::List(vec![self.main_module().clone()])),
             ("table", self.table()),
+            ("types", self.types.clone()),
+            ("effects", self.effects.clone()),
             ("errors", Json::List(Vec::new())),
             ("main", Json::text(&self.main)),
         ])
     }
-}
-
-fn unresolved(message: String) -> Problem {
-    argument_error("QNT000", message)
 }
 
 fn argument_error(code: &str, message: String) -> Problem {
@@ -222,24 +153,12 @@ impl Parsed {
     /// flattener stops with "Internal error while flattening", that error with Quint's text
     /// under the code `QNT000`.
     pub fn compile(&self, target: &Target) -> Result<Compiled, Problem> {
-        let mut modules = self.modules.clone();
-        let mut ids = self.ids.clone();
-        let plain = plain_variables(&modules);
-        let mut parse_table = Table {
-            entries: self.table.clone(),
-            order: self.order.clone(),
+        let checked = self.typecheck()?;
+        let mut modules = match checked.get("modules") {
+            Some(Json::List(modules)) => modules.clone(),
+            _ => Vec::new(),
         };
-        let mut typecheck = Applications::new();
-        typecheck.table(&mut parse_table).map_err(unresolved)?;
-        for module in &mut modules {
-            if let Some(Json::List(declarations)) = field_mut(module, "declarations") {
-                for declaration in declarations {
-                    typecheck
-                        .declaration(&parse_table, declaration)
-                        .map_err(unresolved)?;
-                }
-            }
-        }
+        let mut ids = self.ids.clone();
         let Some(main_at) = modules
             .iter()
             .position(|module| text(module, "name") == target.main)
@@ -249,10 +168,10 @@ impl Parsed {
                 format!("module {} does not exist", target.main),
             ));
         };
-        let mut checked = Vec::new();
+        let mut extra = Vec::new();
         for (name, flag) in [(&target.init, "init"), (&target.step, "step")] {
             expression(name, &mut ids)?;
-            checked.push((format!("action q::{flag} = {name}"), Some(flag)));
+            extra.push((format!("action q::{flag} = {name}"), Some(flag)));
         }
         let invariants: Vec<&str> = target
             .invariant
@@ -261,21 +180,23 @@ impl Parsed {
             .filter(|invariant| !invariant.is_empty() && *invariant != "true")
             .collect();
         if !invariants.is_empty() {
-            checked.push((
+            extra.push((
                 format!("val q::inv = and({})", invariants.join(" and ")),
                 None,
             ));
         }
         if let Some(temporal) = target.temporal.as_deref().filter(|text| !text.is_empty()) {
-            checked.push((format!("temporal q::temporalProps = and({temporal})"), None));
+            extra.push((format!("temporal q::temporalProps = and({temporal})"), None));
         }
         let mut roles = Vec::new();
-        for (written, flag) in &checked {
+        let mut added = Vec::new();
+        for (written, flag) in &extra {
             let declaration = snippet(written, &mut ids)
                 .ok_or_else(|| argument_error("QNT000", format!("Could not parse {written}")))?;
             if let Some(flag) = flag {
                 roles.push((*flag, declaration.clone()));
             }
+            added.push(declaration.clone());
             if let Some(Json::List(declarations)) = field_mut(&mut modules[main_at], "declarations")
             {
                 declarations.push(declaration);
@@ -283,21 +204,39 @@ impl Parsed {
         }
         let resolution = resolve(&mut modules);
         let errors = resolution.errors.clone();
-        let mut table = Table::of(resolution);
+        let table = Table::of(resolution);
         check_roles(&roles, &errors, &table)?;
         if let Some(first) = errors.first() {
             return Err(argument_error(first.code, first.message.clone()));
         }
-        Applications::new().table(&mut table).map_err(unresolved)?;
-        let flat = flatten_modules(&modules, &table, &mut ids)
+        let in_order: Vec<(u64, Json)> = table
+            .order
+            .iter()
+            .filter_map(|id| table.get(*id).map(|entry| (*id, entry.to_json())))
+            .collect();
+        let checked_types = checked
+            .get("types")
+            .cloned()
+            .unwrap_or(Json::Object(Vec::new()));
+        let types = match self.types_of_added(&in_order, &checked_types, &added) {
+            Ok(types) => types,
+            Err(problem) if problem.code == "unreadable" => return Err(problem),
+            Err(_) => checked_types,
+        };
+        self.analyze_added(&table.to_json(), &added)?;
+        let flat = flatten_modules(&modules, &table, &types, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;
+        let effects = checked
+            .get("effects")
+            .cloned()
+            .unwrap_or(Json::Object(Vec::new()));
         Ok(Compiled {
             modules: flat.modules.iter().map(without_cleared).collect(),
             table: flat.table,
             main: target.main.clone(),
+            types: types_with_copies(&flat.types, &flat.copies),
+            effects: effects_with_copies(&effects, &flat.copies),
             copies: flat.copies,
-            declared: flat.declared,
-            plain,
         })
     }
 }
