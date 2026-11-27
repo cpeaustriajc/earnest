@@ -1,4 +1,5 @@
 use crate::corpus::{recorded, root};
+use crate::effects::compared;
 use crate::types::compared_types;
 use std::time::{Duration, Instant};
 
@@ -31,4 +32,11 @@ fn a_set_nested_a_hundred_deep_is_typed_in_no_more_time_than_quint_takes() {
     let started = Instant::now();
     assert_eq!(as_quint_types("set_nested_a_hundred_deep"), Ok(()));
     assert!(started.elapsed() < QUINT_S_TIME, "{:?}", started.elapsed());
+}
+
+#[test]
+fn an_instance_quint_s_mode_checker_throws_on_is_unreadable_though_an_earlier_module_has_a_mode_error()
+ {
+    let path = "crates/earnest_quint_syntax/tests/samples/review/typing/instance_crash_after_mode_error.qnt";
+    assert_eq!(compared(path, &recorded(), &root()).map(drop), Ok(()));
 }
