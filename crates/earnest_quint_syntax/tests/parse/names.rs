@@ -253,3 +253,83 @@ fn quint_s_refusals_in_the_name_phases_have_quint_s_code_place_and_text() {
         );
     }
 }
+
+#[test]
+fn a_conflict_quint_reports_with_no_place_takes_the_place_quint_gives_it_next() {
+    for (name, line, column) in [
+        ("destructured_twice", 3, 7),
+        ("destructured_let_param", 4, 16),
+    ] {
+        let problem = refusal(name);
+        assert_eq!(
+            (problem.code.as_str(), problem.line, problem.column),
+            ("QNT101", line, column),
+            "{name}: Quint's first error has no place and its second, of the same message, is there: {problem}"
+        );
+        assert_eq!(
+            problem.source,
+            format!("{REFUSED}/names_{name}.qnt"),
+            "{name} names its file"
+        );
+    }
+}
+
+#[test]
+fn a_conflict_quint_never_places_is_at_the_destructuring_that_makes_the_name() {
+    for (name, message) in [
+        (
+            "destructured_built_in",
+            "Built-in name 'Set' is redefined in module 'M'",
+        ),
+        (
+            "destructured_overlap",
+            "Conflicting definitions found for name 'b' in module 'M'",
+        ),
+    ] {
+        let problem = refusal(name);
+        assert_eq!(
+            (
+                problem.code.as_str(),
+                problem.line,
+                problem.message.as_str()
+            ),
+            ("QNT101", 2, message),
+            "{name}: Quint gives no place, and the crate points at the first destructuring: {problem}"
+        );
+        assert_eq!(
+            problem.source,
+            format!("{REFUSED}/names_{name}.qnt"),
+            "{name} names its file"
+        );
+    }
+}
+
+#[test]
+fn set_or_list_applied_to_two_types_is_a_type_alias_not_found_as_quint_says() {
+    for (name, column, message) in [
+        ("set_applied_to_two", 12, "Type alias 'Set' not found"),
+        ("list_applied_to_two", 18, "Type alias 'List' not found"),
+    ] {
+        let path = format!("crates/earnest_quint_syntax/tests/samples/review/{name}.qnt");
+        let Err(problem) = read(&path, |path| fs::read_to_string(root().join(path)).ok()) else {
+            panic!("{name} is refused");
+        };
+        assert_eq!(
+            (
+                problem.code.as_str(),
+                problem.line,
+                problem.column,
+                problem.message.as_str()
+            ),
+            ("QNT404", 2, column, message),
+            "{name}"
+        );
+        assert!(
+            matches!(
+                compared(&path, &recorded(), &root()),
+                Ok(Equal::RefusedByNames)
+            ),
+            "{name} as Quint recorded it"
+        );
+    }
+}
