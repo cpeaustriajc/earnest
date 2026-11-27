@@ -141,7 +141,7 @@ test("a step that takes a field out of range is the last step of the path", () =
   expect(found.path?.steps.map((step) => step.action)).toStrictEqual(["grow"]);
 });
 
-test("a fault in a condition, a change or the expectation breaks the witness and says where", () => {
+test("a condition that a negative remainder makes false, and a fault in a change or the expectation, break the witness and say where", () => {
   const Jar = m.model("Jar", {
     n: m.int(-1, 1).initial(0),
     box: m
@@ -167,9 +167,7 @@ test("a fault in a condition, a change or the expectation breaks the witness and
   const found = explore(Jar, {
     exports: { drop, fill, peek, inCondition, inChange, inExpect },
   }).rules;
-  expect(only(found, "inCondition").reason).toBe(
-    "step 2: the condition of the action `fill` takes a remainder with a negative number or a divisor below 1 here",
-  );
+  expect(only(found, "inCondition").reason).toBe("step 2, `fill`, can't happen here");
   expect(only(found, "inCondition").path?.steps.map((step) => step.action)).toStrictEqual(["drop"]);
   expect(only(found, "inChange").reason).toBe(
     "step 1: the change of the action `peek` reads a value that is null here",

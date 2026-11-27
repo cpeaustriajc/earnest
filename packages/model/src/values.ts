@@ -816,18 +816,20 @@ export const seqOf = <const T>(...items: readonly T[]): SeqValue<T> => SeqValue.
 export const mapOf = <const K, const V>(...entries: readonly (readonly [K, V])[]): MapValue<K, V> =>
   MapValue.of(entries);
 
-/** Thrown by `rem` for a remainder the contract makes a fault; `explore` and `replay` report it. */
+const BY_ZERO = "takes a division or a remainder by zero";
+
+/** Thrown by `rem` for a divisor of zero; `explore` and `replay` report it as `earnest verify` does. */
 export class RemainderFault extends Error {
   constructor() {
-    super("takes a remainder with a negative number or a divisor below 1");
+    super(BY_ZERO);
     this.name = "RemainderFault";
   }
 }
 
-/** Thrown by `div` for a division the contract makes a fault; `explore` and `replay` report it. */
+/** Thrown by `div` for a divisor of zero; `explore` and `replay` report it as `earnest verify` does. */
 export class DivisionFault extends Error {
   constructor() {
-    super("takes a division with a negative number or a divisor below 1");
+    super(BY_ZERO);
     this.name = "DivisionFault";
   }
 }
@@ -852,27 +854,38 @@ export const some = <T>(value: T | null): T => {
   return value;
 };
 
-/**
- * Writes the remainder of `a` divided by `b`: `m.rem(7, 3)` is 1. A negative `a` or a `b`
- * below 1 is a fault, as in `earnest verify`, because languages disagree on the result there.
- * Use it where JavaScript would use `%`, which a model file may not.
- */
-export const rem = (a: number, b: number): number => {
-  if (a < 0 || b < 1 || Number.isNaN(a) || Number.isNaN(b)) {
-    throw new RemainderFault();
+const numbers = (a: number, b: number): void => {
+  if (Number.isNaN(a) || Number.isNaN(b)) {
+    throw new TypeError("m.div and m.rem take numbers, and NaN is not one");
   }
-  return a % b;
 };
 
 /**
- * Writes the whole number of times `b` goes into `a`: `m.div(7, 2)` is 3. A negative `a` or a
- * `b` below 1 is a fault, as in `earnest verify`, because languages disagree on the result
- * there and Rust panics on a divisor of zero. Use it where JavaScript would use `/`, which a
- * model file may not, since it gives a fraction.
+ * Writes the remainder of `a` divided by `b`, JavaScript's `a % b`: `m.rem(7, 3)` is 1,
+ * `m.rem(-7, 2)` is -1 and `m.rem(7, -2)` is 1, with the sign of `a` as Rust's `%` has it. A
+ * zero result is 0, never -0. A `b` of zero is a fault, as in `earnest verify`, where JavaScript
+ * would go on with `NaN`, and so is a `NaN`. Use it where JavaScript would use `%`, which a model
+ * file may not.
+ */
+export const rem = (a: number, b: number): number => {
+  numbers(a, b);
+  if (b === 0) {
+    throw new RemainderFault();
+  }
+  return (a % b) + 0;
+};
+
+/**
+ * Writes the whole number of times `b` goes into `a`, `Math.trunc(a / b)`: `m.div(7, 2)` is 3,
+ * `m.div(-7, 2)` is -3 and `m.div(-7, -2)` is 3, as Rust's `/` on integers. It is exact for
+ * every safe integer, and a zero result is 0, never -0. A `b` of zero is a fault, as in
+ * `earnest verify` and as Rust panics, and so is a `NaN`. Use it where JavaScript would use
+ * `/`, which a model file may not, since it gives a fraction.
  */
 export const div = (a: number, b: number): number => {
-  if (a < 0 || b < 1 || Number.isNaN(a) || Number.isNaN(b)) {
+  numbers(a, b);
+  if (b === 0) {
     throw new DivisionFault();
   }
-  return (a - (a % b)) / b;
+  return Math.trunc(a / b) + 0;
 };

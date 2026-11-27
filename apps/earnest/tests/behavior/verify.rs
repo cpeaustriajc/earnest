@@ -615,7 +615,7 @@ fn readme_a_read_of_a_field_of_null_is_a_fault_with_the_path_to_it() {
 }
 
 #[test]
-fn readme_a_remainder_of_a_negative_number_is_a_fault() {
+fn readme_a_remainder_by_zero_is_a_fault() {
     let run = verify_text(&["meter.model.ts"]);
     run.exits(1);
     let path = path_under(&run.detail("Meter"), &["fault"]);
