@@ -125,8 +125,12 @@ fn the_two_shapes_quint_s_flattener_stops_on_are_refused_with_its_error() {
 
 #[test]
 fn the_record_a_call_gives_has_its_field_names_in_the_types_the_reader_reads() {
-    let compiled =
-        flattened("Main", "--init init --step step", "fieldnames").expect("Main is flattened");
+    let compiled = flattened(
+        "Main",
+        "--init init --step step --invariant named,called,viaParam,valued,literal",
+        "fieldnames",
+    )
+    .expect("Main is flattened");
     let mut arguments = Vec::new();
     field_names_arguments(compiled.main_module(), &mut arguments);
     assert!(arguments.len() >= 5, "{arguments:?}");
@@ -192,5 +196,27 @@ fn a_definition_exported_by_one_module_and_used_by_another_keeps_quint_s_order_o
             "hidden",
             "namespaces"
         ]
+    );
+}
+
+#[test]
+fn an_integer_past_64_bits_comes_out_with_every_digit() {
+    let compiled = flattened("Big", "--init init --step step --invariant above", "big")
+        .expect("Big is flattened");
+    let written = compiled.output().to_string();
+    for digits in ["123456789012345678901234567890123", "18446744073709551617"] {
+        assert!(written.contains(&format!("\"value\":{digits}")), "{digits}");
+    }
+}
+
+#[test]
+fn a_variable_updated_through_two_routes_is_refused_as_quint_s_effect_pass_refuses_it() {
+    let refused = flattened("W0", "--init init --step both", "two_routes")
+        .expect_err("Quint's effect pass refuses it");
+    assert_eq!(refused.code, "QNT202");
+    assert!(
+        refused.message.starts_with("Multiple updates of variable"),
+        "{}",
+        refused.message
     );
 }

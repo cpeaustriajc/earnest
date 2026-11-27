@@ -213,7 +213,7 @@ pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, Stri
         Err(error) => {
             return match ours {
                 Err(problem)
-                    if error.contains(&problem.message)
+                    if error.contains(problem.message.lines().next().unwrap_or_default())
                         && (problem.message.starts_with(FLATTENER_STOPPED)
                             || error.contains(&format!("[{}]", problem.code))) =>
                 {

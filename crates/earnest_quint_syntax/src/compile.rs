@@ -1,6 +1,7 @@
 use crate::files::Parsed;
 use crate::flatten::{Table, field_mut, flatten_modules, id_of, text, without_cleared};
 use crate::ids::Ids;
+use crate::inference::types_of_added;
 use crate::json::Json;
 use crate::lexer::lex;
 use crate::names::{Raised, resolve};
@@ -218,11 +219,11 @@ impl Parsed {
             .get("types")
             .cloned()
             .unwrap_or(Json::Object(Vec::new()));
-        let types = match self.types_of_added(&in_order, &checked_types, &added) {
-            Ok(types) => types,
-            Err(problem) if problem.code == "unreadable" => return Err(problem),
-            Err(_) => checked_types,
-        };
+        let analyzed = types_of_added(in_order.clone(), &checked_types, &added);
+        if analyzed.crash.is_some() {
+            self.types_of_added(&in_order, &checked_types, &added)?;
+        }
+        let types = analyzed.table;
         self.analyze_added(&table.to_json(), &added)?;
         let flat = flatten_modules(&modules, &table, &types, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;

@@ -185,7 +185,11 @@ fn analyze(
     results
 }
 
-fn types_of_added(table: Vec<(u64, Json)>, types: &Json, declarations: &[Json]) -> TypeResults {
+pub(crate) fn types_of_added(
+    table: Vec<(u64, Json)>,
+    types: &Json,
+    declarations: &[Json],
+) -> TypeResults {
     let previous = match types {
         Json::Object(entries) => entries
             .iter()

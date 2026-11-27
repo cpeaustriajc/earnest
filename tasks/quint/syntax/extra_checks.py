@@ -46,6 +46,9 @@ lines += [
     f"{COMPILE} --main Main --init init --step step --invariant ok {samples.format('drops')}",
     f"{COMPILE} --main Spec --init init --step step --invariant named,called,viaParam,valued,literal {samples.format('fieldnames')}",
     f"{COMPILE} --main Main --init init --step step --invariant named,called,viaParam,valued,literal {samples.format('fieldnames')}",
+    f"{COMPILE} --main W0 --init init --step both {samples.format('two_routes')}",
+    f"{COMPILE} --main Big --init init --step step --invariant above {samples.format('big')}",
+    f"{COMPILE} --main Records --init init --step step --invariant firstNames,secondNames,ofVariable {samples.format('records')}",
     f"{COMPILE} --main Through --init init --step step --invariant pOk {samples.format('crash_export')}",
     f"{COMPILE} --main Setup --init init --step step --invariant sOk {samples.format('crash_import_as')}",
 ]

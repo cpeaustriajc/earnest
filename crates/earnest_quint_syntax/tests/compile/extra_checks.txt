@@ -244,6 +244,7 @@ compile	--target	json	--main	Both	--init	init	--step	step	tasks/quint/imports/st
 compile	--target	json	--main	types	--init	init	--step	step	tasks/quint/imports/types.qnt
 compile	--target	json	--main	Lamp	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
 compile	--target	json	--main	Dim	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
+compile	--target	json	--main	Big	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/big.qnt
 compile	--target	json	--main	Param	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
 compile	--target	json	--main	Mid	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
 compile	--target	json	--main	Through	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
@@ -259,6 +260,9 @@ compile	--target	json	--main	Other	--init	init	--step	step	crates/earnest_quint_
 compile	--target	json	--main	Main	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/exported_and_used.qnt
 compile	--target	json	--main	Spec	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
 compile	--target	json	--main	Main	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	Records	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/records.qnt
+compile	--target	json	--main	Spec	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/two_routes.qnt
+compile	--target	json	--main	W0	--init	init	--step	step	crates/earnest_quint_syntax/tests/samples/compile/two_routes.qnt
 compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	small	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
 compile	--target	json	--main	Lamp	--init	init	--step	step	--invariant	small,known	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
 compile	--target	json	--main	Lamp	--init	init	--step	flip	--invariant	n<5	crates/earnest_quint_syntax/tests/samples/compile/adds.qnt
@@ -272,5 +276,8 @@ compile	--target	json	--main	Dim	--init	L::init	--step	L::step	--temporal	L::fli
 compile	--target	json	--main	Main	--init	init	--step	step	--invariant	ok	crates/earnest_quint_syntax/tests/samples/compile/drops.qnt
 compile	--target	json	--main	Spec	--init	init	--step	step	--invariant	named,called,viaParam,valued,literal	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
 compile	--target	json	--main	Main	--init	init	--step	step	--invariant	named,called,viaParam,valued,literal	crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt
+compile	--target	json	--main	W0	--init	init	--step	both	crates/earnest_quint_syntax/tests/samples/compile/two_routes.qnt
+compile	--target	json	--main	Big	--init	init	--step	step	--invariant	above	crates/earnest_quint_syntax/tests/samples/compile/big.qnt
+compile	--target	json	--main	Records	--init	init	--step	step	--invariant	firstNames,secondNames,ofVariable	crates/earnest_quint_syntax/tests/samples/compile/records.qnt
 compile	--target	json	--main	Through	--init	init	--step	step	--invariant	pOk	crates/earnest_quint_syntax/tests/samples/compile/crash_export.qnt
 compile	--target	json	--main	Setup	--init	init	--step	step	--invariant	sOk	crates/earnest_quint_syntax/tests/samples/compile/crash_import_as.qnt
