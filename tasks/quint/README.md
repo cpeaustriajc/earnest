@@ -4945,7 +4945,7 @@ find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earn
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 372 | 372 | 323 samples of the repository and 49 of the crate's own, 34 of them refused |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 381 | 381 | 332 samples of the repository and 49 of the crate's own, 34 of them refused |
 | Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place |
 | 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1080 | 63 Quint accepts: all equal; 1136 Quint refuses: 1037 at Quint's line and column, 99 elsewhere; 20 more refused only by Quint's name phases |
 | 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 659 | 225 Quint accepts: 224 equal, 1 we refuse; 575 Quint refuses: 435 at Quint's place, 132 elsewhere, 8 we read |
