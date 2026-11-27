@@ -253,3 +253,14 @@ fn quint_s_refusals_in_the_name_phases_have_quint_s_code_place_and_text() {
         );
     }
 }
+
+#[test]
+fn a_conflict_quint_reports_with_no_place_is_not_placed_at_the_first_line() {
+    let problem = refusal("destructured_twice");
+    assert_eq!(problem.code, "QNT101");
+    assert_ne!(
+        (problem.line, problem.column),
+        (1, 1),
+        "Quint's first error has no place (`locs` is empty) and its second is at 3:7: {problem}"
+    );
+}
