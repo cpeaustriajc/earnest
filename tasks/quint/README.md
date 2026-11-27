@@ -5980,21 +5980,24 @@ build unless said otherwise. Quint is Quint 0.33.1's CLI on the same files.
 | A substitution applied inside another | 2,100 | "Maximum call stack size exceeded: a type here is nested more than 2100 deep, deeper than earnest reads" | types a type 2,048 deep (`f11` below), overflows at 4,096 |
 | Unification nested in types | 5,000 | "... these types are nested more than 5000 deep ..." | no input reaches it while the bound above holds |
 | Rounds of one substitution | 100 | "... still changing after 100 rounds ..." | the most any sample needs is 2 |
-| Type nodes the types of one file hold | 1,600,000 | "the types of this file hold more than 1600000 type nodes (N counted when type work stopped), more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's" | none |
+| Type nodes the types of one file hold | 5,000,000 (1,600,000 before #96) | "the types of this file hold more than 5000000 type nodes (N counted when type work stopped), more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's" | none |
 
 - The substitution bound was measured with `pure def f_i(x) = f_{i-1}(f_{i-1}(x))`: `f11` (2,048 deep)
   is typed in 2.0 s (Quint 14.2 s), `f12` is refused, as Quint overflows. A composite such as
   `f10(f9(...(1)))` of 2,000 already overflows Quint; earnest reads it.
-- The type-node bound is earnest's own. Each id holds a copy of its type where Quint shares one
-  object, so a `match` of n cases or a sum type of n variants holds about 6n² type nodes (inference
-  alone is at 330 MB for 500 cases, against Quint's whole 265 MB). 1,600,000 nodes keeps `compile`
-  under about 4 GiB (500 cases: 1.51 million nodes, 3.7 GB). It admits about 515 cases or variants.
-  Quint typechecks 2,500 cases (626 s, 4.5 GB) and fails to compile them (exit 1 after 1,065 s,
-  7.6 GB), so earnest is stricter between 515 and 2,500. The count is kept as inference gives each
-  id its type, so the 2,500-case file is refused at a peak of 408 MiB in 16 s. The largest table in
-  the repository holds 25,250 nodes, in Quint's repository 74,688 (`evaluator/fixtures/jmt/test/
-  test_all.qnt`), and in the deep samples 504,011 (`records_500`). Sharing the type, which a later
-  issue does, removes the cause.
+- The type-node bound is earnest's own, and since #96 it is set by the CLI's readers, not the
+  front end. The front end stores each type once (`Json::Shared`, types interned by content, one
+  shared value per inlined alias), so its own memory follows the text it writes. Each id's type is
+  still counted whole, as the text writes it: a `match` of n cases over a sum type of n variants
+  holds 6n² + 25n + 16 nodes. The bound is the largest round count at which the whole release
+  `earnest verify` stays under 4 GiB on both paths, a marked `val` (compile) and a check of only a
+  run (the typecheck path, which `Typechecked::read` parses into a `serde_json::Value` at about 26
+  times the text). 910 cases are read (1,453 and 3,781 MiB, 44 and 28 s) and 911 refused (about
+  115 MiB, 16 to 32 s). At 910 Quint 0.33.1 typechecks in 53 s and 1,366 MiB and compiles in
+  80 s and 2,618 MiB, and it typechecks 2,500 cases (626 s, 4.5 GB), so earnest is still stricter
+  between 911 and 2,500. The front end alone at 2,500 cases typechecks in 226 s and 2,084 MiB
+  (1.06 GB of it the output text). The bound can rise once the CLI's readers stop holding the
+  whole text as a tree (#96).
 - These bounds are the crate's, and since #95 the CLI's too: its readers parse the front end's JSON
   with no limit on its nesting (below, "Through the CLI").
 - Where Quint overflows and earnest reads within its bounds (a sum of 1,000 terms, a `Set` 1,000
