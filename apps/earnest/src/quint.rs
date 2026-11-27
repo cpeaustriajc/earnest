@@ -28,6 +28,7 @@ const HERE: &str = ".";
 const TOP_OF_FILE: Place = Place { line: 1, column: 1 };
 const QUALIFIED: &str = "::";
 const PARSE: &str = "`quint parse`";
+const NOT_PARSED: &str = "the Quint file can't be parsed";
 const NOT_READ: &str = "unreadable";
 const MISSING_MODULE: &str = "QNT405";
 const FLATTENER_STOPPED: &str = "Internal error while flattening";
@@ -454,12 +455,16 @@ pub(crate) fn parsed(real_file: &Path, shown: &str) -> Result<Places, Problem> {
             &format!("the Quint file can't be read: {error}"),
         ));
     }
+    let not_parsed = || Problem::new(shown, TOP_OF_FILE, PARSE, NOT_PARSED);
+    if !Path::new(shown).is_file() {
+        return Err(not_parsed());
+    }
     let parsed = front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
     Places::from_quint(
         &parsed.output().to_string(),
         &parsed.source_map().to_string(),
     )
-    .ok_or_else(|| Problem::new(shown, TOP_OF_FILE, PARSE, "the Quint file can't be parsed"))
+    .ok_or_else(not_parsed)
 }
 
 pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
