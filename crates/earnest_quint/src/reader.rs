@@ -1156,10 +1156,12 @@ impl<'a> Reader<'a> {
         {
             let ends = self.arguments(args)?;
             let mut numbers = Vec::with_capacity(2);
+            let mut past_64_bits = false;
             for each in &ends {
                 match constant(each, self.slots)? {
                     Some(Value::Int(number)) => numbers.push(number),
-                    Some(Value::Big(_)) | None => {
+                    Some(Value::Big(_)) => past_64_bits = true,
+                    None => {
                         return Ok(Picked::Computed(Expr::Apply(Op::Interval, ends)));
                     }
                     Some(_) => {
@@ -1167,21 +1169,23 @@ impl<'a> Reader<'a> {
                     }
                 }
             }
-            let [lo, hi] = numbers.as_slice() else {
-                return self.refuse("`to`", "a range without both ends");
-            };
-            let domain = Domain::Int { lo: *lo, hi: *hi };
-            if domain.count() > MOST_VALUES_LISTED {
-                return self.refuse(
-                    &feature,
-                    &format!(
-                        "a range of more than {MOST_VALUES_LISTED} values, more than the checker \
-                         tries in one step: pick from a smaller range"
-                    ),
-                );
+            if !past_64_bits {
+                let [lo, hi] = numbers.as_slice() else {
+                    return self.refuse("`to`", "a range without both ends");
+                };
+                let domain = Domain::Int { lo: *lo, hi: *hi };
+                if domain.count() > MOST_VALUES_LISTED {
+                    return self.refuse(
+                        &feature,
+                        &format!(
+                            "a range of more than {MOST_VALUES_LISTED} values, more than the \
+                             checker tries in one step: pick from a smaller range"
+                        ),
+                    );
+                }
+                let values = domain.values();
+                return Ok(Picked::Listed(domain, values));
             }
-            let values = domain.values();
-            return Ok(Picked::Listed(domain, values));
         }
         let set = self.pure(source)?;
         match constant(&set, self.slots)? {
