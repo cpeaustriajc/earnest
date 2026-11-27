@@ -2,6 +2,7 @@
 
 mod compare;
 mod corpus;
+mod deep;
 mod depth;
 mod docs;
 mod effects;

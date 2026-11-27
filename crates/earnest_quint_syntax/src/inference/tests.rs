@@ -10,6 +10,9 @@ fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     };
     for entry in entries.flatten() {
         let relative = directory.join(entry.file_name());
+        if relative == Path::new("crates/earnest_quint_syntax/tests/samples/deep") {
+            continue;
+        }
         if entry.path().is_dir() {
             samples(base, &relative, found);
         } else if relative

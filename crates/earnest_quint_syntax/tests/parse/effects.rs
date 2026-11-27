@@ -40,7 +40,7 @@ pub(crate) struct Recording {
     pub(crate) output: Vec<(String, usize, String)>,
 }
 
-fn fnv(written: &str) -> String {
+pub(crate) fn fnv(written: &str) -> String {
     let mut value: u64 = 0xCBF2_9CE4_8422_2325;
     for byte in written.bytes() {
         value = (value ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3);
@@ -126,6 +126,7 @@ fn place(error: &Json) -> Option<(usize, usize)> {
     Some((number("line") + 1, number("col") + 1))
 }
 
+#[derive(Debug)]
 pub(crate) enum Outcome {
     Equal,
     RefusedAlike,

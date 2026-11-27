@@ -13,12 +13,17 @@ pub(crate) fn recorded() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint")
 }
 
+pub(crate) const DEEP: &str = "crates/earnest_quint_syntax/tests/samples/deep";
+
 pub(crate) fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(base.join(directory)) else {
         return;
     };
     for entry in entries.flatten() {
         let relative = directory.join(entry.file_name());
+        if relative == Path::new(DEEP) {
+            continue;
+        }
         if entry.path().is_dir() {
             samples(base, &relative, found);
         } else if relative
@@ -250,6 +255,7 @@ fn same_name_refusal(ours: Result<Problem, String>, errors: &[Json]) -> Result<(
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Equal {
     Fully,
     RefusedByNames,

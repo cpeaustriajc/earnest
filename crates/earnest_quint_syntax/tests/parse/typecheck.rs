@@ -1,6 +1,6 @@
 use crate::corpus::{fixture, quint_output, root, samples};
 use crate::effects::{Outcome, recording, same_refusal};
-use crate::types::{recorded_types, their_table};
+use crate::types::{recorded_types, same_as_hashed, their_table};
 use earnest_quint_syntax::{Json, read};
 use std::env;
 use std::fs;
@@ -25,7 +25,7 @@ fn patched(value: &mut Json, path: &[Json], replacement: Json) -> Result<(), Str
     patched(inner, rest, replacement)
 }
 
-fn their_output(recorded: &Path) -> Result<Option<Json>, String> {
+pub(crate) fn their_output(recorded: &Path) -> Result<Option<Json>, String> {
     let effects = recording(recorded)?;
     let Some(effects) = effects.effects else {
         return Ok(None);
@@ -96,7 +96,7 @@ fn first_difference(ours: &Json, theirs: &Json, path: &str) -> Option<String> {
     }
 }
 
-fn compared(sample: &str, base: &Path, recordings: &Path) -> Result<Outcome, String> {
+pub(crate) fn compared(sample: &str, base: &Path, recordings: &Path) -> Result<Outcome, String> {
     let recorded = recordings.join(
         sample
             .trim_start_matches(&*base.to_string_lossy())
@@ -117,6 +117,12 @@ fn compared(sample: &str, base: &Path, recordings: &Path) -> Result<Outcome, Str
         return same_refusal(ours, first);
     }
     let ours = ours.map_err(|problem| format!("refused: {problem}"))?;
+    if let Some(Ok(types)) = recorded_types(&recorded)
+        && let Some(hashed) = types.get("hashed")
+    {
+        same_as_hashed(&ours.to_string(), hashed.get("typecheck"), "typecheck")?;
+        return Ok(Outcome::Equal);
+    }
     let theirs = their_output(&recorded)?.ok_or_else(|| "no effects recorded".to_owned())?;
     if let Some(difference) = first_difference(&ours, &theirs, "typecheck") {
         return Err(difference);
