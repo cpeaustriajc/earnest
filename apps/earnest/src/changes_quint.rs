@@ -152,9 +152,9 @@ struct Judged {
 impl Judged {
     fn wording(&self) -> Wording {
         let says = self.sentence.clone().unwrap_or_else(|| match self.group {
-            Group::Invariant => format!("The Quint invariant `{}` holds", self.id),
-            Group::Temporal => format!("The Quint temporal property `{}` holds", self.id),
-            Group::Run => format!("The Quint run `{}` passes", self.id),
+            Group::Invariant => format!("Quint invariant `{}`", self.id),
+            Group::Temporal => format!("Quint temporal property `{}`", self.id),
+            Group::Run => format!("Quint run `{}`", self.id),
         });
         let holds = match self.expected {
             Expected::Holds => self.text.clone(),
@@ -391,7 +391,7 @@ fn file_changes(
     compare: &Compare<'_>,
     file: &str,
     (old, refused): (&[Judging], &[String]),
-    new: &[Judging],
+    (new, unread): (&[Judging], &[String]),
 ) -> Vec<Difference> {
     let mut changes = Vec::new();
     for check in new.iter().filter(|now| !refused.contains(&now.name)) {
@@ -404,6 +404,7 @@ fn file_changes(
     for check in old
         .iter()
         .filter(|was| !new.iter().any(|now| now.name == was.name))
+        .filter(|was| !unread.contains(&was.name))
         .filter(|was| selects(compare, was))
     {
         changes.extend(
@@ -680,19 +681,49 @@ fn refused_checks(compare: &Compare<'_>, file: &str, side: &Side) -> Vec<NotRead
     not_compared
 }
 
+fn unread_now(file: &str, old: &Side, unread: &[String], compare: &Compare<'_>) -> Vec<NotRead> {
+    old.checks
+        .iter()
+        .filter(|was| unread.contains(&was.name) && selects(compare, was))
+        .map(|was| NotRead {
+            file: file.to_owned(),
+            model: Some(was.name.clone()),
+            reason: Why::UnreadableNow,
+            problem: None,
+        })
+        .collect()
+}
+
 fn compared_at_base(
     compare: &Compare<'_>,
     file: &str,
     at_base: Result<Side, Why>,
-    now: &[Judging],
+    now: Option<(&[Judging], &[String])>,
 ) -> (Vec<Difference>, Vec<NotRead>) {
-    match at_base {
-        Ok(old) => (
-            file_changes(compare, file, (&old.checks, &old.refused), now),
-            refused_checks(compare, file, &old),
-        ),
-        Err(why) => (Vec::new(), vec![NotRead::file(file.to_owned(), why)]),
-    }
+    let old = match at_base {
+        Ok(old) => old,
+        Err(why) => return (Vec::new(), vec![NotRead::file(file.to_owned(), why)]),
+    };
+    let Some((now, unread)) = now else {
+        let selected = old.checks.iter().any(|was| selects(compare, was));
+        let unreadable = selected.then(|| NotRead::file(file.to_owned(), Why::UnreadableNow));
+        return (Vec::new(), unreadable.into_iter().collect());
+    };
+    let mut not_compared = refused_checks(compare, file, &old);
+    not_compared.extend(unread_now(file, &old, unread, compare));
+    (
+        file_changes(compare, file, (&old.checks, &old.refused), (now, unread)),
+        not_compared,
+    )
+}
+
+fn checks_unread_now(compare: &Compare<'_>, real_file: &Path) -> Vec<String> {
+    compare
+        .files
+        .iter()
+        .filter(|each| !each.problems().is_empty() && real(Path::new(&each.path)) == real_file)
+        .flat_map(|each| each.declared.iter().map(|declared| declared.name.clone()))
+        .collect()
 }
 
 pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotRead>) {
@@ -716,11 +747,17 @@ pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotR
             .quint_for(&folder)
             .ok()
             .and_then(|quint| parsed(&real_file, &shown, &quint).ok());
-        let now = now_places.as_ref().map_or_else(Vec::new, |places| {
-            checks_in(places, &real_file, &shown).checks
-        });
+        let unread = checks_unread_now(compare, &real_file);
+        let now: Vec<Judging> = now_places
+            .as_ref()
+            .map_or_else(Vec::new, |places| {
+                checks_in(places, &real_file, &shown).checks
+            })
+            .into_iter()
+            .filter(|check| !unread.contains(&check.name))
+            .collect();
         if bytes_at(compare.base, &shown).is_none() {
-            changes.extend(file_changes(compare, &shown, (&[], &[]), &now));
+            changes.extend(file_changes(compare, &shown, (&[], &[]), (&now, &unread)));
             continue;
         }
         if now_places
@@ -730,7 +767,10 @@ pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotR
             continue;
         }
         let at_base = reader.checks_at_base(&folder, &below, &shown);
-        let (listed, refused) = compared_at_base(compare, &shown, at_base, &now);
+        let read_now = now_places
+            .is_some()
+            .then_some((now.as_slice(), unread.as_slice()));
+        let (listed, refused) = compared_at_base(compare, &shown, at_base, read_now);
         changes.extend(listed);
         not_compared.extend(refused);
     }
@@ -743,7 +783,7 @@ pub(crate) fn quint_changes(compare: &Compare<'_>) -> (Vec<Difference>, Vec<NotR
         }
         let (folder, below) = existing_folder(&file);
         let at_base = reader.checks_at_base(&folder, &below, &shown);
-        let (listed, refused) = compared_at_base(compare, &shown, at_base, &[]);
+        let (listed, refused) = compared_at_base(compare, &shown, at_base, Some((&[], &[])));
         changes.extend(listed);
         not_compared.extend(refused);
     }

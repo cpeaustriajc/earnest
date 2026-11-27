@@ -26,7 +26,7 @@ fn part_of(says: &str) -> Option<(&str, &str, &str)> {
     (digits(number) && digits(of)).then_some((number, of, name))
 }
 
-fn made_up_name(sentence: &str) -> bool {
+pub(crate) fn made_up_name(sentence: &str) -> bool {
     let sentence = sentence.strip_suffix(EVERY_START).unwrap_or(sentence);
     MADE_UP_KINDS.iter().any(|kind| {
         sentence

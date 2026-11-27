@@ -5,6 +5,14 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint runs and assumptions judged as Quint judges them
+
+Where earnest and Quint gave different answers on the same `.qnt` file, earnest now gives Quint's:
+
+- **A false run in a check of runs only:** a run that is one condition, such as `run sumsTest = total([1]) == 2`, passed in a check that judges no property. It is `broken`, as `quint test` fails it. In a check that searches states it was already `broken`.
+- **A false `assert` in a run's first action, or as the whole run:** `run t = all { assert(total([1, 2]) == 4) }` and `run t = assert(total([1]) == 2)` made the check `unreadable`. The run is `broken`, as `quint test` fails it with `Assertion failed`. With a `nondet` in that action, one value that fails the `assert` breaks the run.
+- **An `assume` in the spec of a setup:** a false one made the check `unreadable`. It is left out, as `quint compile` leaves it out and Quint's TLC run never sees it, so the setup is checked. A false `assume` in a module checked directly still makes the check `unreadable`, as Quint's TLC run stops on it.
+
 ## November 2026: charts draw the states the rules are about
 
 A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
@@ -31,13 +39,15 @@ val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
 ```text
 rule changes since origin/main
   added      Small.inRange  "The time stays between zero and the limit."  specs/clock.qnt
-  added      Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+  added      Small.tickTest (witness)  specs/clock.qnt
 ```
 
 - Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
 - A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
 - The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
 - A file that can't be read at the base, native or Quint, is named on a `not compared` line under `rule changes since <base>`, with why, and in a new `notCompared` key in JSON, so the section no longer says `none` for it. A check whose marks are unreadable at the base is named alone, and the other checks of its file are compared; a mark that belongs to no check, such as a `/// @View` typo, is named with its line and column, and every check is compared. The stderr warning stays.
+- A file or a Quint check that is unreadable now is `not compared` with `unreadable now`, native or Quint, and the rules it had at the base are no longer listed as `removed`. A deleted file, and a module whose mark was taken off, still list theirs as `removed`.
+- A rule with no sentence of its own prints no quoted sentence in the rule changes, as its result line does.
 - A folder given twice under two spellings no longer lists the rules of its files as `removed`, for native and Quint models alike.
 - `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
 
@@ -72,12 +82,12 @@ module bank {
 
 - **Modules:** a module is a check when its own doc comment holds a `/// @check` mark, on any line, and is named by the module. An unmarked module is not judged, whatever runs it holds. One with no property to judge plays its runs and searches nothing.
 - **Names in a module's doc:** `/// @check levelOk, darkWhenOff`, `/// @check broken neverFull` or `/// @check reachable atTop` above a module judges those names, as the module sees them, in that check only.
-- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. A check that judges only properties marked `broken` or `reachable` stops once it has found each, so a model with no end passes. The other lines of the doc comment are the rule's sentence. A definition's doc comment holds one mark.
+- **Properties:** `/// @check` on a `val` or `temporal` definition judges it in every check that sees it; `/// @check broken` expects a counterexample; `/// @check reachable` expects a reachable state where the `val` is true, and prints `reached  P` with its path or `never reached  P`. A check that judges only properties marked `broken` or `reachable` stops once it has found each, so a model with no end passes. `earnest report` words these rules as `earnest verify` does, with the path under `broken  P  (expected)`, so a check that fails only through its marks names them. The other lines of the doc comment are the rule's sentence. A definition's doc comment holds one mark.
 - **Runs:** a check plays every run it sees whose name ends in `Test`, and every run marked `/// @check` or named in its doc comment; `/// @check broken` on a run says it must fail.
 - **What a check sees** is what `quint compile --main` resolves: own definitions, `import M.*`, `import M as A` (`A::name`), `import M` (`M::name`), `import M.name`, imports `from` another file, instances, and exports through any number of modules. Each property is judged once, even when an import under a name and its export both bring it.
 - **Unreadable at the mark's line:** a word after `@check` that earnest does not know, `///@check` with no space, a second mark, names after a mark on a definition, a mark on an `action`, `var`, `const`, `import` or a definition with parameters, `@check reachable` on anything but a value, a name in a module's doc that the module does not see, a marked module that leaves a constant unset, one with a property and no `init` or `step` (the message shows the `action step = ...` to write), one with nothing to judge, and a marked definition or run that no check sees.
 - **Counts:** the result line of a `.qnt` model says how many rules and runs it has, `1 rule, 1 run`, so a mark lost to a typo shows.
-- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write above the module with the names each judges, a `val` for each property written as an expression, the module to add for another `init` or `step` or a second check of one module, and the runs ending in `Test` that are played from now on although the entry left them out.
+- **`earnest.quint.json` is gone:** a folder that still holds one is `unreadable` at that file, and the message lists, for every entry, the marks to write above the module with the names each judges, a `val` for each property written as an expression, the module to add for another `init` or `step` or a second check of one module, and the runs ending in `Test` that are played from now on although the entry left them out. For an entry that becomes a copy of a setup, the lines are written in the copy's names (`val atMostTwo = V::x <= 2`), and a line that takes the place of the copy's own `init` or `step` is listed as such.
 
 - **A list of names goes on over the next line** when its line ends with a comma; a doc line of a check made only of names it sees, after a line with no comma, is `unreadable` at that line.
 - **`///@check small`** above a module or a definition is `unreadable` at that line, read from the source.

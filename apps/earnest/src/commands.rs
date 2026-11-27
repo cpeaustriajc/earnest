@@ -10,10 +10,13 @@ use crate::print::{
 };
 use crate::quint;
 use crate::reading::{ModelFile, load, read};
-use crate::run::{Bounds, Expecting, Graphs, Ran, Search, Stops, checked, explore_expecting};
+use crate::run::{
+    Bounds, ExpectedPaths, Expecting, Graphs, Ran, Search, Stops, checked, detail_of,
+    explore_expecting,
+};
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
-    Charted, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_charts,
+    Charted, Detailed, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_details,
     rule_changes_section, skipped_section,
 };
 use earnest_check::Status;
@@ -256,6 +259,38 @@ fn changes_section(base: &str, compared: &Compared) -> String {
     )
 }
 
+fn with_marked_details(
+    sections: &[Charted<'_>],
+    targets: &[Target<'_>],
+    ran: &[Ran],
+    unreadable: &[Unreadable<'_>],
+) -> String {
+    let details: Vec<Option<Vec<String>>> = targets
+        .iter()
+        .zip(ran)
+        .map(|(target, ran)| {
+            let readable = target.readable;
+            (!readable.expected.is_empty()).then(|| {
+                detail_of(
+                    &ran.outcome,
+                    (&readable.expected, &readable.reachable),
+                    &readable.model,
+                    ExpectedPaths::Printed,
+                )
+            })
+        })
+        .collect();
+    let detailed: Vec<Detailed<'_>> = sections
+        .iter()
+        .zip(&details)
+        .map(|(charted, detail)| Detailed {
+            charted: *charted,
+            detail: detail.as_deref(),
+        })
+        .collect();
+    report_with_details(&detailed, unreadable, None)
+}
+
 pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
     let bounds = limits_of(&arguments.bounds);
     if let Some(base) = &arguments.base {
@@ -313,7 +348,7 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
     if let Some(error) = selected.unmatched
         && compared
             .as_ref()
-            .is_none_or(|(_, compared)| compared.changes.is_empty())
+            .is_none_or(|(_, compared)| compared.lists_nothing())
     {
         return Err(error);
     }
@@ -333,7 +368,7 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         .as_ref()
         .map(|(base, compared)| changes_section(base, compared));
     let left_out = (!no_model.is_empty()).then(|| no_model_section(&no_model));
-    let mut written = report_with_charts(&sections, &unreadable, None);
+    let mut written = with_marked_details(&sections, &targets, &ran, &unreadable);
     for section in changes_section
         .into_iter()
         .chain(skipped_section(&skipped))

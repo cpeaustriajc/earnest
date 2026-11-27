@@ -325,7 +325,7 @@ fn the_runs_of_a_spec_that_imports_other_modules_are_played_as_quint_test_plays_
 }
 
 #[test]
-fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
+fn a_false_assumption_stops_a_module_checked_directly_and_is_left_out_of_a_setup_as_quint_does() {
     let quint = Quint::new();
     quint
         .sandbox
@@ -354,7 +354,11 @@ fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
             )
         })
         .collect();
-    assert_eq!(unreadable.len(), 2, "`Direct` and `Bad`\n{report}");
+    assert_eq!(
+        unreadable.len(),
+        1,
+        "`Direct` alone: `quint verify --backend tlc --main Direct` stops on the assumption\n{report}"
+    );
     for (feature, message) in &unreadable {
         assert_eq!(feature, "`assume Positive`", "{report}");
         assert!(
@@ -362,6 +366,19 @@ fn a_false_assumption_stops_a_module_checked_directly_and_a_setup_alike() {
             "{message}"
         );
     }
+    let bad = model(&report, "Bad");
+    assert_eq!(
+        (&bad["status"], &bad["states"]),
+        (&Value::from("pass"), &Value::from(4)),
+        "`Spec`'s assumption `N > 0` is false in `Bad`, and `quint verify --backend tlc --main \
+         Bad --invariant ok` checks it all the same: 4 distinct states and no error, since \
+         `quint compile` leaves out the assumptions of the spec\n{report}"
+    );
+    assert_eq!(
+        verdicts(&report, "Bad"),
+        pairs(&[("upTest", "holds")]),
+        "as `quint test --main Bad` passes `upTest`\n{report}"
+    );
     let good = model(&report, "Good");
     assert_eq!(good["status"], "pass", "{report}");
     assert_eq!(

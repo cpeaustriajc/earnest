@@ -1,5 +1,5 @@
-// `assume` read the same way in a module checked directly and in a setup: a false one stops the
-// check, as `quint verify --backend tlc` stops on it; a true one changes nothing.
+// `assume` as Quint's TLC run reads it: a false one stops a module checked directly, and one in
+// the spec of a setup is left out, as `quint compile` drops it: `Bad` is checked.
 /// @check
 module Direct {
   var n: int

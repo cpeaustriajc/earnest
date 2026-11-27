@@ -6,7 +6,7 @@ use crate::reach::variables_reached;
 use crate::reader::{MOST_ACTIONS, Path, Read, Reader, Refusal, all_of, refusal, too_many_actions};
 use crate::runs::{Variables, scripts};
 use crate::scan::refused;
-use crate::starts::start_states;
+use crate::starts::{Asserts, start_states};
 use crate::temporal::{Step, temporal};
 use crate::view::{self, Views};
 use earnest_ir::{
@@ -353,7 +353,7 @@ fn parts<'a>(
     reader.in_init = false;
     let starts = starting.and_then(|starting| {
         kept(
-            start_states((&starting, "`init`"), names, reader.slots),
+            start_states((&starting, "`init`"), names, reader.slots, Asserts::Refuse),
             &mut refused,
         )
     });

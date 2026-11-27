@@ -1023,24 +1023,11 @@ impl<'t> Filler<'t> {
     }
 
     fn assumptions(&mut self) -> Fill<()> {
-        let mut found: Vec<(Option<usize>, &'t Value)> = Vec::new();
-        for (position, each) in self.instances.iter().enumerate() {
-            if let Some((_, proto)) = each.declared {
-                let spec = self.typechecked.module(proto)?;
-                found.extend(
-                    list(spec, "declarations")
-                        .iter()
-                        .filter(|declaration| text(declaration, "kind") == Some("assume"))
-                        .map(|declaration| (Some(position), declaration)),
-                );
-            }
-        }
-        found.extend(
-            list(self.main, "declarations")
-                .iter()
-                .filter(|declaration| text(declaration, "kind") == Some("assume"))
-                .map(|declaration| (None, declaration)),
-        );
+        let found: Vec<(Option<usize>, &'t Value)> = list(self.main, "declarations")
+            .iter()
+            .filter(|declaration| text(declaration, "kind") == Some("assume"))
+            .map(|declaration| (None, declaration))
+            .collect();
         for (within, declaration) in found {
             let mut copy = declaration.clone();
             copy["name"] = Value::String(self.renamed_name(text(declaration, "name")?, within));
