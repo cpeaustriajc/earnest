@@ -2,20 +2,38 @@
 
 //! `.qnt` files nested deep, read through the CLI: the samples of `tasks/quint/deep`, written by
 //! its `generate.py`, each a check whose `holds` holds and whose `broken` is broken at `x = 3`,
-//! as `quint run` and TLC judge them.
+//! as `quint run` and TLC judge them. The repository keeps the samples that cost little in a
+//! debug build (`generate.py` says which and why); the others are judged by hand, in the
+//! measurements of `tasks/quint/README.md`.
 
 use std::fs;
 
 use crate::support::{Run, Sandbox, model, repository, rule};
 
-/// The shapes that read in seconds in a debug build at 300 deep. The others of the folder
-/// (`sets`, `records`, `lambdas`) spend minutes there in the front end's type inference, so they
-/// are judged in release by the measurements of `tasks/quint/README.md`, not here.
-const SHAPES: [&str; 9] = [
-    "nots", "parens", "sums", "lets", "ands", "ors", "elseifs", "ifs", "implies",
+/// Every shape the CLI is tested on at 100 deep. Nested past about 60, any of them was refused
+/// by the 128 levels of serde_json's limit, which no longer apply to the front end's JSON.
+const AT_100: [&str; 9] = [
+    "nots_100",
+    "parens_100",
+    "sums_100",
+    "lets_100",
+    "ands_100",
+    "ors_100",
+    "elseifs_100",
+    "ifs_100",
+    "implies_100",
 ];
 
-const DEPTHS: [usize; 2] = [100, 300];
+/// The shapes whose depth the stacks are tested at: as deep as these, every walk of the file
+/// recurses 300 and 500 levels, in the text, in Quint's tree, or both.
+const DEEPER: [&str; 6] = [
+    "nots_300",
+    "nots_500",
+    "sums_300",
+    "sums_500",
+    "parens_300",
+    "parens_500",
+];
 
 fn sample(name: &str) -> String {
     let path = repository()
@@ -24,17 +42,10 @@ fn sample(name: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-fn names() -> Vec<String> {
-    DEPTHS
-        .iter()
-        .flat_map(|depth| SHAPES.iter().map(move |shape| format!("{shape}_{depth}")))
-        .collect()
-}
-
-fn with_samples() -> Sandbox {
+fn with_samples(names: &[&str]) -> Sandbox {
     let sandbox = Sandbox::empty();
-    for name in names() {
-        sandbox.write(&format!("deep/{name}.qnt"), &sample(&name));
+    for name in names {
+        sandbox.write(&format!("deep/{name}.qnt"), &sample(name));
     }
     sandbox
 }
@@ -55,9 +66,19 @@ fn judged_as_quint_judges(run: &Run, name: &str) {
     );
 }
 
+fn judged_in_text(run: &Run, name: &str) {
+    assert_eq!(
+        run.model_line(name)[..3],
+        ["fail", name, "4 states"],
+        "{name}\n{run}"
+    );
+    assert_eq!(run.detail(name)[0], "broken  broken", "{name}\n{run}");
+}
+
 #[test]
-fn a_folder_of_files_nested_100_and_300_deep_is_judged_as_quint_judges_it_on_one_job_and_four() {
-    let sandbox = with_samples();
+fn a_folder_of_files_nested_100_deep_in_nine_shapes_is_judged_as_quint_judges_it_on_one_job_and_four()
+ {
+    let sandbox = with_samples(&AT_100);
     for jobs in ["1", "4"] {
         let run = sandbox.earnest(&["verify", "--json", "--no-cache", "--jobs", jobs, "deep"]);
         run.exits(1);
@@ -67,19 +88,41 @@ fn a_folder_of_files_nested_100_and_300_deep_is_judged_as_quint_judges_it_on_one
                 .is_none_or(Vec::is_empty),
             "{run}"
         );
-        for name in names() {
-            judged_as_quint_judges(&run, &name);
+        for name in AT_100 {
+            judged_as_quint_judges(&run, name);
+        }
+        let text = sandbox.earnest(&["verify", "--no-cache", "--jobs", jobs, "deep"]);
+        text.exits(1);
+        for name in AT_100 {
+            judged_in_text(&text, name);
         }
     }
 }
 
 #[test]
-fn a_file_nested_300_deep_named_alone_is_judged_as_quint_judges_it() {
-    let sandbox = Sandbox::empty();
-    sandbox.write("nots_300.qnt", &sample("nots_300"));
-    let run = sandbox.earnest(&["verify", "--json", "--no-cache", "nots_300.qnt"]);
-    run.exits(1);
-    judged_as_quint_judges(&run, "nots_300");
+fn each_file_nested_100_deep_named_alone_is_judged_as_quint_judges_it() {
+    let sandbox = with_samples(&AT_100);
+    for name in AT_100 {
+        let file = format!("deep/{name}.qnt");
+        let run = sandbox.earnest(&["verify", "--json", "--no-cache", &file]);
+        run.exits(1);
+        judged_as_quint_judges(&run, name);
+        let text = sandbox.earnest(&["verify", "--no-cache", &file]);
+        text.exits(1);
+        judged_in_text(&text, name);
+    }
+}
+
+#[test]
+fn files_nested_300_and_500_deep_are_judged_as_quint_judges_them_on_one_job_and_four() {
+    let sandbox = with_samples(&DEEPER);
+    for jobs in ["1", "4"] {
+        let run = sandbox.earnest(&["verify", "--json", "--no-cache", "--jobs", jobs, "deep"]);
+        run.exits(1);
+        for name in DEEPER {
+            judged_as_quint_judges(&run, name);
+        }
+    }
 }
 
 fn git(sandbox: &Sandbox, arguments: &[&str]) {
@@ -108,18 +151,23 @@ fn shallow(text: &str) -> String {
         .join("\n")
 }
 
+fn since_a_shallow_base(name: &str) -> Run {
+    let deep = sample(name);
+    let sandbox = Sandbox::empty();
+    sandbox.write("m.qnt", &shallow(&deep));
+    git(&sandbox, &["init", "-q", "."]);
+    git(&sandbox, &["add", "m.qnt"]);
+    git(&sandbox, &["commit", "-qm", "base"]);
+    sandbox.write("m.qnt", &deep);
+    let run = sandbox.earnest(&["verify", "--no-cache", "--base", "HEAD", "m.qnt"]);
+    run.exits(1);
+    run
+}
+
 #[test]
-fn a_rule_that_nests_300_deep_since_the_base_is_listed_changed() {
-    for name in ["nots_300", "sums_300", "ifs_300"] {
-        let deep = sample(name);
-        let sandbox = Sandbox::empty();
-        sandbox.write("m.qnt", &shallow(&deep));
-        git(&sandbox, &["init", "-q", "."]);
-        git(&sandbox, &["add", "m.qnt"]);
-        git(&sandbox, &["commit", "-qm", "base"]);
-        sandbox.write("m.qnt", &deep);
-        let run = sandbox.earnest(&["verify", "--no-cache", "--base", "HEAD", "m.qnt"]);
-        run.exits(1);
+fn a_rule_that_nests_300_and_500_deep_since_the_base_is_listed_changed() {
+    for name in ["nots_300", "sums_300", "sums_500"] {
+        let run = since_a_shallow_base(name);
         assert!(
             run.stdout
                 .lines()
@@ -128,6 +176,21 @@ fn a_rule_that_nests_300_deep_since_the_base_is_listed_changed() {
             "{name}\n{run}"
         );
     }
+}
+
+#[test]
+fn a_rule_put_in_300_parentheses_since_the_base_is_not_listed() {
+    let run = since_a_shallow_base("parens_300");
+    let lines: Vec<&str> = run.stdout.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with("rule changes since"))
+        .unwrap_or_else(|| panic!("the rule changes are listed\n{run}"));
+    assert_eq!(
+        lines.get(at + 1).copied(),
+        Some("  none"),
+        "parentheses are not in Quint's tree, so the rule says what it said\n{run}"
+    );
 }
 
 fn nested_nots(depth: usize) -> String {
