@@ -169,3 +169,42 @@ fn a_match_nested_a_hundred_and_sixty_deep_is_checked_in_no_more_time_than_quint
     assert!(checked.is_ok(), "{:?}", checked.err());
     assert!(started.elapsed() < quint_s_time, "{:?}", started.elapsed());
 }
+
+fn alias_chain(length: usize) -> String {
+    let aliases: Vec<String> = (1..length)
+        .map(|at| format!("  type T{at} = T{}", at - 1))
+        .collect();
+    module(&format!(
+        "  type T0 = int\n{}\n  val y: T{} = 1",
+        aliases.join("\n"),
+        length - 1
+    ))
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    ignore = "a time bound holds in an optimized build: cargo test --release -p earnest_quint_syntax --test parse depth::"
+)]
+fn a_chain_of_eight_thousand_aliases_is_compiled_in_under_two_seconds_where_quint_runs_out_of_stack()
+ {
+    let text = alias_chain(8_000);
+    let started = Instant::now();
+    let parsed = read_text(&text).expect("read");
+    let checked = parsed.typecheck();
+    assert!(checked.is_ok(), "{:?}", checked.err());
+    let target = earnest_quint_syntax::Target {
+        main: "deep".to_owned(),
+        init: "init".to_owned(),
+        step: "step".to_owned(),
+        invariant: None,
+        temporal: None,
+    };
+    let compiled = parsed.compile(&target);
+    assert!(compiled.is_ok(), "{:?}", compiled.err());
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+}
