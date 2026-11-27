@@ -88,13 +88,13 @@ pub(crate) enum Typed {
     Skipped,
 }
 
-fn recorded_types(recorded: &Path) -> Option<Result<Json, String>> {
+pub(crate) fn recorded_types(recorded: &Path) -> Option<Result<Json, String>> {
     let path = PathBuf::from(format!("{}.types.json", recorded.display()));
     let text = fs::read_to_string(&path).ok()?;
     Some(Json::parse(&text).map_err(|at| format!("{} is JSON up to {at}", path.display())))
 }
 
-fn their_table(recorded: &Json) -> Result<Json, String> {
+pub(crate) fn their_table(recorded: &Json) -> Result<Json, String> {
     let (Some(Json::List(schemes)), Some(Json::Object(types))) =
         (recorded.get("schemes"), recorded.get("types"))
     else {
@@ -245,5 +245,41 @@ fn every_file_of_quint_s_repository_has_the_types_quint_typecheck_writes() {
         "{} differ:\n{}",
         different.len(),
         different.join("\n")
+    );
+}
+
+#[test]
+fn added_definitions_are_typed_against_the_types_already_found() {
+    let base = root();
+    let sample = "crates/earnest_quint_syntax/tests/samples/typing/base.qnt";
+    let parsed = read(sample, |path| fs::read_to_string(base.join(path)).ok()).expect("read");
+    let types = parsed.types().expect("typed");
+    let Json::Object(entries) = &types else {
+        panic!("a table");
+    };
+    let none = parsed
+        .types_of_added(&[], &types, &[])
+        .expect("nothing added is nothing refused");
+    assert_eq!(none, types, "adding nothing keeps every type");
+    let added = Json::parse(
+        r#"{"id":900001,"kind":"def","name":"q::added","qualifier":"val","expr":{"id":900000,"kind":"app","opcode":"iadd","args":[{"id":899998,"kind":"int","value":1},{"id":899999,"kind":"int","value":2}]}}"#,
+    )
+    .expect("JSON");
+    let Json::Object(more) = parsed
+        .types_of_added(&[], &types, &[added])
+        .expect("an addition of two integers is typed")
+    else {
+        panic!("a table");
+    };
+    assert_eq!(more.len(), entries.len() + 4, "the four new ids are typed");
+    let int = r#"{"typeVariables":[],"rowVariables":[],"type":{"id":3,"kind":"int"}}"#;
+    let found = more
+        .iter()
+        .find(|(id, _)| id == "900001")
+        .map(|(_, scheme)| scheme.to_string());
+    assert_eq!(
+        found.as_deref(),
+        Some(int),
+        "the definition has iadd's result"
     );
 }

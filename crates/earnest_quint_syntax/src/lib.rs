@@ -36,5 +36,6 @@ mod types;
 
 pub use effects::effects_with_copies;
 pub use files::{Parsed, read};
+pub use inference::types_with_copies;
 pub use json::Json;
 pub use problem::Problem;

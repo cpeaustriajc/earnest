@@ -33,11 +33,11 @@ fn expanded(value: &Json, nodes: &[Json]) -> Json {
     }
 }
 
-struct Recording {
-    stage: String,
-    first_error: Option<Json>,
-    effects: Option<Vec<(String, Json)>>,
-    output: Vec<(String, usize, String)>,
+pub(crate) struct Recording {
+    pub(crate) stage: String,
+    pub(crate) first_error: Option<Json>,
+    pub(crate) effects: Option<Vec<(String, Json)>>,
+    pub(crate) output: Vec<(String, usize, String)>,
 }
 
 fn fnv(written: &str) -> String {
@@ -48,7 +48,7 @@ fn fnv(written: &str) -> String {
     format!("{value:016x}")
 }
 
-fn recording(recorded: &Path) -> Result<Recording, String> {
+pub(crate) fn recording(recorded: &Path) -> Result<Recording, String> {
     let path = PathBuf::from(format!("{}.effects.json", recorded.display()));
     let written = fs::read_to_string(&path).map_err(|_| "not recorded".to_owned())?;
     let fixture =
@@ -134,7 +134,7 @@ pub(crate) enum Outcome {
     QuintCrashes,
 }
 
-fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
+pub(crate) fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
     let explanation = explanation(theirs);
     let place = place(theirs);
     let at = place.map_or_else(
@@ -381,6 +381,7 @@ const REFUSALS: &[(&str, &str)] = &[
     ("effects_union_not_covered", "QNT000"),
     ("effects_first_of_two_modules", "QNT200"),
     ("effects_let_annotation_resolved", "QNT000"),
+    ("effects_different_kinds_of_effect", "QNT000"),
     ("effects_unions_of_entities", "QNT000"),
     ("effects_def_updates_listed_twice", "QNT200"),
 ];

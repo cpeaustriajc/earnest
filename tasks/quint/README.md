@@ -5278,6 +5278,19 @@ built-in signatures, parsed by the crate's own parser with fresh ids, as Quint p
 time), `generator.rs` (the constraint generator and inferrer) and `printing.rs` (`typeToString`,
 `expressionToString`, error trees).
 
+For the passes after inference (#88's effect, mode and nondet checks) `inference::types_of`
+gives, module by module, the type errors in the order Quint raised them, the type application
+errors apart, the exception if Quint throws, the whole table, and each id's scheme printed as
+`typeSchemeToString` prints it with whether it is `bool` (54,526 printed alike on the
+repository's samples: `every_type_is_printed_as_quint_prints_its_scheme`). For definitions added
+after the types were checked (#89's flattener), `Parsed::types_of_added` runs Quint's
+`analyzeInc`: a fresh type application resolver over the given name table, an inferrer that
+starts from the given `types` with its own counter of fresh names. It is tested only for its
+contract (nothing added keeps the table; an added definition gets its types), not yet against
+`quint compile`'s own output. Error text prints expressions with `src/printing_ir.rs`, taken
+from #88's branch, and its types with the type checker's printer, which `types::type_text` now
+calls: the crate has one printer of types, as Quint's IR has.
+
 Two small changes outside these files: `names.rs` keeps the order in which the name resolver
 inserts entries into the table, and `files.rs` gives it (and the source map) to the type checker.
 
@@ -5294,7 +5307,7 @@ thrown. The type errors are recorded apart because Quint gives effect errors the
 `condense_types.py` checks, when the file has no type error, that its `types` equals that of
 `types.js` as text, then stores `<file>.types.json`: each distinct scheme once, the id of each
 type pointing at its scheme, the first three type errors, and `quint typecheck`'s first three
-explanations. The 405 recordings come to 2.5 MB.
+explanations. Each scheme is stored with Quint's `typeSchemeToString` of it. The 406 recordings come to 2.7 MB.
 
 `tests/parse/types.rs` compares the whole table key by key (the first id that differs is named)
 and then as text; a refused file must be refused with `QNT000`, Quint's explanation (`[QNT000]` and
@@ -5308,7 +5321,7 @@ for files outside the repository. Generated programs:
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax --test parse`) | 468 | 405 | 368 typed with the whole table equal as text; 37 refused by the type checker, each with Quint's explanation at Quint's place, one of them (`types_crash_wildcard_only.qnt`) where Quint throws; the other 63 are refused before types, by the parse and name phases (slice 1 and 2) |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax --test parse`) | 469 | 406 | 369 typed with the whole table equal as text; 37 refused by the type checker, each with Quint's explanation at Quint's place, one of them (`types_crash_wildcard_only.qnt`) where Quint throws; the other 63 are refused before types, by the parse and name phases (slice 1 and 2) |
 | Quint's repository at `v0.33.1`, in the container only | 196 | 177 | 173 typed, all equal as text; 4 refused alike; 19 refused before types (slice 2's count) |
 | 300 generated programs (`generate_types.py <folder> 300 1`: polymorphic definitions used at many types, records through several definitions, sum types in collections, a planted type error in about 3 of 10), in the container only | 300 | 300 | 209 typed, all equal; 91 refused alike |
 | 1000 more, seed 2, with local polymorphic definitions and higher-order chains, in the container only | 1000 | 1000 | 696 typed, all equal; 304 refused alike |
@@ -5355,6 +5368,36 @@ uninterpreted type), `declarations.qnt` (`const`, `var`, a polymorphic definitio
 types, `assume`, `temporal`, `run`, instances with constants), `builtins.qnt` (every operator of
 `builtin.qnt` once), `last_assume.qnt` and `sum_tails.qnt` (below).
 
+### The whole of `quint typecheck --out`, with #88's effect passes [ran]
+
+`Parsed::typecheck` gives what `quint typecheck --out` writes: `stage`, `warnings`, the modules and
+the name table with their type applications resolved (`quint typecheck` writes them as its type
+application resolver left them), `types`, `effects` and `errors`; or Quint's first error across all
+its passes, in Quint's order per module: type errors, effect inference, type applications, modes,
+multiple updates, nondet. It hands #88's passes (`Parsed::analyzed`) a `TypePass` built from
+`types_of`, and the resolved modules and table, which Quint's effect passes read too. After the
+merge of the two wirings, `Parsed::effects` and `Parsed::analyze_added` go through
+`Parsed::typecheck` too, and #88's `operator_arity` only asks whether a resolved annotation is an
+operator type: the one resolver of type applications is `src/inference/application.rs`.
+
+`record_types.sh` now stores, when Quint accepts the file, the places where `quint typecheck`'s
+modules and table differ from `quint parse`'s (only resolved type applications) as patches. The
+test (`tests/parse/typecheck.rs`) rebuilds Quint's whole output from the parse, types and effects
+recordings and compares ours with it, path by path and then as text:
+`every_sample_has_the_whole_output_of_quint_typecheck_or_its_first_error`: 372 of the 520 files
+under `tasks/` and `crates/` with the whole output equal, 83 refused with Quint's first error at
+Quint's place, the 2 where Quint throws refused as `unreadable`, 63 refused by the parse and name
+phases, 0 differ. On Quint's 196 files at `v0.33.1`, in the container only
+(`every_file_of_quint_s_repository_has_the_whole_output_of_quint_typecheck`, recorded with
+`RECORD_ROOT=<clone> record.sh`): 172 with the whole output equal, 5 refused with Quint's first
+error, 19 refused by the parse and name phases, 0 differ.
+`the_first_error_across_quint_s_passes_is_the_one_quint_reports_first` pins
+three: QNT205 printing the type of a `nondet` body, a type error before a mode error, and an
+effect error before a type application error.
+
+For #89's flattener: `types_with_copies(types, copies)` gives each copied id the scheme of the id it
+was copied from, and `Parsed::types_of_added` infers only the definitions `quint compile` adds.
+
 ### Where Quint looks wrong, and what the crate does: as Quint
 
 - An `assume` whose body is not a boolean is accepted when it is the last declaration of the last
@@ -5376,10 +5419,16 @@ types, `assume`, `temporal`, `run`, instances with constants), `builtins.qnt` (e
   exception's message: Quint gives no verdict either. Smallest file:
   `module m { def f(e) = match e { | _ => 1 } }`.
 - Only the first error is given. Quint reports every error; the first is the same.
-- A type application error (`too many arguments supplied`) comes after the module's effect errors
-  in Quint's list. The crate does not check effects (#88), so on a file with both and no type error,
-  Quint's first error is the effect error and the crate's the type application error. Both refuse.
-  No sample has it.
+- A substitution that is still changing after 10,000 rounds of application stops the file as
+  `unreadable` ("the types of this file could not be settled"), where Quint would recurse until its
+  stack runs out. No file reaches it: the most rounds any file needs are 2 on the repository's
+  samples, 3 on Quint's 196 files (`tendermint.qnt`) and 2 on the 1,000 generated programs, and the
+  test of the samples asserts the bound stays a hundred times above what they need. The occurs
+  checks of `bindType` and `bindRow` keep a single binding from being cyclic, and I found no
+  composition that makes one, so there is no smallest file.
+- `Parsed::types` alone puts a type application error after the module's type errors. Quint puts
+  the module's effect errors between them; `Parsed::typecheck` does
+  (`refused/types_application_after_effects.qnt`).
 
 ## Quint front end, slice 3b: effects and modes (#88): report
 
@@ -5407,22 +5456,23 @@ Effect inference needs nothing from the type checker but the declarations as the
 type-application resolver leaves them: it reads the table (`id`, `importedFrom`, `namespaces`)
 and, for a `const`, whether its annotation is an operator type.
 
-`Parsed::typecheck` (`src/effects.rs`) is the whole of what `quint typecheck --out` writes:
+`Parsed::typecheck` (`src/inference.rs`, one entry after merging the two wirings built on
+`claude/qnt-effects` and `claude/qnt-types`) is the whole of what `quint typecheck --out` writes:
 `stage`, `warnings`, `modules`, `table`, `types`, `effects`, `errors`. It runs the type pass of #87
-(`Parsed::type_checked` in `src/inference.rs`): the table's type applications resolved once, then
+(`types_of`): the table's type applications resolved once, then
 each module's declarations, then type inference; then the effect passes on the resolved modules,
 the `nondet` check reading the types (`QNT205`, with the type printed as `typeSchemeToString`
 prints it); and takes the errors module by module, in phase 2's order, in Quint's order: type
 errors, effect-inference errors, type-application errors, then mode, multiple-updates and
-`nondet` errors. A crash of Quint's type checker refuses the file as `unreadable` before anything
-else, as Quint writes nothing then. `Parsed::effects` is the `effects` of that output.
+`nondet` errors. A crash of Quint's type checker, or a substitution still changing after the type pass's bound of
+rounds, refuses the file as `unreadable` before anything else, as Quint writes nothing then. `Parsed::effects` is the `effects` of that output.
 
 Where Quint resolves type applications, and which resolver stays: Quint runs its
 `TypeApplicationResolver` in `analyzeDeclarations`, in the typecheck stage, once over the whole
 table when the analyzer is made and then over each module's declarations, and `quint typecheck`
 writes the modules and the table as it leaves them (the modules are mutated in place).
 `quint compile` flattens that output, so it sees them resolved. The resolver that stays is the
-type checker's (`src/inference/application.rs`), run once in `Parsed::type_checked`: the effect
+type checker's (`src/inference/application.rs`), run once in `types_of`: the effect
 passes read its modules, and the const's small resolver that was here is gone. The flattener's
 `src/applications.rs` does the same work again and can go once the flattener reads the modules and
 table of `Parsed::typecheck`.
@@ -5511,7 +5561,7 @@ used by one of them.
 | `QNT000` `Signature not found for name: x` | inferrer | yes; on a file Quint's type checker refuses first | `refused/effects_signature_not_found_types_first.qnt` |
 | `QNT000` `Expected n arguments, got m` | arrow unification | yes; no file found where the type checker does not refuse it first | `refused/effects_arguments_types_first.qnt` |
 | `QNT000` `Can't bind e to E: cyclical binding` | unification | yes; no file found where the type checker does not refuse it first | |
-| `QNT000` `Can't unify different types of effects` | unification | yes; no file found that reaches it | |
+| `QNT000` `Can't unify different types of effects` | unification | yes (a constant typed by a plain alias of an operator type gets the pure effect; found by the review) | `refused/effects_different_kinds_of_effect.qnt` |
 | `Can't unify <kind> ... and <kind> ...` | concrete unification | not needed: two different kinds always coexist, so it is never raised | |
 | `Couldn't find any result for id ...`, `Unexpected arrow found in operator result`, and the `newInstance` that is called unbound on a lambda's body | thrown: `quint typecheck` stops with a stack trace | refused as `unreadable`, naming the cause; no file found that reaches them | |
 | `Arrow effect after substitution should be an arrow`, `Error applying fresh names substitution`, `Impossible: all cases should be covered`, `Unexpected error while formatting effect scheme` | thrown | can't happen: the substitutions they guard never fail | |

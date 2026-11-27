@@ -17,7 +17,7 @@ fn sample(name: &str) -> Parsed {
 }
 
 fn analyzed(parsed: &Parsed, types: &TypePass) -> Result<crate::json::Json, Problem> {
-    parsed.analyzed_modules(parsed.modules(), types)
+    parsed.analyzed(types)
 }
 
 fn refusal(name: &str, types: &TypePass) -> Problem {
