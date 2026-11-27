@@ -59,7 +59,10 @@ fn a_byte_that_is_not_utf8_in_a_comment_is_read_as_quint_reads_it_and_the_check_
 #[test]
 fn a_string_with_a_byte_that_is_not_utf8_is_read_as_quint_reads_it_and_the_check_passes() {
     let sandbox = Sandbox::empty();
-    let text = COUNTER.replace("val ok = x <= 3", "val ok = x <= 3 and \"\u{1}\" == \"\u{1}\"");
+    let text = COUNTER.replace(
+        "val ok = x <= 3",
+        "val ok = x <= 3 and \"\u{1}\" == \"\u{1}\"",
+    );
     let bytes: Vec<u8> = text
         .bytes()
         .map(|byte| if byte == 1 { 0xff } else { byte })
