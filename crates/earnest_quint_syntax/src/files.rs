@@ -121,6 +121,9 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
             let Some(Json::Text(from)) = declaration.get("fromSource") else {
                 continue;
             };
+            if from.is_empty() {
+                continue;
+            }
             let importing = trail.last().map_or("", String::as_str);
             let target = normalize(&format!("{}/{from}.qnt", parent(importing)));
             let lower = target.to_lowercase();
@@ -170,7 +173,7 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
     let mut resolution = resolve(&mut modules);
     sort(&mut modules, &resolution.table, &mut resolution.errors);
     if let Some(first) = resolution.errors.first() {
-        return Err(raised_at(&ids, first));
+        return Err(raised_at(&ids, &modules, &resolution.errors, first, path));
     }
     Ok(Parsed {
         modules,
@@ -180,17 +183,73 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
     })
 }
 
-fn raised_at(ids: &Ids, raised: &Raised) -> Problem {
-    match raised.reference.and_then(|id| ids.place(id)) {
+fn raised_at(
+    ids: &Ids,
+    modules: &[Json],
+    errors: &[Raised],
+    first: &Raised,
+    path: &str,
+) -> Problem {
+    let placed_id = first
+        .reference
+        .filter(|id| ids.place(*id).is_some())
+        .or_else(|| {
+            errors
+                .iter()
+                .filter(|other| other.code == first.code && other.message == first.message)
+                .filter_map(|other| other.reference)
+                .find(|id| ids.place(*id).is_some())
+        })
+        .or_else(|| {
+            first
+                .reference
+                .and_then(|id| placed_definition_before(ids, modules, id))
+        });
+    match placed_id.and_then(|id| ids.place(id)) {
         Some(place) => Problem::coded(
-            raised.code,
-            raised.message.clone(),
+            first.code,
+            first.message.clone(),
             place.start.line,
             usize::try_from(place.start.column).unwrap_or(0),
         )
         .in_source(ids.source_name(place.source)),
-        None => Problem::coded(raised.code, raised.message.clone(), 0, 0),
+        None => Problem::coded(first.code, first.message.clone(), 0, 0).in_source(path),
     }
+}
+
+fn placed_definition_before(ids: &Ids, modules: &[Json], target: u64) -> Option<u64> {
+    fn visit(value: &Json, ids: &Ids, target: u64, last: &mut Option<u64>) -> bool {
+        match value {
+            Json::Object(fields) => {
+                let id = match value.get("id") {
+                    Some(Json::Number(digits)) => digits.parse::<u64>().ok(),
+                    _ => None,
+                };
+                if id == Some(target) {
+                    return true;
+                }
+                let definition = matches!(
+                    value.get("kind"),
+                    Some(Json::Text(kind)) if matches!(kind.as_str(), "def" | "const" | "var" | "typedef" | "assume")
+                );
+                if definition && let Some(id) = id.filter(|id| ids.place(*id).is_some()) {
+                    *last = Some(id);
+                }
+                fields
+                    .iter()
+                    .any(|(_, inner)| visit(inner, ids, target, last))
+            }
+            Json::List(items) => items.iter().any(|inner| visit(inner, ids, target, last)),
+            _ => false,
+        }
+    }
+    let mut last = None;
+    for module in modules {
+        if visit(module, ids, target, &mut last) {
+            return last;
+        }
+    }
+    None
 }
 
 fn placed(ids: &Ids, at: &Json, code: &str, message: String) -> Problem {
@@ -220,10 +279,10 @@ fn first_problem(
     let index = ids.source(source);
     let lexical = lexed.problems.first();
     match parse(&lexed.tokens, ids, index) {
-        Err(Reported { problem, token }) => {
+        Err(Reported { problem, seen, .. }) => {
             let next_start = lexed
                 .tokens
-                .get(token + 1)
+                .get(seen + 1)
                 .map_or(usize::MAX, |next| next.start);
             let first = match lexical {
                 Some((at, lexical)) if *at < next_start => lexical.clone(),
