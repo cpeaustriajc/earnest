@@ -4960,6 +4960,8 @@ find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earn
 | 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1087 | 63 Quint accepts: all equal; 1136 Quint refuses: 1044 at Quint's line and column, 92 elsewhere (1 of them by the cap); 20 more refused only by Quint's name phases |
 | 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 670 | 225 Quint accepts: all equal; 575 Quint refuses: 445 at Quint's place, 130 elsewhere, none read |
 | 1000 more from another seed, generated after the fix below, in the container only | 1000 | 875 | 307 Quint accepts: 306 equal, 1 we refuse; 693 Quint refuses: 569 at Quint's place, 122 elsewhere, 2 we read (before the fix: 865 equal, 1 refused, 13 read, 1 tree different) |
+| 9000 generated actions with definitions at block level, one typo each (#93), in the container only | 18,000 | 17,087 | 9569 Quint accepts: all equal, modules and table (10 refused before); 8431 Quint refuses: 7518 at Quint's place (4690 before), 913 elsewhere, none read |
+| 708 of the repository's samples without imports, one typo each (#93), in the container only | 708 | 672 | 111 Quint accepts: all equal; 597 Quint refuses: 561 at Quint's place (541 before), 36 elsewhere |
 
 The command for the two last rows and Quint's repository: `QUINT_EXAMPLES=<folder of .qnt>
 QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax every_file_of
@@ -4996,6 +4998,11 @@ way. Every place it knowingly differs, with the direction and the smallest file 
      `module G{val v0=val(y,y)=val(y,_)={x1F}and().implies()val v1={false}}`.
    - Reads what Quint refuses (`QNT008`), smallest:
      `module G{val v1=val{g}={...{false},f:()}-{()}val v2=or{{()},}val v4=match(){_=>{true}}}`.
+   - A binary `-` whose operand is an `if` with an `else` that ends before an `and {` list on
+     the next line, as in `val w = 2 - if (true) 1 else 1` / `and { (), 1 }`, was refused: the
+     check that an operand follows the `-` read the `else` to the end of the list and gave up.
+     It now also tries the operand with one point ending a value (#93); 10 of the 9569
+     generated files of item 4 that Quint accepts were refused this way, none is now.
    - Refusing every `let` where the retry finds more than one reading the next token can follow
      was tried and not kept: it refuses 3 of the repository's 397 samples, 1 of Quint's 196 files
      and 30 of 532 generated files Quint accepts, which the crate reads as Quint does.
@@ -5006,9 +5013,33 @@ way. Every place it knowingly differs, with the direction and the smallest file 
    `module A { val x = (a.b(1 +)) }`, at 1:28 in Quint and 1:24 in the crate. Two mutated files have Quint's lexer error first, an unterminated
    string at the end of the file that Quint's lookahead for a `match` 37 and 75 lines earlier
    reached.
+   - After a definition inside an expression (`nondet`, `def`, `val`, `pure val`, #93). When the
+     first reading of a `let` fails, the crate reads it again with one point ending a value. A
+     retry whose `let` parses but which the next token can't follow is taken only when it got at
+     least as far as the first reading's failure, counting the furthest any of its own attempts
+     got. That is how Quint's lookahead keeps the alternative that lives longer and, on a tie, the
+     one that has already left the value. Before, any such retry was taken, so an error in the
+     body was placed where a shorter reading of the value stopped: `{ nondet v = 0.to(2).oneOf()
+     x' = v + }` at the `x` instead of the `}`, and `{ def g(a) = a` / `x' = 1 +` / `}` as
+     `QNT006` at the `x` (samples in `tests/samples/places/`).
+   - On 9000 generated actions with 1 to 3 such definitions at block level, one line or several,
+     under `all`, `any`, `and`, `if` and nested blocks, each with one typo planted (a dangling
+     operator; a `}`, `)`, `,`, `{` or `(` dropped or added; a stray `///` line; `=` for `==` or
+     the reverse; a `'` dropped; seeds 1 to 3, in the container only): of the 8431 Quint refuses,
+     7518 are at Quint's code, line and column (4690 before); none that agreed before differs.
+     The 913 left, by Quint's message: 484 `no viable alternative`, 240 `extraneous input`, 84
+     `mismatched input`, 68 `missing`, 37 another code; the same generator without the
+     definitions (2780 refused) differs on 207, the same kinds. 143 of the 913 are a retry still
+     taken where Quint keeps the first reading, the crate naming `QNT006` or `QNT008` where Quint
+     names `QNT000`. Smallest, an error in a `def`'s value:
+     `module A { var x: int action step = { def g(a) = f(x +) x' = 1 } }`, `QNT000` at 1:55 in
+     Quint and `QNT006` at 1:51 in the crate; and
+     `module A { var x: int action step = { and val w = 1 x' = w } }`, at 1:43 in both, `QNT000`
+     in Quint and `QNT008` in the crate.
 5. **A syntax error's message. Same verdict and place, other text.** For `QNT000` the crate words
    the message itself, with Quint's code, line and column; Quint's lists the tokens its parser
-   expected (decided on #84). Every other code's message is Quint's.
+   expected (decided on #84). Every other code's message is Quint's. A token the message shows
+   is on one line: a doc comment without its line end, any other line break as `\n`.
 
 Nothing else is known to differ: the crate writes what Quint writes even where Quint's behaviour
 looks like a fault (a doc line that keeps half a character as U+FFFD, `from ""` read as no path).
