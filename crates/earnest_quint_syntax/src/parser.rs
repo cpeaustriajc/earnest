@@ -125,6 +125,12 @@ impl Within {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Unfollowed {
+    Taken,
+    Refused,
+}
+
 enum Follow {
     Declaration,
     Body,
@@ -168,12 +174,16 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         edge: false,
         reached: Cell::new(0),
         searches: 0,
+        exhausted: None,
         root: false,
         follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
     };
     let outcome = parser.file();
+    if let Some(refusal) = parser.exhausted.take() {
+        return Err(refusal);
+    }
     match (parser.reported.take(), outcome) {
         (Some(first), _) | (None, Err(first)) => Err(first),
         (None, Ok(())) => Ok(Parsed {
@@ -195,6 +205,7 @@ struct Parser<'a> {
     edge: bool,
     reached: Cell<usize>,
     searches: usize,
+    exhausted: Option<Reported>,
     root: bool,
     follows: Vec<Follow>,
     candidates: Vec<usize>,
@@ -526,7 +537,23 @@ impl Parser<'_> {
 
     fn searching(&mut self) -> bool {
         self.searches += 1;
-        self.searches <= SEARCHES
+        let within = self.searches <= SEARCHES;
+        if !within && self.exhausted.is_none() {
+            let token = self.token(self.at);
+            self.exhausted = Some(Reported {
+                problem: Problem::coded(
+                    "unreadable",
+                    format!(
+                        "this file needs more than {SEARCHES} attempts to read as Quint reads it, and earnest gives up rather than guess: put the values of nested `let`s in parentheses"
+                    ),
+                    token.line - 1,
+                    token.column,
+                ),
+                token: self.at,
+                seen: self.at,
+            });
+        }
+        within
     }
 
     fn parenthesized_here(&mut self) -> Result<Json, Reported> {
@@ -2105,50 +2132,37 @@ impl Parser<'_> {
         }
     }
 
-    fn followed_retry(
+    fn choose(
         &mut self,
         mark: &Mark,
         mut candidates: Vec<usize>,
+        unfollowed: Unfollowed,
     ) -> Option<(Definition, Json)> {
         candidates.sort_unstable();
         candidates.dedup();
+        let mut following = Vec::new();
+        let mut parsing = None;
         for candidate in candidates.into_iter().rev() {
-            if !self.searching() {
-                break;
-            }
-            self.rewind(mark);
-            self.stops.push(candidate);
-            if self.let_parts(mark.candidates).is_ok() && self.can_follow() {
-                self.rewind(mark);
-                self.stops.push(candidate);
-                return self.let_parts(mark.candidates).ok();
-            }
-        }
-        None
-    }
-
-    fn retried(&mut self, mark: &Mark, mut candidates: Vec<usize>) -> Option<(Definition, Json)> {
-        candidates.sort_unstable();
-        candidates.dedup();
-        let mut parsed = None;
-        for candidate in candidates.into_iter().rev() {
-            if !self.searching() {
+            if !self.searching() || !following.is_empty() {
                 break;
             }
             self.rewind(mark);
             self.stops.push(candidate);
             if self.let_parts(mark.candidates).is_ok() {
                 if self.can_follow() {
-                    self.rewind(mark);
-                    self.stops.push(candidate);
-                    return self.let_parts(mark.candidates).ok();
+                    following.push(candidate);
+                } else {
+                    parsing = parsing.or(Some(candidate));
                 }
-                parsed = parsed.or(Some(candidate));
             }
         }
         self.rewind(mark);
-        let candidate = parsed?;
-        self.stops.push(candidate);
+        let chosen = match (following.as_slice(), unfollowed) {
+            ([first, ..], _) => *first,
+            ([], Unfollowed::Taken) => parsing?,
+            ([], Unfollowed::Refused) => return None,
+        };
+        self.stops.push(chosen);
         self.let_parts(mark.candidates).ok()
     }
 
@@ -2162,7 +2176,7 @@ impl Parser<'_> {
                     .get(mark.candidates..)
                     .unwrap_or_default()
                     .to_vec();
-                if let Some(parts) = self.followed_retry(&mark, candidates) {
+                if let Some(parts) = self.choose(&mark, candidates, Unfollowed::Refused) {
                     parts
                 } else {
                     self.rewind(&mark);
@@ -2171,7 +2185,7 @@ impl Parser<'_> {
                 }
             }
             Err((failure, candidates)) => {
-                let Some(parts) = self.retried(&mark, candidates.clone()) else {
+                let Some(parts) = self.choose(&mark, candidates.clone(), Unfollowed::Taken) else {
                     self.rewind(&mark);
                     self.candidates.extend(candidates);
                     return Err(*failure);
