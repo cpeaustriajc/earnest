@@ -1,3 +1,4 @@
+use super::again;
 use super::cond::Cond;
 use super::num::{Num, Stop};
 use super::shared::Shared;
@@ -107,6 +108,7 @@ pub(super) enum Val {
     MapOf(Box<[(Self, Self)]>),
     Sweep(Box<Sweeping>),
     Fold(Box<Carrying>),
+    AnySize(Box<(Self, Expr)>),
 }
 
 fn all_of(items: &[Expr], shared: &Shared) -> Box<[Val]> {
@@ -247,6 +249,10 @@ impl Val {
                 };
                 folding.over(&collection, first, frame, Self::eval)
             }
+            Self::AnySize(within) => match within.0.eval(frame) {
+                Err(fault) => again(fault, frame, |frame| crate::eval(&within.1, frame)),
+                found => found,
+            },
         }
     }
 }

@@ -628,8 +628,17 @@ fn a_label_keeps_every_number_of_the_compiled_module_as_quint_wrote_it() {
             .map(|(_, _, feature, message)| (feature, message))
             .collect()
     };
-    assert_eq!(faults(&marked).len(), 2, "{marked}");
+    assert!(
+        faults(&marked).is_empty(),
+        "a Quint `int` has no size, so `wider`'s literals past 64 bits are read: {marked}"
+    );
     assert_eq!(faults(&marked), faults(&bare));
+    let wider = quint.earnest(&["verify", "numbers", "--no-cache", "--model", "wider"]);
+    assert!(
+        wider.stdout.contains("broken  below")
+            && wider.stdout.contains("start  m = 18446744073709551617"),
+        "`m < 9223372036854775808` is false for m = 2^64 + 1, as `quint test` says\n{wider}"
+    );
     let text = quint.earnest(&["verify", "numbers", "--no-cache"]);
     let plain = quint.earnest(&["verify", "numbers_bare", "--no-cache"]);
     assert_eq!(result_line(&text, "wide"), result_line(&plain, "wide"));

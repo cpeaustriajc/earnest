@@ -1,8 +1,9 @@
+use crate::code;
 use crate::json::{Def, Entry, Expr as Quint};
 use crate::reach::variables_reached;
 use crate::reader::{Read, Reader, Refusal, refusal};
 use crate::spans::{Span, items, member, text_of, whole, without};
-use earnest_ir::{Code, Label, Piece};
+use earnest_ir::{Label, Piece};
 use std::collections::HashMap;
 
 const INVARIANTS: &str = "q::inv";
@@ -180,7 +181,7 @@ pub(crate) fn label<'a>(reader: &mut Reader<'a>, view: &'a Def) -> Read<Label> {
     });
     let expr = read.map_err(|refused| unread(reader, view, &refused))?;
     Ok(Label {
-        pieces: vec![Piece::Shown(Code::new(expr))],
+        pieces: vec![Piece::Shown(code(expr))],
         slots: reader.slots,
     })
 }

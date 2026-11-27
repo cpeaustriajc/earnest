@@ -95,7 +95,7 @@ impl<'m> Premises<'m> {
                 premises.add(
                     &rule.id,
                     PremiseKind::Implies,
-                    Cow::Owned(Code::new(given)),
+                    Cow::Owned(rule.holds.part(given)),
                     rule.slots,
                 );
             }

@@ -22,6 +22,7 @@ const POWER: &str = include_str!("../fixtures/power.json");
 const WIDE: &str = include_str!("../fixtures/wide.json");
 const MANY: &str = include_str!("../fixtures/many.json");
 const OVERFLOW: &str = include_str!("../fixtures/overflow.json");
+const START_FAULT: &str = include_str!("../fixtures/startfault.json");
 const BANK: &str = include_str!("../../../tasks/quint/models/bank.json");
 const SHAPES: &str = include_str!("../../../tasks/quint/models/shapes.json");
 const REFUSED: &str = include_str!("../fixtures/refused.json");
@@ -484,14 +485,15 @@ fn an_integer_power_is_read() {
 }
 
 #[test]
-fn an_integer_beyond_64_bits_is_refused() {
-    let found = problems(WIDE);
-    assert!(
-        found
-            .iter()
-            .any(|problem| problem.message.contains("an integer beyond 64 bits")),
-        "99999999999999999999 does not fit: {found:?}"
+fn an_integer_beyond_64_bits_is_read_with_every_digit() {
+    let read = model(WIDE);
+    let wide = Value::whole("99999999999999999999".parse().expect("digits"));
+    assert_eq!(
+        read.runs.starts,
+        Some(vec![vec![wide.clone()]]),
+        "a Quint `int` has no size, so 99999999999999999999 is the start of `x`"
     );
+    assert_eq!(read.symbols.show(&wide), "99999999999999999999");
 }
 
 #[test]
@@ -501,7 +503,18 @@ fn a_step_that_unfolds_into_too_many_actions_is_refused() {
 
 #[test]
 fn a_fault_while_working_out_the_start_states_is_refused() {
-    refused_with(OVERFLOW, "`init`", "too large to hold");
+    refused_with(START_FAULT, "`init`", "a negative number");
+}
+
+#[test]
+fn a_sum_past_64_bits_in_the_start_states_is_the_exact_number() {
+    assert_eq!(
+        model(OVERFLOW).runs.starts,
+        Some(vec![vec![Value::whole(
+            "9223372036854775808".parse().expect("digits")
+        )]]),
+        "`quint test` gives 9223372036854775807 + 1 > 0, so earnest gives 2^63"
+    );
 }
 
 #[test]

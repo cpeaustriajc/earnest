@@ -8,6 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
+num-bigint.workspace = true
 rustc-hash.workspace = true
 serde_json.workspace = true
 
