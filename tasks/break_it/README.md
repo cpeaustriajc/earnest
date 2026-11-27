@@ -3393,6 +3393,14 @@ of the integration branch with Quint 0.33.1 from npm (`quint test --backend type
 test` output through a small program in place of `quint`. Each `.qnt` file has its recordings
 under `crates/earnest_quint_syntax/tests/quint/`.
 
+What became of the four findings, all on the integration branch: the step's own `nondet` over 100
+values or more is fixed by #99 (its section follows this one); the lone false `assert` after a
+`nondet` at `171f2d9b` and the range past 64 bits at `1fa66cda`, each attacked again by the pass
+and found correct; `confirm --quint` gives a cause only to the run that reaches it since
+`e782398b`. With #99 in, `pickTest` of the `confirm` model agrees with `quint test`, so its test
+now asserts that the run that divides carries the cause and that no other run is listed. The
+sections below describe the build the pass ran on.
+
 ### A step's own `nondet` over 100 values or more passes runs that `quint test` fails
 
 `models/quint_seventh/big_step_pick/big_step_pick.qnt`: `init.then(nondet n = 0.to(199).oneOf()
@@ -3465,7 +3473,7 @@ check reaches counts". Because the cause is worked out for the check, not for ea
 (`apps/earnest/src/confirm_quint.rs`, the `reasons` handed to every comparison), one dividing run
 turns every other run's real difference into `cannot`, and `confirm` exits as it would for a known
 cause. Right result: `differs` for `pickTest`, `cannot` only for `halfTest`. Test:
-`confirm_names_the_division_cause_only_on_a_run_that_reaches_a_division`.
+`confirm_names_the_division_cause_on_the_run_that_divides_and_on_no_other`.
 
 ### Two seeded random comparisons
 

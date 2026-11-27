@@ -104,7 +104,7 @@ fn a_run_s_own_nondet_over_a_range_past_64_bits_is_played_not_called_a_set_read_
 }
 
 #[test]
-fn confirm_names_the_division_cause_only_on_a_run_that_reaches_a_division() {
+fn confirm_names_the_division_cause_on_the_run_that_divides_and_on_no_other() {
     let folder = TempDir::new().expect("a temporary folder can be made");
     let program = folder.path().join("quint");
     fs::write(&program, RECORDED_TEST).expect("the recording program can be written");
@@ -129,21 +129,23 @@ fn confirm_names_the_division_cause_only_on_a_run_that_reaches_a_division() {
         .output()
         .expect("earnest starts");
     let printed = String::from_utf8_lossy(&output.stdout);
-    let pick: Vec<&str> = printed
-        .lines()
-        .skip_while(|line| !line.contains("run pickTest"))
-        .take(2)
-        .collect();
+    let lines: Vec<&str> = printed.lines().collect();
+    let half = lines
+        .iter()
+        .position(|line| line.contains("run halfTest"))
+        .and_then(|at| lines.get(at.saturating_add(1)));
     assert!(
-        !pick.is_empty()
-            && !pick
-                .iter()
-                .any(|line| line.contains("truncates toward zero")),
-        "`pickTest` reaches no `/` and no `%`: `quint test` fails it (`pickTest failed after 1 \
-         test(s)`, `Error [QNT513]: Cannot continue in `then``) for a reason that is not \
-         division, and the docs give the division cause to \"a run the check plays [that] \
-         reaches `/` or `%`\" (\"only what the check reaches counts\"). Naming it on every run \
-         of a check where one run divides turns a real `differs` into `cannot`\n{printed}"
+        half.is_some_and(|cause| cause.contains("truncates toward zero")),
+        "`halfTest` is `(-7) / 2 == -4`: the checker floors and says holds, `quint test` \
+         truncates and fails it, and the line under it names that cause\n{printed}"
+    );
+    assert!(
+        !printed.contains("pickTest"),
+        "`pickTest` reaches no `/` and no `%`, and since #99 the checker breaks it as `quint \
+         test` does (`pickTest failed after 1 test(s)`, `Error [QNT513]: Cannot continue in \
+         `then``), so it is not listed. Before #99 it differed, and the division cause of \
+         `halfTest` was given to it too, which turned a real `differs` into `cannot`: a cause \
+         belongs to the run that reaches it (`confirm_reach.rs` has the tests for that)\n{printed}"
     );
 }
 
