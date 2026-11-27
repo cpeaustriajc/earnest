@@ -5329,9 +5329,9 @@ tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint cra
 
 | Corpus | Checks | Equal | Notes |
 | --- | --- | --- | --- |
-| Every check earnest compiles under `tasks/` (`checks.txt`) | 249 | 241 | 6 refused by both with Quint's message (4 `init` not found, 2 `Internal error while flattening`); 2 refused by Quint's mode check (`QNT203`, `quintrefuses/refused.qnt`), left to #88 |
+| Every check earnest compiles under `tasks/` (`checks.txt`), on the tree merged with `claude/lucid-brown-f5xvr8` | 255 | 245 | 6 refused by both with Quint's message (4 `init` not found, 2 `Internal error while flattening`); 4 refused by Quint's type or effect pass (`QNT203` in `quintrefuses/refused.qnt`, and `typed/illtyped.qnt`), left to #87 and #88 |
 | The 17 shapes, every name tried; every module of `tasks/quint/imports/` and of the samples; what a check adds (`extra_checks.txt`) | 272 | 64 | 208 refused by both, each with Quint's message: names a shape does not see (`QNT404`), modules with no `init`, the two flattener crashes |
-| The reader, on each of the 305 equal | 305 | 305 | 251 searched with the same outcome, 54 unreadable both ways with the same problems |
+| The reader, on each of the 309 equal | 309 | 309 | 255 searched with the same outcome, 54 unreadable both ways with the same problems |
 | Quint's repository at `v0.33.1`, in the container only: each module with `action init` and `action step` (`corpus_checks.py`), `--main M` | 108 modules in 93 of the 196 files | 106 | 2 refused by both with Quint's message: `adr006before.qnt` (a syntax error, `QNT000`) and `two_phase_commit_modules.qnt` (`Internal error while flattening`) |
 
 The command for the last row: `python3 -I tasks/quint/syntax/corpus_checks.py <quint> > <list>`,
