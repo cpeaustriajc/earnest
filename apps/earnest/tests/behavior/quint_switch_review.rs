@@ -251,10 +251,10 @@ module A {{
         .timeout(Duration::from_mins(2))
         .output();
     let took = started.elapsed();
-    let stdout = output
-        .as_ref()
-        .map(|done| String::from_utf8_lossy(&done.stdout).into_owned())
-        .unwrap_or_default();
+    let stdout = output.as_ref().map_or_else(
+        |_| String::new(),
+        |done| String::from_utf8_lossy(&done.stdout).into_owned(),
+    );
     assert!(
         took < Duration::from_mins(1) && stdout.starts_with("unreadable  specs/a.qnt"),
         "the build before the switch, with Quint 0.33.1, printed in 7 s:\n\
