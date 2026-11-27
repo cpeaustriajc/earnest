@@ -150,7 +150,7 @@ unreadable  old/earnest.quint.json
 
 An entry that wrote a property as an expression, such as `"invariants": [{ "name": "nonNegative", "is": "n >= 0" }]`, is given the `val` to add with its mark: `/// @check nonNegative` above the module and `val nonNegative = n >= 0` inside it. An expression with no `name` gets the name `property`, then `property2`.
 
-A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste.
+A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste. Those lines name what the import gives after the import's name, as `val atMostTwo = V::x <= 2` for the entry's `x <= 2`, and a line that takes the place of the copy's own `init` or `step` is listed as such. A name bound inside the expression, as the `x` of `S.forall(x => x > 0)`, and the label of a `match` branch are left as written.
 
 ## Expected counterexamples
 
@@ -232,7 +232,7 @@ A met expectation prints one line, `broken  nonNegative  (expected)`, with no pa
 
 ### Stopping once every counterexample is found
 
-When every property the check judges is marked `broken` and is an invariant, or a temporal property that earnest reads as one (`always(P)`, or such parts of an `and`), the search stops at the end of the level in which it finds the last of them broken. A property in parts stops the search only once every part is broken. The model is `pass`, its count is the states found so far, and the result line ends with `(every expected counterexample was found)`. The search goes breadth first and stops only at the end of a level, so each counterexample is a shortest one, as in a full search. Runs need no search and are played as usual.
+When every property the check judges is marked `broken` or `reachable` and is an invariant, or a temporal property that earnest reads as one (`always(P)`, or such parts of an `and`), the search stops at the end of the level in which it finds the last of them broken or reached. A state marked `reachable` counts as a counterexample here: it is the counterexample of "no state makes it true". A property in parts stops the search only once every part is broken. The model is `pass`, its count is the states found so far, and the result line ends with `(every expected counterexample was found)`. The search goes breadth first and stops only at the end of a level, so each counterexample is a shortest one, as in a full search. Runs need no search and are played as usual.
 
 A check that also lists an invariant that must hold, or a temporal property about runs such as `eventually(P)`, searches every state: `vaultKnownBugs` above counts all 5. With `--rule nonNegative`, only that rule is judged, so `vaultKnownBugs` stops too. `--rule` that names a run plays the run from the start states with no search, as a check that lists only runs does, so a model without end gives the run's verdict and counts its start states only.
 

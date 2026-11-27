@@ -95,3 +95,29 @@ fn every_compiled_fixture_the_reader_took_before_runs_had_their_own_variables_is
         "read by 7f18149, so read now: {refused:#?}"
     );
 }
+
+#[test]
+fn every_compiled_sample_of_a_shape_a_project_writes_is_still_read() {
+    let folder = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tasks/quint/samples/fixtures/compiled"
+    );
+    let mut paths: Vec<std::path::PathBuf> = std::fs::read_dir(folder)
+        .unwrap_or_else(|error| panic!("{folder} can't be listed: {error}"))
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty(), "{folder} holds the compiled samples");
+    let refused: Vec<String> = paths
+        .iter()
+        .filter_map(|path| {
+            let source = std::fs::read_to_string(path)
+                .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()));
+            read(&path.display().to_string(), &source)
+                .err()
+                .map(|problems| format!("{}: {problems:?}", path.display()))
+        })
+        .collect();
+    assert!(refused.is_empty(), "a sample stopped reading: {refused:#?}");
+}
