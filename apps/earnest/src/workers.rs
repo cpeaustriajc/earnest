@@ -1,6 +1,18 @@
 use earnest_check::{Helpers, WORKER_STACK};
+use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
+
+thread_local! {
+    static STACK: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+/// The bytes of stack this thread was started with, when it is a thread [`run_each`] started to
+/// run a task; `None` on every other thread: the one that runs the command, and a thread a task
+/// starts itself.
+pub(crate) fn stack_of_this_worker() -> Option<usize> {
+    STACK.with(Cell::get)
+}
 
 #[derive(Debug)]
 struct Pool {
@@ -52,6 +64,7 @@ where
         let workers: Vec<_> = (0..pool.crew)
             .map(|_| {
                 earnest_threads::start(scope, Some(WORKER_STACK), || {
+                    STACK.with(|stack| stack.set(Some(WORKER_STACK)));
                     let mut mine = Vec::new();
                     while let Some(position) = pool.claim() {
                         if let Some(task) = tasks.get(position) {
@@ -78,7 +91,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{Pool, run_each};
+    use super::{Pool, run_each, stack_of_this_worker};
+    use earnest_check::WORKER_STACK;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use std::time::Duration;
@@ -201,6 +215,30 @@ mod tests {
             pool.helpers.borrow(usize::MAX).threads(),
             0,
             "every thread runs a task, so a model that starts early has one thread"
+        );
+    }
+
+    #[test]
+    fn only_a_thread_run_each_started_for_a_task_knows_its_stack() {
+        assert_eq!(stack_of_this_worker(), None, "the test's own thread");
+        let tasks: Vec<usize> = (0..6).collect();
+        let seen = run_each(&tasks, 2, |_, _| {
+            let started = thread::scope(|scope| {
+                earnest_threads::start(scope, None, stack_of_this_worker)
+                    .expect("a thread starts")
+                    .join()
+                    .expect("the thread ends")
+            });
+            (stack_of_this_worker(), started)
+        });
+        assert!(
+            seen.iter().all(|each| *each == (Some(WORKER_STACK), None)),
+            "every task knows its worker's stack, and a thread it starts does not: {seen:?}"
+        );
+        assert_eq!(
+            stack_of_this_worker(),
+            None,
+            "the test's own thread, afterwards"
         );
     }
 }

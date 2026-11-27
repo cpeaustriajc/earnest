@@ -8,11 +8,11 @@ use crate::plan::{Labels, Plan, Spot, Viewing, planned};
 use crate::reading::{Content, Declared, ModelFile, Readable};
 use crate::run::whole_of;
 use crate::typecheck::typechecked;
-use crate::workers::run_each;
+use crate::workers::{run_each, stack_of_this_worker};
 use earnest_diagnostics::{Place, Problem};
 use earnest_ir::{Code, Expr, Op};
 use earnest_quint::{Located, Runs, Setup, Typechecked};
-use earnest_quint_syntax::{Parsed, Target, read};
+use earnest_quint_syntax::{Parsed, Target, on_a_stack_of, read};
 use std::collections::{BTreeSet, HashMap};
 use std::env;
 use std::fs;
@@ -209,6 +209,15 @@ pub(crate) fn quint_text(path: impl AsRef<Path>) -> io::Result<String> {
     fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
+const _: () = assert!(
+    earnest_check::WORKER_STACK >= earnest_quint_syntax::STACK_NEEDED,
+    "a worker's stack must hold the front end, which runs on it with no thread of its own"
+);
+
+pub(crate) fn with_front_end<T>(work: impl FnOnce() -> T) -> T {
+    on_a_stack_of(stack_of_this_worker().unwrap_or(0), work)
+}
+
 pub(crate) fn front_end(shown: &str) -> Result<Parsed, earnest_quint_syntax::Problem> {
     read(&normalized(Path::new(shown)), |path| quint_text(path).ok())
 }
@@ -286,11 +295,13 @@ fn compile(job: &Job) -> Result<String, Problem> {
     let target = target_of(&labelled(job));
     #[cfg(test)]
     tests::record(&target, &job.shown);
-    let parsed = front_end(&job.shown).map_err(|problem| compile_failed(job, &problem))?;
-    let compiled = parsed
-        .compile(&target)
-        .map_err(|problem| compile_failed(job, &problem))?;
-    Ok(compiled.output().to_string())
+    with_front_end(|| {
+        let parsed = front_end(&job.shown).map_err(|problem| compile_failed(job, &problem))?;
+        let compiled = parsed
+            .compile(&target)
+            .map_err(|problem| compile_failed(job, &problem))?;
+        Ok(compiled.output().to_string())
+    })
 }
 
 fn runs_only(check: &Check) -> bool {
@@ -459,12 +470,15 @@ pub(crate) fn parsed(real_file: &Path, shown: &str) -> Result<Places, Problem> {
     if !Path::new(shown).is_file() {
         return Err(not_parsed());
     }
-    let parsed = front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
-    Places::from_quint(
-        &parsed.output().to_string(),
-        &parsed.source_map().to_string(),
-    )
-    .ok_or_else(not_parsed)
+    with_front_end(|| {
+        let parsed =
+            front_end(shown).map_err(|problem| parse_failed(shown, real_file, &problem))?;
+        Places::from_quint(
+            &parsed.output().to_string(),
+            &parsed.source_map().to_string(),
+        )
+        .ok_or_else(not_parsed)
+    })
 }
 
 pub(crate) fn segments_end_alike(first: &str, second: &str) -> bool {
