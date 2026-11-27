@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import { type Exploration, explore, m, replay } from "@earnestjs/model";
 
-const FAULT = "takes a division with a negative number or a divisor below 1 in this state";
+const FAULT = "takes a division or a remainder by zero in this state";
+const STUCK = "no action can happen here, and the model does not mark it as an end";
 
 const messages = (found: Exploration): string[] => found.findings.map((finding) => finding.message);
 
@@ -18,15 +19,9 @@ test("m.div is exact up to the largest safe integer", () => {
   expect(m.div(Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER)).toBe(0);
 });
 
-test("m.div of a negative number, or by a divisor below 1, throws the division fault", () => {
-  for (const [a, b] of [
-    [-1, 3],
-    [5, 0],
-    [5, -2],
-    [-4, -2],
-  ] as const) {
-    expect(() => m.div(a, b)).toThrow(/negative number or a divisor below 1/);
-  }
+test("m.div of a negative number, or by a divisor below 1, truncates, and by zero throws the division fault", () => {
+  expect([m.div(-1, 3), m.div(5, -2), m.div(-4, -2)]).toStrictEqual([0, -2, 2]);
+  expect(() => m.div(5, 0)).toThrow(/by zero/);
 });
 
 test("a division by zero in a change is a fault, as the checker reports it", () => {
@@ -41,23 +36,17 @@ test("a division by zero in a change is a fault, as the checker reports it", () 
   expect(messages(found)).toStrictEqual([`the change of the action \`cut\` ${FAULT}`]);
 });
 
-test("a division of a negative number in a rule, an end and a when is a fault", () => {
+test("a division of a negative number in a rule, an end and a when has a value, not a fault", () => {
   const Rule = m.model("Rule", { n: m.int(-1, 1).initial(-1) });
   const rule = m.rule(Rule, "Rule", (s) => m.div(s.n, 1) !== 99);
   const always = m.end(Rule, "Always", () => true);
-  expect(messages(explore(Rule, { exports: { rule, always } }))).toStrictEqual([
-    `the rule \`rule\` ${FAULT}`,
-  ]);
+  expect(messages(explore(Rule, { exports: { rule, always } }))).toStrictEqual([]);
   const When = m.model("When", { n: m.int(-1, 1).initial(-1) });
   const inWhen = m.action(When, "when", { when: (s) => m.div(s.n, 1) === 0, changes: () => ({}) });
-  expect(messages(explore(When, { exports: { inWhen } }))).toStrictEqual([
-    `the condition of the action \`inWhen\` ${FAULT}`,
-  ]);
+  expect(messages(explore(When, { exports: { inWhen } }))).toStrictEqual([STUCK]);
   const Ended = m.model("Ended", { n: m.int(-1, 1).initial(-1) });
   const over = m.end(Ended, "Over", (s) => m.div(s.n, 1) === 0);
-  expect(messages(explore(Ended, { exports: { over } }))).toStrictEqual([
-    `the end \`over\` ${FAULT}`,
-  ]);
+  expect(messages(explore(Ended, { exports: { over } }))).toStrictEqual([STUCK]);
 });
 
 test("replay reports the division fault of an action", () => {

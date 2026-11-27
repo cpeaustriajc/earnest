@@ -143,8 +143,7 @@ export const namer = (exports: Exports = {}): ((part: object, fallback: string) 
 
 const NULL_READ = "reads a value that is null";
 const OVERFLOW = "computes a number too large to hold";
-const REMAINDER = "takes a remainder with a negative number or a divisor below 1";
-const DIVISION = "takes a division with a negative number or a divisor below 1";
+const BY_ZERO = "takes a division or a remainder by zero";
 const WRONG_KIND = "uses a value of the wrong kind";
 
 /** What `attempt` gives: the result, or the sentence part saying why there is none. */
@@ -160,11 +159,8 @@ export const attempt = <T>(run: () => T): Attempt<T> => {
   try {
     return { fault: null, value: run() };
   } catch (thrown) {
-    if (thrown instanceof RemainderFault) {
-      return { fault: REMAINDER, value: null };
-    }
-    if (thrown instanceof DivisionFault) {
-      return { fault: DIVISION, value: null };
+    if (thrown instanceof RemainderFault || thrown instanceof DivisionFault) {
+      return { fault: BY_ZERO, value: null };
     }
     if (thrown instanceof NullFault) {
       return { fault: NULL_READ, value: null };
@@ -179,7 +175,7 @@ export const attempt = <T>(run: () => T): Attempt<T> => {
 const numberFault = (json: Json): string | null => {
   if (typeof json === "number") {
     if (Number.isNaN(json)) {
-      return REMAINDER;
+      return BY_ZERO;
     }
     return Math.abs(json) > Number.MAX_SAFE_INTEGER ? OVERFLOW : null;
   }

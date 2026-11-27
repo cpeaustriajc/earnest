@@ -247,10 +247,7 @@ test("a rule about runs that can't be judged in a state is unknown, with a fault
     ["low", "holds"],
   ]);
   expect(found.findings.map((finding) => [finding.kind, finding.message])).toStrictEqual([
-    [
-      "fault",
-      "the rule `halves` takes a division with a negative number or a divisor below 1 in this state",
-    ],
+    ["fault", "the rule `halves` takes a division or a remainder by zero in this state"],
   ]);
 });
 

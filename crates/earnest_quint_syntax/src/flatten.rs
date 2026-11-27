@@ -1,6 +1,6 @@
 use crate::ids::Ids;
 use crate::json::Json;
-use crate::names::{Entry, Raised, Resolution, built_in, resolve};
+use crate::names::{Entry, Prefix, Raised, Resolution, built_in};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -275,12 +275,10 @@ impl<'a> Inliner<'a> {
         entry.get("type").map(|aliased| (id, aliased))
     }
 
-    fn resolved(&self, written: &Json) -> Json {
-        let Some((first, mut aliased)) = self.aliased(written) else {
-            return written.clone();
-        };
+    fn resolved(&self, written: &Json) -> Option<Json> {
+        let (first, mut aliased) = self.aliased(written)?;
         if let Some(known) = self.resolved.borrow().get(&first) {
-            return known.clone();
+            return Some(known.clone());
         }
         let mut chain = vec![first];
         let mut known = None;
@@ -297,42 +295,49 @@ impl<'a> Inliner<'a> {
         for id in chain {
             resolved.insert(id, found.clone());
         }
-        found
+        Some(found)
     }
 }
 
 fn inline_type(table: &Inliner<'_>, written: &Json) -> Json {
-    let mut inlined = table.resolved(written);
-    match text(&inlined, "kind") {
-        "set" | "list" => inline_at(table, &mut inlined, "elem"),
+    let mut inlined = written.clone();
+    inline_in_place(table, &mut inlined);
+    inlined
+}
+
+fn inline_in_place(table: &Inliner<'_>, inlined: &mut Json) {
+    if let Some(resolved) = table.resolved(inlined) {
+        *inlined = resolved;
+    }
+    match text(inlined, "kind") {
+        "set" | "list" => inline_at(table, inlined, "elem"),
         "fun" => {
-            inline_at(table, &mut inlined, "arg");
-            inline_at(table, &mut inlined, "res");
+            inline_at(table, inlined, "arg");
+            inline_at(table, inlined, "res");
         }
         "oper" => {
-            for argument in list_mut(&mut inlined, "args") {
-                *argument = inline_type(table, argument);
+            for argument in list_mut(inlined, "args") {
+                inline_in_place(table, argument);
             }
-            inline_at(table, &mut inlined, "res");
+            inline_at(table, inlined, "res");
         }
         "tup" | "rec" | "sum" => {
-            if let Some(row) = field_mut(&mut inlined, "fields") {
+            if let Some(row) = field_mut(inlined, "fields") {
                 inline_row(table, row);
             }
         }
         "app" => {
-            for argument in list_mut(&mut inlined, "args") {
-                *argument = inline_type(table, argument);
+            for argument in list_mut(inlined, "args") {
+                inline_in_place(table, argument);
             }
         }
         _ => {}
     }
-    inlined
 }
 
 fn inline_at(table: &Inliner<'_>, value: &mut Json, key: &str) {
     if let Some(inner) = field_mut(value, key) {
-        *inner = inline_type(table, inner);
+        inline_in_place(table, inner);
     }
 }
 
@@ -1137,8 +1142,7 @@ pub(crate) fn error_text(errors: &[Raised]) -> String {
         .join(",")
 }
 
-fn resolved(modules: &mut [Json]) -> Result<Table, String> {
-    let resolution = resolve(modules);
+fn resolved(resolution: Resolution) -> Result<Table, String> {
     if resolution.errors.is_empty() {
         Ok(Table::of(resolution))
     } else {
@@ -1159,7 +1163,7 @@ pub(crate) struct Flat {
 pub(crate) fn flatten_modules(
     modules: &[Json],
     table: &Table,
-    types: &Json,
+    mut types: Json,
     ids: &mut Ids,
 ) -> Result<Flat, String> {
     let mut copies = Vec::new();
@@ -1170,22 +1174,13 @@ pub(crate) fn flatten_modules(
         .collect();
     let (inlined, mut flat_table) = inline_aliases(&unique, &table);
     let aliases = Inliner::of(&table);
-    let types = match types {
-        Json::Object(schemes) => Json::Object(
-            schemes
-                .iter()
-                .map(|(id, scheme)| {
-                    let mut scheme = scheme.clone();
-                    if let Some(written) = scheme.get("type") {
-                        let inlined = inline_type(&aliases, written);
-                        put(&mut scheme, "type", inlined);
-                    }
-                    (id.clone(), scheme)
-                })
-                .collect(),
-        ),
-        other => other.clone(),
-    };
+    if let Json::Object(schemes) = &mut types {
+        for (_, scheme) in schemes {
+            if let Some(written) = field_mut(scheme, "type") {
+                inline_in_place(&aliases, written);
+            }
+        }
+    }
     let mut state = Modules {
         aliases: inlined
             .iter()
@@ -1201,30 +1196,23 @@ pub(crate) fn flatten_modules(
             .map(|module| (text(module, "name").to_owned(), module.clone()))
             .collect(),
     };
+    let mut prefix = Prefix::default();
     while !state.waiting.is_empty() {
         let module = state.waiting.remove(0);
         let first = flatten_module(&module, &mut state, &flat_table)?;
-        let instanced = flatten_instances(&first, &state, &flat_table, ids, &mut copies)?;
+        let mut instanced = flatten_instances(&first, &state, &flat_table, ids, &mut copies)?;
+        let intermediate = resolved(prefix.then(&mut instanced))?;
         let done = state.flattened.len();
-        let mut together: Vec<Json> = state.flattened.iter().cloned().chain(instanced).collect();
-        let intermediate = resolved(&mut together)?;
-        let instanced = together.split_off(done);
-        state.flattened = together;
         for each in instanced {
             let flat = flatten_module(&each, &mut state, &intermediate)?;
             let name = text(&flat, "name").to_owned();
             state.flattened.push(flat);
             state.aliases.insert(name.clone(), name);
         }
-        let done = state.flattened.len();
-        let mut together: Vec<Json> = state
-            .flattened
-            .drain(..)
-            .chain(state.waiting.drain(..))
-            .collect();
-        flat_table = resolved(&mut together)?;
-        state.waiting = together.split_off(done);
-        state.flattened = together;
+        for flat in &mut state.flattened[done..] {
+            prefix.add(flat);
+        }
+        flat_table = resolved(prefix.then(&mut state.waiting))?;
     }
     Ok(Flat {
         modules: state.flattened,

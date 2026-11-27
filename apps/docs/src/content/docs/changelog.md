@@ -14,6 +14,16 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 - **`confirm --quint`:** it is the one command that starts the project's `quint`, found as before; with none it prints `not compared` and how to install it.
 - **Nothing kept:** `.earnest/quint/` no longer holds Quint's output, and the Quint version is no longer part of any key. A folder left by an older build can be deleted. With `--base`, a base that can't be read no longer has the reason `quintNotFound`.
 
+## November 2026: TypeScript and Rust `/` and `%` give what the language gives
+
+In a TypeScript or Rust model, a division or a remainder with a negative number or a divisor below 1 was a fault (`takes a division with a negative number or a divisor below 1`). Each now means what its own language says:
+
+- **Rust:** `/` drops the fraction and `%` has the sign of the left side: `-7 / 2 == -3`, `-7 % 2 == -1`, `7 % -2 == 1`, `-7 / -2 == 3`. A typed field keeps its type's range.
+- **TypeScript:** `m.div(a, b)` is `Math.trunc(a / b)` and `m.rem(a, b)` is JavaScript's `a % b`, the same answers as Rust, in `earnest verify` and in `@earnestjs/model`.
+- **Faults:** a zero divisor, `takes a division or a remainder by zero`, where Rust panics and JavaScript gives `NaN`; and in Rust the type's smallest number over `-1`, such as `-128_i8 / -1` or `-128_i8 % -1`, where Rust panics on overflow. A Rust setup may now write `-7 / 2`.
+- **`earnest tla`:** writes the truncated forms, so TLC, whose `\div` floors, computes the same answer and `earnest confirm --tlc` says `same`.
+- **Unchanged:** Quint models, where `/` floors. A model that never divides a negative number gets the same answers, and the search is as fast as before. See [TypeScript](/reference/typescript/#disallowed-constructs) and [Rust](/reference/rust/#integer-types-and-overflow).
+
 ## November 2026: Quint `/` and `%` give one answer for every divisor but zero
 
 In a Quint model, `/` or `%` with a negative number was a fault (`takes a division with a negative number or a divisor below 1`), since Quint's own tools disagree there. Earnest now computes one rule that holds together, at any size:

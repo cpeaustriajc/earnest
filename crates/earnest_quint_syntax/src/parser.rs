@@ -129,8 +129,14 @@ impl Within {
 
 #[derive(Clone, Copy)]
 enum Unfollowed {
-    Taken,
+    TakenBeyond(usize),
     Refused,
+}
+
+#[derive(Default)]
+struct Found {
+    following: Option<Vec<usize>>,
+    parsing: Option<Vec<usize>>,
 }
 
 enum Follow {
@@ -183,6 +189,8 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
+        forced: None,
+        doubtful: Vec::new(),
     };
     let outcome = parser.file();
     if let Some(refusal) = parser.too_deep.take() {
@@ -193,10 +201,137 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
     }
     match (parser.reported.take(), outcome) {
         (Some(first), _) | (None, Err(first)) => Err(first),
-        (None, Ok(())) => Ok(Parsed {
-            modules: parser.modules,
-            listened: parser.listened,
-        }),
+        (None, Ok(())) => {
+            let doubtful = std::mem::take(&mut parser.doubtful);
+            let mut points: Vec<usize> = doubtful.iter().map(|doubt| doubt.at).collect();
+            points.sort_unstable();
+            points.dedup();
+            let declaration_of = |point: usize| {
+                doubtful
+                    .iter()
+                    .filter(|doubt| doubt.at == point)
+                    .map(|doubt| doubt.declaration)
+                    .try_fold(None, |reach: Option<Span>, declaration| {
+                        let (start, end) = declaration?;
+                        Some(Some(reach.map_or((start, end), |(first, last)| {
+                            (first.min(start), last.max(end))
+                        })))
+                    })
+                    .flatten()
+            };
+            if let Some(&point) = points
+                .iter()
+                .find(|&&point| reads_with_a_name_at(tokens, source, point, declaration_of(point)))
+            {
+                let value = doubtful
+                    .iter()
+                    .rev()
+                    .find(|doubt| doubt.at == point)
+                    .and_then(|doubt| doubt.value);
+                return Err(two_readings(tokens, point, value));
+            }
+            Ok(Parsed {
+                modules: parser.modules,
+                listened: parser.listened,
+            })
+        }
+    }
+}
+
+fn reads_with_a_name_at(
+    tokens: &[Token],
+    source: usize,
+    doubt: usize,
+    declaration: Option<Span>,
+) -> bool {
+    if let Some((start, end)) = declaration {
+        let mut ids = Ids::default();
+        let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+        parser.at = start;
+        let mut read = true;
+        while read && parser.at < end {
+            read = parser.documented_declaration().is_ok();
+        }
+        if !read || parser.too_deep.is_some() || parser.exhausted.is_some() {
+            return false;
+        }
+        if parser.at == end {
+            return named_only(parser.reported.as_ref(), doubt);
+        }
+    }
+    let mut ids = Ids::default();
+    let mut parser = forced_parser(tokens, &mut ids, source, doubt);
+    let outcome = parser.file();
+    outcome.is_ok()
+        && parser.too_deep.is_none()
+        && parser.exhausted.is_none()
+        && named_only(parser.reported.as_ref(), doubt)
+}
+
+fn named_only(reported: Option<&Reported>, doubt: usize) -> bool {
+    reported
+        .is_some_and(|reported| reported.token == doubt + 1 && reported.problem.code == "QNT008")
+}
+
+fn forced_parser<'a>(
+    tokens: &'a [Token],
+    ids: &'a mut Ids,
+    source: usize,
+    doubt: usize,
+) -> Parser<'a> {
+    Parser {
+        tokens,
+        at: 0,
+        ids,
+        source,
+        declarations: Vec::new(),
+        modules: Vec::new(),
+        reported: None,
+        listened: None,
+        edge: false,
+        reached: Cell::new(0),
+        searches: 0,
+        exhausted: None,
+        nesting: 0,
+        too_deep: None,
+        root: false,
+        follows: Vec::new(),
+        candidates: Vec::new(),
+        stops: Vec::new(),
+        forced: Some(doubt),
+        doubtful: Vec::new(),
+    }
+}
+
+fn two_readings(tokens: &[Token], doubt: usize, value: Option<Span>) -> Reported {
+    let place = |at: usize| {
+        let token = &tokens[at.min(tokens.len() - 1)];
+        (token.line, token.column + 1)
+    };
+    let token = &tokens[doubt.min(tokens.len() - 1)];
+    let advice = value.map_or_else(
+        || "put the value of the definition before it in parentheses".to_owned(),
+        |(start, end)| {
+            let (from_line, from_column) = place(start);
+            let (to_line, to_column) = place(end);
+            let to_column = to_column + tokens[end.min(tokens.len() - 1)].text.chars().count();
+            format!(
+                "put that definition's value, from {from_line}:{from_column} to before {to_line}:{to_column}, in parentheses"
+            )
+        },
+    );
+    Reported {
+        problem: Problem::coded(
+            "unreadable",
+            format!(
+                "Quint's grammar reads this `{}` two ways: as written here, or as a name, which Quint refuses with QNT008; earnest can't tell which of the two Quint takes, so {advice}",
+                token.text
+            ),
+            token.line - 1,
+            token.column,
+        ),
+        token: doubt,
+        seen: doubt,
     }
 }
 
@@ -219,6 +354,14 @@ struct Parser<'a> {
     follows: Vec<Follow>,
     candidates: Vec<usize>,
     stops: Vec<usize>,
+    forced: Option<usize>,
+    doubtful: Vec<Doubt>,
+}
+
+struct Doubt {
+    at: usize,
+    value: Option<Span>,
+    declaration: Option<Span>,
 }
 
 struct Mark {
@@ -409,7 +552,12 @@ impl Parser<'_> {
     }
 
     fn unexpected<T>(&self, expected: &str) -> Result<T, Reported> {
-        let shown = self.token(self.at).text.clone();
+        let shown = self
+            .token(self.at)
+            .text
+            .trim_end_matches(['\r', '\n'])
+            .replace('\r', "\\r")
+            .replace('\n', "\\n");
         Err(self.failure(format!("unexpected '{shown}', expected {expected}")))
     }
 
@@ -495,6 +643,41 @@ impl Parser<'_> {
         true
     }
 
+    fn doubts(&mut self, at: usize) -> bool {
+        if self.forced == Some(at) {
+            return true;
+        }
+        self.doubtful.push(Doubt {
+            at,
+            value: None,
+            declaration: None,
+        });
+        false
+    }
+
+    fn may_be_called(&self, open: usize) -> bool {
+        let Some(close) = self.matching_paren(open) else {
+            return true;
+        };
+        if self.kind_at(close + 1) != Kind::LeftBrace {
+            return true;
+        }
+        let first = close + 2;
+        let case_label = self.is_identifier(first) && self.kind_at(first + 1) == Kind::LeftParen;
+        !(self.kind_at(first) == Kind::Pipe || case_label)
+    }
+
+    fn definition_value(&mut self, within: Within) -> Result<Json, Reported> {
+        let start = self.at;
+        let recorded = self.doubtful.len();
+        let value = self.followed_expr(within.follow());
+        let end = self.last();
+        for doubt in self.doubtful.iter_mut().skip(recorded) {
+            doubt.value.get_or_insert((start, end));
+        }
+        value
+    }
+
     fn may_start_body(&self, kind: Kind) -> bool {
         let next = self.kind_at(self.at + 1);
         match kind {
@@ -576,7 +759,23 @@ impl Parser<'_> {
     fn operand_starts(&mut self) -> bool {
         let mark = self.mark();
         self.advance();
-        let started = self.primary().is_ok();
+        let operand = self.mark();
+        let mut started = self.primary().is_ok();
+        let mut candidates = self
+            .candidates
+            .get(operand.candidates..)
+            .unwrap_or_default()
+            .to_vec();
+        candidates.sort_unstable();
+        candidates.dedup();
+        for candidate in candidates.into_iter().rev() {
+            if started || !self.searching() {
+                break;
+            }
+            self.rewind(&operand);
+            self.stops.push(candidate);
+            started = self.primary().is_ok();
+        }
         self.rewind(&mark);
         started
     }
@@ -670,7 +869,13 @@ impl Parser<'_> {
             if self.kind() == Kind::End {
                 return self.unexpected("'}' or a declaration");
             }
+            let declaration = self.at;
+            let recorded = self.doubtful.len();
             self.documented_declaration()?;
+            let end = self.at;
+            for doubt in self.doubtful.iter_mut().skip(recorded) {
+                doubt.declaration.get_or_insert((declaration, end));
+            }
         }
         self.advance();
         let module_id = self.placed(self.span(start));
@@ -1288,7 +1493,7 @@ impl Parser<'_> {
             }
         }
         let body = if self.eat(Kind::Assign) {
-            Some(self.followed_expr(within.follow())?)
+            Some(self.definition_value(within)?)
         } else {
             None
         };
@@ -1349,7 +1554,7 @@ impl Parser<'_> {
             self.expect(Kind::RightBrace, "}")?;
         }
         self.expect(Kind::Assign, "=")?;
-        let value = self.followed_expr(within.follow())?;
+        let value = self.definition_value(within)?;
         self.eat(Kind::Semicolon);
         let temporary_id = self.placed(self.span(start));
         let temporary_name = format!("quintDestructTemp{temporary_id}");
@@ -1506,6 +1711,13 @@ impl Parser<'_> {
             if kind == Kind::Minus && fallback == Fallback::Allowed && !self.operand_starts() {
                 break;
             }
+            if INFIX_NAMES.contains(&kind)
+                && self.edge
+                && !self.may_start_body(kind)
+                && self.doubts(self.at)
+            {
+                break;
+            }
             self.advance();
             let right = self.expr(right_level)?;
             if kind == Kind::Assign {
@@ -1544,21 +1756,26 @@ impl Parser<'_> {
         }
         let name = self.text(self.span(name_start));
         if self.kind() == Kind::LeftParen && self.goes_on(self.at) {
-            let receiver = callee.clone();
             let call = |parser: &mut Self| {
                 parser.advance();
-                let mut args = vec![receiver];
-                if parser.kind() != Kind::RightParen {
-                    args.extend(parser.arguments()?);
-                }
+                let args = if parser.kind() == Kind::RightParen {
+                    Vec::new()
+                } else {
+                    parser.arguments()?
+                };
                 parser.expect(Kind::RightParen, ")")?;
-                Ok(parser.application(parser.span(start), &name, args))
+                Ok(args)
             };
-            if fallback == Fallback::Not {
-                return call(self);
-            }
-            if let Some(called) = self.contest(call, self.at, Self::parenthesized_here)? {
-                return Ok(called);
+            let parsed_args = if fallback == Fallback::Not {
+                Some(call(self)?)
+            } else {
+                self.contest(call, self.at, Self::parenthesized_here)?
+            };
+            if let Some(args) = parsed_args {
+                let mut all = Vec::with_capacity(args.len() + 1);
+                all.push(callee);
+                all.extend(args);
+                return Ok(self.application(self.span(start), &name, all));
             }
         }
         let span = self.span(start);
@@ -1739,6 +1956,13 @@ impl Parser<'_> {
                     None => self.plain_name(start),
                 }
             }
+            Kind::Match
+                if self.kind_at(self.at + 1) == Kind::LeftParen
+                    && self.may_be_called(self.at + 1)
+                    && self.doubts(self.at) =>
+            {
+                self.named(start)
+            }
             Kind::Match if self.reads_keyword(self.at) => {
                 match self.attempt(|parser| parser.match_expression(start)) {
                     Some(matched) => Ok(matched),
@@ -1816,7 +2040,7 @@ impl Parser<'_> {
     }
 
     fn named(&mut self, start: usize) -> Result<Json, Reported> {
-        if self.edge && self.stops.contains(&(self.at * 2 + 1)) {
+        if self.edge && self.kind() != Kind::Match && self.stops.contains(&(self.at * 2 + 1)) {
             return self.plain_name(start);
         }
         let after = self.after_qualified(self.at);
@@ -2176,35 +2400,70 @@ impl Parser<'_> {
     fn choose(
         &mut self,
         mark: &Mark,
-        mut candidates: Vec<usize>,
+        candidates: Vec<usize>,
         unfollowed: Unfollowed,
     ) -> Option<(Definition, Json)> {
+        let mut found = Found::default();
+        self.search(mark, &[], candidates, unfollowed, &mut found);
+        self.rewind(mark);
+        let chosen = match (found.following, unfollowed) {
+            (Some(stops), _) => stops,
+            (None, Unfollowed::TakenBeyond(_)) => found.parsing?,
+            (None, Unfollowed::Refused) => return None,
+        };
+        self.stops.extend(chosen);
+        self.let_parts(mark.candidates).ok()
+    }
+
+    fn search(
+        &mut self,
+        mark: &Mark,
+        earlier: &[usize],
+        mut candidates: Vec<usize>,
+        unfollowed: Unfollowed,
+        found: &mut Found,
+    ) {
         candidates.sort_unstable();
         candidates.dedup();
-        let mut following = Vec::new();
-        let mut parsing = None;
         for candidate in candidates.into_iter().rev() {
-            if !self.searching() || !following.is_empty() {
-                break;
+            if found.following.is_some() || !self.searching() {
+                return;
             }
+            let mut stops = earlier.to_vec();
+            stops.push(candidate);
             self.rewind(mark);
-            self.stops.push(candidate);
-            if self.let_parts(mark.candidates).is_ok() {
-                if self.can_follow() {
-                    following.push(candidate);
-                } else {
-                    parsing = parsing.or(Some(candidate));
+            self.stops.extend(stops.iter().copied());
+            let reached = self.reached.replace(0);
+            let tried = self.let_parts(mark.candidates);
+            let reach = self.reached.get().max(self.at);
+            self.reached.set(reached.max(self.reached.get()));
+            let pushed = match tried {
+                Err((_, pushed)) => pushed,
+                Ok(_) if self.can_follow() => {
+                    found.following = Some(stops);
+                    return;
                 }
-            }
+                Ok(_) => {
+                    if matches!(unfollowed, Unfollowed::TakenBeyond(failed) if reach >= failed)
+                        && earlier.is_empty()
+                        && found.parsing.is_none()
+                    {
+                        found.parsing = Some(stops.clone());
+                    }
+                    self.candidates
+                        .get(mark.candidates..)
+                        .unwrap_or_default()
+                        .to_vec()
+                }
+            };
+            let at = candidate / 2;
+            let called = self.kind_at(at + 1) == Kind::LeftParen;
+            let later: Vec<usize> = pushed
+                .into_iter()
+                .filter(|later| later / 2 > at || (called && *later > candidate))
+                .collect();
+            self.search(mark, &stops, later, unfollowed, found);
         }
-        self.rewind(mark);
-        let chosen = match (following.as_slice(), unfollowed) {
-            ([first, ..], _) => *first,
-            ([], Unfollowed::Taken) => parsing?,
-            ([], Unfollowed::Refused) => return None,
-        };
-        self.stops.push(chosen);
-        self.let_parts(mark.candidates).ok()
     }
 
     fn let_expression(&mut self, start: usize) -> Result<Json, Reported> {
@@ -2226,11 +2485,24 @@ impl Parser<'_> {
                 }
             }
             Err((failure, candidates)) => {
-                let Some(parts) = self.choose(&mark, candidates.clone(), Unfollowed::Taken) else {
+                let Some(parts) = self.choose(
+                    &mark,
+                    candidates.clone(),
+                    Unfollowed::TakenBeyond(failure.token),
+                ) else {
                     self.rewind(&mark);
                     self.candidates.extend(candidates);
                     return Err(*failure);
                 };
+                if mark.reported.is_none()
+                    && self.at < failure.token
+                    && !self.can_follow()
+                    && self.reported.as_ref().is_some_and(|reported| {
+                        reported.problem.code == "QNT006" && reported.token == self.at
+                    })
+                {
+                    self.reported = Some(*failure);
+                }
                 parts
             }
         };

@@ -159,6 +159,29 @@ pub(crate) struct Inferrer<'a> {
     saved: Scope,
     location: Option<&'a Value>,
     pub(crate) crash_place: Option<u64>,
+    /// The type nodes of every type given an id so far, as the types table will hold them.
+    type_nodes: usize,
+    /// The most type nodes the types given ids have held at once.
+    pub(crate) most_nodes: usize,
+    /// The most type nodes inference keeps before it stops all type work.
+    pub(crate) node_limit: usize,
+    counted: HashMap<u64, usize>,
+}
+
+fn nodes(value: &Value) -> usize {
+    let mut count = 0;
+    let mut waiting = vec![value];
+    while let Some(value) = waiting.pop() {
+        match value {
+            Value::Object(fields) => {
+                count += 1;
+                waiting.extend(fields.iter().map(|(_, inner)| inner));
+            }
+            Value::List(items) => waiting.extend(items.iter()),
+            _ => {}
+        }
+    }
+    count
 }
 
 impl<'a> Inferrer<'a> {
@@ -175,6 +198,10 @@ impl<'a> Inferrer<'a> {
             saved: Scope::default(),
             location: None,
             crash_place: None,
+            type_nodes: 0,
+            most_nodes: 0,
+            node_limit: usize::MAX,
+            counted: HashMap::new(),
         }
     }
 
@@ -206,8 +233,20 @@ impl<'a> Inferrer<'a> {
                 if sound && self.context.crashed().is_some() {
                     self.crash_place = Some(id);
                 }
+                self.count(id, &simplified.value);
                 self.types.insert(id, simplified);
             }
+        }
+    }
+
+    fn count(&mut self, id: u64, value: &Value) {
+        let found = nodes(value);
+        let before = self.counted.insert(id, found).unwrap_or(0);
+        self.type_nodes = self.type_nodes.saturating_sub(before).saturating_add(found);
+        self.most_nodes = self.most_nodes.max(self.type_nodes);
+        if self.type_nodes > self.node_limit {
+            self.context
+                .crash(format!("more than {} type nodes", self.node_limit));
         }
     }
 
@@ -224,6 +263,7 @@ impl<'a> Inferrer<'a> {
                 self.errors.set(id, error);
             }
             Ok(scheme) => {
+                self.count(id, &scheme.value);
                 self.in_scope.set(id, scheme.clone());
                 self.types.insert(id, scheme);
             }

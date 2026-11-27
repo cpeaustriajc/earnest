@@ -934,6 +934,12 @@ fn pair(op: Op, first: &Written, second: &Written, third: Option<&Written>) -> W
                 Math::Divide => {
                     return call(Helper::Division, &[left, right], Kind::Int);
                 }
+                Math::TruncatedRemainder(_) => {
+                    return call(Helper::TruncatedRemainder, &[left, right], Kind::Int);
+                }
+                Math::TruncatedDivide => {
+                    return call(Helper::TruncatedDivision, &[left, right], Kind::Int);
+                }
                 _ => return unknown("arithmetic added after it was written"),
             };
             Written::new(format!("({left} {sign} {right})"), Kind::Int)
@@ -1077,6 +1083,22 @@ fn has_a_value(op: Op, given: &[Written]) -> Option<String> {
             "(({} >= 0) {AND} ({} >= 1))",
             left.text, right.text
         )),
+        (Op::Math(Math::TruncatedDivide), [_, right, ..]) => Some(format!("({} # 0)", right.text)),
+        (Op::Math(Math::TruncatedRemainder(ty)), [left, right, ..]) => {
+            let lowest = ty
+                .map(IntType::lowest)
+                .filter(|lowest| *lowest < 0 && *lowest > i64::from(i32::MIN));
+            Some(match lowest {
+                Some(lowest) => format!(
+                    "(({right} # 0) {AND} (({left} # {}) \\/ ({right} # {})))",
+                    number(lowest),
+                    number(-1),
+                    left = left.text,
+                    right = right.text
+                ),
+                None => format!("({} # 0)", right.text),
+            })
+        }
         _ => None,
     }
 }

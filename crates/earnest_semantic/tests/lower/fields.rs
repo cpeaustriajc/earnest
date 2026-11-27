@@ -227,15 +227,12 @@ fn a_starting_value_of_the_wrong_kind_is_refused() {
 
 #[test]
 fn a_starting_value_that_can_not_be_computed_is_refused() {
-    let negative = binary(Binary::Remainder, int(-7), int(2));
+    let negative = binary(Binary::Remainder, int(-7), int(0));
     let source = draft(vec![("level", starting(range(0, 3), here(negative)))]);
     let problem = the_problem(&source);
     assert_eq!(problem.place(), HERE);
     assert_eq!(problem.feature, "a starting value");
-    assert_eq!(
-        problem.message,
-        "takes a remainder with a negative number or a divisor below 1"
-    );
+    assert_eq!(problem.message, "takes a division or a remainder by zero");
 }
 
 #[test]

@@ -41,16 +41,27 @@ pub enum Math {
     Subtract,
     /// The product.
     Multiply,
-    /// What is left of the first after dividing by the second. A negative first number or a
-    /// second number below 1 is [`Fault::Remainder`]. In a frame of Quint's numbers it is
-    /// `first - second * (first / second)` for every second number but zero, which is
-    /// [`Fault::ByZero`].
+    /// Quint's `imod`: what is left of the first after dividing by the second. A negative first
+    /// number or a second number below 1 is [`Fault::Remainder`]. In a frame of Quint's numbers
+    /// it is `first - second * (first / second)` for every second number but zero, which is
+    /// [`Fault::ByZero`]. A TypeScript or Rust model has [`Math::TruncatedRemainder`] instead.
     Remainder,
-    /// The whole number of times the second goes into the first. A negative first number or a
-    /// second number below 1 is [`Fault::Division`]. In a frame of Quint's numbers it is the
-    /// floor of the exact quotient for every second number but zero, which is
-    /// [`Fault::ByZero`].
+    /// Quint's `idiv`: the whole number of times the second goes into the first. A negative
+    /// first number or a second number below 1 is [`Fault::Division`]. In a frame of Quint's
+    /// numbers it is the floor of the exact quotient for every second number but zero, which is
+    /// [`Fault::ByZero`]. A TypeScript or Rust model has [`Math::TruncatedDivide`] instead.
     Divide,
+    /// Rust's `/` on integers and TypeScript's `Math.trunc(a / b)`: the exact quotient with its
+    /// fraction dropped, so `-7 / 2` is -3. A second number of zero is [`Fault::ByZero`], and a
+    /// quotient that does not fit in 64 bits, the smallest `i64` over -1, is
+    /// [`Fault::Overflow`]. A smaller type's bound is the [`Op::Fit`] around it.
+    TruncatedDivide,
+    /// Rust's `%` on integers and JavaScript's `%`: the remainder that goes with
+    /// [`Math::TruncatedDivide`], with the sign of the first number, so `-7 % 2` is -1 and
+    /// `7 % -2` is 1. A second number of zero is [`Fault::ByZero`]. Where Rust panics because
+    /// the quotient overflows, the smallest number of the type given over -1, it is the fault the
+    /// quotient has: [`Fault::Outside`] that type, or [`Fault::Overflow`] for the smallest `i64`.
+    TruncatedRemainder(Option<IntType>),
 }
 
 /// A primitive on a set. The set is the first argument.

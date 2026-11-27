@@ -89,7 +89,7 @@ fn applied_to_substitutions(
 
 pub(crate) const ROUND_LIMIT: usize = 100;
 
-pub(crate) const DEPTH_LIMIT: usize = 2_000;
+pub(crate) const DEPTH_LIMIT: usize = 2_100;
 
 pub(crate) const UNIFY_LIMIT: usize = 5_000;
 

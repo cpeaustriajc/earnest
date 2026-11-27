@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT000] no viable alternative at input '(x+)'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/places/def_value_with_dangling_operator.qnt","start":{"line":2,"col":34,"index":58},"end":{"line":2,"col":34,"index":58}}]}]}

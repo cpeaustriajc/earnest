@@ -1,3 +1,4 @@
+use crate::effects::with_copies;
 use crate::files::Parsed;
 use crate::flatten::{Table, field_mut, flatten_modules, id_of, text, without_cleared};
 use crate::ids::Ids;
@@ -7,7 +8,6 @@ use crate::lexer::lex;
 use crate::names::{Raised, resolve};
 use crate::parser::parse;
 use crate::problem::Problem;
-use crate::{effects_with_copies, types_with_copies};
 
 /// What `quint compile --target json` is told to flatten and check: `--main`, `--init`,
 /// `--step`, `--invariant` and `--temporal`, each as the text given on the command line.
@@ -229,28 +229,27 @@ impl Parsed {
             .iter()
             .filter_map(|id| table.get(*id).map(|entry| (*id, entry.to_json())))
             .collect();
-        let checked_types = checked
-            .get("types")
-            .cloned()
-            .unwrap_or(Json::Object(Vec::new()));
-        let analyzed = types_of_added(in_order.clone(), &checked_types, &added);
+        let none = Json::Object(Vec::new());
+        let checked_types = checked.get("types").unwrap_or(&none);
+        let analyzed = types_of_added(in_order.clone(), checked_types, &added);
         if analyzed.crash.is_some() {
-            self.types_of_added(&in_order, &checked_types, &added)?;
+            self.types_of_added(&in_order, checked_types, &added)?;
         }
+        drop(in_order);
+        let effects = checked.get("effects").cloned().unwrap_or(none);
+        drop(checked);
         let types = analyzed.table;
         self.analyze_added(&table.to_json(), &added)?;
-        let flat = flatten_modules(&modules, &table, &types, &mut ids)
+        let flat = flatten_modules(&modules, &table, types, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;
-        let effects = checked
-            .get("effects")
-            .cloned()
-            .unwrap_or(Json::Object(Vec::new()));
+        drop(modules);
+        drop(table);
         Ok(Compiled {
             modules: flat.modules.iter().map(without_cleared).collect(),
             table: flat.table,
             main: target.main.clone(),
-            types: types_with_copies(&flat.types, &flat.copies),
-            effects: effects_with_copies(&effects, &flat.copies),
+            types: with_copies(flat.types, &flat.copies),
+            effects: with_copies(effects, &flat.copies),
             copies: flat.copies,
         })
     }

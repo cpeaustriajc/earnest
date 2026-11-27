@@ -1029,13 +1029,21 @@ impl crate::files::Parsed {
 /// Quint's id refresher does. `copies` holds the pairs (new id, old id); an old id with no effect
 /// gives none.
 pub fn effects_with_copies(effects: &Json, copies: &[(u64, u64)]) -> Json {
-    let Json::Object(entries) = effects else {
-        return effects.clone();
+    with_copies(effects.clone(), copies)
+}
+
+/// What [`effects_with_copies`] gives, from a table it may take apart.
+pub(crate) fn with_copies(mut effects: Json, copies: &[(u64, u64)]) -> Json {
+    let Json::Object(entries) = &mut effects else {
+        return effects;
     };
-    let mut by_id: BTreeMap<u64, Json> = entries
-        .iter()
-        .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme.clone())))
-        .collect();
+    let mut by_id: BTreeMap<u64, Json> = BTreeMap::new();
+    for (id, scheme) in entries.iter_mut() {
+        if let Ok(id) = id.parse() {
+            by_id.insert(id, std::mem::replace(scheme, Json::Null));
+        }
+    }
+    drop(effects);
     for (new, old) in copies {
         if let Some(scheme) = by_id.get(old).cloned() {
             by_id.insert(*new, scheme);

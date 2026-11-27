@@ -423,3 +423,72 @@ fn an_argument_past_the_ones_an_operation_takes_is_left_out_as_the_engine_ignore
     let extra = Expr::Apply(Op::Not, vec![stage.flag.clone(), int(1)]);
     assert_eq!(stage.sketch.shown(extra), "(~flag)");
 }
+
+#[test]
+fn a_native_remainder_truncates_with_any_sign_and_faults_on_zero_only() {
+    let mut stage = stage();
+    stage.sketch.rule(
+        "odd",
+        two(Op::Math(Math::TruncatedRemainder(None)), &stage.n, int(-2)),
+    );
+    let module = stage.sketch.written().module;
+    assert!(
+        module.contains("    InRange => ((~((-2) # 0)) \\/ TruncatedRemainder(n, (-2)))\n"),
+        "{module}"
+    );
+    assert_eq!(
+        helpers_of(&module),
+        [
+            "Fault(message) == Assert(FALSE, message)",
+            "TruncatedRemainder(left, right) == IF right > 0 THEN \
+             (IF left >= 0 THEN left % right ELSE -((-left) % right)) \
+             ELSE IF right < 0 THEN \
+             (IF left >= 0 THEN left % (-right) ELSE -((-left) % (-right))) \
+             ELSE Fault(\"a division or a remainder by zero\")",
+        ]
+    );
+}
+
+#[test]
+fn a_native_division_truncates_with_any_sign_and_faults_on_zero_only() {
+    let mut stage = stage();
+    stage.sketch.rule(
+        "half",
+        two(Op::Math(Math::TruncatedDivide), &stage.n, int(-2)),
+    );
+    let module = stage.sketch.written().module;
+    assert!(
+        module.contains("    InRange => ((~((-2) # 0)) \\/ TruncatedDivision(n, (-2)))\n"),
+        "{module}"
+    );
+    assert_eq!(
+        helpers_of(&module),
+        [
+            "Fault(message) == Assert(FALSE, message)",
+            "TruncatedDivision(left, right) == IF right > 0 THEN \
+             (IF left >= 0 THEN left \\div right ELSE -((-left) \\div right)) \
+             ELSE IF right < 0 THEN \
+             (IF left >= 0 THEN -(left \\div (-right)) ELSE (-left) \\div (-right)) \
+             ELSE Fault(\"a division or a remainder by zero\")",
+        ]
+    );
+}
+
+#[test]
+fn a_remainder_of_a_small_signed_type_faults_on_its_smallest_number_over_minus_one() {
+    let mut stage = stage();
+    let ty = earnest_value::IntType::I8;
+    stage.sketch.rule(
+        "odd",
+        two(
+            Op::Math(Math::TruncatedRemainder(Some(ty))),
+            &stage.n,
+            int(-1),
+        ),
+    );
+    let module = stage.sketch.written().module;
+    assert!(
+        module.contains("    InRange => (((-1) # 0) /\\ ((n # (-128)) \\/ ((-1) # (-1))))\n"),
+        "{module}"
+    );
+}
