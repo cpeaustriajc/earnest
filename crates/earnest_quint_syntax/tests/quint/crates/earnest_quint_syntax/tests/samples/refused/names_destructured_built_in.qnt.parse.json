@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT101] Built-in name 'Set' is redefined in module 'M'","locs":[]}],"order":[[4,5]],"depth":{},"table":{"4":{"$":4,"+":[["depth",0]]},"5":{"$":5,"+":[["depth",0]]},"7":{"$":4,"+":[["depth",0]]}}}

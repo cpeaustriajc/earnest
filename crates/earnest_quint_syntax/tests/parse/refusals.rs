@@ -119,3 +119,22 @@ fn a_syntax_error_in_an_imported_file_is_unreadable_rather_than_repaired() {
         "the imported file's own error, named as unreadable"
     );
 }
+
+#[test]
+fn a_file_that_needs_more_attempts_than_the_cap_is_refused_rather_than_guessed() {
+    let lets = "val a = ".repeat(9);
+    let bodies = "-1 ".repeat(9);
+    let text = format!("module A {{\n  val v = {lets}1 {bodies}\n}}\n");
+    let Err(problem) = read("/m/deep.qnt", |_| Some(text.clone())) else {
+        panic!("the file is refused");
+    };
+    assert_eq!(
+        problem.code, "unreadable",
+        "the cap is a refusal: {problem}"
+    );
+    assert!(
+        problem.message.contains("attempts"),
+        "the message says why: {}",
+        problem.message
+    );
+}

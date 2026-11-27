@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use crate::ids::{Ids, Place};
 use crate::json::Json;
 use crate::lexer::{Kind, Token};
@@ -5,6 +7,8 @@ use crate::problem::Problem;
 use crate::types::{type_text, unbound_type_variables};
 
 type Span = (usize, usize);
+
+const SEARCHES: usize = 20_000;
 
 const DOT: u8 = 31;
 const INDEX: u8 = 28;
@@ -97,6 +101,7 @@ pub(crate) struct Parsed {
 pub(crate) struct Reported {
     pub(crate) problem: Problem,
     pub(crate) token: usize,
+    pub(crate) seen: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -118,6 +123,12 @@ impl Within {
             Self::Let => Follow::Body,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum Unfollowed {
+    Taken,
+    Refused,
 }
 
 enum Follow {
@@ -161,12 +172,18 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         reported: None,
         listened: None,
         edge: false,
+        reached: Cell::new(0),
+        searches: 0,
+        exhausted: None,
         root: false,
         follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
     };
     let outcome = parser.file();
+    if let Some(refusal) = parser.exhausted.take() {
+        return Err(refusal);
+    }
     match (parser.reported.take(), outcome) {
         (Some(first), _) | (None, Err(first)) => Err(first),
         (None, Ok(())) => Ok(Parsed {
@@ -186,6 +203,9 @@ struct Parser<'a> {
     reported: Option<Reported>,
     listened: Option<Problem>,
     edge: bool,
+    reached: Cell<usize>,
+    searches: usize,
+    exhausted: Option<Reported>,
     root: bool,
     follows: Vec<Follow>,
     candidates: Vec<usize>,
@@ -315,11 +335,11 @@ fn doc_text(tokens: &[Token]) -> String {
     tokens
         .iter()
         .map(|token| {
-            let chars: Vec<char> = token.text.chars().collect();
-            let end = chars.len().saturating_sub(1);
-            chars
+            let units: Vec<u16> = token.text.encode_utf16().collect();
+            let end = units.len().saturating_sub(1);
+            units
                 .get(4..end)
-                .map_or_else(String::new, |inner| inner.iter().collect())
+                .map_or_else(String::new, String::from_utf16_lossy)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -373,9 +393,11 @@ impl Parser<'_> {
 
     fn failure(&self, message: String) -> Reported {
         let token = self.token(self.at);
+        self.reached.set(self.reached.get().max(self.at));
         Reported {
             problem: Problem::syntax(message, token.line - 1, token.column),
             token: self.at,
+            seen: self.reached.get(),
         }
     }
 
@@ -407,6 +429,7 @@ impl Parser<'_> {
             self.reported = Some(Reported {
                 problem: Problem::coded(code, message, token.line - 1, token.column),
                 token: self.at,
+                seen: self.reached.get().max(self.at),
             });
         }
     }
@@ -482,6 +505,65 @@ impl Parser<'_> {
             self.rewind(&mark);
         }
         parsed
+    }
+
+    fn contest<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, Reported>,
+        other: usize,
+        other_parse: fn(&mut Self) -> Result<Json, Reported>,
+    ) -> Result<Option<T>, Reported> {
+        let mark = self.mark();
+        let failed = match parse(self) {
+            Ok(parsed) => return Ok(Some(parsed)),
+            Err(failed) => failed,
+        };
+        let reported = self.reported.take();
+        self.rewind(&mark);
+        if !self.searching() {
+            return Ok(None);
+        }
+        self.at = other;
+        let reach =
+            other_parse(self).map_or_else(|other_failed| other_failed.token, |_| usize::MAX);
+        self.rewind(&mark);
+        if reach >= failed.token {
+            Ok(None)
+        } else {
+            self.reported = reported;
+            Err(failed)
+        }
+    }
+
+    fn searching(&mut self) -> bool {
+        self.searches += 1;
+        let within = self.searches <= SEARCHES;
+        if !within && self.exhausted.is_none() {
+            let token = self.token(self.at);
+            self.exhausted = Some(Reported {
+                problem: Problem::coded(
+                    "unreadable",
+                    format!(
+                        "this file needs more than {SEARCHES} attempts to read as Quint reads it, and earnest gives up rather than guess: put the values of nested `let`s in parentheses"
+                    ),
+                    token.line - 1,
+                    token.column,
+                ),
+                token: self.at,
+                seen: self.at,
+            });
+        }
+        within
+    }
+
+    fn parenthesized_here(&mut self) -> Result<Json, Reported> {
+        let at = self.at;
+        self.parenthesized(at)
+    }
+
+    fn braces_here(&mut self) -> Result<Json, Reported> {
+        let at = self.at;
+        self.braces(at)
     }
 
     fn operand_starts(&mut self) -> bool {
@@ -921,21 +1003,9 @@ impl Parser<'_> {
             }
             at = after;
             if self.kind_at(at) == Kind::LeftParen {
-                let mut depth = 0usize;
-                loop {
-                    match self.kind_at(at) {
-                        Kind::LeftParen => depth += 1,
-                        Kind::RightParen => {
-                            depth -= 1;
-                            if depth == 0 {
-                                at += 1;
-                                break;
-                            }
-                        }
-                        Kind::End => return false,
-                        _ => {}
-                    }
-                    at += 1;
+                match self.closing(at) {
+                    Some((close, false)) => at = close + 1,
+                    _ => return false,
                 }
             }
             if self.kind_at(at) == Kind::Pipe {
@@ -943,6 +1013,27 @@ impl Parser<'_> {
             } else {
                 return DECLARATION_FOLLOWERS.contains(&self.kind_at(at));
             }
+        }
+    }
+
+    fn closing(&self, open: usize) -> Option<(usize, bool)> {
+        let mut depth = 0usize;
+        let mut comma = false;
+        let mut at = open;
+        loop {
+            match self.kind_at(at) {
+                Kind::LeftParen | Kind::LeftBracket | Kind::LeftBrace => depth += 1,
+                Kind::RightParen | Kind::RightBracket | Kind::RightBrace => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        return Some((at, comma));
+                    }
+                }
+                Kind::Comma if depth == 1 => comma = true,
+                Kind::End => return None,
+                _ => {}
+            }
+            at += 1;
         }
     }
 
@@ -1340,7 +1431,7 @@ impl Parser<'_> {
                     };
                     if fallback == Fallback::Not {
                         left = index(self)?;
-                    } else if let Some(applied) = self.attempt(index) {
+                    } else if let Some(applied) = self.contest(index, self.at, Self::primary)? {
                         left = applied;
                     } else {
                         break;
@@ -1425,7 +1516,7 @@ impl Parser<'_> {
             if fallback == Fallback::Not {
                 return call(self);
             }
-            if let Some(called) = self.attempt(call) {
+            if let Some(called) = self.contest(call, self.at, Self::parenthesized_here)? {
                 return Ok(called);
             }
         }
@@ -1588,30 +1679,20 @@ impl Parser<'_> {
             Kind::And | Kind::Or
                 if self.kind_at(self.at + 1) == Kind::LeftBrace && self.reads_keyword(self.at) =>
             {
-                let opcode = if self.kind() == Kind::And {
-                    "and"
-                } else {
-                    "or"
-                };
-                let listed = self.attempt(|parser| {
-                    parser.advance();
-                    parser.advance();
-                    let args = parser.listed(Kind::RightBrace, "}")?;
-                    Ok(parser.application(parser.span(start), opcode, args))
-                });
-                match listed {
-                    Some(listed) => Ok(listed),
-                    None => self.plain_name(start),
-                }
+                self.keyword_list(start)
             }
             kind if CALL_NAMES.contains(&kind)
                 && self.kind_at(self.at + 1) == Kind::LeftParen
                 && self.reads_keyword(self.at) =>
             {
-                let called = self.attempt(|parser| {
-                    parser.advance();
-                    parser.call(start)
-                });
+                let called = self.contest(
+                    |parser| {
+                        parser.advance();
+                        parser.call(start)
+                    },
+                    self.at + 1,
+                    Self::parenthesized_here,
+                )?;
                 match called {
                     Some(called) => Ok(called),
                     None => self.plain_name(start),
@@ -1671,6 +1752,28 @@ impl Parser<'_> {
         }
     }
 
+    fn keyword_list(&mut self, start: usize) -> Result<Json, Reported> {
+        let opcode = if self.kind() == Kind::And {
+            "and"
+        } else {
+            "or"
+        };
+        let listed = self.contest(
+            |parser| {
+                parser.advance();
+                parser.advance();
+                let args = parser.listed(Kind::RightBrace, "}")?;
+                Ok(parser.application(parser.span(start), opcode, args))
+            },
+            self.at + 1,
+            Self::braces_here,
+        )?;
+        match listed {
+            Some(listed) => Ok(listed),
+            None => self.plain_name(start),
+        }
+    }
+
     fn named(&mut self, start: usize) -> Result<Json, Reported> {
         if self.edge && self.stops.contains(&(self.at * 2 + 1)) {
             return self.plain_name(start);
@@ -1682,10 +1785,14 @@ impl Parser<'_> {
                 self.lambda_rest(start, params)
             }
             Kind::LeftParen if self.goes_on(after) => {
-                let called = self.attempt(|parser| {
-                    parser.qualified_name()?;
-                    parser.call(start)
-                });
+                let called = self.contest(
+                    |parser| {
+                        parser.qualified_name()?;
+                        parser.call(start)
+                    },
+                    after,
+                    Self::parenthesized_here,
+                )?;
                 match called {
                     Some(called) => Ok(called),
                     None => self.plain_name(start),
@@ -1752,6 +1859,17 @@ impl Parser<'_> {
             let body = self.expr(0)?;
             return Ok(self.tupled_lambda(self.span(start), params, body));
         }
+        let reach = self.lambda_reach(start);
+        match self.tuple_or_paren(start) {
+            Err(failure) if reach > failure.token => {
+                self.at = reach;
+                Err(self.failure("no viable alternative".to_owned()))
+            }
+            parsed => parsed,
+        }
+    }
+
+    fn tuple_or_paren(&mut self, start: usize) -> Result<Json, Reported> {
         self.advance();
         if self.eat(Kind::RightParen) {
             let unit_id = self.placed(self.span(start));
@@ -1765,6 +1883,53 @@ impl Parser<'_> {
         let mut items = vec![first];
         items.extend(self.listed(Kind::RightParen, ")")?);
         Ok(self.application(self.span(start), "Tup", items))
+    }
+
+    fn parameters_reach(&self, start: usize, at_least: usize) -> Result<usize, usize> {
+        let mut at = start;
+        let mut count = 0;
+        loop {
+            let after = if self.kind_at(at) == Kind::Hole {
+                at + 1
+            } else {
+                self.after_qualified(at)
+            };
+            if after == at {
+                return Err(at);
+            }
+            count += 1;
+            at = after;
+            match self.kind_at(at) {
+                Kind::Comma => at += 1,
+                Kind::RightParen if count >= at_least => return Ok(at),
+                _ => return Err(at),
+            }
+        }
+    }
+
+    fn lambda_reach(&self, open: usize) -> usize {
+        let plain = |parser: &Self, open: usize| match parser.parameters_reach(open + 1, 1) {
+            Ok(close) if parser.kind_at(close + 1) == Kind::FatArrow => usize::MAX,
+            Ok(close) => close + 1,
+            Err(at) => at,
+        };
+        let mut reach = plain(self, open);
+        if self.kind_at(open + 1) == Kind::LeftParen {
+            reach = reach.max(plain(self, open + 1));
+            let sugared = match self.parameters_reach(open + 2, 2) {
+                Ok(close) if self.kind_at(close + 1) == Kind::RightParen => {
+                    if self.kind_at(close + 2) == Kind::FatArrow {
+                        usize::MAX
+                    } else {
+                        close + 2
+                    }
+                }
+                Ok(close) => close + 1,
+                Err(at) => at,
+            };
+            reach = reach.max(sugared);
+        }
+        if reach == usize::MAX { 0 } else { reach }
     }
 
     fn tupled_lambda(&mut self, span: Span, params: Vec<Json>, body: Json) -> Json {
@@ -1942,7 +2107,10 @@ impl Parser<'_> {
         Ok(app(match_id, "matchVariant", args))
     }
 
-    fn let_parts(&mut self, since: usize) -> Result<(Definition, Json), (Reported, Vec<usize>)> {
+    fn let_parts(
+        &mut self,
+        since: usize,
+    ) -> Result<(Definition, Json), (Box<Reported>, Vec<usize>)> {
         let outer_edge = std::mem::replace(&mut self.edge, true);
         let outer = std::mem::take(&mut self.candidates);
         let definition = self.operator_definition(Within::Let);
@@ -1950,7 +2118,7 @@ impl Parser<'_> {
         self.edge = outer_edge;
         let definition = match definition {
             Ok(definition) => definition,
-            Err(failure) => return Err((failure, mine)),
+            Err(failure) => return Err((Box::new(failure), mine)),
         };
         match self.expr(LET_BODY) {
             Ok(body) => {
@@ -1959,49 +2127,42 @@ impl Parser<'_> {
             }
             Err(failure) => {
                 mine.extend(self.candidates.get(since..).unwrap_or_default());
-                Err((failure, mine))
+                Err((Box::new(failure), mine))
             }
         }
     }
 
-    fn followed_retry(
+    fn choose(
         &mut self,
         mark: &Mark,
         mut candidates: Vec<usize>,
+        unfollowed: Unfollowed,
     ) -> Option<(Definition, Json)> {
         candidates.sort_unstable();
         candidates.dedup();
+        let mut following = Vec::new();
+        let mut parsing = None;
         for candidate in candidates.into_iter().rev() {
-            self.rewind(mark);
-            self.stops.push(candidate);
-            if self.let_parts(mark.candidates).is_ok() && self.can_follow() {
-                self.rewind(mark);
-                self.stops.push(candidate);
-                return self.let_parts(mark.candidates).ok();
+            if !self.searching() || !following.is_empty() {
+                break;
             }
-        }
-        None
-    }
-
-    fn retried(&mut self, mark: &Mark, mut candidates: Vec<usize>) -> Option<(Definition, Json)> {
-        candidates.sort_unstable();
-        candidates.dedup();
-        let mut parsed = None;
-        for candidate in candidates.into_iter().rev() {
             self.rewind(mark);
             self.stops.push(candidate);
             if self.let_parts(mark.candidates).is_ok() {
                 if self.can_follow() {
-                    self.rewind(mark);
-                    self.stops.push(candidate);
-                    return self.let_parts(mark.candidates).ok();
+                    following.push(candidate);
+                } else {
+                    parsing = parsing.or(Some(candidate));
                 }
-                parsed = parsed.or(Some(candidate));
             }
         }
         self.rewind(mark);
-        let candidate = parsed?;
-        self.stops.push(candidate);
+        let chosen = match (following.as_slice(), unfollowed) {
+            ([first, ..], _) => *first,
+            ([], Unfollowed::Taken) => parsing?,
+            ([], Unfollowed::Refused) => return None,
+        };
+        self.stops.push(chosen);
         self.let_parts(mark.candidates).ok()
     }
 
@@ -2015,19 +2176,19 @@ impl Parser<'_> {
                     .get(mark.candidates..)
                     .unwrap_or_default()
                     .to_vec();
-                if let Some(parts) = self.followed_retry(&mark, candidates) {
+                if let Some(parts) = self.choose(&mark, candidates, Unfollowed::Refused) {
                     parts
                 } else {
                     self.rewind(&mark);
                     self.let_parts(mark.candidates)
-                        .map_err(|(failure, _)| failure)?
+                        .map_err(|(failure, _)| *failure)?
                 }
             }
             Err((failure, candidates)) => {
-                let Some(parts) = self.retried(&mark, candidates.clone()) else {
+                let Some(parts) = self.choose(&mark, candidates.clone(), Unfollowed::Taken) else {
                     self.rewind(&mark);
                     self.candidates.extend(candidates);
-                    return Err(failure);
+                    return Err(*failure);
                 };
                 parts
             }
@@ -2116,7 +2277,10 @@ impl Parser<'_> {
         let start = self.at;
         match self.kind() {
             Kind::LeftParen => self.parenthesized_type(start),
-            Kind::Set | Kind::List if self.kind_at(self.at + 1) == Kind::LeftBracket => {
+            Kind::Set | Kind::List
+                if self.kind_at(self.at + 1) == Kind::LeftBracket
+                    && self.closing(self.at + 1).is_some_and(|(_, comma)| !comma) =>
+            {
                 let kind = if self.kind() == Kind::Set {
                     "set"
                 } else {
