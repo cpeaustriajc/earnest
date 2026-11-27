@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"modules":[{"id":2,"name":"Keyword","declarations":[]}],"errors":[{"explanation":"[QNT000] no viable alternative at input 'valall'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/keyword_all.qnt","start":{"line":1,"col":6,"index":23},"end":{"line":1,"col":8,"index":25}}]}]}

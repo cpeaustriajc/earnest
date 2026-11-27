@@ -99,6 +99,12 @@ pub(crate) struct Reported {
     pub(crate) token: usize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fallback {
+    Allowed,
+    Not,
+}
+
 #[derive(Clone, Copy)]
 enum Within {
     Module,
@@ -140,6 +146,7 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         reported: None,
         listened: None,
         edge: false,
+        root: false,
         candidates: Vec::new(),
         stops: Vec::new(),
     };
@@ -163,6 +170,7 @@ struct Parser<'a> {
     reported: Option<Reported>,
     listened: Option<Problem>,
     edge: bool,
+    root: bool,
     candidates: Vec<usize>,
     stops: Vec<usize>,
 }
@@ -173,6 +181,7 @@ struct Mark {
     reported: Option<Reported>,
     listened: Option<Problem>,
     candidates: usize,
+    stops: usize,
 }
 
 fn id(value: u64) -> Json {
@@ -404,6 +413,7 @@ impl Parser<'_> {
             reported: self.reported.clone(),
             listened: self.listened.clone(),
             candidates: self.candidates.len(),
+            stops: self.stops.len(),
         }
     }
 
@@ -413,6 +423,7 @@ impl Parser<'_> {
         self.reported.clone_from(&mark.reported);
         self.listened.clone_from(&mark.listened);
         self.candidates.truncate(mark.candidates);
+        self.stops.truncate(mark.stops);
     }
 
     fn goes_on(&mut self, at: usize) -> bool {
@@ -436,9 +447,37 @@ impl Parser<'_> {
         }
     }
 
+    fn attempt<T>(&mut self, parse: impl FnOnce(&mut Self) -> Result<T, Reported>) -> Option<T> {
+        let mark = self.mark();
+        let parsed = parse(self).ok();
+        if parsed.is_none() {
+            self.rewind(&mark);
+        }
+        parsed
+    }
+
+    fn operand_starts(&mut self) -> bool {
+        let mark = self.mark();
+        self.advance();
+        let started = self.primary().is_ok();
+        self.rewind(&mark);
+        started
+    }
+
+    fn plain_name(&mut self, start: usize) -> Result<Json, Reported> {
+        let name = self.qualified_name()?;
+        let name_id = self.placed(self.span(start));
+        Ok(name_expr(name_id, &self.text(name)))
+    }
+
+    fn root_expr(&mut self) -> Result<Json, Reported> {
+        self.root = true;
+        self.expr(0)
+    }
+
     fn enclosed(&mut self) -> Result<Json, Reported> {
         let edge = std::mem::replace(&mut self.edge, false);
-        let value = self.expr(0);
+        let value = self.root_expr();
         self.edge = edge;
         value
     }
@@ -529,7 +568,7 @@ impl Parser<'_> {
                 self.advance();
                 let name = self.ident_or_hole()?;
                 self.expect(Kind::Assign, "=")?;
-                let assumption = self.expr(0)?;
+                let assumption = self.root_expr()?;
                 let declaration_id = self.placed(self.span(start));
                 self.declarations.push(Json::object(vec![
                     ("id", id(declaration_id)),
@@ -679,7 +718,7 @@ impl Parser<'_> {
         loop {
             let name = self.qualified_name()?;
             self.expect(Kind::Assign, "=")?;
-            let value = self.expr(0)?;
+            let value = self.root_expr()?;
             overrides.push((name, value));
             if self.kind() == Kind::Comma && self.kind_at(self.at + 1) != Kind::RightParen {
                 self.advance();
@@ -1094,7 +1133,7 @@ impl Parser<'_> {
             }
         }
         let body = if self.eat(Kind::Assign) {
-            Some(self.expr(0)?)
+            Some(self.root_expr()?)
         } else {
             None
         };
@@ -1155,7 +1194,7 @@ impl Parser<'_> {
             self.expect(Kind::RightBrace, "}")?;
         }
         self.expect(Kind::Assign, "=")?;
-        let value = self.expr(0)?;
+        let value = self.root_expr()?;
         self.eat(Kind::Semicolon);
         let temporary_id = self.placed(self.span(start));
         let temporary_name = format!("quintDestructTemp{temporary_id}");
@@ -1215,24 +1254,40 @@ impl Parser<'_> {
     }
 
     fn expr(&mut self, precedence: u8) -> Result<Json, Reported> {
+        let root = std::mem::replace(&mut self.root, false);
+        let fallback = if root {
+            Fallback::Allowed
+        } else {
+            Fallback::Not
+        };
         let start = self.at;
         let mut left = self.primary()?;
         loop {
             let kind = self.kind();
             let (level, opcode, right_level) = match kind {
                 Kind::Dot if DOT >= precedence => {
-                    left = self.dot_call(start, left)?;
+                    left = self.dot_call(start, left, fallback)?;
                     continue;
                 }
                 Kind::LeftBracket if INDEX >= precedence => {
                     if self.may_start_body(kind) && !self.goes_on(self.at) {
                         break;
                     }
-                    self.advance();
-                    let index = self.enclosed()?;
-                    self.expect(Kind::RightBracket, "]")?;
-                    let app_id = self.placed(self.span(start));
-                    left = app(app_id, "nth", vec![left, index]);
+                    let indexed = left.clone();
+                    let index = |parser: &mut Self| {
+                        parser.advance();
+                        let index = parser.enclosed()?;
+                        parser.expect(Kind::RightBracket, "]")?;
+                        let app_id = parser.placed(parser.span(start));
+                        Ok(app(app_id, "nth", vec![indexed, index]))
+                    };
+                    if fallback == Fallback::Not {
+                        left = index(self)?;
+                    } else if let Some(applied) = self.attempt(index) {
+                        left = applied;
+                    } else {
+                        break;
+                    }
                     continue;
                 }
                 Kind::Caret => (POWER, "ipow", POWER),
@@ -1259,6 +1314,9 @@ impl Parser<'_> {
             if level < precedence || (self.may_start_body(kind) && !self.goes_on(self.at)) {
                 break;
             }
+            if kind == Kind::Minus && fallback == Fallback::Allowed && !self.operand_starts() {
+                break;
+            }
             self.advance();
             let right = self.expr(right_level)?;
             if kind == Kind::Assign {
@@ -1282,7 +1340,12 @@ impl Parser<'_> {
         app(app_id, name, args)
     }
 
-    fn dot_call(&mut self, start: usize, callee: Json) -> Result<Json, Reported> {
+    fn dot_call(
+        &mut self,
+        start: usize,
+        callee: Json,
+        fallback: Fallback,
+    ) -> Result<Json, Reported> {
         self.advance();
         let name_start = self.at;
         if INFIX_NAMES.contains(&self.kind()) {
@@ -1292,13 +1355,22 @@ impl Parser<'_> {
         }
         let name = self.text(self.span(name_start));
         if self.kind() == Kind::LeftParen && self.goes_on(self.at) {
-            self.advance();
-            let mut args = vec![callee];
-            if self.kind() != Kind::RightParen {
-                args.extend(self.arguments()?);
+            let receiver = callee.clone();
+            let call = |parser: &mut Self| {
+                parser.advance();
+                let mut args = vec![receiver];
+                if parser.kind() != Kind::RightParen {
+                    args.extend(parser.arguments()?);
+                }
+                parser.expect(Kind::RightParen, ")")?;
+                Ok(parser.application(parser.span(start), &name, args))
+            };
+            if fallback == Fallback::Not {
+                return call(self);
             }
-            self.expect(Kind::RightParen, ")")?;
-            return Ok(self.application(self.span(start), &name, args));
+            if let Some(called) = self.attempt(call) {
+                return Ok(called);
+            }
         }
         let span = self.span(start);
         let accessor_id = self.placed(span);
@@ -1411,16 +1483,31 @@ impl Parser<'_> {
                 } else {
                     "or"
                 };
-                self.advance();
-                self.advance();
-                let args = self.listed(Kind::RightBrace, "}")?;
-                Ok(self.application(self.span(start), opcode, args))
+                let listed = self.attempt(|parser| {
+                    parser.advance();
+                    parser.advance();
+                    let args = parser.listed(Kind::RightBrace, "}")?;
+                    Ok(parser.application(parser.span(start), opcode, args))
+                });
+                match listed {
+                    Some(listed) => Ok(listed),
+                    None => self.plain_name(start),
+                }
             }
             kind if CALL_NAMES.contains(&kind) && self.kind_at(self.at + 1) == Kind::LeftParen => {
-                self.advance();
-                self.call(start)
+                let called = self.attempt(|parser| {
+                    parser.advance();
+                    parser.call(start)
+                });
+                match called {
+                    Some(called) => Ok(called),
+                    None => self.plain_name(start),
+                }
             }
-            Kind::Match => self.match_expression(start),
+            Kind::Match => match self.attempt(|parser| parser.match_expression(start)) {
+                Some(matched) => Ok(matched),
+                None => self.plain_name(start),
+            },
             Kind::LeftBracket => {
                 self.advance();
                 let args = if self.kind() == Kind::RightBracket {
@@ -1477,8 +1564,14 @@ impl Parser<'_> {
                 self.lambda_rest(start, params)
             }
             Kind::LeftParen if self.goes_on(after) => {
-                self.qualified_name()?;
-                self.call(start)
+                let called = self.attempt(|parser| {
+                    parser.qualified_name()?;
+                    parser.call(start)
+                });
+                match called {
+                    Some(called) => Ok(called),
+                    None => self.plain_name(start),
+                }
             }
             Kind::Prime => {
                 let name = self.qualified_name()?;
@@ -1723,36 +1816,49 @@ impl Parser<'_> {
         Ok(app(match_id, "matchVariant", args))
     }
 
-    fn let_parts(&mut self) -> Result<(Definition, Json), (Reported, Vec<usize>)> {
+    fn let_parts(&mut self, since: usize) -> Result<(Definition, Json), (Reported, Vec<usize>)> {
         let outer_edge = std::mem::replace(&mut self.edge, true);
         let outer = std::mem::take(&mut self.candidates);
         let definition = self.operator_definition(Within::Let);
-        let mine = std::mem::replace(&mut self.candidates, outer);
+        let mut mine = std::mem::replace(&mut self.candidates, outer);
         self.edge = outer_edge;
-        let definition = definition.map_err(|failure| (failure, mine.clone()))?;
-        let body = self.expr(LET_BODY).map_err(|failure| (failure, mine))?;
-        Ok((definition, body))
+        let definition = match definition {
+            Ok(definition) => definition,
+            Err(failure) => return Err((failure, mine)),
+        };
+        match self.expr(LET_BODY) {
+            Ok(body) => {
+                self.candidates.extend(mine);
+                Ok((definition, body))
+            }
+            Err(failure) => {
+                mine.extend(self.candidates.get(since..).unwrap_or_default());
+                Err((failure, mine))
+            }
+        }
     }
 
     fn let_expression(&mut self, start: usize) -> Result<Json, Reported> {
         let mark = self.mark();
-        let (definition, body) = match self.let_parts() {
+        let (definition, body) = match self.let_parts(mark.candidates) {
             Ok(parts) => parts,
-            Err((failure, candidates)) => {
+            Err((failure, mut candidates)) => {
+                candidates.sort_unstable();
+                candidates.dedup();
                 let mut found = None;
                 for candidate in candidates.into_iter().rev() {
                     self.rewind(&mark);
                     self.stops.push(candidate);
-                    if let Ok(parts) = self.let_parts() {
+                    if let Ok(parts) = self.let_parts(mark.candidates) {
                         found = Some(parts);
                         break;
                     }
-                    self.stops.pop();
                 }
-                match found {
-                    Some(parts) => parts,
-                    None => return Err(failure),
-                }
+                let Some(parts) = found else {
+                    self.rewind(&mark);
+                    return Err(failure);
+                };
+                parts
             }
         };
         let span = self.span(start);

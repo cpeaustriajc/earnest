@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"modules":[{"id":3,"name":"Script","declarations":[{"id":2,"kind":"def","name":"answer","qualifier":"val","expr":{"id":1,"kind":"int","value":42}}]}],"errors":[]}
