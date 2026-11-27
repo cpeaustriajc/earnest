@@ -1,6 +1,6 @@
 use crate::ids::Ids;
 use crate::json::Json;
-use crate::names::{Entry, Raised, Resolution, built_in, resolve};
+use crate::names::{Entry, Prefix, Raised, Resolution, built_in};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1142,8 +1142,7 @@ pub(crate) fn error_text(errors: &[Raised]) -> String {
         .join(",")
 }
 
-fn resolved(modules: &mut [Json]) -> Result<Table, String> {
-    let resolution = resolve(modules);
+fn resolved(resolution: Resolution) -> Result<Table, String> {
     if resolution.errors.is_empty() {
         Ok(Table::of(resolution))
     } else {
@@ -1206,30 +1205,23 @@ pub(crate) fn flatten_modules(
             .map(|module| (text(module, "name").to_owned(), module.clone()))
             .collect(),
     };
+    let mut prefix = Prefix::default();
     while !state.waiting.is_empty() {
         let module = state.waiting.remove(0);
         let first = flatten_module(&module, &mut state, &flat_table)?;
-        let instanced = flatten_instances(&first, &state, &flat_table, ids, &mut copies)?;
+        let mut instanced = flatten_instances(&first, &state, &flat_table, ids, &mut copies)?;
+        let intermediate = resolved(prefix.then(&mut instanced))?;
         let done = state.flattened.len();
-        let mut together: Vec<Json> = state.flattened.iter().cloned().chain(instanced).collect();
-        let intermediate = resolved(&mut together)?;
-        let instanced = together.split_off(done);
-        state.flattened = together;
         for each in instanced {
             let flat = flatten_module(&each, &mut state, &intermediate)?;
             let name = text(&flat, "name").to_owned();
             state.flattened.push(flat);
             state.aliases.insert(name.clone(), name);
         }
-        let done = state.flattened.len();
-        let mut together: Vec<Json> = state
-            .flattened
-            .drain(..)
-            .chain(state.waiting.drain(..))
-            .collect();
-        flat_table = resolved(&mut together)?;
-        state.waiting = together.split_off(done);
-        state.flattened = together;
+        for flat in &mut state.flattened[done..] {
+            prefix.add(flat);
+        }
+        flat_table = resolved(prefix.then(&mut state.waiting))?;
     }
     Ok(Flat {
         modules: state.flattened,

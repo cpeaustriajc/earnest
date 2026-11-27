@@ -308,19 +308,11 @@ fn with_namespaces(entry: &Entry, namespaces: &[String]) -> Entry {
     current
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct Resolution {
     pub(crate) table: BTreeMap<u64, Entry>,
     pub(crate) inserted: Vec<u64>,
     pub(crate) errors: Vec<Raised>,
-}
-
-impl Resolution {
-    fn insert(&mut self, id: u64, entry: Entry) {
-        if self.table.insert(id, entry).is_none() {
-            self.inserted.push(id);
-        }
-    }
 }
 
 #[derive(Debug, Default)]
@@ -330,6 +322,60 @@ struct Resolver {
     module: String,
     depth: i64,
     resolution: Resolution,
+    undo: Option<Undo>,
+}
+
+#[derive(Debug, Default)]
+struct Undo {
+    entries: Vec<(u64, Option<Entry>)>,
+    modules: Vec<(String, Option<Names>)>,
+    inserted: usize,
+    errors: usize,
+}
+
+/// A resolver that keeps what it found in the modules it was given, so that the modules after
+/// them are resolved without resolving those again.
+#[derive(Debug, Default)]
+pub(crate) struct Prefix {
+    resolver: Resolver,
+}
+
+impl Prefix {
+    /// Resolves `module` after the modules already given, and keeps what it found.
+    pub(crate) fn add(&mut self, module: &mut Json) {
+        self.resolver.module(module);
+    }
+
+    /// What resolving the modules given so far and then `modules` finds, as [`resolve`] finds
+    /// it; `modules` are not kept.
+    pub(crate) fn then(&mut self, modules: &mut [Json]) -> Resolution {
+        let resolver = &mut self.resolver;
+        resolver.undo = Some(Undo {
+            inserted: resolver.resolution.inserted.len(),
+            errors: resolver.resolution.errors.len(),
+            ..Undo::default()
+        });
+        for module in modules.iter_mut() {
+            resolver.module(module);
+        }
+        let found = resolver.resolution.clone();
+        let undo = resolver.undo.take().unwrap_or_default();
+        for (id, entry) in undo.entries.into_iter().rev() {
+            match entry {
+                Some(entry) => resolver.resolution.table.insert(id, entry),
+                None => resolver.resolution.table.remove(&id),
+            };
+        }
+        for (name, names) in undo.modules.into_iter().rev() {
+            match names {
+                Some(names) => resolver.by_module.insert(name, names),
+                None => resolver.by_module.remove(&name),
+            };
+        }
+        resolver.resolution.inserted.truncate(undo.inserted);
+        resolver.resolution.errors.truncate(undo.errors);
+        found
+    }
 }
 
 pub(crate) fn resolve(modules: &mut [Json]) -> Resolution {
@@ -360,6 +406,23 @@ fn append(value: &mut Json, key: &str, inner: Json) {
 }
 
 impl Resolver {
+    fn insert(&mut self, id: u64, entry: Entry) {
+        let old = self.resolution.table.insert(id, entry);
+        if let Some(undo) = &mut self.undo {
+            undo.entries.push((id, old.clone()));
+        }
+        if old.is_none() {
+            self.resolution.inserted.push(id);
+        }
+    }
+
+    fn bind(&mut self, name: String, names: Names) {
+        let old = self.by_module.insert(name.clone(), names);
+        if let Some(undo) = &mut self.undo {
+            undo.modules.push((name, old));
+        }
+    }
+
     fn raise(&mut self, code: &'static str, message: String, reference: Option<u64>) {
         self.resolution
             .errors
@@ -385,7 +448,8 @@ impl Resolver {
         for declaration in items(module, "declarations") {
             self.declaration(declaration);
         }
-        self.by_module.insert(name, std::mem::take(&mut self.names));
+        let names = std::mem::take(&mut self.names);
+        self.bind(name, names);
     }
 
     fn collect_declaration(&mut self, declaration: &mut Json) {
@@ -488,7 +552,7 @@ impl Resolver {
         };
         let copied = instance.copied(qualified.as_deref(), Copy::Hidden);
         if let Some(qualified) = &qualified {
-            self.by_module.insert(qualified.clone(), instance);
+            self.bind(qualified.clone(), instance);
         }
         self.collect_all(&copied, declaration);
     }
@@ -517,7 +581,7 @@ impl Resolver {
             return;
         };
         if let Some(Json::Text(qualified)) = declaration.get("qualifiedName") {
-            self.by_module.insert(qualified.clone(), imported.clone());
+            self.bind(qualified.clone(), imported.clone());
         }
         let copied = imported.copied(Self::qualifier(declaration).as_deref(), Copy::Hidden);
         self.collect_named(&copied, declaration);
@@ -755,7 +819,7 @@ impl Resolver {
         } else {
             Entry::of(definition).with("depth", depth)
         };
-        self.resolution.insert(id, entry);
+        self.insert(id, entry);
     }
 
     fn expression(&mut self, expression: &Json) {
@@ -814,7 +878,7 @@ impl Resolver {
             Some(entry) if entry.get("kind") != Some(&Json::text("typedef")) => {
                 let entry = entry.clone();
                 if let Some(id) = id {
-                    self.resolution.insert(id, entry);
+                    self.insert(id, entry);
                 }
             }
             _ => self.raise("QNT404", format!("Name '{name}' not found"), id),
@@ -830,7 +894,7 @@ impl Resolver {
                     Some(entry) if entry.get("kind") == Some(&Json::text("typedef")) => {
                         let entry = entry.clone();
                         if let Some(id) = id {
-                            self.resolution.insert(id, entry);
+                            self.insert(id, entry);
                         }
                     }
                     _ => self.raise("QNT404", format!("Type alias '{name}' not found"), id),
