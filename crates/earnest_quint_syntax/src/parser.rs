@@ -1575,12 +1575,12 @@ impl Parser<'_> {
                 parser.expect(Kind::RightParen, ")")?;
                 Ok(args)
             };
-            let called = if fallback == Fallback::Not {
+            let parsed_args = if fallback == Fallback::Not {
                 Some(call(self)?)
             } else {
                 self.contest(call, self.at, Self::parenthesized_here)?
             };
-            if let Some(args) = called {
+            if let Some(args) = parsed_args {
                 let mut all = Vec::with_capacity(args.len() + 1);
                 all.push(callee);
                 all.extend(args);
