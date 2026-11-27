@@ -34,7 +34,7 @@ The repository follows the workspace layout used by oxc: one crate per concern, 
 
 Data flows one way: a reader parses a file into an AST, `earnest_semantic` lowers it into a checked model, `earnest_check` explores reachable states, and a writer formats the output. A crate depends only on earlier crates in that pipeline. Each crate has its own `README.md`, inherits workspace lints and metadata, keeps unit tests beside the code, and puts public API tests in `tests/`.
 
-A report of a Quint shape that earnest refuses or misreads is fixed together with a sample of that shape: in `tasks/quint/samples/`, or in `tasks/quint/shapes/` when the shape is how one module brings in another. Record its fixtures with `record.py` beside it, from Quint 0.33.1, and the test suite reads the sample on every run.
+A report of a Quint shape that earnest refuses or misreads is fixed together with a sample of that shape: in `tasks/quint/samples/`, or in `tasks/quint/shapes/` when the shape is how one module brings in another. Record its fixtures with `record.py` beside it, from Quint 0.33.1, and the test suite reads the sample on every run. Every new `.qnt` file under `tasks/` or `crates/` also needs its `quint parse` recorded for `crates/earnest_quint_syntax`: with `QUINT_PACKAGE` naming an install of `@informalsystems/quint@0.33.1`, run `tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint <file>...` from the repository.
 
 ## Running checks
 

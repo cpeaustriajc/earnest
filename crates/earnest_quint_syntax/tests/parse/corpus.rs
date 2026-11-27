@@ -30,11 +30,14 @@ fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     }
 }
 
-fn fixture(recorded: &Path, kind: &str) -> Json {
+const NOT_RECORDED: &str = "not recorded";
+
+const RECORD_COMMAND: &str = "npm install @informalsystems/quint@0.33.1 in a scratch folder, export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint, then from the repository: tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint <file>...";
+
+fn fixture(recorded: &Path, kind: &str) -> Result<Json, String> {
     let path = PathBuf::from(format!("{}.{kind}.json", recorded.display()));
-    let text =
-        fs::read_to_string(&path).unwrap_or_else(|_| panic!("{} is recorded", path.display()));
-    Json::parse(&text).unwrap_or_else(|at| panic!("{} is JSON up to {at}", path.display()))
+    let text = fs::read_to_string(&path).map_err(|_| NOT_RECORDED.to_owned())?;
+    Json::parse(&text).map_err(|at| format!("{} is JSON up to {at}", path.display()))
 }
 
 fn number(value: Option<&Json>) -> usize {
@@ -243,7 +246,7 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
             .trim_start_matches('/'),
     );
     let load = |path: &str| fs::read_to_string(base.join(path)).ok();
-    let phases = fixture(recorded, "phases");
+    let phases = fixture(recorded, "phases")?;
     if let Some(Json::List(errors)) = phases.get("errors")
         && let Some(first) = errors.first()
     {
@@ -253,7 +256,7 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
         };
         return same_refusal(ours, first).map(|()| Equal::Fully);
     }
-    let parse = fixture(recorded, "parse");
+    let parse = fixture(recorded, "parse")?;
     if let Some(Json::List(errors)) = parse.get("errors")
         && let Some(first) = errors.first()
     {
@@ -300,18 +303,21 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
 
 struct Tally {
     different: Vec<String>,
+    unrecorded: Vec<String>,
     refused_by_names: usize,
 }
 
 fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
     let mut counted = Tally {
         different: Vec::new(),
+        unrecorded: Vec::new(),
         refused_by_names: 0,
     };
     for sample in found {
         match compared(sample, recorded, base) {
             Ok(Equal::Fully) => {}
             Ok(Equal::RefusedByNames) => counted.refused_by_names += 1,
+            Err(reason) if reason == NOT_RECORDED => counted.unrecorded.push(sample.clone()),
             Err(reason) => counted.different.push(format!("{sample}: {reason}")),
         }
     }
@@ -327,8 +333,15 @@ fn every_sample_in_the_repository_reads_as_quint_parse_writes_it() {
     found.sort();
     let Tally {
         different,
+        unrecorded,
         refused_by_names,
     } = tally(&found, &recorded(), &base);
+    assert!(
+        unrecorded.is_empty(),
+        "{} samples have no recording of Quint's parse. Record them: {RECORD_COMMAND}\n{}",
+        unrecorded.len(),
+        unrecorded.join("\n")
+    );
     println!(
         "{} of {} samples equal to the whole of quint parse 0.33.1, with Quint's own ids; {refused_by_names} of them refused by its name phases, each at Quint's place",
         found.len() - different.len(),
@@ -358,9 +371,11 @@ fn every_file_of_quint_s_repository_reads_as_quint_parse_writes_it() {
         .collect();
     found.sort();
     let Tally {
-        different,
+        mut different,
+        unrecorded,
         refused_by_names,
     } = tally(&found, &recorded, &base);
+    different.extend(unrecorded.iter().map(|file| format!("{file}: {NOT_RECORDED}")));
     println!(
         "{} of {} files of Quint's repository equal to the whole of quint parse 0.33.1; {refused_by_names} of them refused by its name phases, each at Quint's place",
         found.len() - different.len(),
