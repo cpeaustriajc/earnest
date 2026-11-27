@@ -413,7 +413,12 @@ fn a_module_of_runs_only_with_variables_of_its_own_is_built_from_the_typecheck()
     let quint = Quint::new();
     let run = quint.earnest(&["verify", "specs/OwnRuns.qnt"]);
     run.exits(1);
-    assert_eq!(run.model_line("OwnRuns")[..3], ["fail", "OwnRuns", "0 ms"]);
+    let line = run.model_line("OwnRuns");
+    assert_eq!(line[..2], ["fail", "OwnRuns"]);
+    assert!(
+        line[2].ends_with(" ms"),
+        "a check of runs only has no state count: the time follows the name\n{run}"
+    );
     let report = quint
         .earnest(&["verify", "--json", "specs/OwnRuns.qnt"])
         .json();
