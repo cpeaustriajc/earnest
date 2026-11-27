@@ -154,6 +154,10 @@ impl Parsed {
     /// flattener stops with "Internal error while flattening", that error with Quint's text
     /// under the code `QNT000`.
     pub fn compile(&self, target: &Target) -> Result<Compiled, Problem> {
+        crate::stack::on_large_stack(|| self.compile_here(target))?
+    }
+
+    fn compile_here(&self, target: &Target) -> Result<Compiled, Problem> {
         let checked = self.typecheck()?;
         let mut modules = match checked.get("modules") {
             Some(Json::List(modules)) => modules.clone(),

@@ -10,6 +10,8 @@ type Span = (usize, usize);
 
 const SEARCHES: usize = 20_000;
 
+pub(crate) const NESTING: usize = 2_000;
+
 const DOT: u8 = 31;
 const INDEX: u8 = 28;
 const POWER: u8 = 27;
@@ -175,12 +177,17 @@ pub(crate) fn parse(tokens: &[Token], ids: &mut Ids, source: usize) -> Result<Pa
         reached: Cell::new(0),
         searches: 0,
         exhausted: None,
+        nesting: 0,
+        too_deep: None,
         root: false,
         follows: Vec::new(),
         candidates: Vec::new(),
         stops: Vec::new(),
     };
     let outcome = parser.file();
+    if let Some(refusal) = parser.too_deep.take() {
+        return Err(refusal);
+    }
     if let Some(refusal) = parser.exhausted.take() {
         return Err(refusal);
     }
@@ -206,6 +213,8 @@ struct Parser<'a> {
     reached: Cell<usize>,
     searches: usize,
     exhausted: Option<Reported>,
+    nesting: usize,
+    too_deep: Option<Reported>,
     root: bool,
     follows: Vec<Follow>,
     candidates: Vec<usize>,
@@ -1401,7 +1410,41 @@ impl Parser<'_> {
         def(definition_id, name, qualifier, access)
     }
 
+    fn nested<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, Reported>,
+    ) -> Result<T, Reported> {
+        if self.nesting >= NESTING {
+            let (line, column) = {
+                let token = self.token(self.at);
+                (token.line, token.column)
+            };
+            let at = self.at;
+            let refusal = self.too_deep.get_or_insert_with(|| Reported {
+                problem: Problem::coded(
+                    "unreadable",
+                    format!(
+                        "expressions or types here are nested more than {NESTING} deep, deeper than earnest reads"
+                    ),
+                    line - 1,
+                    column,
+                ),
+                token: at,
+                seen: at,
+            });
+            return Err(refusal.clone());
+        }
+        self.nesting += 1;
+        let parsed = parse(self);
+        self.nesting -= 1;
+        parsed
+    }
+
     fn expr(&mut self, precedence: u8) -> Result<Json, Reported> {
+        self.nested(|parser| parser.expression_at(precedence))
+    }
+
+    fn expression_at(&mut self, precedence: u8) -> Result<Json, Reported> {
         let root = std::mem::replace(&mut self.root, false);
         let fallback = if root {
             Fallback::Allowed
@@ -2229,6 +2272,10 @@ impl Parser<'_> {
     }
 
     fn type_expr(&mut self, precedence: u8) -> Result<Json, Reported> {
+        self.nested(|parser| parser.type_at(precedence))
+    }
+
+    fn type_at(&mut self, precedence: u8) -> Result<Json, Reported> {
         let start = self.at;
         let mut left = self.type_primary()?;
         loop {

@@ -946,6 +946,10 @@ impl crate::files::Parsed {
     /// A file Quint's type checker refuses is refused with its first error, as by
     /// [`Parsed::typecheck`], and so is a `nondet` whose body is not boolean (`QNT205`).
     pub fn effects(&self) -> Result<Json, crate::Problem> {
+        crate::stack::on_large_stack(|| self.effects_here())?
+    }
+
+    fn effects_here(&self) -> Result<Json, crate::Problem> {
         let output = self.typecheck()?;
         Ok(output.get("effects").cloned().unwrap_or(Json::Null))
     }
@@ -992,6 +996,10 @@ impl crate::files::Parsed {
     ///
     /// A file on which Quint stops with an internal error, as `unreadable`.
     pub fn analyze_added(&self, table: &Json, definitions: &[Json]) -> Result<(), crate::Problem> {
+        crate::stack::on_large_stack(|| self.analyze_added_here(table, definitions))?
+    }
+
+    fn analyze_added_here(&self, table: &Json, definitions: &[Json]) -> Result<(), crate::Problem> {
         let crashed = |inference::Crash(why)| crate::Problem {
             code: "unreadable".to_owned(),
             message: format!("quint compile 0.33.1 stops with an internal error here: {why}"),
