@@ -369,7 +369,7 @@ impl<'a> Inferrer<'a> {
     fn exit_const(&mut self, definition: &Json) {
         let arity = definition
             .get("typeAnnotation")
-            .and_then(|annotation| self.operator_arity(annotation, 0));
+            .and_then(Self::operator_arity);
         let scheme = match arity {
             Some(arity) => standard_propagation(arity),
             None => Scheme::plain(Effect::Concrete(Vec::new())),
@@ -377,23 +377,8 @@ impl<'a> Inferrer<'a> {
         self.add(id_of(definition), Ok(scheme));
     }
 
-    fn operator_arity(&self, annotation: &Json, steps: usize) -> Option<usize> {
-        match text(annotation, "kind") {
-            "oper" => Some(items(annotation, "args").len()),
-            "app" if steps < 64 => {
-                let constructor = annotation.get("ctor").map_or(0, id_of);
-                let definition = self.table.get(&constructor)?;
-                let parameters = match definition.get("params") {
-                    Some(Json::List(parameters)) => parameters.len(),
-                    _ => 0,
-                };
-                if parameters != items(annotation, "args").len() {
-                    return None;
-                }
-                self.operator_arity(definition.get("type")?, steps + 1)
-            }
-            _ => None,
-        }
+    fn operator_arity(annotation: &Json) -> Option<usize> {
+        (text(annotation, "kind") == "oper").then(|| items(annotation, "args").len())
     }
 
     fn exit_var(&mut self, definition: &Json) {

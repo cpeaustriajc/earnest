@@ -37,6 +37,15 @@ struct Recording {
     stage: String,
     first_error: Option<Json>,
     effects: Option<Vec<(String, Json)>>,
+    output: Vec<(String, usize, String)>,
+}
+
+fn fnv(written: &str) -> String {
+    let mut value: u64 = 0xCBF2_9CE4_8422_2325;
+    for byte in written.bytes() {
+        value = (value ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3);
+    }
+    format!("{value:016x}")
 }
 
 fn recording(recorded: &Path) -> Result<Recording, String> {
@@ -73,10 +82,21 @@ fn recording(recorded: &Path) -> Result<Recording, String> {
         }
         _ => None,
     };
+    let mut output = Vec::new();
+    if let Some(Json::List(keys)) = fixture.get("output") {
+        for entry in keys {
+            if let Json::List(entry) = entry
+                && let [Json::Text(key), Json::Number(length), Json::Text(hash)] = entry.as_slice()
+            {
+                output.push((key.clone(), length.parse().unwrap_or(0), hash.clone()));
+            }
+        }
+    }
     Ok(Recording {
         stage,
         first_error,
         effects,
+        output,
     })
 }
 
@@ -146,28 +166,39 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Out
             .trim_start_matches('/'),
     );
     let recording = recording(&recorded)?;
+    let load = |path: &str| fs::read_to_string(base.join(path)).ok();
     match recording.stage.as_str() {
         "typechecking" => {}
-        "crashed" => return Ok(Outcome::QuintCrashes),
+        "crashed" => {
+            let parsed = read(sample, load).map_err(|problem| format!("refused: {problem}"))?;
+            return match parsed.typecheck() {
+                Err(problem) if problem.code == "unreadable" => Ok(Outcome::QuintCrashes),
+                Err(problem) => Err(format!(
+                    "Quint crashes on it, and we refuse it as {problem}"
+                )),
+                Ok(_) => Err("Quint crashes on it, and we read it".to_owned()),
+            };
+        }
         _ => return Ok(Outcome::RefusedByEarlierPhases),
     }
-    let load = |path: &str| fs::read_to_string(base.join(path)).ok();
     let parsed = read(sample, load).map_err(|problem| format!("refused: {problem}"))?;
-    let ours = parsed.effects();
+    let ours = parsed.typecheck();
     if let Some(first) = &recording.first_error {
         let explanation = explanation(first);
-        let needs_types = explanation.starts_with("[QNT205]")
-            || (explanation.starts_with("[QNT000]") && !from_effect_inference(&explanation));
-        if needs_types {
-            return Ok(Outcome::RefusedByTypes);
-        }
-        return same_refusal(ours, first);
+        let by_types = explanation.starts_with("[QNT000]") && !from_effect_inference(&explanation);
+        return same_refusal(ours, first).map(|outcome| {
+            if by_types {
+                Outcome::RefusedByTypes
+            } else {
+                outcome
+            }
+        });
     }
     let theirs = recording
         .effects
         .ok_or_else(|| "no effects recorded".to_owned())?;
-    let ours = ours.map_err(|problem| format!("refused as {problem}, which Quint accepts"))?;
-    let Json::Object(ours) = ours else {
+    let output = ours.map_err(|problem| format!("refused as {problem}, which Quint accepts"))?;
+    let Some(Json::Object(ours)) = output.get("effects") else {
         return Err("our effects are not an object".to_owned());
     };
     for (index, (id, their_scheme)) in theirs.iter().enumerate() {
@@ -188,6 +219,25 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Out
     }
     if let Some((id, _)) = ours.get(theirs.len()) {
         return Err(format!("id {id}: only ours has it"));
+    }
+    let Json::Object(keys) = &output else {
+        return Err("our output is not an object".to_owned());
+    };
+    let our_keys: Vec<&String> = keys.iter().map(|(key, _)| key).collect();
+    let their_keys: Vec<&String> = recording.output.iter().map(|(key, _, _)| key).collect();
+    if our_keys != their_keys {
+        return Err(format!(
+            "the keys of quint typecheck's output are {their_keys:?}, ours {our_keys:?}"
+        ));
+    }
+    for ((key, value), (_, length, hash)) in keys.iter().zip(&recording.output) {
+        let written = value.to_string();
+        if written.len() != *length || fnv(&written) != *hash {
+            return Err(format!(
+                "{key} of quint typecheck's output differs as text: {} bytes against Quint's {length}",
+                written.len()
+            ));
+        }
     }
     Ok(Outcome::Equal)
 }
@@ -228,7 +278,7 @@ fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
 
 fn report(counted: &Tally, total: usize, corpus: &str) -> String {
     format!(
-        "{corpus}: {} of {total} files with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker or by QNT205, which needs types, not compared here; {} on which Quint's type checker crashes",
+        "{corpus}: {} of {total} files with the whole output of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker alike; {} on which Quint's type checker crashes, refused as unreadable",
         counted.equal, counted.refused_alike, counted.earlier, counted.by_types, counted.crashes
     )
 }
@@ -320,6 +370,7 @@ const REFUSALS: &[(&str, &str)] = &[
     ("effects_update_twice_in_all", "QNT202"),
     ("effects_update_twice_by_call", "QNT202"),
     ("effects_update_twice_in_any", "QNT202"),
+    ("effects_nondet_not_boolean", "QNT205"),
     ("effects_one_of_outside_nondet", "QNT203"),
     ("effects_generate_outside_nondet", "QNT203"),
     ("effects_nondet_not_one_of", "QNT204"),
@@ -329,12 +380,12 @@ const REFUSALS: &[(&str, &str)] = &[
     ("effects_order_mode_then_update", "QNT200"),
     ("effects_union_not_covered", "QNT000"),
     ("effects_first_of_two_modules", "QNT200"),
+    ("effects_let_annotation_resolved", "QNT000"),
     ("effects_unions_of_entities", "QNT000"),
     ("effects_def_updates_listed_twice", "QNT200"),
 ];
 
-const WAITING_FOR_TYPES: &[&str] = &[
-    "effects_nondet_not_boolean",
+const TYPE_ERROR_FIRST: &[&str] = &[
     "effects_order_type_then_mode",
     "effects_arguments_types_first",
     "effects_signature_not_found_types_first",
@@ -363,16 +414,27 @@ fn each_refusal_of_the_effect_passes_is_refused_with_quint_s_code_place_and_text
 }
 
 #[test]
-fn a_file_refused_by_quint_s_type_checker_or_by_qnt205_is_left_to_the_type_checker() {
+fn a_file_with_a_type_error_and_an_effect_error_is_refused_with_the_type_error_as_quint_refuses_it()
+{
     let base = root();
-    for name in WAITING_FOR_TYPES {
+    for name in TYPE_ERROR_FIRST {
         let sample = format!("{REFUSED}/{name}.qnt");
+        let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+        let parsed = read(&sample, load).unwrap_or_else(|problem| panic!("{name}: {problem}"));
+        let problem = parsed
+            .typecheck()
+            .err()
+            .unwrap_or_else(|| panic!("{name} is refused"));
+        assert_eq!(
+            problem.code, "QNT000",
+            "{name} is refused with a type error"
+        );
         assert!(
             matches!(
                 compared(&sample, &recorded(), &base),
                 Ok(Outcome::RefusedByTypes)
             ),
-            "{name} is refused by Quint's type checker or by QNT205"
+            "{name} is refused as Quint refuses it"
         );
     }
 }
@@ -635,5 +697,63 @@ fn an_added_definition_s_mode_error_is_dropped_as_quint_compile_drops_it() {
             .analyze_added(&Json::Object(entries), &[definition])
             .is_ok(),
         "quint compile --invariant \"x' = 1\" is not refused"
+    );
+}
+
+const ACROSS_PASSES: &[(&str, &str)] = &[
+    (
+        "effects_application_before_mode",
+        "too many arguments supplied: F only accepts 1 parameters",
+    ),
+    (
+        "effects_inference_before_application",
+        "Result cannot be an operator",
+    ),
+    (
+        "effects_order_type_then_mode",
+        "Couldn't unify int and bool",
+    ),
+];
+
+#[test]
+fn errors_of_different_passes_are_reported_in_quint_s_order() {
+    let base = root();
+    for (name, first) in ACROSS_PASSES {
+        let sample = format!("{REFUSED}/{name}.qnt");
+        let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+        let parsed = read(&sample, load).unwrap_or_else(|problem| panic!("{name}: {problem}"));
+        let problem = parsed
+            .typecheck()
+            .err()
+            .unwrap_or_else(|| panic!("{name} is refused"));
+        assert!(
+            problem.message.starts_with(first),
+            "{name} is refused first with {first}, not {problem}"
+        );
+        assert!(
+            compared(&sample, &recorded(), &base).is_ok(),
+            "{name} is refused as Quint refuses it"
+        );
+    }
+}
+
+#[test]
+fn a_view_quint_refuses_with_qnt203_is_refused_before_any_check_is_compiled() {
+    let base = root();
+    let sample = "tasks/quint/views/quintrefuses/refused.qnt";
+    let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+    let parsed = read(sample, load).expect("the sample is read");
+    let problem = parsed.typecheck().expect_err("the sample is refused");
+    assert_eq!(
+        format!("{problem}"),
+        "tasks/quint/views/quintrefuses/refused.qnt:12:15 [QNT203] 'oneOf' must be used inside a nondet definition",
+        "Quint's error for both checks of the file, small and small with the view shown"
+    );
+    assert!(
+        matches!(
+            compared(sample, &recorded(), &base),
+            Ok(Outcome::RefusedAlike)
+        ),
+        "refused as Quint refuses it"
     );
 }

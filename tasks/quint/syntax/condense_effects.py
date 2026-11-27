@@ -47,6 +47,13 @@ class Nodes:
         return value
 
 
+def fnv(written):
+    value = 0xCBF29CE484222325
+    for byte in written.encode("utf-8"):
+        value = ((value ^ byte) * 0x100000001B3) % (1 << 64)
+    return f"{value:016x}"
+
+
 with open(typecheck_name) as file:
     written = file.read()
 output = json.loads(written)
@@ -63,6 +70,12 @@ if effects is not None and not output.get("errors"):
     for key, node in ids:
         deltas.append([key - previous, node])
         previous = key
+    if text(output) != written:
+        sys.exit(f"{typecheck_name}: Quint's output is not written back as it was")
+    absolute = text(output)
+    if root in absolute:
+        sys.exit(f"{typecheck_name}: Quint's output names a file by its absolute path")
+    condensed["output"] = [[key, len(text(value).encode("utf-8")), fnv(text(value))] for key, value in output.items()]
     condensed["nodes"] = nodes.nodes
     condensed["effects"] = deltas
 with open(effects_name, "w") as file:

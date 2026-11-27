@@ -16,10 +16,12 @@ fn sample(name: &str) -> Parsed {
     .expect("the sample is read")
 }
 
+fn analyzed(parsed: &Parsed, types: &TypePass) -> Result<crate::json::Json, Problem> {
+    parsed.analyzed_modules(parsed.modules(), types)
+}
+
 fn refusal(name: &str, types: &TypePass) -> Problem {
-    sample(name)
-        .analyzed(types)
-        .expect_err("the sample is refused")
+    analyzed(&sample(name), types).expect_err("the sample is refused")
 }
 
 fn type_error(module: usize, message: &str, reference: u64) -> (usize, Raised) {
@@ -87,15 +89,11 @@ fn a_nondet_whose_body_is_boolean_or_has_no_type_is_not_refused() {
         },
     );
     assert!(
-        sample("effects_nondet_not_boolean")
-            .analyzed(&types)
-            .is_ok(),
+        analyzed(&sample("effects_nondet_not_boolean"), &types).is_ok(),
         "a boolean body"
     );
     assert!(
-        sample("effects_nondet_not_boolean")
-            .analyzed(&TypePass::default())
-            .is_ok(),
+        analyzed(&sample("effects_nondet_not_boolean"), &TypePass::default()).is_ok(),
         "no type, as where Quint's type checker left none"
     );
 }
@@ -135,7 +133,7 @@ fn a_type_error_of_a_later_module_comes_after_an_effect_error_of_an_earlier_one(
         ..TypePass::default()
     };
     assert_eq!(
-        parsed.analyzed(&earlier).expect_err("refused").message,
+        analyzed(&parsed, &earlier).expect_err("refused").message,
         "same module",
         "a type error of the same module comes first"
     );

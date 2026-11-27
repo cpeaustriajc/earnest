@@ -941,28 +941,99 @@ impl crate::files::Parsed {
     /// qualifier does not allow (`QNT200`), an instance override that is not pure (`QNT201`), a
     /// variable updated twice in one step (`QNT202`), a misused `nondet` (`QNT203`, `QNT204`,
     /// `QNT206`). A file on which Quint stops with an internal error is refused as `unreadable`.
-    /// Until the crate checks types, a file Quint's type checker refuses may be read, and a
-    /// `nondet` whose body is not boolean (`QNT205`) is not refused.
+    /// A file Quint's type checker refuses is refused with its first error, as by
+    /// [`Parsed::typecheck`], and so is a `nondet` whose body is not boolean (`QNT205`).
     pub fn effects(&self) -> Result<Json, crate::Problem> {
-        self.analyzed(&TypePass::default())
+        let output = self.typecheck()?;
+        Ok(output.get("effects").cloned().unwrap_or(Json::Null))
     }
 
-    pub(crate) fn analyzed(&self, types: &TypePass) -> Result<Json, crate::Problem> {
+    /// The whole of what `quint typecheck --out` writes for a file it accepts: the modules and the
+    /// table with every application of a parametric type alias resolved, the `types` table, the
+    /// `effects` table, and no errors.
+    ///
+    /// # Errors
+    ///
+    /// Quint's first error, from its passes in Quint's order, module by module: type errors,
+    /// effect-inference errors, type-application errors, then the mode, multiple-updates and
+    /// `nondet` checks (`QNT000`, `QNT200` to `QNT206`). A file on which Quint's type checker or
+    /// effect passes stop with an internal error is refused as `unreadable`.
+    pub fn typecheck(&self) -> Result<Json, crate::Problem> {
+        let checked = self.type_checked();
+        if let Some(crash) = &checked.crash {
+            return Err(crate::Problem {
+                code: "unreadable".to_owned(),
+                message: format!(
+                    "quint typecheck 0.33.1 stops on this file with an internal error of its type checker: {crash}"
+                ),
+                source: self.main_source().to_owned(),
+                line: 1,
+                column: 1,
+            });
+        }
+        let raised = |errors: &[(usize, u64, crate::inference::printing::ErrorTree)]| {
+            errors
+                .iter()
+                .map(|(module, id, error)| {
+                    (
+                        *module,
+                        Raised {
+                            code: "QNT000",
+                            message: crate::inference::printing::error_text(error),
+                            reference: Some(*id),
+                        },
+                    )
+                })
+                .collect()
+        };
+        let pass = TypePass {
+            types: checked
+                .types
+                .iter()
+                .map(|(id, scheme)| {
+                    (
+                        *id,
+                        TypeOf {
+                            boolean: scheme.value.kind() == "bool",
+                            text: crate::inference::scheme_text(scheme),
+                        },
+                    )
+                })
+                .collect(),
+            errors: raised(&checked.errors),
+            application_errors: raised(&checked.application_errors),
+        };
+        let effects = self.analyzed_modules(&checked.modules, &pass)?;
+        Ok(Json::object(vec![
+            ("stage", Json::text("typechecking")),
+            ("warnings", Json::List(Vec::new())),
+            ("modules", Json::List(checked.modules)),
+            ("table", checked.table),
+            ("types", crate::inference::types_json(&checked.types)),
+            ("effects", effects),
+            ("errors", Json::List(Vec::new())),
+        ]))
+    }
+
+    fn analyzed_modules(&self, modules: &[Json], types: &TypePass) -> Result<Json, crate::Problem> {
         let type_of = |id: u64| {
             types.types.get(&id).map(|found| TypeOf {
                 boolean: found.boolean,
                 text: found.text.clone(),
             })
         };
-        let analysis = analyze(self.modules(), self.entries(), &type_of).map_err(
-            |inference::Crash(why)| crate::Problem {
-                code: "unreadable".to_owned(),
-                message: format!("quint typecheck 0.33.1 stops with an internal error here: {why}"),
-                source: self.main_source().to_owned(),
-                line: 1,
-                column: 1,
-            },
-        )?;
+        let analysis =
+            analyze(modules, self.entries(), &type_of).map_err(|inference::Crash(why)| {
+                crate::Problem {
+                    code: "unreadable".to_owned(),
+                    message: format!(
+                        "quint typecheck 0.33.1 stops with an internal error here: {why}"
+                    ),
+                    source: self.main_source().to_owned(),
+                    line: 1,
+                    column: 1,
+                }
+            })?;
         for module in 0..self.modules().len() {
             let none = Vec::new();
             let errors: Vec<Raised> = of_module(&types.errors, module)
@@ -1002,7 +1073,8 @@ impl crate::files::Parsed {
                 .collect(),
             _ => BTreeMap::new(),
         };
-        let analysis = analyze(self.modules(), self.entries(), &|_| None).map_err(crashed)?;
+        let checked = self.type_checked();
+        let analysis = analyze(&checked.modules, self.entries(), &|_| None).map_err(crashed)?;
         analyze_added(&analysis.schemes, &entries, definitions, &|_| None).map_err(crashed)
     }
 }
