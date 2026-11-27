@@ -1,4 +1,4 @@
-use crate::compare::{Renaming, declarations_by_id, difference, source_maps, without_depth};
+use crate::compare::{Renaming, difference, source_maps};
 use earnest_quint_syntax::{Json, Problem, read};
 use std::env;
 use std::fs;
@@ -68,6 +68,48 @@ fn same_refusal(ours: Result<Problem, String>, theirs: &Json) -> Result<(), Stri
     }
 }
 
+fn ids(values: &[Json]) -> Vec<String> {
+    let mut found: Vec<String> = values
+        .iter()
+        .map(|value| match value {
+            Json::Number(digits) => digits.clone(),
+            other => other
+                .get("id")
+                .map_or_else(String::new, ToString::to_string),
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+fn same_declarations(ours: &[Json], order: Option<&Json>) -> Result<(), String> {
+    let Some(Json::List(order)) = order else {
+        return Err("parse: no order of declarations recorded".to_owned());
+    };
+    if order.len() != ours.len() {
+        return Err(format!(
+            "parse: {} modules against Quint's {}",
+            ours.len(),
+            order.len()
+        ));
+    }
+    for (index, (module, their_order)) in ours.iter().zip(order).enumerate() {
+        let (Some(Json::List(declarations)), Json::List(their_ids)) =
+            (module.get("declarations"), their_order)
+        else {
+            return Err(format!("parse.modules[{index}]: no declarations"));
+        };
+        if ids(declarations) != ids(their_ids) {
+            return Err(format!(
+                "parse.modules[{index}]: declarations {:?} against Quint's {:?}",
+                ids(declarations),
+                ids(their_ids)
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) enum Equal {
     Fully,
     UpToNames(String),
@@ -101,7 +143,7 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
     )?;
     source_maps(
         &parsed.source_map(),
-        &fixture(recorded, "map"),
+        phases.get("sourceMap").unwrap_or(&Json::Null),
         &mut renaming,
     )?;
     let parse = fixture(recorded, "parse");
@@ -114,20 +156,7 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
         };
         return Ok(Equal::UpToNames(explanation));
     }
-    let their_modules = match parse.get("modules") {
-        Some(Json::List(modules)) => modules
-            .iter()
-            .map(|module| declarations_by_id(&without_depth(module)))
-            .collect(),
-        _ => Vec::new(),
-    };
-    let our_modules = parsed.modules().iter().map(declarations_by_id).collect();
-    difference(
-        &Json::List(our_modules),
-        &Json::List(their_modules),
-        &mut renaming,
-        "parse.modules",
-    )?;
+    same_declarations(parsed.modules(), parse.get("order"))?;
     if renaming.is_identity() {
         Ok(Equal::Fully)
     } else {

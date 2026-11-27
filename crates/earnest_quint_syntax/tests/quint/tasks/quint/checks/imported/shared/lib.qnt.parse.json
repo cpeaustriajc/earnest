@@ -1,1 +1,1 @@
-{"stage":"parsing","warnings":[],"modules":[{"id":3,"name":"lib","declarations":[{"id":2,"kind":"def","name":"Limit","qualifier":"pureval","expr":{"id":1,"kind":"int","value":5}}]}],"errors":[]}
+{"errors":[],"order":[[2]],"depth":{}}

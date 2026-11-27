@@ -1,1 +1,0 @@
-{"sourceIndex":{"0":"crates/earnest_quint_syntax/tests/samples/refused/unclosed_module.qnt"},"map":{"1":[0,{"line":2,"col":0,"index":30},{"line":2,"col":-1,"index":29}],"2":[0,{"line":1,"col":10,"index":28},{"line":1,"col":10,"index":28}],"3":[0,{"line":1,"col":6,"index":24},{"line":1,"col":6,"index":24}],"4":[0,{"line":0,"col":0,"index":0},{"line":1,"col":28,"index":28}]}}

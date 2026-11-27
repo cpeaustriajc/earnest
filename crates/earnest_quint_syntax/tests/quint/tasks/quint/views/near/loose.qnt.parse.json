@@ -1,1 +1,1 @@
-{"stage":"parsing","warnings":[],"modules":[{"id":5,"name":"loose","declarations":[{"doc":"@view state","id":4,"kind":"def","name":"x","qualifier":"nondet","expr":{"id":3,"kind":"app","opcode":"oneOf","args":[{"id":2,"kind":"app","opcode":"Set","args":[{"id":1,"kind":"int","value":1}]}]}}]}],"errors":[]}
+{"errors":[],"order":[[4]],"depth":{}}

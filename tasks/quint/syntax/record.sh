@@ -11,5 +11,6 @@ for file in "$@"; do
   mkdir -p "$(dirname "$target")"
   node "$here/phases.js" "$file" "$target.phases.json"
   "$quint" parse "$file" --out "$target.parse.json" --source-map "$target.map.json" > /dev/null 2>&1 || true
-  python3 -I "$here/relative.py" "$root" "$target.phases.json" "$target.parse.json" "$target.map.json"
+  python3 -I "$here/condense.py" "$root" "$target.phases.json" "$target.parse.json" "$target.map.json"
+  rm "$target.map.json"
 done

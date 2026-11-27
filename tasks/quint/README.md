@@ -4918,13 +4918,23 @@ The crate does phases 1 and 2, with Quint's own ids. Phases 3 and 4 are slice 2.
 
 ### How it is compared [ran]
 
-Three oracles per file, recorded from Quint 0.33.1 into `crates/earnest_quint_syntax/tests/quint`:
+Three oracles per file, recorded from Quint 0.33.1 into `crates/earnest_quint_syntax/tests/quint`,
+each tree stored once:
 
 - `<file>.phases.json`: `tasks/quint/syntax/phases.js` calls the package's own
-  `parsePhase1fromText` and `parsePhase2sourceResolution`. Compared key by key, nothing stripped.
-- `<file>.parse.json`: `quint parse --out`, with `table` dropped when recorded. Compared with each
-  module's declarations as a set (sorted by id) and `depth` stripped.
-- `<file>.map.json`: `quint parse --source-map`, compared exactly.
+  `parsePhase1fromText` and `parsePhase2sourceResolution` and writes their modules, errors and
+  source map. Compared key by key, nothing stripped.
+- `quint parse --source-map`: `condense.py` checks when recording that it equals the source map in
+  `<file>.phases.json`, and stores no copy. The test compares ours with that one exactly.
+- `quint parse --out`: `condense.py` checks when recording that its modules equal those of
+  `<file>.phases.json` once each module's declarations are sorted by id and `depth` is stripped,
+  and keeps in `<file>.parse.json` only what is not already there: its errors, each module's
+  declaration ids in Quint's order (`order`, the fixture slice 2's sort needs) and `depth` by id.
+  The test compares each module's declarations with `order` as a set of ids.
+
+The fixtures come to 6.9 MB in 762 files, compact JSON. The 55 source maps already under
+`tasks/quint/*/fixtures` hold the same entries but name their file relative to the sample's own
+folder, so they are not read in place of these (they would save 0.4 MB).
 
 The helper (`tests/parse/compare.rs`) maps ids through one renaming for the whole file and names
 the first path that differs; the corpus test also requires the renaming to be the identity, so the
@@ -4939,7 +4949,7 @@ export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint
 find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint
 ```
 
-`record.sh` makes paths relative to the repository (`relative.py`).
+`record.sh` makes paths relative to the repository and condenses the recordings (`condense.py`).
 
 ### Results [ran]
 
