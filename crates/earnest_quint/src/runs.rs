@@ -2,8 +2,10 @@ use crate::Runs;
 use crate::json::{Declaration, Def, Expr as Quint, Param};
 use crate::model::{action, ids, picks};
 use crate::names::Short;
-use crate::reader::{Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, refusal};
-use crate::starts::start_states;
+use crate::reader::{
+    Picked, READ_BEFORE_SET, Read, Reader, Refusal, all_of, constant, constant_of_a_run, refusal,
+};
+use crate::starts::{Asserts, start_states};
 use earnest_ir::{Action, Code, Expr, Field, Pick, Plan, Script, Stage};
 use earnest_value::{Domain, Value};
 use std::collections::BTreeSet;
@@ -230,9 +232,10 @@ impl<'a> Run<'_, 'a> {
             }
             _ => {
                 let holds = self.reader.pure(expr)?;
-                match constant(&holds, self.reader.slots)? {
+                match constant_of_a_run(&holds, self.reader.slots)? {
                     Some(Value::Bool(holds)) => self.push(Plan {
                         must_not_finish: !holds,
+                        starts: self.init.is_none().then(|| vec![Vec::new()]),
                         ..Self::without_steps(chosen)
                     }),
                     _ => self.refuse(
@@ -432,7 +435,13 @@ impl<'a> Run<'_, 'a> {
                 );
             }
         }
-        start_states((&paths, &first), &self.fields, self.reader.slots).map_err(|refused| {
+        start_states(
+            (&paths, &first),
+            &self.fields,
+            self.reader.slots,
+            Asserts::EndTheRun,
+        )
+        .map_err(|refused| {
             let why = format!("{}, in the run `{}`", refused.why, self.name);
             Refusal { why, ..refused }.within(self.name)
         })

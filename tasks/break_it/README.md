@@ -3140,6 +3140,16 @@ place of the copy's own `init` or `step`; `earnest report` words marked rules as
 does, with the path under a met mark; and a run marked `broken` that a compiled check can't play
 is one of the runs not played. The sections below describe the build the pass ran on.
 
+Found after the pass, by the orchestrator while making a failing `assert` run follow `quint test`
+(the owner's rule for the Quint integration: follow Quint): **a wrong verdict, a false pass.** In a
+check of runs only, a run that is one false condition, `run plainFalseTest = total([1]) == 2`,
+passed, where `quint test` fails it; in a check that searches states it was already broken. Such a
+run is played from the model's start states, and a check of runs only has none. No pass caught
+it, because every pure false run in the passes' models sat beside a false `assert`, which made
+the whole check unreadable first. Fixed with the `assert` shapes; the model is
+`models/quint_sixth/false_runs/` and the test
+`a_run_that_is_false_or_fails_an_assert_is_broken_in_a_check_of_runs_only`.
+
 ### A check whose only marks are `@check reachable` stops early and counts part of the model
 
 `models/quint_sixth/reachable_only/reachable_only.qnt`: `x` counts from 0 to 10 and stays there;

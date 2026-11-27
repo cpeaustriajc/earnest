@@ -5,6 +5,14 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint runs and assumptions judged as Quint judges them
+
+Where earnest and Quint gave different answers on the same `.qnt` file, earnest now gives Quint's:
+
+- **A false run in a check of runs only:** a run that is one condition, such as `run sumsTest = total([1]) == 2`, passed in a check that judges no property. It is `broken`, as `quint test` fails it. In a check that searches states it was already `broken`.
+- **A false `assert` in a run's first action, or as the whole run:** `run t = all { assert(total([1, 2]) == 4) }` and `run t = assert(total([1]) == 2)` made the check `unreadable`. The run is `broken`, as `quint test` fails it with `Assertion failed`. With a `nondet` in that action, one value that fails the `assert` breaks the run.
+- **An `assume` in the spec of a setup:** a false one made the check `unreadable`. It is left out, as `quint compile` leaves it out and Quint's TLC run never sees it, so the setup is checked. A false `assume` in a module checked directly still makes the check `unreadable`, as Quint's TLC run stops on it.
+
 ## November 2026: charts draw the states the rules are about
 
 A chart of a model where every rule held drew only the states nearest the start, often none that a rule is about. After the paths to broken states, `earnest chart` and `earnest report` now draw, rule by rule, the shortest path to the nearest state where its premise holds: the left side of an implication such as `!a || b` or Quint's `a implies b`, or where an eventually rule starts, then the path from there to where what it must reach holds. Each path is drawn whole or left out, so a far premise does not take the arrows of the next. A line under the chart names those states, such as ``The premise of `cornered` first holds in `x = 5, y = 5`.``, cutting a label past 80 characters. So a chart of a model with a premise can show other states and arrows than before. Verdicts, paths and JSON are unchanged, and a model with no premise gets the same chart as before. See [Statecharts and PR reports](/reference/output/#statecharts-and-pr-reports).
