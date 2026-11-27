@@ -409,3 +409,28 @@ fn a_run_nested_80_deep_that_divides_still_gets_its_cause_from_confirm_with_quin
         "the division is found in the compiled JSON, nested past serde's limit\n{run}"
     );
 }
+
+#[test]
+fn the_place_of_a_compiled_module_nested_too_deep_is_its_first_bracket_past_the_bound() {
+    let opened = 8_100;
+    let head = "{\"stage\":\"compiling\",\"main\":\"deep\",\"warnings\":[],\n\"modules\":[{\"id\":1,\"name\":\"deep\",\"declarations\":[{\"id\":2,\"kind\":\"def\",\"name\":\"holds\",\"qualifier\":\"val\",\"expr\":\n";
+    let line = "{\"id\":3,\"kind\":\"int\",\"value\":123456789012345678901234567890,\"x\":";
+    let text = format!(
+        "{head}{line}{}{}}}}}]}}],\"table\":{{}}}}\n",
+        "[".repeat(opened),
+        "]".repeat(opened)
+    );
+    let sandbox = Sandbox::empty();
+    sandbox.write("compiled.json", &text);
+    let run = sandbox.earnest(&["verify", "--json", "compiled.json"]);
+    run.exits(1);
+    let report = run.json();
+    let problem = &report["unreadable"][0];
+    let past = 8_008 - 6 + 1;
+    assert_eq!(
+        (&problem["line"], &problem["column"]),
+        (&3.into(), &(line.len() + past).into()),
+        "the bracket that is 8,009 deep: the sixth level opens the line, and the number too long \
+         for 64 bits before it does not move it\n{run}"
+    );
+}

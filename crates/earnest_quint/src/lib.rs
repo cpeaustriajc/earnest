@@ -205,7 +205,8 @@ const TREE_DEPTH: usize = 4_000;
 const MOST_NESTED: usize = 2 * TREE_DEPTH + 8;
 
 /// Where the first `{` or `[` of `json` nested deeper than [`MOST_NESTED`] is, found with no
-/// recursion and no parse.
+/// recursion and no parse. Given the file's own text, not [`json::exact`]'s, whose quotes around
+/// a long number would move the column.
 fn too_deep(json: &str) -> Option<Place> {
     let mut depth: usize = 0;
     let mut in_string = false;
@@ -262,7 +263,7 @@ fn read_wanted(
 ) -> Result<Model, Vec<Located>> {
     let exact = json::exact(source);
     if written == Written::ByHand
-        && let Some(at) = too_deep(&exact)
+        && let Some(at) = too_deep(source)
     {
         return Err(vec![Located::new(
             Problem::new(
