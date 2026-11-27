@@ -1,1 +1,1 @@
-{"errors":[],"order":[[2,4],[8,10]],"depth":{"2":0}}
+{"stage":"parsing","warnings":[],"errors":[],"order":[[2,4],[8,10]],"depth":{"2":0},"table":{"3":{"$":2,"+":[["depth",0]]},"4":{"$":4,"+":[["depth",0]]},"7":{"$":2,"+":[["depth",0],["importedFrom",{"$":8}],["hidden",true],["namespaces",["D","Review"]]]},"9":{"$":4,"+":[["depth",0],["importedFrom",{"$":8}],["hidden",true],["namespaces",["D","Review"]]]},"10":{"$":10,"+":[["depth",0]]}}}

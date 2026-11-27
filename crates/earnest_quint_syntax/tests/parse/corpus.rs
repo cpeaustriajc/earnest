@@ -205,31 +205,45 @@ fn quint_output(phases: &Json, parse: &Json) -> Result<Json, String> {
     ]))
 }
 
-fn same_name_refusal(ours: Result<Problem, String>, theirs: &Json) -> Result<(), String> {
-    let start = theirs
-        .get("locs")
-        .and_then(|locs| match locs {
-            Json::List(locs) => locs.first(),
-            _ => None,
-        })
-        .and_then(|loc| loc.get("start"));
-    let line = number(start.and_then(|start| start.get("line"))) + 1;
-    let column = number(start.and_then(|start| start.get("col"))) + 1;
-    let explanation = match theirs.get("explanation") {
+fn explanation_of(error: &Json) -> String {
+    match error.get("explanation") {
         Some(Json::Text(explanation)) => explanation.clone(),
         _ => String::new(),
+    }
+}
+
+fn first_place(error: &Json) -> Option<(usize, usize)> {
+    let Some(Json::List(locs)) = error.get("locs") else {
+        return None;
     };
-    let problem = ours.map_err(|_| {
-        format!("Quint refuses it at {line}:{column} with {explanation}, and we read it")
-    })?;
+    let start = locs.first()?.get("start")?;
+    Some((number(start.get("line")) + 1, number(start.get("col")) + 1))
+}
+
+fn same_name_refusal(ours: Result<Problem, String>, errors: &[Json]) -> Result<(), String> {
+    let first = errors.first().unwrap_or(&Json::Null);
+    let explanation = explanation_of(first);
+    let place = first_place(first).or_else(|| {
+        errors
+            .iter()
+            .filter(|error| explanation_of(error) == explanation)
+            .find_map(first_place)
+    });
+    let at = place.map_or_else(
+        || "no place".to_owned(),
+        |(line, column)| format!("{line}:{column}"),
+    );
+    let problem =
+        ours.map_err(|_| format!("Quint refuses it at {at} with {explanation}, and we read it"))?;
+    let same_place = place.is_none_or(|place| (problem.line, problem.column) == place);
     if format!("[{}] {}", problem.code, problem.message) == explanation
-        && problem.line == line
-        && problem.column == column
+        && same_place
+        && !problem.source.is_empty()
     {
         Ok(())
     } else {
         Err(format!(
-            "refused as {problem}, where Quint refuses it at {line}:{column} with {explanation}"
+            "refused as {problem}, where Quint refuses it at {at} with {explanation}"
         ))
     }
 }
@@ -257,14 +271,17 @@ pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Equ
         return same_refusal(ours, first).map(|()| Equal::Fully);
     }
     let parse = fixture(recorded, "parse")?;
+    if parse.get("table").is_none() {
+        return Err(NOT_RECORDED.to_owned());
+    }
     if let Some(Json::List(errors)) = parse.get("errors")
-        && let Some(first) = errors.first()
+        && !errors.is_empty()
     {
         let ours = match read(sample, load) {
             Ok(_) => Err(String::new()),
             Err(problem) => Ok(problem),
         };
-        return same_name_refusal(ours, first).map(|()| Equal::RefusedByNames);
+        return same_name_refusal(ours, errors).map(|()| Equal::RefusedByNames);
     }
     let parsed = read(sample, load).map_err(|problem| format!("refused: {problem}"))?;
     let theirs = quint_output(&phases, &parse)?;

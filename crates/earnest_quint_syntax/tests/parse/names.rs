@@ -255,12 +255,51 @@ fn quint_s_refusals_in_the_name_phases_have_quint_s_code_place_and_text() {
 }
 
 #[test]
-fn a_conflict_quint_reports_with_no_place_is_not_placed_at_the_first_line() {
-    let problem = refusal("destructured_twice");
-    assert_eq!(problem.code, "QNT101");
-    assert_ne!(
-        (problem.line, problem.column),
-        (1, 1),
-        "Quint's first error has no place (`locs` is empty) and its second is at 3:7: {problem}"
-    );
+fn a_conflict_quint_reports_with_no_place_takes_the_place_quint_gives_it_next() {
+    for (name, line, column) in [
+        ("destructured_twice", 3, 7),
+        ("destructured_let_param", 4, 16),
+    ] {
+        let problem = refusal(name);
+        assert_eq!(
+            (problem.code.as_str(), problem.line, problem.column),
+            ("QNT101", line, column),
+            "{name}: Quint's first error has no place and its second, of the same message, is there: {problem}"
+        );
+        assert_eq!(
+            problem.source,
+            format!("{REFUSED}/names_{name}.qnt"),
+            "{name} names its file"
+        );
+    }
+}
+
+#[test]
+fn a_conflict_quint_never_places_is_at_the_destructuring_that_makes_the_name() {
+    for (name, message) in [
+        (
+            "destructured_built_in",
+            "Built-in name 'Set' is redefined in module 'M'",
+        ),
+        (
+            "destructured_overlap",
+            "Conflicting definitions found for name 'b' in module 'M'",
+        ),
+    ] {
+        let problem = refusal(name);
+        assert_eq!(
+            (
+                problem.code.as_str(),
+                problem.line,
+                problem.message.as_str()
+            ),
+            ("QNT101", 2, message),
+            "{name}: Quint gives no place, and the crate points at the first destructuring: {problem}"
+        );
+        assert_eq!(
+            problem.source,
+            format!("{REFUSED}/names_{name}.qnt"),
+            "{name} names its file"
+        );
+    }
 }

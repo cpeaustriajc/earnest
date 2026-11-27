@@ -5171,7 +5171,7 @@ To record again: as for slice 1 (`record.sh`). Generated programs:
 
 | Corpus | Files | Equal | Notes |
 | --- | --- | --- | --- |
-| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 417 | 417 | the whole output, as text; 16 refused by the name phases and 36 by phases 1 and 2, each with Quint's first code, place and text |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 433 | 433 | the whole output, as text; 22 refused by the name phases and 41 by phases 1 and 2, each with Quint's first code, place and text |
 | Quint's repository at `v0.33.1`, in the container only | 196 | 196 | 177 accepted, all equal as text; 11 refused by phases 1 and 2; the 8 its name phases refuse are refused with the same code, place and text: `builtin.qnt` (`QNT101` built-in `Nat`), `_0100cyclicDefs` and `_0101noRecursion` (`QNT099`), `_1011nameOutOfScope`, `_1012unknownType`, `_1013unknownTypeLetIn` (`QNT404`), `_1014conflictingNames` (`QNT101`), `_1016nonConstOverride` (`QNT406`) |
 | 300 generated programs that stress names (`generate_names.py <folder> 300 1`: shadowing chains in lambdas, `let`s and local `def`s, a name by an import and by an export, every import form, instances three deep with constants, names used before their definition, now and then a cycle, a missing name or a conflict), in the container only | 300 | 300 | 133 accepted, all equal as text; 167 refused by the name phases, each with Quint's first code, place and text: `QNT101` 95 (mostly a name bound twice at one depth), `QNT099` 42, `QNT404` 30 |
 
@@ -5190,6 +5190,14 @@ including where Quint's behaviour looks like a fault (below). The one difference
 reading: Quint reports every error of a refused file and the crate reports the first, so a file
 Quint refuses is refused by both, and the crate's message is Quint's first one
 (`refused/names_twice.qnt`: Quint reports both definitions of `a`, the crate the first).
+Where Quint's first error has no place (its `locs` is empty: the definition it names is
+one a destructuring `val { a } = ...` generates, which has no entry in the source map), the
+problem takes the place of Quint's next error of the same code and message
+(`refused/names_destructured_twice.qnt`, 3:7; `names_destructured_let_param.qnt`). Where no
+error of that message has a place (`names_destructured_built_in.qnt`,
+`names_destructured_overlap.qnt`), the place is the crate's and not Quint's: the nearest
+definition with a place before the one Quint names, which is the destructuring that makes the
+name. A problem always names its file. The corpus test compares a missing place as missing.
 Slice 1's own difference stays: a syntax error in an imported file is `unreadable` (stricter
 than Quint, which reads on in a repaired tree), `tasks/quint/README.md` above.
 
