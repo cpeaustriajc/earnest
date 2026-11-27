@@ -16,6 +16,7 @@ mod quint_first;
 mod quint_fourth;
 mod quint_fourth_fixes;
 mod quint_integers;
+mod quint_nondet_step;
 mod quint_second;
 mod quint_seventh;
 mod quint_sixth;

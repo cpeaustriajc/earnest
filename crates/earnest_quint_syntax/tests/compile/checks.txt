@@ -166,13 +166,16 @@ compile	--target	json	--main	Uses	--init	init	--step	step	--invariant	later	task
 compile	--target	json	--main	W3	--init	init	--step	step	--invariant	ok	tasks/quint/review/barecomma/barecomma.qnt
 compile	--target	json	--main	Whole	--init	init	--step	step	--invariant	small	tasks/quint/review/twosetups/twosetups.qnt
 compile	--target	json	--main	assertAfterNondet	--init	init	--step	step	tasks/break_it/models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt
+compile	--target	json	--main	assertFail	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/assert_fail.qnt
 compile	--target	json	--main	bank	--init	init	--step	step	--invariant	nonNegative	tasks/quint/marked/specs/bank.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	belowBig	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	mutex,holderKnown,bounded,grantsBounded	--temporal	drains,someGrant,served	tasks/break_it/models/quint_second/project/setups.qnt
+compile	--target	json	--main	bigPick	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/big_pick.qnt
 compile	--target	json	--main	bigStepPick	--init	init	--step	step	tasks/break_it/models/quint_seventh/big_step_pick/big_step_pick.qnt
 compile	--target	json	--main	bigTopRange	--init	init	--step	step	tasks/break_it/models/quint_seventh/big_top_range/big_top_range.qnt
 compile	--target	json	--main	bignum	--init	init	--step	step	--invariant	sumIsPositive,squareIsWide,powersAreOrdered,quotientIsExact,belowTwoToThe63Plus2	tasks/break_it/models/quint_integers/bignum/bignum.qnt
 compile	--target	json	--main	board	--init	init	--step	step	--invariant	xNeverBehind,xHasTwo	tasks/quint/samples/board.qnt
+compile	--target	json	--main	chains	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/chains.qnt
 compile	--target	json	--main	checked	--init	init	--step	step	--invariant	belowThree,belowThree == belowThree,half == half	tasks/quint/views/checked/checked.qnt
 compile	--target	json	--main	choose	--init	init	--step	step	--invariant	ok	tasks/quint/checks/choose/choose.qnt
 compile	--target	json	--main	counter	--init	init	--step	step	--invariant	inRange	tasks/quint/checks/inrange/counter.qnt
@@ -189,6 +192,7 @@ compile	--target	json	--main	divisionBlamed	--init	init	--step	step	tasks/break_
 compile	--target	json	--main	endless	--init	init	--step	step	--invariant	small	tasks/break_it/models/quint_third/output/output.qnt
 compile	--target	json	--main	falseRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
 compile	--target	json	--main	fault	--init	init	--step	step	--invariant	P::annBelowFive	tasks/quint/imports/printing.qnt
+compile	--target	json	--main	firstAction	--init	init	--step	step	--invariant	belowFive	tasks/break_it/models/quint_nondet_step/first_action.qnt
 compile	--target	json	--main	floored	--init	init	--step	step	--invariant	rebuilt,between,literals,wideLiterals	tasks/break_it/models/quint_integers/floored/floored.qnt
 compile	--target	json	--main	halves	--init	init	--step	step	--invariant	halfAbove	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	house	--init	init	--step	step	--invariant	tickBound,neverLit	tasks/quint/samples/parts.qnt
@@ -205,6 +209,7 @@ compile	--target	json	--main	mixed	--init	init	--step	step	--invariant	inBounds	
 compile	--target	json	--main	mixed	--init	init	--step	step	--invariant	inBounds,downAtZero,agree,neverFourDown	tasks/quint/checks/mixed/mixed.qnt
 compile	--target	json	--main	named	--init	init	--step	step	--invariant	fresh,D::bounded	--temporal	D::drains	tasks/quint/imports/setups.qnt
 compile	--target	json	--main	near	--init	init	--step	step	--invariant	small	tasks/quint/views/near/near.qnt
+compile	--target	json	--main	nested	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/nested.qnt
 compile	--target	json	--main	nondetRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/nondet_runs/nondet_runs.qnt
 compile	--target	json	--main	once	--init	init	--step	step	--invariant	inRange,parity == parity,sign == sign	tasks/quint/views/twice/twice.qnt
 compile	--target	json	--main	outside	--init	init	--step	step	--invariant	small,shown == shown	tasks/quint/views/outside/outside.qnt
