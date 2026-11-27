@@ -15,13 +15,15 @@ pub(crate) fn recorded() -> PathBuf {
 
 pub(crate) const DEEP: &str = "crates/earnest_quint_syntax/tests/samples/deep";
 
+pub(crate) const TWO_READINGS: &str = "crates/earnest_quint_syntax/tests/samples/two_readings";
+
 pub(crate) fn samples(base: &Path, directory: &Path, found: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(base.join(directory)) else {
         return;
     };
     for entry in entries.flatten() {
         let relative = directory.join(entry.file_name());
-        if relative == Path::new(DEEP) {
+        if relative == Path::new(DEEP) || relative == Path::new(TWO_READINGS) {
             continue;
         }
         if entry.path().is_dir() {
