@@ -6078,7 +6078,8 @@ that thread; `ulimit -s` sets the stack).
 | `val` chain | 1,997 / 1,998 | judged | judged | judged |
 | `implies` | 999 / 1,000 | judged | judged | judged |
 | `0 + ... + x` | 3,997 / 3,998 (Quint's tree) | judged | judged | judged up to 3,783; past it the drop of the model overflows after the verdict |
-| `Set(`, records | refused from 1,998 / 1,999 by the type-node guard; 500 judged | judged at 500 | - | judged at 500 |
+| `Set(` | 1,998 / 1,999 (since #96; before it the type-node guard refused 1,998) | judged at 1,998 (398 s, 587 MiB) | - | judged at 500 |
+| records | refused at 1,998 by the type-node guard (5,006,294 nodes counted); 500 judged | judged at 500 | - | judged at 500 |
 | lambdas | 999 / 1,000 | 300 judged; 999 over 15 minutes | - | 300 judged |
 | `compiled.json`, nested `not` | 4,000 / 4,001 (the bracket scan) | judged | judged | judged |
 
