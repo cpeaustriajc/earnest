@@ -303,3 +303,33 @@ fn a_conflict_quint_never_places_is_at_the_destructuring_that_makes_the_name() {
         );
     }
 }
+
+#[test]
+fn set_or_list_applied_to_two_types_is_a_type_alias_not_found_as_quint_says() {
+    for (name, column, message) in [
+        ("set_applied_to_two", 12, "Type alias 'Set' not found"),
+        ("list_applied_to_two", 18, "Type alias 'List' not found"),
+    ] {
+        let path = format!("crates/earnest_quint_syntax/tests/samples/review/{name}.qnt");
+        let Err(problem) = read(&path, |path| fs::read_to_string(root().join(path)).ok()) else {
+            panic!("{name} is refused");
+        };
+        assert_eq!(
+            (
+                problem.code.as_str(),
+                problem.line,
+                problem.column,
+                problem.message.as_str()
+            ),
+            ("QNT404", 2, column, message),
+            "{name}"
+        );
+        assert!(
+            matches!(
+                compared(&path, &recorded(), &root()),
+                Ok(Equal::RefusedByNames)
+            ),
+            "{name} as Quint recorded it"
+        );
+    }
+}
