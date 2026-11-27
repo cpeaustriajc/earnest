@@ -219,7 +219,6 @@ compile	--target	json	--main	nested	--init	init	--step	step	tasks/break_it/model
 compile	--target	json	--main	nondetRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/nondet_runs/nondet_runs.qnt
 compile	--target	json	--main	nots_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_100.qnt
 compile	--target	json	--main	nots_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_300.qnt
-compile	--target	json	--main	nots_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/nots_500.qnt
 compile	--target	json	--main	once	--init	init	--step	step	--invariant	inRange,parity == parity,sign == sign	tasks/quint/views/twice/twice.qnt
 compile	--target	json	--main	ors_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ors_100.qnt
 compile	--target	json	--main	outside	--init	init	--step	step	--invariant	small,shown == shown	tasks/quint/views/outside/outside.qnt
@@ -254,7 +253,6 @@ compile	--target	json	--main	stuck	--init	init	--step	step	--invariant	ok	tasks/
 compile	--target	json	--main	stuck	--init	init	--step	step	--invariant	ok	tasks/quint/checks/stuck/stuck.qnt
 compile	--target	json	--main	sums_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_100.qnt
 compile	--target	json	--main	sums_300	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_300.qnt
-compile	--target	json	--main	sums_500	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/sums_500.qnt
 compile	--target	json	--main	tally	--init	init	--step	step	tasks/quint/samples/tally.qnt
 compile	--target	json	--main	tallyfails	--init	init	--step	step	tasks/quint/samples/tallyfails.qnt
 compile	--target	json	--main	three	--init	init	--step	step	--invariant	bounded,counted	--temporal	drains	tasks/quint/imports/setups.qnt

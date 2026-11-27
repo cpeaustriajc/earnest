@@ -17,13 +17,14 @@ KEPT = (100, 300, 500)
 # Every file costs time in each debug `cargo test` (the corpus tests of earnest_quint_syntax
 # parse, typecheck, compile and search every .qnt file of the repository) and to record with
 # Quint 0.33.1. The repository keeps the files that cost little: every shape at 100 but
-# records and lambdas, and nots, sums and parens past 100. `earnest verify` in a debug build:
+# records and lambdas, nots, sums and lets at 300 and parens at 300 and 500. With nots and sums
+# at 500 as well, the tests of earnest_quint_syntax took 224 s against 184 s without any. `earnest verify` in a debug build:
 # ifs, implies, ands, ors and elseifs cost 3 to 4 s at 300 and 6 to 9 s at 500; records_100
 # 7 s and lambdas_100 12 s; sets 24 s at 300, records 142 s at 300 and lambdas over 300 s at
 # 300, as earnest's type inference grows with the depth of a type. Quint 0.33.1 compiles
 # sets_300 in 81 s, sets_500 in 370 s and records_300 in 573 s, takes about 30 minutes to
 # record lambdas_300, and over 30 minutes to compile lambdas_999.
-KEPT_PAST_100 = {"nots": (300, 500), "sums": (300, 500), "parens": (300, 500), "lets": (300,)}
+KEPT_PAST_100 = {"nots": (300,), "sums": (300,), "parens": (300, 500), "lets": (300,)}
 LEFT_AT_100 = ("records", "lambdas")
 
 # Shapes and depths Quint 0.33.1's own `quint parse` and `quint compile` overflow on

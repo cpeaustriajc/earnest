@@ -24,16 +24,10 @@ const AT_100: [&str; 9] = [
     "implies_100",
 ];
 
-/// The shapes whose depth the stacks are tested at: as deep as these, every walk of the file
-/// recurses 300 and 500 levels, in the text, in Quint's tree, or both.
-const DEEPER: [&str; 6] = [
-    "nots_300",
-    "nots_500",
-    "sums_300",
-    "sums_500",
-    "parens_300",
-    "parens_500",
-];
+/// The shapes whose depth the stacks are tested at: every walk of the file recurses 300 levels,
+/// in the text and in Quint's tree, and the parser 500. Deeper files are built by the tests
+/// below that run on the system's stack and at the front end's bounds.
+const DEEPER: [&str; 4] = ["nots_300", "sums_300", "parens_300", "parens_500"];
 
 fn sample(name: &str) -> String {
     let path = repository()
@@ -165,8 +159,8 @@ fn since_a_shallow_base(name: &str) -> Run {
 }
 
 #[test]
-fn a_rule_that_nests_300_and_500_deep_since_the_base_is_listed_changed() {
-    for name in ["nots_300", "sums_300", "sums_500"] {
+fn a_rule_that_nests_300_deep_since_the_base_is_listed_changed() {
+    for name in ["nots_300", "sums_300"] {
         let run = since_a_shallow_base(name);
         assert!(
             run.stdout
