@@ -1,6 +1,6 @@
 use crate::model::assigned;
 use crate::reader::{Choice, Path, Read, refusal};
-use earnest_ir::{Frame, eval, truth};
+use earnest_ir::{Fault, Frame, eval, truth};
 use earnest_value::{MOST_VALUES_LISTED, Value};
 use std::collections::BTreeSet;
 
@@ -63,19 +63,37 @@ fn fault(what: &str, why: &str) -> impl Fn(earnest_ir::Fault) -> crate::reader::
     move |fault| refusal(&what, &format!("{why} {}", fault.describe()))
 }
 
+/// What a false `assert` among the conditions of a first action does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Asserts {
+    /// The model is refused, as for `init`, where Quint's backends differ.
+    Refuse,
+    /// The run has no state to start from, so it is broken, as `quint test` fails it.
+    EndTheRun,
+}
+
+enum Start {
+    State(Vec<Value>),
+    NotPossible,
+    Asserted,
+}
+
 fn start_of(
     (path, what): (&Path, &str),
     picked: &[Value],
-    fields: &[String],
-    slots: usize,
-) -> Read<Option<Vec<Value>>> {
+    (fields, slots): (&[String], usize),
+    asserts: Asserts,
+) -> Read<Start> {
     let mut frame = Frame::new(&[], slots_of(path, slots));
     for (choice, value) in path.choices.iter().zip(picked) {
         frame.put(choice.slot, value.clone());
     }
     for guard in &path.guards {
-        if !truth(guard, &mut frame).map_err(fault(what, &format!("a condition of {what}")))? {
-            return Ok(None);
+        match truth(guard, &mut frame) {
+            Ok(true) => {}
+            Ok(false) => return Ok(Start::NotPossible),
+            Err(Fault::Asserted) if asserts == Asserts::EndTheRun => return Ok(Start::Asserted),
+            Err(found) => return Err(fault(what, &format!("a condition of {what}"))(found)),
         }
     }
     let mut state = Vec::with_capacity(fields.len());
@@ -83,19 +101,24 @@ fn start_of(
         let given = fault(what, &format!("a value {what} gives"));
         state.push(eval(&expr, &mut frame).map_err(given)?);
     }
-    Ok(Some(state))
+    Ok(Start::State(state))
 }
 
 pub(crate) fn start_states(
     (paths, what): (&[Path], &str),
     fields: &[String],
     slots: usize,
+    asserts: Asserts,
 ) -> Read<Vec<Vec<Value>>> {
     let mut found = BTreeSet::new();
     for path in paths {
         for picked in combinations((path, what), slots)? {
-            if let Some(state) = start_of((path, what), &picked, fields, slots)? {
-                found.insert(state);
+            match start_of((path, what), &picked, (fields, slots), asserts)? {
+                Start::State(state) => {
+                    found.insert(state);
+                }
+                Start::NotPossible => {}
+                Start::Asserted => return Ok(Vec::new()),
             }
         }
     }

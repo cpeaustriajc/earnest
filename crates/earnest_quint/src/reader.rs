@@ -266,6 +266,19 @@ fn fault_refusal(fault: Fault) -> Refusal {
     )
 }
 
+/// [`constant`] for a run that is one condition: a false `assert` in it gives `false`, as
+/// `quint test` fails the run.
+pub(crate) fn constant_of_a_run(expr: &Expr, slots: usize) -> Read<Option<Value>> {
+    if reads_state(expr, &[]) {
+        return Ok(None);
+    }
+    match eval(expr, &mut Frame::new(&[], slots)) {
+        Ok(value) => Ok(Some(value)),
+        Err(Fault::Asserted) => Ok(Some(Value::Bool(false))),
+        Err(fault) => Err(fault_refusal(fault)),
+    }
+}
+
 pub(crate) fn constant(expr: &Expr, slots: usize) -> Read<Option<Value>> {
     if reads_state(expr, &[]) {
         return Ok(None);

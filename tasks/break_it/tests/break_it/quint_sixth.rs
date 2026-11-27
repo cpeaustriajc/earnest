@@ -235,3 +235,38 @@ fn a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_wit
         "both runs are named as not played, as with a plain `@check` on `badRun`\n{report:#}"
     );
 }
+
+#[test]
+fn a_run_that_is_false_or_fails_an_assert_is_broken_in_a_check_of_runs_only() {
+    let report = verified("false_runs", &[]);
+    let checked = model(&report, "falseRuns");
+    let verdicts: Vec<(&str, &str)> = [
+        "plainFalseTest",
+        "plainTrueTest",
+        "bareAssertTest",
+        "firstAssertTest",
+        "pickAssertTest",
+        "passingAssertTest",
+    ]
+    .into_iter()
+    .map(|run| (run, rule(checked, run)["verdict"].as_str().unwrap_or("")))
+    .collect();
+    assert_eq!(
+        verdicts,
+        [
+            ("plainFalseTest", "broken"),
+            ("plainTrueTest", "holds"),
+            ("bareAssertTest", "broken"),
+            ("firstAssertTest", "broken"),
+            ("pickAssertTest", "broken"),
+            ("passingAssertTest", "holds"),
+        ],
+        "`quint test --backend typescript --main falseRuns` fails `plainFalseTest`, \
+         `bareAssertTest`, `firstAssertTest` and `pickAssertTest` (QNT508, Assertion failed, for \
+         the three with an `assert`) and passes the other two. The module marks no property, so \
+         the check plays its runs and searches nothing: `plainFalseTest` passed there, and the \
+         three runs whose first action holds a false `assert` made the check unreadable\n\
+         {report:#}"
+    );
+    assert_eq!(checked["status"], "fail", "{report:#}");
+}

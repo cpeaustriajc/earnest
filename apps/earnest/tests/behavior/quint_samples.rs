@@ -54,7 +54,7 @@ case "$1" in
 esac
 "##;
 
-const UNREADABLE: [&str; 1] = ["tallyfails"];
+const FAILS_AS_MARKED: [&str; 1] = ["tallyfails"];
 
 fn samples() -> PathBuf {
     repository().join("tasks/quint/samples")
@@ -184,7 +184,7 @@ fn each_sample_that_reads_has_the_state_count_and_the_verdicts_quint_gave() {
         .as_object()
         .expect("expected.json maps each sample")
     {
-        if UNREADABLE.contains(&name.as_str()) {
+        if FAILS_AS_MARKED.contains(&name.as_str()) {
             continue;
         }
         let module = entry["module"]
@@ -205,22 +205,29 @@ fn each_sample_that_reads_has_the_state_count_and_the_verdicts_quint_gave() {
 }
 
 #[test]
-fn a_pure_run_that_fails_by_an_assert_is_unreadable_where_quint_test_fails_it() {
+fn a_pure_run_that_fails_by_an_assert_is_broken_as_quint_test_fails_it() {
     let run = Quint::new().verify();
     let report = run.json();
-    let problems: Vec<&Value> = report["unreadable"]
+    assert_eq!(
+        report["unreadable"].as_array().map(Vec::len),
+        Some(0),
+        "every sample reads\n{run}"
+    );
+    let checked = model(&report, "tallyfails");
+    let wrong = checked["rules"]
         .as_array()
         .into_iter()
         .flatten()
-        .collect();
-    assert_eq!(problems.len(), UNREADABLE.len(), "{run}");
-    let problem = problems[0];
-    assert_eq!(problem["file"], "samples/tallyfails.qnt", "{run}");
-    assert_eq!(problem["line"], 7, "{run}");
-    assert_eq!(problem["feature"], "an action written in place", "{run}");
+        .find(|rule| rule["id"] == "wrongTest")
+        .unwrap_or(&Value::Null);
     assert_eq!(
-        problem["message"],
-        "a condition of an action written in place finds an `assert` false, which `quint run` stops on as an error and TLC reads as a guard that disables the action, in the run `wrongTest`",
-        "{run}"
+        (&wrong["verdict"], &wrong["expected"]),
+        (&Value::from("broken"), &Value::from("broken")),
+        "`quint test --main tallyfails` prints `wrongTest failed after 1 test(s)` (QNT508, \
+         Assertion failed), and the run is marked `@check broken`\n{run}"
+    );
+    assert_eq!(
+        checked["status"], "pass",
+        "the one run breaks as marked\n{run}"
     );
 }
