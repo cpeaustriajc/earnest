@@ -676,7 +676,7 @@ A difference prints `cannot`, with `Quint can't confirm this:` and the reason un
 |---|---|
 | Java is not on `PATH` | `Java was not found on PATH, and quint verify --backend tlc needs it ...` |
 | `quint` stops with an error, such as Quint 0.33.1 on `import X as A` inside an instantiated spec | `Quint stopped:` and Quint's error |
-| The model declares, or the search computes, a number outside 32 bits, such as `2^64` | TLC's integers hold 32 bits; when Quint's TLC run stops on the number, that reason and then `Quint stopped:` with TLC's `can't handle a number this big` |
+| The model declares, or the search computes, a number outside 32 bits, such as `2^64` | TLC's integers hold 32 bits; when Quint's TLC run stops on the number, `Quint stopped: TLC can't handle a number this big.` |
 | The checker could not judge a property or a run, such as `/` or `%` of a negative number, which is a fault | `the checker could not judge it` |
 | A run `quint test` passed after more than one sample, which the checker breaks | `quint test` tries random choices of a run, and the checker tries every choice |
 | A run the check plays reaches `range`; only the comparison with `quint test` | `quint test` answers otherwise when `range` starts above its end ([listed above](#where-quints-backends-differ)) |

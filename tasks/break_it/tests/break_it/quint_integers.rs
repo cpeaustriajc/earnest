@@ -224,17 +224,14 @@ fn confirm_with_quint_cannot_confirm_numbers_past_32_bits_and_names_tlc_s_limit(
         "`quint verify --backend tlc` stops with TLC's `can't handle a number this big`\n\
          {stdout}\n{stderr}"
     );
-    let why = format!(
-        "    Quint can't confirm this: {TLC_LIMIT}; Quint stopped: TLC can't handle a number \
-         this big."
-    );
+    let why = "    Quint can't confirm this: Quint stopped: TLC can't handle a number this big.";
     assert!(
         lines
             .iter()
             .skip(1)
             .filter(|line| line.starts_with("    "))
             .all(|line| *line == why),
-        "each line says why with TLC's limit\n{stdout}"
+        "each line says why in TLC's words\n{stdout}"
     );
     assert!(
         !stdout.contains("differs"),
