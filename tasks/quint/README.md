@@ -5995,10 +5995,8 @@ build unless said otherwise. Quint is Quint 0.33.1's CLI on the same files.
   the repository holds 25,250 nodes, in Quint's repository 74,688 (`evaluator/fixtures/jmt/test/
   test_all.qnt`), and in the deep samples 504,011 (`records_500`). Sharing the type, which a later
   issue does, removes the cause.
-- These bounds are the crate's. Through the CLI, a file with more than about 57 levels of operator
-  nesting is refused earlier, with "the Quint file can't be parsed", by the CLI's own reading of
-  the JSON (most likely serde_json's depth limit of 128); that is a ticket of its own. The deep
-  samples prove the crate, not the CLI.
+- These bounds are the crate's, and since #95 the CLI's too: its readers parse the front end's JSON
+  with no limit on its nesting (below, "Through the CLI").
 - Where Quint overflows and earnest reads within its bounds (a sum of 1,000 terms, a `Set` 1,000
   deep, chains of 4,000 to 20,000 aliases), Quint 0.33.1 gives no verdict; `confirm --quint` says
   `cannot`.
@@ -6039,6 +6037,51 @@ are `quint typecheck` and `quint compile`; `-` where not measured.
 | `match` of n cases, sum type of n variants | 500 / 2,500 | 4.6 s / refused | 18 s / refused | 3.7 GB / 408 MiB | 13 / 626 s | - / fails | bound: type nodes, above |
 | chain of n `.union(...)` calls | 3,990 / 20,000 | 24 s / refused | 60 s / refused | 122 MB / - | overflows from 2,000 (1.4 s) | - | fixed: read 17.6 s → 74 ms at 3,990; 20,000 refused in 0.3 s (1.4 s in debug) |
 | chain of n `.map(x => Set(x))` | 500 | 40 s | 81 s | 1.5 GB | 210 s | - | left: Quint's nested fixpoint of substitutions; about 5 times faster than Quint |
+
+### Through the CLI (#95)
+
+The CLI's readers parse the JSON the front end wrote with serde_json's `unbounded_depth` and
+`disable_recursion_limit()`: `Places::from_quint` and `runs_held` (`places.rs`),
+`Typechecked::read` (`setup.rs`), `read_runs` and `read_viewed` (`lib.rs`), and
+`where_backends_differ` (`confirm_reach.rs`). The front end refuses a file past its bounds before
+it writes any JSON. What walks that JSON as deep as the file is nested runs through
+`on_large_stack(stack_of_this_worker().unwrap_or(0), work)`: inline on a worker of 256 MiB, on a
+64 MiB thread from the command's thread (`quint.rs`, `reading.rs`, `confirm_reach.rs`). A
+`compiled.json` has no front end before it: `read` scans its `{` and `[` outside strings, with no
+recursion, and refuses one nested more than 8,008 deep (two levels for each of 4,000 levels of an
+expression, and room for the module) at the place of that bracket: "the JSON is nested more than
+8008 deep here, deeper than earnest reads: a compiled module's expressions may nest up to 4000 deep".
+
+The samples are `tasks/quint/deep/`, written by its `generate.py`: twelve shapes (`not(`, `Set(`,
+parentheses, an else-if chain, nested ifs, records, `and {}`, `or {}`, lambdas in `Set.exists`, a
+`val` chain, `0 + ... + x`, `implies`) at 100, 300 and 500, each a check whose `holds` holds and
+whose `broken` is broken at `x = 3`. Measured by running `earnest verify` on each shape at the front
+end's largest accepted depth; "the system's stack" is the command on the process's main thread, as
+`main.rs` runs it when the system refuses its 512 MiB thread (a library for `LD_PRELOAD` refuses
+that thread; `ulimit -s` sets the stack).
+
+| Shape | Largest accepted / first refused | Release, 512 MiB and 1 MiB | Debug, 512 MiB | Debug, 1 MiB |
+| --- | --- | --- | --- | --- |
+| `not(` | 1,998 / 1,999 | judged | judged | judged |
+| parentheses | 1,999 / 2,000 | judged | judged | judged |
+| else-if chain | 1,998 / 1,999 | judged | judged | judged |
+| nested `if` | 1,998 / 1,999 | judged | judged | judged |
+| `and {}`, `or {}` | 1,999 / 2,000 | judged | judged | judged |
+| `val` chain | 1,997 / 1,998 | judged | judged | judged |
+| `implies` | 999 / 1,000 | judged | judged | judged |
+| `0 + ... + x` | 3,997 / 3,998 (Quint's tree) | judged | judged | judged up to 3,761; past it the drop of the model overflows after the verdict |
+| `Set(`, records | refused from 1,998 / 1,999 by the type-node guard; 500 judged | judged at 500 | - | judged at 500 |
+| lambdas | 999 / 1,000 | 300 judged; 999 over 15 minutes | - | 300 judged |
+| `compiled.json`, nested `not` | 4,000 / 4,001 (the bracket scan) | judged | judged | judged |
+
+- The one abort left: in a debug build, when earnest can't start its large thread so the command
+  runs on the system's stack, and that stack is 1 MiB (Linux and macOS give 8 MiB), one expression
+  chained more than 3,761 long overflows in the drop of `earnest_ir::Model` at the end of
+  `verify`. A released build reads its bounds at 1 MiB. Before the hops the command's thread at
+  the system's stack held 1,129 (debug, 8 MiB) and 829 (release, 1 MiB).
+- Time: the front end's type inference grows faster than the depth of a type. Release: `Set` 300 in
+  5.8 s, 500 in 25 s; records 300 in 24 s; `and {}` near 2,000 in 30 to 40 s. Quint 0.33.1's own
+  `quint compile` on the same files: `Set` 300 in 81 s, 500 in 370 s; records 300 in 573 s.
 
 ### Tests
 

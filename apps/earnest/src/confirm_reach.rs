@@ -227,7 +227,7 @@ pub(crate) fn where_backends_differ(source: &str, quint: &QuintCheck) -> Reasons
     .unwrap_or_else(|refused| Reasons {
         search: vec![refused.message.clone()],
         runs: vec![refused.message],
-        own: Default::default(),
+        own: BTreeMap::new(),
     })
 }
 

@@ -408,6 +408,8 @@ unreadable  specs/deep.qnt
 
 Past the second bound the message ends `nested more than 4000 deep in Quint's tree, deeper than earnest reads`.
 
+A released build of earnest reads files up to these bounds even with 1 MiB of stack. One case is bounded lower: in a debug build of earnest, when earnest can't start its large thread so the command runs on the system's stack, and that stack is 1 MiB (Linux and macOS give 8 MiB), one expression chained more than 3,761 long, such as a sum of more terms, overflows the stack after the check is judged.
+
 These are earnest's bounds, not Quint's. Quint 0.33.1 itself overflows its stack well before them on some shapes, such as a `Set` 1,000 deep or a sum of 1,000 terms; [`confirm --quint`](#confirming-a-check-with-quint) then says `cannot`. A file nested a few hundred deep reads in seconds, but a deep type, such as a `Set` or a record nested 500 deep, can take minutes, as it takes Quint.
 
 ## What is read today
