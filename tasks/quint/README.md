@@ -5330,8 +5330,8 @@ tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint cra
 | Corpus | Checks | Equal | Notes |
 | --- | --- | --- | --- |
 | Every check earnest compiles under `tasks/` (`checks.txt`), on the tree merged with `claude/lucid-brown-f5xvr8` | 255 | 245 | 6 refused by both with Quint's message (4 `init` not found, 2 `Internal error while flattening`); 4 refused by Quint's type or effect pass (`QNT203` in `quintrefuses/refused.qnt`, and `typed/illtyped.qnt`), left to #87 and #88 |
-| The 17 shapes, every name tried; every module of `tasks/quint/imports/` and of the samples; what a check adds (`extra_checks.txt`) | 272 | 64 | 208 refused by both, each with Quint's message: names a shape does not see (`QNT404`), modules with no `init`, the two flattener crashes |
-| The reader, on each of the 309 equal | 309 | 309 | 255 searched with the same outcome, 54 unreadable both ways with the same problems |
+| The 17 shapes, every name tried; every module of `tasks/quint/imports/` and of the samples; what a check adds (`extra_checks.txt`) | 276 | 65 | 211 refused by both, each with Quint's message: names a shape does not see (`QNT404`), modules with no `init`, the two flattener crashes |
+| The reader, on each of the 310 equal | 310 | 310 | 256 searched with the same outcome, 54 unreadable both ways with the same problems |
 | Quint's repository at `v0.33.1`, in the container only: each module with `action init` and `action step` (`corpus_checks.py`), `--main M` | 108 modules in 93 of the 196 files | 106 | 2 refused by both with Quint's message: `adr006before.qnt` (a syntax error, `QNT000`) and `two_phase_commit_modules.qnt` (`Internal error while flattening`) |
 
 The command for the last row: `python3 -I tasks/quint/syntax/corpus_checks.py <quint> > <list>`,
@@ -5372,7 +5372,10 @@ the main one's; a lambda parameter is renamed even where it shadows nothing; an 
 definition is written with `hidden: false` and `namespaces: []`; two declarations named `_`
 (two `assume _`) keep only the first.
 
-One place is written as Quint writes it on every file compared but is not shown to be in
-general: a key JavaScript sets to `undefined` keeps its place in the object, and the crate drops
-it, so a key set again later would come last. Only `importedFrom` of an exported definition is
-set to `undefined` and could be set again, when a later module imports the main one.
+A key JavaScript sets to `undefined` keeps its place in the object, and a value set under it
+later lands there. Quint's collector gives every entry it makes an `importedFrom` key, undefined
+for a module's own definition; the flattener's `export` copies such an entry with `importedFrom`
+set to `undefined`, and the import of the module that exported it sets it again, in its old
+place (`exported_and_used.qnt`, found by the review of `5008154`). That is the one key the
+flattener sets to `undefined` that a later pass sets again, and the crate keeps its place with a
+marker (`flatten::CLEARED`) that the table and the written output leave out.

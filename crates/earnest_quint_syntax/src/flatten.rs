@@ -41,6 +41,18 @@ impl Table {
     }
 }
 
+pub(crate) const CLEARED: Json = Json::Null;
+
+pub(crate) fn without_cleared(module: &Json) -> Json {
+    let mut module = module.clone();
+    for declaration in list_mut(&mut module, "declarations") {
+        if let Json::Object(fields) = declaration {
+            fields.retain(|(key, value)| !(key == "importedFrom" && *value == CLEARED));
+        }
+    }
+    module
+}
+
 pub(crate) fn text<'a>(value: &'a Json, key: &str) -> &'a str {
     match value.get(key) {
         Some(Json::Text(text)) => text,
@@ -68,12 +80,6 @@ pub(crate) fn put(value: &mut Json, key: &str, inner: Json) {
             Some((_, slot)) => *slot = inner,
             None => fields.push((key.to_owned(), inner)),
         }
-    }
-}
-
-fn remove(value: &mut Json, key: &str) {
-    if let Json::Object(fields) = value {
-        fields.retain(|(name, _)| name != key);
     }
 }
 
@@ -871,7 +877,7 @@ impl<'a> Flattener<'a> {
             let mut bare = definition.clone();
             put(&mut bare, "hidden", Json::Bool(false));
             put(&mut bare, "namespaces", Json::List(Vec::new()));
-            remove(&mut bare, "importedFrom");
+            put(&mut bare, "importedFrom", CLEARED);
             self.nested_walk(namespace, entry.id(), &definition);
             self.push(bare);
         }

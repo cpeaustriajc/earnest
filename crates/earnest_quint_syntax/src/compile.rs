@@ -1,6 +1,6 @@
 use crate::applications::Applications;
 use crate::files::Parsed;
-use crate::flatten::{Table, field_mut, flatten_modules, id_of, text};
+use crate::flatten::{Table, field_mut, flatten_modules, id_of, text, without_cleared};
 use crate::ids::Ids;
 use crate::json::Json;
 use crate::lexer::lex;
@@ -292,7 +292,7 @@ impl Parsed {
         let flat = flatten_modules(&modules, &table, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;
         Ok(Compiled {
-            modules: flat.modules,
+            modules: flat.modules.iter().map(without_cleared).collect(),
             table: flat.table,
             main: target.main.clone(),
             copies: flat.copies,

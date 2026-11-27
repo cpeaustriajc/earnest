@@ -2,6 +2,10 @@ use earnest_quint_syntax::{Compiled, Json, Problem, Target, read};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const SYNTAX: &str = "QNT000";
+
+const FLATTENER_STOPPED: &str = "Internal error while flattening";
+
 pub(crate) const LEFT_OUT: [&str; 2] = ["types", "effects"];
 
 pub(crate) fn root() -> PathBuf {
@@ -225,7 +229,10 @@ pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, Stri
         Ok(ours) => ours,
         Err(problem) => {
             return match &recorded.quint {
-                Err(error) if error.contains(&format!("[{}]", problem.code)) => {
+                Err(error)
+                    if error.contains(&format!("[{}]", problem.code))
+                        && (problem.code == SYNTAX || error.contains(&problem.message)) =>
+                {
                     Ok(Outcome::BothRefuse)
                 }
                 _ => Err(format!("not read: {problem}")),
@@ -236,7 +243,13 @@ pub(crate) fn compared(recorded: &Recorded, base: &Path) -> Result<Outcome, Stri
         Ok(theirs) => theirs,
         Err(error) => {
             return match ours {
-                Err(problem) if error.contains(&problem.message) => Ok(Outcome::BothRefuse),
+                Err(problem)
+                    if error.contains(&problem.message)
+                        && (problem.message.starts_with(FLATTENER_STOPPED)
+                            || error.contains(&format!("[{}]", problem.code))) =>
+                {
+                    Ok(Outcome::BothRefuse)
+                }
                 Err(problem) => Err(format!(
                     "refused with `{}`, where Quint stops with `{error}`",
                     problem.message

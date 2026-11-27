@@ -123,7 +123,10 @@ impl Entry {
             Json::Object(fields) => Self {
                 fields: fields
                     .iter()
-                    .map(|(key, value)| (key.clone(), Some(Rc::new(value.clone()))))
+                    .map(|(key, value)| {
+                        let kept = (*value != Json::Null).then(|| Rc::new(value.clone()));
+                        (key.clone(), kept)
+                    })
                     .collect(),
             },
             _ => Self::default(),
