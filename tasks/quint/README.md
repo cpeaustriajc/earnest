@@ -5673,9 +5673,12 @@ drop runs; only `--target tlaplus` does.
 
 ### How it is compared [ran]
 
-- `tasks/quint/syntax/list_checks.sh <earnest> tasks` lists every check earnest compiles: it
-  runs `earnest verify` with a `quint` that refuses `typecheck`, so every check is compiled,
-  and records the arguments. They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
+- `tasks/quint/syntax/list_checks.sh tasks` lists every check earnest compiles: it runs the
+  ignored test `quint::tests::the_checks_earnest_compiles_are_listed_as_quint_compile_is_called`,
+  which plans every check below the folder as `earnest verify` does, with no typecheck, so every
+  check is compiled, and records the arguments `quint compile` would be given (before the switch
+  it ran `earnest verify` with a `quint` that refused `typecheck`; the two lists are equal byte
+  for byte). They are in `crates/earnest_quint_syntax/tests/compile/checks.txt`
   (249), one check a line with its arguments between tabs, since earnest gives an invariant such as `pair == pair` as one argument. `extra_checks.py` adds every candidate name of the 17 shapes (as
   `tasks/quint/shapes/record.py` tries them), every module of `tasks/quint/imports/` and of the
   crate's samples (`tests/samples/compile/`), and 15 checks of what a check adds: 272 in
@@ -5707,7 +5710,7 @@ To record again (the tests need no Node):
 ```sh
 npm install @informalsystems/quint@0.33.1          # in a scratch folder
 export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint
-tasks/quint/syntax/list_checks.sh target/release/earnest tasks > crates/earnest_quint_syntax/tests/compile/checks.txt
+tasks/quint/syntax/list_checks.sh tasks > crates/earnest_quint_syntax/tests/compile/checks.txt
 python3 -I tasks/quint/syntax/extra_checks.py . > crates/earnest_quint_syntax/tests/compile/extra_checks.txt
 tasks/quint/syntax/record_compile.sh crates/earnest_quint_syntax/tests/quint crates/earnest_quint_syntax/tests/compile/*checks.txt
 ```

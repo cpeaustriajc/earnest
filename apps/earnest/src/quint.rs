@@ -279,9 +279,12 @@ fn target_of(check: &Check) -> Target {
 }
 
 fn compile(job: &Job) -> Result<String, Problem> {
+    let target = target_of(&labelled(job));
+    #[cfg(test)]
+    tests::record(&target, &job.shown);
     let parsed = front_end(&job.shown).map_err(|problem| compile_failed(job, &problem))?;
     let compiled = parsed
-        .compile(&target_of(&labelled(job)))
+        .compile(&target)
         .map_err(|problem| compile_failed(job, &problem))?;
     Ok(compiled.output().to_string())
 }
@@ -921,8 +924,78 @@ fn one_per_file(files: Vec<ModelFile>) -> Vec<ModelFile> {
 
 #[cfg(test)]
 mod tests {
-    use super::compile_said;
-    use earnest_quint_syntax::Problem;
+    use super::{compile_said, compiled_all, found, found_checks};
+    use crate::discovery::discover;
+    use earnest_quint_syntax::{Problem, Target};
+    use std::collections::{BTreeSet, HashMap};
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+    use std::sync::Mutex;
+
+    const FOLDER_VARIABLE: &str = "EARNEST_LISTED_FOLDER";
+    const LIST_VARIABLE: &str = "EARNEST_LISTED_CHECKS";
+
+    static RECORDED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub(super) fn record(target: &Target, file: &str) {
+        let mut words: Vec<&str> = vec![
+            "compile",
+            "--target",
+            "json",
+            "--main",
+            &target.main,
+            "--init",
+            &target.init,
+            "--step",
+            &target.step,
+        ];
+        for (flag, text) in [
+            ("--invariant", &target.invariant),
+            ("--temporal", &target.temporal),
+        ] {
+            if let Some(text) = text {
+                words.extend([flag, text.as_str()]);
+            }
+        }
+        words.push(file);
+        if let Ok(mut recorded) = RECORDED.lock() {
+            recorded.push(words.join("\t"));
+        }
+    }
+
+    #[test]
+    #[ignore = "writes the list of checks to the file named by EARNEST_LISTED_CHECKS"]
+    fn the_checks_earnest_compiles_are_listed_as_quint_compile_is_called() {
+        let list = env::var(LIST_VARIABLE).expect("EARNEST_LISTED_CHECKS names the list to write");
+        let folder = env::var(FOLDER_VARIABLE).unwrap_or_else(|_| "tasks".to_owned());
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("the repository is two folders above the CLI");
+        let listed = discover(&[root.join(folder)])
+            .expect("the folder can be searched")
+            .listed;
+        let (_, candidates) = found(&listed);
+        let mut files = Vec::new();
+        let (checks, places) = found_checks(&candidates, 1, &mut files);
+        compiled_all(
+            &checks,
+            &vec![None; checks.len()],
+            (&HashMap::new(), &places),
+            1,
+        );
+        let prefix = format!("{}/", root.to_string_lossy());
+        let lines: BTreeSet<String> = RECORDED
+            .lock()
+            .expect("the list can be read")
+            .iter()
+            .map(|line| line.replace(&prefix, ""))
+            .collect();
+        let mut text = lines.into_iter().collect::<Vec<_>>().join("\n");
+        text.push('\n');
+        fs::write(&list, text).expect("the list can be written");
+    }
 
     fn problem(code: &str, message: &str, source: &str) -> Problem {
         Problem {
