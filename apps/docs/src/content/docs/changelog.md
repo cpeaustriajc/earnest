@@ -18,6 +18,15 @@ rule changes since origin/main
 - **JSON:** the `notCompared` entry has `problem` with the file, line, column and whole message, as the reason `marks` has. A native file unreadable at the base is unchanged.
 - **Nothing left behind:** `--base` writes the base's `.qnt` files for the run and removes them when it ends, so `.earnest/quint/base-<hash>/` is no longer kept. Two runs at once in one repository each use their own copy. See [Rule changes](/reference/output/#quint-checks).
 
+## November 2026: a Quint run's `nondet` over 100 values inside a step can fail it, as in `quint test`
+
+A `nondet` inside a step of a run, `init.then(nondet n = 0.to(199).oneOf() all { n == 7, x' = n }).then(step)`, made the step able to happen when any value worked, so such a run passed where `quint test` fails it (QNT513). `quint test` tries another value only of a set of fewer than 100 values; over a larger set it keeps its first pick. Earnest now judges every `nondet` of a run's steps that way:
+
+- **100 values or more:** a value the action is false for makes the step false, and the run is broken with that value, ``with `n` = 0, step 1, … and `quint test` tries no other value of a `nondet` over 100 values or more``. In the middle of a chain that is an error; as the run's last step, a `nondet` at the top of the run may try its next value.
+- **Fewer than 100 values:** unchanged. Nested `nondet`s, an `any`, a set read from the state, `reps`, `expect`, `fail()`, a helper that chains steps and the run's first action, `init` among them, follow the same rule. See [A `nondet` inside a step](/reference/quint/#a-nondet-inside-a-step).
+- **`assert` under `fail()`:** a false `assert` in a run's first action broke the run, except under `fail()`, which passed it; `quint test` fails it (QNT508), and now earnest breaks it too.
+- **Unchanged:** the search (`init`, `step`, invariants and temporal properties take every value), native models, and runs whose steps pick from fewer than 100 values.
+
 ## November 2026: `earnest verify` reads `.qnt` files with no Quint and no Node
 
 `earnest verify`, `earnest changes` and `earnest chart` read a `.qnt` file themselves, as Quint 0.33.1 reads it, where they started the project's `quint` (Node) for `quint parse`, `quint typecheck` and `quint compile`. The verdicts, state counts, runs and printed lines are the same as with Quint 0.33.1 on every Quint sample in the repository.
