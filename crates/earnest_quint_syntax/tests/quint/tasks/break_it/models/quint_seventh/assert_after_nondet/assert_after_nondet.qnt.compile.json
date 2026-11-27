@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tassertAfterNondet\t--init\tinit\t--step\tstep\ttasks/break_it/models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt","error":"error: [QNT404] Name 'step' not found"}]}

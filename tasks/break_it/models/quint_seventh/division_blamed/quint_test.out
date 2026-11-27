@@ -1,0 +1,23 @@
+
+  divisionBlamed
+    1) halfTest failed after 1 test(s)
+    2) pickTest failed after 1 test(s)
+
+  2 failed
+
+  1) halfTest:
+       Error [QNT511]: Test halfTest returned false
+        at division_blamed.qnt:9:7
+        9:   run halfTest = (-7) / 2 == -4
+                 ^^^^^^^^
+    Use --seed=0x275425617e1d3 --match=halfTest to repeat.
+  2) pickTest:
+       Error [QNT513]: Cannot continue in `then` because the highlighted expression evaluated to false
+        at division_blamed.qnt:11:28
+        11:   run pickTest = init.then(nondet n = 0.to(199).oneOf() all { n == 7, x' = n }).then(step)
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Use --seed=0x275425617e1d3 --match=pickTest to repeat.
+
+
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 division_blamed.qnt
