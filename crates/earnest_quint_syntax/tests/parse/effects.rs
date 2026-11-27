@@ -1,0 +1,282 @@
+use crate::corpus::{root, samples};
+use earnest_quint_syntax::{Json, Problem, read};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const RECORD_COMMAND: &str = "npm install @informalsystems/quint@0.33.1 in a scratch folder, export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint, then from the repository: tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint <file>...";
+
+fn recorded() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/quint")
+}
+
+fn expanded(value: &Json, nodes: &[Json]) -> Json {
+    match value {
+        Json::Object(fields) => {
+            if let [(key, Json::Number(index))] = fields.as_slice()
+                && key == "#"
+            {
+                let index: usize = index.parse().unwrap_or(usize::MAX);
+                return nodes
+                    .get(index)
+                    .map_or(Json::Null, |node| expanded(node, nodes));
+            }
+            Json::Object(
+                fields
+                    .iter()
+                    .map(|(key, inner)| (key.clone(), expanded(inner, nodes)))
+                    .collect(),
+            )
+        }
+        Json::List(items) => Json::List(items.iter().map(|inner| expanded(inner, nodes)).collect()),
+        other => other.clone(),
+    }
+}
+
+struct Recording {
+    stage: String,
+    first_error: Option<Json>,
+    effects: Option<Vec<(String, Json)>>,
+}
+
+fn recording(recorded: &Path) -> Result<Recording, String> {
+    let path = PathBuf::from(format!("{}.effects.json", recorded.display()));
+    let written = fs::read_to_string(&path).map_err(|_| "not recorded".to_owned())?;
+    let fixture =
+        Json::parse(&written).map_err(|at| format!("{} is JSON up to {at}", path.display()))?;
+    let stage = match fixture.get("stage") {
+        Some(Json::Text(stage)) => stage.clone(),
+        _ => String::new(),
+    };
+    let first_error = match fixture.get("errors") {
+        Some(Json::List(errors)) => errors.first().cloned(),
+        _ => None,
+    };
+    let effects = match (fixture.get("nodes"), fixture.get("effects")) {
+        (Some(Json::List(nodes)), Some(Json::List(deltas))) => {
+            let mut id: u64 = 0;
+            let mut table = Vec::new();
+            for pair in deltas {
+                let Json::List(pair) = pair else {
+                    return Err("effects: an entry is not a pair".to_owned());
+                };
+                let (Some(Json::Number(delta)), Some(node)) = (pair.first(), pair.get(1)) else {
+                    return Err("effects: an entry is not a pair of numbers".to_owned());
+                };
+                id += delta
+                    .parse::<u64>()
+                    .map_err(|_| "effects: a bad id".to_owned())?;
+                let node = Json::Object(vec![("#".to_owned(), node.clone())]);
+                table.push((id.to_string(), expanded(&node, nodes)));
+            }
+            Some(table)
+        }
+        _ => None,
+    };
+    Ok(Recording {
+        stage,
+        first_error,
+        effects,
+    })
+}
+
+fn explanation(error: &Json) -> String {
+    match error.get("explanation") {
+        Some(Json::Text(explanation)) => explanation.clone(),
+        _ => String::new(),
+    }
+}
+
+fn from_effect_inference(explanation: &str) -> bool {
+    explanation.lines().last().is_some_and(|last| {
+        last.starts_with("Inferring effect for")
+            || last.starts_with("Trying to infer effect for operator application")
+    })
+}
+
+fn place(error: &Json) -> (usize, usize) {
+    let start = match error.get("locs") {
+        Some(Json::List(locs)) => locs.first().and_then(|loc| loc.get("start")),
+        _ => None,
+    };
+    let number = |key: &str| match start.and_then(|start| start.get(key)) {
+        Some(Json::Number(digits)) => digits.parse::<usize>().unwrap_or(0),
+        _ => 0,
+    };
+    (number("line") + 1, number("col") + 1)
+}
+
+pub(crate) enum Outcome {
+    Equal,
+    RefusedAlike,
+    RefusedByEarlierPhases,
+    RefusedByTypes,
+    QuintCrashes,
+}
+
+fn same_refusal(ours: Result<Json, Problem>, theirs: &Json) -> Result<Outcome, String> {
+    let explanation = explanation(theirs);
+    let (line, column) = place(theirs);
+    let Err(problem) = ours else {
+        return Err(format!(
+            "Quint refuses it at {line}:{column} with {explanation}, and we read it"
+        ));
+    };
+    if format!("[{}] {}", problem.code, problem.message) == explanation
+        && problem.line == line
+        && problem.column == column
+    {
+        Ok(Outcome::RefusedAlike)
+    } else {
+        Err(format!(
+            "refused as {problem}, where Quint refuses it at {line}:{column} with {explanation}"
+        ))
+    }
+}
+
+pub(crate) fn compared(sample: &str, recorded: &Path, base: &Path) -> Result<Outcome, String> {
+    let recorded = recorded.join(
+        sample
+            .trim_start_matches(&*base.to_string_lossy())
+            .trim_start_matches('/'),
+    );
+    let recording = recording(&recorded)?;
+    match recording.stage.as_str() {
+        "typechecking" => {}
+        "crashed" => return Ok(Outcome::QuintCrashes),
+        _ => return Ok(Outcome::RefusedByEarlierPhases),
+    }
+    let load = |path: &str| fs::read_to_string(base.join(path)).ok();
+    let parsed = read(sample, load).map_err(|problem| format!("refused: {problem}"))?;
+    let ours = parsed.effects();
+    if let Some(first) = &recording.first_error {
+        let explanation = explanation(first);
+        if explanation.starts_with("[QNT000]") && !from_effect_inference(&explanation) {
+            return Ok(Outcome::RefusedByTypes);
+        }
+        return same_refusal(ours, first);
+    }
+    let theirs = recording
+        .effects
+        .ok_or_else(|| "no effects recorded".to_owned())?;
+    let ours = ours.map_err(|problem| format!("refused as {problem}, which Quint accepts"))?;
+    let Json::Object(ours) = ours else {
+        return Err("our effects are not an object".to_owned());
+    };
+    for (index, (id, their_scheme)) in theirs.iter().enumerate() {
+        let Some((our_id, our_scheme)) = ours.get(index) else {
+            return Err(format!("id {id}: only Quint's has it: {their_scheme}"));
+        };
+        if our_id != id {
+            return Err(format!(
+                "id {id} in Quint's is id {our_id} in ours at the same place"
+            ));
+        }
+        let (our_text, their_text) = (our_scheme.to_string(), their_scheme.to_string());
+        if our_text != their_text {
+            return Err(format!(
+                "id {id}: ours is {our_text}, Quint's is {their_text}"
+            ));
+        }
+    }
+    if let Some((id, _)) = ours.get(theirs.len()) {
+        return Err(format!("id {id}: only ours has it"));
+    }
+    Ok(Outcome::Equal)
+}
+
+struct Tally {
+    equal: usize,
+    refused_alike: usize,
+    earlier: usize,
+    by_types: usize,
+    crashes: usize,
+    different: Vec<String>,
+    unrecorded: Vec<String>,
+}
+
+fn tally(found: &[String], recorded: &Path, base: &Path) -> Tally {
+    let mut counted = Tally {
+        equal: 0,
+        refused_alike: 0,
+        earlier: 0,
+        by_types: 0,
+        crashes: 0,
+        different: Vec::new(),
+        unrecorded: Vec::new(),
+    };
+    for sample in found {
+        match compared(sample, recorded, base) {
+            Ok(Outcome::Equal) => counted.equal += 1,
+            Ok(Outcome::RefusedAlike) => counted.refused_alike += 1,
+            Ok(Outcome::RefusedByEarlierPhases) => counted.earlier += 1,
+            Ok(Outcome::RefusedByTypes) => counted.by_types += 1,
+            Ok(Outcome::QuintCrashes) => counted.crashes += 1,
+            Err(reason) if reason == "not recorded" => counted.unrecorded.push(sample.clone()),
+            Err(reason) => counted.different.push(format!("{sample}: {reason}")),
+        }
+    }
+    counted
+}
+
+fn report(counted: &Tally, total: usize, corpus: &str) -> String {
+    format!(
+        "{corpus}: {} of {total} with the effects table of quint typecheck 0.33.1, equal as text; {} refused by its effect passes alike; {} refused by its parse phases; {} refused by its type checker, not compared here; {} on which Quint's type checker crashes",
+        counted.equal, counted.refused_alike, counted.earlier, counted.by_types, counted.crashes
+    )
+}
+
+#[test]
+fn every_sample_in_the_repository_has_the_effects_quint_typecheck_writes() {
+    let base = root();
+    let mut found = Vec::new();
+    samples(&base, Path::new("tasks"), &mut found);
+    samples(&base, Path::new("crates"), &mut found);
+    found.sort();
+    let counted = tally(&found, &recorded(), &base);
+    assert!(
+        counted.unrecorded.is_empty(),
+        "{} samples have no recording of Quint's typecheck. Record them: {RECORD_COMMAND}\n{}",
+        counted.unrecorded.len(),
+        counted.unrecorded.join("\n")
+    );
+    println!("{}", report(&counted, found.len(), "the repository"));
+    assert!(
+        counted.different.is_empty(),
+        "{} of {} differ:\n{}",
+        counted.different.len(),
+        found.len(),
+        counted.different.join("\n")
+    );
+}
+
+#[test]
+#[ignore = "needs a clone of Quint's repository and its recorded typechecks, named by QUINT_EXAMPLES and QUINT_EXAMPLES_RECORDED"]
+fn every_file_of_quint_s_repository_has_the_effects_quint_typecheck_writes() {
+    let base = PathBuf::from(env::var("QUINT_EXAMPLES").expect("QUINT_EXAMPLES names the clone"));
+    let recorded = PathBuf::from(
+        env::var("QUINT_EXAMPLES_RECORDED").expect("QUINT_EXAMPLES_RECORDED names the recordings"),
+    );
+    let mut found = Vec::new();
+    samples(&base, Path::new(""), &mut found);
+    let mut found: Vec<String> = found
+        .iter()
+        .map(|sample| format!("{}/{sample}", base.display()))
+        .collect();
+    found.sort();
+    let mut counted = tally(&found, &recorded, &base);
+    let unrecorded: Vec<String> = counted
+        .unrecorded
+        .iter()
+        .map(|file| format!("{file}: not recorded"))
+        .collect();
+    counted.different.extend(unrecorded);
+    println!("{}", report(&counted, found.len(), "Quint's repository"));
+    assert!(
+        counted.different.is_empty(),
+        "{} of {} differ:\n{}",
+        counted.different.len(),
+        found.len(),
+        counted.different.join("\n")
+    );
+}

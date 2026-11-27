@@ -53,6 +53,14 @@ impl Parsed {
     pub fn source_map(&self) -> Json {
         self.ids.compact()
     }
+
+    pub(crate) fn entries(&self) -> &BTreeMap<u64, Entry> {
+        &self.table
+    }
+
+    pub(crate) fn problem(&self, raised: &Raised) -> Problem {
+        raised_at(&self.ids, raised)
+    }
 }
 
 struct Pending {

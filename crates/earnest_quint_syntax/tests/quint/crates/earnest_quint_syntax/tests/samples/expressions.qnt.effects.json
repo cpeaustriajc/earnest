@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify int and tup\nTrying to unify int and (int, int)\nTrying to unify (bool, _t78, _t78) => _t78 and (bool, int, (int, int)) => _t79\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/expressions.qnt","start":{"line":4,"col":17,"index":116},"end":{"line":4,"col":36,"index":135}}]}]}
