@@ -16,6 +16,7 @@ mod quint_changes;
 mod quint_checks;
 mod quint_confirm;
 mod quint_data;
+mod quint_deep;
 mod quint_expected;
 mod quint_fairness;
 mod quint_first;
