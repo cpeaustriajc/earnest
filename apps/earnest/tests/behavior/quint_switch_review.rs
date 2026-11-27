@@ -3,6 +3,7 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
+use std::time::{Duration, Instant};
 
 use crate::support::{Run, Sandbox};
 
@@ -115,5 +116,150 @@ fn a_qnt_file_whose_name_is_not_utf8_is_refused_with_the_message_and_place_of_th
         "the build before the switch, with Quint 0.33.1, printed:\n\
          unreadable  specs/caf\u{fffd}.qnt\n  \
          specs/caf\u{fffd}.qnt:1:1  `quint parse`  the Quint file can't be parsed\n{run}"
+    );
+}
+
+fn first_problem(run: &Run) -> (u64, u64, String) {
+    let report = run.json();
+    let problem = &report["unreadable"][0];
+    (
+        problem["line"].as_u64().unwrap_or_default(),
+        problem["column"].as_u64().unwrap_or_default(),
+        problem["message"]
+            .as_str()
+            .unwrap_or_default()
+            .split(' ')
+            .next()
+            .unwrap_or_default()
+            .to_owned(),
+    )
+}
+
+#[test]
+fn a_syntax_error_in_the_body_after_a_nondet_is_placed_where_quint_places_it() {
+    let sandbox = Sandbox::empty();
+    sandbox.write(
+        "specs/a.qnt",
+        "/// @check
+module A {
+  var x: int
+  action init = x' = 0
+  action step = { nondet v = 0.to(2).oneOf() x' = v + }
+  /// @check
+  val ok = x >= 0
+}
+",
+    );
+    let run = with_no_programs(&sandbox, &["verify", "--no-cache", "--json", "specs/a.qnt"]);
+    run.exits(1);
+    assert_eq!(
+        first_problem(&run),
+        (5, 55, "[QNT000]".to_owned()),
+        "the build before the switch, with Quint 0.33.1, printed:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:5:55  `quint parse`  [QNT000] no viable alternative at input '+}}'\n\
+         where the switched build places it at 5:46, the start of `x' = v +`\n{run}"
+    );
+}
+
+#[test]
+fn a_syntax_error_in_the_body_after_a_local_def_keeps_quints_place_and_code() {
+    let sandbox = Sandbox::empty();
+    sandbox.write(
+        "specs/a.qnt",
+        "/// @check
+module A {
+  var x: int
+  action init = x' = 0
+  action step = {
+    def g(a) = a
+    x' = 1 +
+  }
+  /// @check
+  val ok = x >= 0
+}
+",
+    );
+    let run = with_no_programs(&sandbox, &["verify", "--no-cache", "--json", "specs/a.qnt"]);
+    run.exits(1);
+    assert_eq!(
+        first_problem(&run),
+        (8, 3, "[QNT000]".to_owned()),
+        "the build before the switch, with Quint 0.33.1, printed:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:8:3  `quint parse`  [QNT000] no viable alternative at input '+}}'\n\
+         where the switched build prints 7:5 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
+    );
+}
+
+#[test]
+fn a_brace_left_open_before_a_def_is_refused_at_quints_place_with_quints_code() {
+    let sandbox = Sandbox::empty();
+    sandbox.write(
+        "specs/a.qnt",
+        "/// @check
+module A {
+  var x: int
+  val small = and {
+    x >= 0,
+  def at(v) = x == v
+  action init = x' = 0
+  action step = x' = x
+  /// @check
+  val ok = x >= 0
+}
+",
+    );
+    let run = with_no_programs(&sandbox, &["verify", "--no-cache", "--json", "specs/a.qnt"]);
+    run.exits(1);
+    assert_eq!(
+        first_problem(&run),
+        (9, 3, "[QNT000]".to_owned()),
+        "the build before the switch, with Quint 0.33.1, printed:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:9:3  `quint parse`  [QNT000] extraneous input '/// @check\\n' expecting {{'{{', 'val', ...}}\n\
+         where the switched build prints 7:3 `[QNT006] unexpected '=', did you mean '=='?`\n{run}"
+    );
+}
+
+#[test]
+fn a_chain_of_twenty_thousand_method_calls_is_refused_within_a_minute_as_quint_refuses_it() {
+    let sandbox = Sandbox::empty();
+    let chain = ".union(Set(1))".repeat(20_000);
+    sandbox.write(
+        "specs/a.qnt",
+        &format!(
+            "/// @check
+module A {{
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 1) x + 1 else 0
+  /// @check
+  val ok = Set(1){chain} != Set()
+}}
+"
+        ),
+    );
+    let empty = sandbox.path().join("no-programs");
+    fs::create_dir_all(&empty).expect("an empty folder can be made");
+    let started = Instant::now();
+    let output = sandbox
+        .command()
+        .env_remove("EARNEST_QUINT")
+        .env("PATH", &empty)
+        .args(["verify", "--no-cache", "specs/a.qnt"])
+        .timeout(Duration::from_mins(2))
+        .output();
+    let took = started.elapsed();
+    let stdout = output.as_ref().map_or_else(
+        |_| String::new(),
+        |done| String::from_utf8_lossy(&done.stdout).into_owned(),
+    );
+    assert!(
+        took < Duration::from_mins(1) && stdout.starts_with("unreadable  specs/a.qnt"),
+        "the build before the switch, with Quint 0.33.1, printed in 7 s:\n\
+         unreadable  specs/a.qnt\n  \
+         specs/a.qnt:1:1  `quint parse`  the Quint file can't be parsed\n\
+         the switched build took {took:?} and printed:\n{stdout}"
     );
 }
