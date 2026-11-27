@@ -3415,6 +3415,13 @@ Right result: `broken` for the three, `holds` for the fourth. Test:
 
 ### A false `assert` that is the whole run after a `nondet` passes
 
+Fixed on the integration branch at 171f2d9b, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: the `assert` inside `or { }` on either side, in either
+branch of an `if`, in a `val` used later, under two nested top `nondet`s, in a run that calls the
+run, in a `pure def`, under `not` and `implies`, in `all { }` with no assignment, and behind a
+guard that keeps it from being reached (`and { n >= 4, assert(n >= 4) }`, `if`, `or`, `implies`, a
+step's own guard): 19 runs, each as `quint test` says.
+
 `models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt`: `nondet n = 0.to(4).oneOf()
 assert(n >= 3)`, the same inside `and { assert(n >= 3), n >= 0 }`, after a `val m = n + 1`, and
 inside a first action `all { assert(n >= 3), x' = n }`. `quint test` fails all four within a few
@@ -3466,7 +3473,18 @@ and a pure run dividing a negative number. Each model was checked with `earnest 
 --match 'Test$'`, and, when its numbers fit TLC, with one `quint verify --backend tlc` per
 property. `generate_runs.py` writes runs only, of nested `any`, `if`, in-step picks over 2 to 5
 values, `reps`, `expect` and `fail()`, under a top `nondet` or none, compared with `quint test`.
-NUMBERS_GO_HERE
+`generate.py`, seeds 1 to 120 (44 with an offset past 31 bits, compared with `quint test` only;
+57 with negative division): the three `earnest` runs give equal verdicts and counts on all 120; 301
+property verdicts equal TLC's (3 more were lost to the Apalache port clash below), and the 76
+state counts TLC printed in full equal earnest's (1 780 states). Of 480 runs, 464 agree with
+`quint test`; the 16 others are the second finding (7 runs in 6 models), the first (2) and
+`quint test`'s truncation, which the docs name (7). `generate_runs.py`, seeds 1 to 300: 239 models
+Quint typechecks (the generator leaks a name in the others, and earnest refuses those too), 1 434
+runs, the three `earnest` runs equal, and all but one run as `quint test` says. That one, seed 261,
+is the strict side the docs name: `nondet n = 0.to(4).oneOf() init.then(3.reps(_ => …pick w in
+0.to(2)…)).then(all { x + y != 0, … })` is false where all three picks are 0, so earnest breaks it,
+and `quint test` fails it only when that happens for each of the five values `n` retries, about
+once in 27^5 samples (`passed 10000 test(s)` three times).
 
 ### Attacked and found correct
 
