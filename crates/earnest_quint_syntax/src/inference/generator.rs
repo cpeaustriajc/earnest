@@ -158,6 +158,7 @@ pub(crate) struct Inferrer<'a> {
     in_scope: Scope,
     saved: Scope,
     location: Option<&'a Value>,
+    pub(crate) crash_place: Option<u64>,
 }
 
 impl<'a> Inferrer<'a> {
@@ -173,6 +174,14 @@ impl<'a> Inferrer<'a> {
             in_scope: Scope::default(),
             saved: Scope::default(),
             location: None,
+            crash_place: None,
+        }
+    }
+
+    pub(crate) fn with_types(context: &'a Context, types: BTreeMap<u64, Scheme>) -> Self {
+        Self {
+            types,
+            ..Self::new(context)
         }
     }
 
@@ -189,10 +198,14 @@ impl<'a> Inferrer<'a> {
             .collect();
         for id in added {
             if let Some(scheme) = self.types.get(&id) {
+                let sound = self.context.crashed().is_none();
                 let simplified = Scheme {
                     value: simplify_type(self.context, &scheme.value),
                     ..scheme.clone()
                 };
+                if sound && self.context.crashed().is_some() {
+                    self.crash_place = Some(id);
+                }
                 self.types.insert(id, simplified);
             }
         }

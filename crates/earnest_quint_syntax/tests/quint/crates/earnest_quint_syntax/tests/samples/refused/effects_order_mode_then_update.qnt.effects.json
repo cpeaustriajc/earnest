@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] val operators may only read state variables, but operator `v` updates variables 'x'. Use action instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_order_mode_then_update.qnt","start":{"line":3,"col":6,"index":95},"end":{"line":3,"col":6,"index":95}}]}]}

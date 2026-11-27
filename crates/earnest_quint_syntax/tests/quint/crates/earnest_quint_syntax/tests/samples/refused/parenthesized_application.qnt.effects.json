@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT009] Use square brackets instead of parenthesis for type application: List[int]","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/parenthesized_application.qnt","start":{"line":2,"col":0,"index":43},"end":{"line":2,"col":0,"index":43}}]}]}

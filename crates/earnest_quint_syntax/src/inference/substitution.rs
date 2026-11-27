@@ -1,5 +1,6 @@
 use crate::inference::solver::{Context, unify, unify_rows};
 use crate::inference::value::Value;
+use std::cell::Cell;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Substitution {
@@ -80,15 +81,32 @@ fn applied_to_substitutions(
     result
 }
 
+pub(crate) const ROUND_LIMIT: usize = 10_000;
+
+thread_local! {
+    static MOST_ROUNDS: Cell<usize> = const { Cell::new(0) };
+}
+
+pub(crate) fn start_counting_rounds() {
+    MOST_ROUNDS.with(|most| most.set(0));
+}
+
+pub(crate) fn most_rounds() -> usize {
+    MOST_ROUNDS.with(Cell::get)
+}
+
 pub(crate) fn apply(substitutions: &[Substitution], written: &Value) -> Value {
     let mut current = written.clone();
-    loop {
+    for round in 1..=ROUND_LIMIT {
         let next = once(substitutions, &current);
         if next.same(&current) {
+            MOST_ROUNDS.with(|most| most.set(most.get().max(round)));
             return current;
         }
         current = next;
     }
+    MOST_ROUNDS.with(|most| most.set(ROUND_LIMIT + 1));
+    current
 }
 
 fn once(substitutions: &[Substitution], written: &Value) -> Value {

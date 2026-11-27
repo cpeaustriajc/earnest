@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Incompatible tails for rows with disjoint fields: {} and { | tail__t1 }\nTrying to unify { x: int, y: int } and { z: _t1 | tail__t1 }\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/types_missing_field.qnt","start":{"line":2,"col":10,"index":68},"end":{"line":2,"col":16,"index":74}}]}]}

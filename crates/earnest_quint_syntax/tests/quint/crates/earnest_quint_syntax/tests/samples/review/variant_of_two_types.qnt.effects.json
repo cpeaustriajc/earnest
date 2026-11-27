@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT009] Use square brackets instead of parenthesis for type application: A[int, str]","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/review/variant_of_two_types.qnt","start":{"line":2,"col":0,"index":39},"end":{"line":2,"col":0,"index":39}}]}]}

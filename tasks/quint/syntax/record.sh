@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-root="$(cd "$here/../../.." && pwd)"
+root="${RECORD_ROOT:-$(cd "$here/../../.." && pwd)}"
 out="$1"
 shift
 quint="$QUINT_PACKAGE/../../.bin/quint"
@@ -13,5 +13,11 @@ for file in "$@"; do
   "$quint" parse "$file" --out "$target.parse.json" --source-map "$target.map.json" > /dev/null 2>&1 || true
   python3 -I "$here/condense.py" "$root" "$target.phases.json" "$target.parse.json" "$target.map.json"
   rm "$target.map.json"
-  "$here/record_types.sh" "$out" "$file"
+  if "$quint" typecheck "$file" --out "$target.typecheck.json" > /dev/null 2>&1 || [ -s "$target.typecheck.json" ]; then
+    python3 -I "$here/condense_effects.py" "$root" "$target.typecheck.json" "$target.effects.json"
+  else
+    printf '{"stage":"crashed","errors":[]}' > "$target.effects.json"
+  fi
+  rm -f "$target.typecheck.json"
+  RECORD_BASE="$root" "$here/record_types.sh" "$out" "$file"
 done

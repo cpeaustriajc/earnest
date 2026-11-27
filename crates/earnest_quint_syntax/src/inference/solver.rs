@@ -30,6 +30,16 @@ impl Table {
         self.order.clone()
     }
 
+    pub(crate) fn sorted(&self) -> Vec<(u64, &Value)> {
+        let mut sorted: Vec<(u64, &Value)> = self
+            .entries
+            .iter()
+            .map(|(id, value)| (*id, value))
+            .collect();
+        sorted.sort_by_key(|(id, _)| *id);
+        sorted
+    }
+
     pub(crate) fn values(&self) -> impl Iterator<Item = &Value> {
         self.order.iter().filter_map(|id| self.entries.get(id))
     }

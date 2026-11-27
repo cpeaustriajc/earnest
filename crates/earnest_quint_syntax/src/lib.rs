@@ -20,6 +20,7 @@
 //! [`Parsed::types`] then checks the types as `quint typecheck` does, and gives the `types` table
 //! it writes, or the first type error it reports.
 
+mod effects;
 mod files;
 mod ids;
 mod inference;
@@ -29,9 +30,12 @@ mod names;
 mod number;
 mod order;
 mod parser;
+mod printing_ir;
 mod problem;
 mod types;
 
+pub use effects::effects_with_copies;
 pub use files::{Parsed, read};
+pub use inference::types_with_copies;
 pub use json::Json;
 pub use problem::Problem;

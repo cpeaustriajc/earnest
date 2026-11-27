@@ -118,7 +118,7 @@ pub(crate) struct Entry {
 }
 
 impl Entry {
-    fn of(written: &Json) -> Self {
+    pub(crate) fn of(written: &Json) -> Self {
         match written {
             Json::Object(fields) => Self {
                 fields: fields

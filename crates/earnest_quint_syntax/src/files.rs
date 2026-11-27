@@ -55,6 +55,18 @@ impl Parsed {
         self.ids.compact()
     }
 
+    pub(crate) fn entries(&self) -> &BTreeMap<u64, Entry> {
+        &self.table
+    }
+
+    pub(crate) fn problem(&self, errors: &[Raised], first: &Raised) -> Problem {
+        raised_at(&self.ids, &self.modules, errors, first, self.main_source())
+    }
+
+    pub(crate) fn main_source(&self) -> &str {
+        self.ids.source_name(0)
+    }
+
     pub(crate) fn table_in_order(&self) -> Vec<(u64, Json)> {
         self.inserted
             .iter()

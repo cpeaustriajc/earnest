@@ -10,9 +10,10 @@ for file in "$@"; do
   relative="$(realpath --relative-to="$base" "$file")"
   target="$out/$relative"
   mkdir -p "$(dirname "$target")"
-  rm -f "$target.types.json" "$target.typecheck.json" "$target.inferred.json"
+  rm -f "$target.types.json" "$target.typecheck.json" "$target.inferred.json" "$target.parsed.json"
   node "$here/types.js" "$file" "$target.inferred.json"
   "$quint" typecheck "$file" --out "$target.typecheck.json" > /dev/null 2>&1 || true
-  python3 -I "$here/condense_types.py" "$root" "$target.typecheck.json" "$target.inferred.json" "$target.types.json"
-  rm -f "$target.typecheck.json" "$target.inferred.json"
+  "$quint" parse "$file" --out "$target.parsed.json" > /dev/null 2>&1 || true
+  python3 -I "$here/condense_types.py" "$root" "$target.typecheck.json" "$target.inferred.json" "$target.types.json" "$target.parsed.json"
+  rm -f "$target.typecheck.json" "$target.inferred.json" "$target.parsed.json"
 done
