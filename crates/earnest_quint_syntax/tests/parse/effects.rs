@@ -327,6 +327,9 @@ const REFUSALS: &[(&str, &str)] = &[
     ("effects_result_operator", "QNT000"),
     ("effects_any_different_updates", "QNT000"),
     ("effects_order_mode_then_update", "QNT200"),
+    ("effects_union_not_covered", "QNT000"),
+    ("effects_unions_of_entities", "QNT000"),
+    ("effects_def_updates_listed_twice", "QNT200"),
 ];
 
 const WAITING_FOR_TYPES: &[&str] = &[

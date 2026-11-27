@@ -19,6 +19,7 @@ module updates {
     nondet m = Set(1, 2).oneOf()
     all { x' = n, y' = m }
   }
+  action chosenInside = { nondet n = s.oneOf() x' = Set(n).oneOf() }
   action twice(a) = all { a, y' = y }
   action passed = twice(x' = 3)
   action withParams(v, w) = all { x' = v, y' = w }
