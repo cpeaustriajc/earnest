@@ -2,6 +2,7 @@ use crate::problem::Problem;
 use earnest_threads::start;
 use std::cell::Cell;
 use std::panic;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
 
@@ -9,6 +10,18 @@ use std::thread;
 /// let through spends in a debug build, twice over. Every recursive pass refuses a file nested
 /// deeper than its bound before it can spend this.
 pub const STACK_NEEDED: usize = 64 * 1024 * 1024;
+
+static THREADS_STARTED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many threads of its own the crate has started in this process. For the crate's tests.
+#[doc(hidden)]
+pub fn threads_started() -> usize {
+    THREADS_STARTED.load(Ordering::Relaxed)
+}
+
+fn started() {
+    THREADS_STARTED.fetch_add(1, Ordering::Relaxed);
+}
 
 thread_local! {
     static ON_LARGE_STACK: Cell<bool> = const { Cell::new(false) };
@@ -62,6 +75,7 @@ fn on_stack_of<T: Send>(stack: usize, work: impl FnOnce() -> T + Send) -> Result
             work()
         })
         .map_err(|error| not_started(&error))?;
+        started();
         worker
             .join()
             .map_err(|payload| panic::resume_unwind(payload))
@@ -89,6 +103,7 @@ pub(crate) fn reading_on_large_stack<T: Send>(
             work(&mut remote)
         })
         .map_err(|error| not_started(&error))?;
+        started();
         for path in asked {
             if giving.send(load(&path)).is_err() {
                 break;
