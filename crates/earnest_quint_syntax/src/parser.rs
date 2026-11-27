@@ -2260,6 +2260,15 @@ impl Parser<'_> {
                     self.candidates.extend(candidates);
                     return Err(*failure);
                 };
+                if mark.reported.is_none()
+                    && self.at < failure.token
+                    && !self.can_follow()
+                    && self.reported.as_ref().is_some_and(|reported| {
+                        reported.problem.code == "QNT006" && reported.token == self.at
+                    })
+                {
+                    self.reported = Some(*failure);
+                }
                 parts
             }
         };
