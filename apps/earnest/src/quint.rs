@@ -26,7 +26,7 @@ use std::time::UNIX_EPOCH;
 
 mod labels;
 
-use labels::{at_marks, blamed, label_unbuilt, labelled, without_labels};
+use labels::{at_marks, blamed, label_names, label_unbuilt, labelled, without_labels};
 
 const PROGRAM_VARIABLE: &str = "EARNEST_QUINT";
 const PROGRAM: &str = "quint";
@@ -656,19 +656,22 @@ fn builds(found: &Places, job: &Job) -> bool {
 }
 
 fn filled(job: &Job, typechecked: Option<&Typechecked>) -> Option<Result<String, Problem>> {
-    let built = |check: &Check| {
-        typechecked?.setup(&Setup::new(
-            &check.main,
-            (&check.init, &check.step),
-            (&check.invariants, &check.temporal),
-            &check.runs,
-        ))
+    let check = &job.check;
+    let built = |labels: &[String]| {
+        typechecked?.setup(
+            &Setup::new(
+                &check.main,
+                (&check.init, &check.step),
+                (&check.invariants, &check.temporal),
+                &check.runs,
+            )
+            .with_labels(labels),
+        )
     };
-    match built(&labelled(job)) {
+    let labels = label_names(job);
+    match built(&labels) {
         Some(json) => Some(Ok(json)),
-        None if job.labels.names().next().is_some() => {
-            built(&job.check).map(|_| Err(label_unbuilt(job)))
-        }
+        None if !labels.is_empty() => built(&[]).map(|_| Err(label_unbuilt(job))),
         None => None,
     }
 }
