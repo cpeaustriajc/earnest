@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify list and bool\nTrying to unify List[_t0] and bool\nTrying to unify (List[_t0], int) => _t0 and (bool, bool) => _t1\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/readings/values_ending_at_two_points.qnt","start":{"line":3,"col":27,"index":56},"end":{"line":3,"col":36,"index":65}}]}]}
