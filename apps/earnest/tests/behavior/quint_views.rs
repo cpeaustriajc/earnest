@@ -806,13 +806,13 @@ fn a_view_mark_in_another_case_or_in_a_comment_quint_drops_is_unreadable_at_its_
     );
     assert_eq!(
         problem_at(&found, 17),
-        "`@view` `// @view state` is a comment that `quint parse` does not hand over, so the \
+        "`@view` `// @view state` is a comment, which Quint does not keep, so the \
          chart is not labelled: write the mark in a doc comment, with three slashes, `/// @view \
          state`, on the line above the `val`"
     );
     assert_eq!(
         problem_at(&found, 20),
-        "`@view` `@view group` is in a `/* */` comment, which `quint parse` does not hand over, \
+        "`@view` `@view group` is in a `/* */` comment, which Quint does not keep, \
          so the chart is not labelled: write the mark in a doc comment, with three slashes, `/// \
          @view group`, on the line above the `val`"
     );
@@ -847,8 +847,8 @@ fn a_label_quint_itself_refuses_is_named_in_quints_error() {
             .collect::<Vec<_>>(),
         [(
             12,
-            "`quint compile --main refused`".to_owned(),
-            "`quint compile --main refused` fails in the chart label `shown`: Error [QNT203]: \
+            "compiling `refused` as Quint".to_owned(),
+            "the chart label `shown` does not compile: Error [QNT203]: \
              'oneOf' must be used inside a nondet definition"
                 .to_owned()
         )]
