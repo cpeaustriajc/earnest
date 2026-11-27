@@ -105,23 +105,28 @@ fn model<'a>(report: &'a Value, name: &str) -> &'a Value {
 }
 
 #[test]
-fn a_check_whose_only_mark_is_reachable_searches_every_state_as_the_docs_say() {
+fn a_check_whose_only_mark_is_reachable_stops_once_the_state_is_reached() {
     let report = verified("reachable_only", &[]);
     let checked = model(&report, "reachableOnly");
     assert_eq!(
-        rule(checked, "two")["expected"],
-        "reached",
-        "the mark is read\n{report:#}"
+        (
+            &rule(checked, "two")["expected"],
+            &rule(checked, "two")["verdict"]
+        ),
+        (&Value::from("reached"), &Value::from("broken")),
+        "the mark is read and the state where `x` is 2 is reached\n{report:#}"
     );
     assert_eq!(
-        (&checked["states"], &checked["reason"]),
-        (&Value::from(11), &Value::Null),
-        "`x` counts from 0 to 10, so the model has 11 states, as `quint verify --backend tlc \
-         --main reachableOnly` counts them (`11 distinct states found`). The docs stop a search \
-         early only \"when every property the check judges is marked `broken`\"; a `reachable` \
-         mark is not, and \"a check whose module sees an `init` and a `step` ... searches every \
-         reachable state\". A reached state is no counterexample either, so the line must not \
-         say `every expected counterexample was found`\n{report:#}"
+        (&checked["status"], &checked["states"], &checked["reason"]),
+        (
+            &Value::from("pass"),
+            &Value::from(4),
+            &Value::from("every expected counterexample was found")
+        ),
+        "`x` counts from 0 to 10, so the model has 11 states. A state marked `reachable` is \
+         looked for as a counterexample of its negation, so a check that judges nothing else \
+         stops at the end of the level that reaches it, as the docs say under \"Stopping once \
+         every counterexample is found\", and a model with no end still passes\n{report:#}"
     );
 }
 
