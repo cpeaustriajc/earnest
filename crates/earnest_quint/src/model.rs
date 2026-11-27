@@ -1,4 +1,5 @@
 use crate::Runs as Chosen;
+use crate::code;
 use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint, Module};
 use crate::names::Short;
 use crate::notation::notation;
@@ -10,8 +11,8 @@ use crate::starts::{Asserts, start_states};
 use crate::temporal::{Step, temporal};
 use crate::view::{self, Views};
 use earnest_ir::{
-    Action, Code, End, Eventually, Expr, FairStep, Field, Frame, Input, Model, Pick, Rule, Runs,
-    Script, View, eval,
+    Action, Code, End, Eventually, Expr, FairStep, Field, Input, Model, Pick, Rule, Runs, Script,
+    View, eval,
 };
 use earnest_value::{Domain, Symbols, Value};
 use std::collections::{HashMap, HashSet};
@@ -147,7 +148,7 @@ pub(crate) fn picks(
                 script,
                 action: position,
                 input,
-                from: Code::new(choice.from.clone()?),
+                from: code(choice.from.clone()?),
             })
         })
 }
@@ -169,10 +170,11 @@ pub(crate) fn action(id: String, path: &Path, fields: &[String], slots: usize) -
                 .map(|(update, _)| update),
         ),
     )
-    .into_iter();
+    .into_iter()
+    .map(Code::of_any_size);
     let guard = prepared
         .next()
-        .unwrap_or_else(|| Code::new(Expr::Const(Value::Bool(true))));
+        .unwrap_or_else(|| code(Expr::Const(Value::Bool(true))));
     let slots = path
         .choices
         .iter()
@@ -255,7 +257,7 @@ fn rules<'a>(
             says: format!("Quint invariant `{name}`"),
             line: DECLARED_ON,
             text: name,
-            holds: Code::new(holds),
+            holds: code(holds),
             slots,
         });
     }
@@ -618,7 +620,7 @@ fn assumed<'a>(reader: &mut Reader<'a>, declarations: &'a [Declaration]) -> Read
         let code = reader.pure(assumption)?;
         let short = name.rsplit("::").next().unwrap_or(name);
         let feature = format!("`assume {short}`");
-        let mut frame = Frame::new(&[], reader.slots);
+        let mut frame = crate::frame(&[], reader.slots);
         match eval(&code, &mut frame) {
             Ok(Value::Bool(true)) => {}
             Ok(_) => {
@@ -809,7 +811,7 @@ fn built(
         ends: vec![End {
             id: STOPS_ANYWHERE.to_owned(),
             says: STOPS_ANYWHERE_SAYS.to_owned(),
-            when: Code::new(Expr::Const(Value::Bool(true))),
+            when: code(Expr::Const(Value::Bool(true))),
             slots: 0,
         }],
         view,

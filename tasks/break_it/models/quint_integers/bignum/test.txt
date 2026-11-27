@@ -1,0 +1,20 @@
+
+  bignum
+    ok passesTwoToThe63Test passed 10000 test(s)
+    ok wideProductTest passed 10000 test(s)
+    1) wrongPowerTest failed after 1 test(s)
+    ok literalTest passed 1 test(s)
+
+  3 passing (652ms)
+  1 failed
+
+  1) wrongPowerTest:
+       Error [QNT508]: Expect condition does not hold true
+        at bignum.qnt:29:24
+        29:   run wrongPowerTest = init.then(step).expect(p == 2^64)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Use --seed=0x2abe23ca97af9 --match=wrongPowerTest to repeat.
+
+
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 bignum.qnt

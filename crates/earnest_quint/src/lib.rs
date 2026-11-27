@@ -30,7 +30,8 @@ mod temporal;
 mod view;
 
 use earnest_diagnostics::{Place, Problem};
-use earnest_ir::Model;
+use earnest_ir::{Code, Expr, Frame, Model};
+use earnest_value::{Notation, Quint, Value};
 
 pub use setup::{Setup, Typechecked};
 pub use view::{Labelled, Views, split_views};
@@ -186,7 +187,7 @@ fn read_wanted(
     runs: &Runs,
     wanted: (model::Wanted, &Views),
 ) -> Result<Model, Vec<Located>> {
-    let compiled: json::Compiled = serde_json::from_str(source).map_err(|error| {
+    let compiled: json::Compiled = serde_json::from_str(&json::exact(source)).map_err(|error| {
         vec![Located::new(
             Problem::new(
                 path,
@@ -238,3 +239,11 @@ mod view_tests;
 mod setup_tests;
 #[cfg(test)]
 mod table;
+
+fn code(expr: Expr) -> Code {
+    Code::new(expr).of_any_size()
+}
+
+fn frame(state: &[Value], slots: usize) -> Frame<'_> {
+    Frame::new(state, slots).numbers_of(Notation::Quint(Quint::default()))
+}

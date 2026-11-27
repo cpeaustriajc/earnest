@@ -5,6 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint integers have no size limit
+
+A Quint `int` has no size, and `quint test` and `quint run` compute with integers of any size. Earnest stopped at 64 bits: a number past them was a fault (`computes a number too large to hold`), and a literal past them made the check `unreadable`. Both are now checked:
+
+- **Any size:** arithmetic, comparisons, the ends of a range, map keys and set items take numbers of any size, so `assert(2^70 > 2^64)` holds and a counter that passes `9223372036854775807` is checked, not faulted. A literal past 64 bits is read as written.
+- **Printed whole:** a path, the chart and `earnest report` print every digit, as Quint's REPL does; the JSON writes such a number as `{"#bigint": "18446744073709551616"}`, as Quint's ITF traces do; `earnest tla` writes the digits.
+- **`confirm`:** TLC holds 32 bits, so `earnest confirm --tlc` and `earnest confirm --quint` say `cannot` for a model past them, naming TLC's limit, not `differs`.
+- **Unchanged:** `/` and `%` with a negative number stay a fault, since Quint's backends disagree there; the caps that keep a search finite stay; TypeScript and Rust models keep their languages' integers. A model whose numbers fit in 64 bits is searched as fast as before, with the same answers. See [What is read today](/reference/quint/#what-is-read-today).
+
 ## November 2026: a `nondet` at the top of a Quint run skips a value the run is false for
 
 A run that starts with a `nondet` was `broken` when any value did not get it through, such as `nondet n = Set(1, 2, 3).oneOf() init.then(all { n < 3, x' = n })` with ``with `n` = 3: step 1 … can't happen here``. `quint test` passes it: where the run is false for the value it picked, it tries the next one. Earnest now judges it the same way:

@@ -191,6 +191,10 @@ impl<'a> Scribe<'a> {
             Value::Bool(true) => "TRUE".to_owned(),
             Value::Bool(false) => "FALSE".to_owned(),
             Value::Int(found) => number(*found),
+            Value::Big(big) if big.number().sign() == earnest_value::Sign::Minus => {
+                format!("({})", big.number())
+            }
+            Value::Big(big) => big.number().to_string(),
             Value::Str(text) => quoted(self.symbols.name(*text)),
             Value::Record(fields) => {
                 let all: Vec<(String, String)> = fields

@@ -30,8 +30,9 @@ construct it refuses. `is_compiled_quint` tells the CLI whether a `.json` file i
 - One end whose condition is `true`, so a state with no next action is not stuck: Quint runs TLC
   without its deadlock check.
 - Operators, `val` and `def` are inlined where they are used.
-- Integers are earnest's: 64 bits, a fault on overflow, and a fault on `/` or `%` with a
-  negative first number or a divisor below 1.
+- Integers have no size, as Quint's do: a number past 64 bits is a `Value::Big`, made only
+  where 64-bit arithmetic overflows, so a model that fits in 64 bits runs today's code. `/` and
+  `%` with a negative first number or a divisor below 1 are a fault.
 
 ## What it refuses
 

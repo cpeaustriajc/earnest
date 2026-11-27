@@ -1,6 +1,6 @@
 use crate::json::{Compiled, Declaration, Def};
 use crate::reader::Reader;
-use earnest_ir::{Fault, Frame, eval};
+use earnest_ir::{Fault, eval};
 use earnest_value::{Symbols, Value};
 use std::collections::HashMap;
 
@@ -139,7 +139,7 @@ fn read_all(compiled: &Compiled, symbols: Symbols) -> (Vec<Result<Value, Fault>>
         let expr = reader
             .pure(&def.expr)
             .unwrap_or_else(|refusal| panic!("{name} is read: {}", refusal.why));
-        values.push(eval(&expr, &mut Frame::new(&[], reader.slots)));
+        values.push(eval(&expr, &mut crate::frame(&[], reader.slots)));
     }
     (values, std::mem::take(&mut reader.symbols))
 }
@@ -153,6 +153,7 @@ fn as_quint_prints(value: &Value, symbols: &Symbols) -> String {
     match value {
         Value::Bool(flag) => flag.to_string(),
         Value::Int(number) => number.to_string(),
+        Value::Big(big) => big.number().to_string(),
         Value::Str(text) => format!("\"{}\"", symbols.name(*text)),
         Value::Set(items) => listed("Set(", items.iter().map(show), ")"),
         Value::Seq(items) => listed("[", items.iter().map(show), "]"),
