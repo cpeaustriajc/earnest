@@ -2,16 +2,25 @@
 """Writes the deep models: one check per shape and depth, each with one property that holds and
 one that is broken, both reading the deep expression. Run from anywhere:
 
-    python3 tasks/quint/deep/generate.py [folder] [depth...]
+    python3 tasks/quint/deep/generate.py [--slow] [folder] [depth...]
 
-With no arguments it writes the samples kept in the repository: depths 100, 300 and 500 in this
-folder. Other depths are for measuring, and go to another folder.
+With no arguments it writes the samples kept in the repository, in this folder: every shape at
+100, 300 and 500, except the slow shapes, at 100 only. Other depths are for measuring, and go to
+another folder.
 """
 
+import argparse
 import pathlib
-import sys
 
 KEPT = (100, 300, 500)
+
+# Shapes whose type is as deep as the expression. Each costs minutes past 100 deep, so the
+# repository keeps them at 100 only: earnest's type inference in a debug build (the corpus tests
+# of earnest_quint_syntax read every .qnt file) takes 24 s for sets_300, 142 s for records_300
+# and over 300 s for lambdas_300, and Quint 0.33.1 needs 81 s and 370 s to compile sets_300 and
+# sets_500, 573 s for records_300, about 30 minutes to record lambdas_300 and over 30 minutes
+# to compile lambdas_999.
+SLOW = ("sets", "records", "lambdas")
 
 # x goes 0, 1, 2, 3, 0, ...: a property "<= 3" holds, "<= 2" is broken at x = 2 or 3.
 HEADER = """/// @check
@@ -116,13 +125,24 @@ def model(name, definitions, holds, broken):
 
 def main():
     here = pathlib.Path(__file__).resolve().parent
-    folder = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else here
-    depths = [int(each) for each in sys.argv[2:]] or list(KEPT)
-    folder.mkdir(parents=True, exist_ok=True)
+    arguments = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    arguments.add_argument(
+        "--slow",
+        action="store_true",
+        help=f"also write {', '.join(SLOW)} past 100 deep: minutes each for earnest's debug type "
+        "inference and for Quint 0.33.1 to record (see SLOW in this file)",
+    )
+    arguments.add_argument("folder", nargs="?", type=pathlib.Path, default=here)
+    arguments.add_argument("depths", nargs="*", type=int)
+    asked = arguments.parse_args()
+    depths = asked.depths or list(KEPT)
+    asked.folder.mkdir(parents=True, exist_ok=True)
     for depth in depths:
         for shape, definitions, holds, broken in shapes(depth):
+            if shape in SLOW and depth > 100 and not asked.slow and not asked.depths:
+                continue
             name = f"{shape}_{depth}"
-            (folder / f"{name}.qnt").write_text(model(name, definitions, holds, broken))
+            (asked.folder / f"{name}.qnt").write_text(model(name, definitions, holds, broken))
 
 
 if __name__ == "__main__":
