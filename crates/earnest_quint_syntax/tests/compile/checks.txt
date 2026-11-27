@@ -168,6 +168,8 @@ compile	--target	json	--main	Whole	--init	init	--step	step	--invariant	small	tas
 compile	--target	json	--main	bank	--init	init	--step	step	--invariant	nonNegative	tasks/quint/marked/specs/bank.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	belowBig	tasks/quint/confirm/confirm.qnt
 compile	--target	json	--main	big	--init	init	--step	step	--invariant	mutex,holderKnown,bounded,grantsBounded	--temporal	drains,someGrant,served	tasks/break_it/models/quint_second/project/setups.qnt
+compile	--target	json	--main	bigStepPick	--init	init	--step	step	tasks/break_it/models/quint_seventh/big_step_pick/big_step_pick.qnt
+compile	--target	json	--main	bigTopRange	--init	init	--step	step	tasks/break_it/models/quint_seventh/big_top_range/big_top_range.qnt
 compile	--target	json	--main	bignum	--init	init	--step	step	--invariant	sumIsPositive,squareIsWide,powersAreOrdered,quotientIsExact,belowTwoToThe63Plus2	tasks/break_it/models/quint_integers/bignum/bignum.qnt
 compile	--target	json	--main	board	--init	init	--step	step	--invariant	xNeverBehind,xHasTwo	tasks/quint/samples/board.qnt
 compile	--target	json	--main	checked	--init	init	--step	step	--invariant	belowThree,belowThree == belowThree,half == half	tasks/quint/views/checked/checked.qnt
@@ -182,6 +184,7 @@ compile	--target	json	--main	counter	--init	init	--step	step	--invariant	inRange
 compile	--target	json	--main	counter	--init	init	--step	step	--invariant	inRange,tooBig	tasks/quint/checks/wide/counter.qnt
 compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	--temporal	later,sooner	tasks/quint/checks/temporal/dead.qnt
 compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	tasks/quint/checks/dead/dead.qnt
+compile	--target	json	--main	divisionBlamed	--init	init	--step	step	tasks/break_it/models/quint_seventh/division_blamed/division_blamed.qnt
 compile	--target	json	--main	endless	--init	init	--step	step	--invariant	small	tasks/break_it/models/quint_third/output/output.qnt
 compile	--target	json	--main	falseRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
 compile	--target	json	--main	fault	--init	init	--step	step	--invariant	P::annBelowFive	tasks/quint/imports/printing.qnt
