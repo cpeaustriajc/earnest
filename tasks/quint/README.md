@@ -4782,3 +4782,164 @@ After merging `claude/lucid-brown-f5xvr8` at `4b9d3a0` (the fifth pass's first f
 `eventually.rs`; its test reads compiled JSON, so nothing to move): `cargo fmt --check`, clippy,
 `just lint-library` clean; `cargo test --locked` 2217 passed, 0 failed; `just docs` `Complete!`;
 `just same-answers` 0 differences. The real-Quint runs above were made at `17b1c8a`, before it.
+
+## Quint front end, slice 1: the parser (#84): report
+
+`crates/earnest_quint_syntax` reads a `.qnt` file the way Quint 0.33.1 reads it before name
+resolution. Nothing calls it yet: only its tests reach it.
+
+### What `quint parse` does, and which part is here [read]
+
+`quint parse` (`dist/src/cliCommands.js`, `parse`) runs four phases before it writes:
+
+1. `parsePhase1fromText`: the ANTLR parser and `ToIrListener`, text to modules and the source map.
+2. `parsePhase2sourceResolution`: reads every file named in `import ... from "..."` or an instance
+   `from "..."` with the same id generator, puts its modules in the output, and sorts all modules
+   so that a module comes after those it imports (Kahn's algorithm, each layer sorted by id as a
+   string). It writes `--source-map` here.
+3. `parsePhase3importAndNameResolution`: adds `table`, and sets `"depth": 0` on every `const` and
+   `var` (the collector writes it into the declaration).
+4. `parsePhase4toposort`: reorders each module's declarations by what they use, ties broken by id
+   as a string.
+
+The crate does phases 1 and 2, with Quint's own ids. Phases 3 and 4 are slice 2.
+
+### How it is compared [ran]
+
+Three oracles per file, recorded from Quint 0.33.1 into `crates/earnest_quint_syntax/tests/quint`:
+
+- `<file>.phases.json`: `tasks/quint/syntax/phases.js` calls the package's own
+  `parsePhase1fromText` and `parsePhase2sourceResolution`. Compared key by key, nothing stripped.
+- `<file>.parse.json`: `quint parse --out`, with `table` dropped when recorded. Compared with each
+  module's declarations as a set (sorted by id) and `depth` stripped.
+- `<file>.map.json`: `quint parse --source-map`, compared exactly.
+
+The helper (`tests/parse/compare.rs`) maps ids through one renaming for the whole file and names
+the first path that differs; the corpus test also requires the renaming to be the identity, so the
+ids are Quint's own. A file Quint refuses must be refused with the first error's code, line and
+column, and its message when the code is not `QNT000`.
+
+To record again (the tests need no Node):
+
+```sh
+npm install @informalsystems/quint@0.33.1          # in a scratch folder
+export QUINT_PACKAGE=<scratch>/node_modules/@informalsystems/quint
+find tasks crates -name '*.qnt' | xargs tasks/quint/syntax/record.sh crates/earnest_quint_syntax/tests/quint
+```
+
+`record.sh` makes paths relative to the repository (`relative.py`).
+
+### Results [ran]
+
+| Corpus | Files | Equal | Notes |
+| --- | --- | --- | --- |
+| Every `.qnt` under `tasks/` and `crates/` (`cargo test -p earnest_quint_syntax`) | 372 | 372 | 323 samples of the repository and 49 of the crate's own, 34 of them refused |
+| Quint's repository at `v0.33.1` (`examples/`, `quint/testFixture/`, `evaluator/fixtures/`, `docs/`, ...), in the container only | 196 | 188 | the other 8 are equal on phases 1 and 2 and refused by `quint parse` after them: `QNT404` (3), `QNT099` (2), `QNT101` (2), `QNT406` (1); 11 of the 188 are refused, each at Quint's place |
+| 1199 corpus files with one or two tokens deleted, replaced, inserted or swapped, in the container only | 1199 | 1080 | 63 Quint accepts: all equal; 1136 Quint refuses: 1037 at Quint's line and column, 99 elsewhere; 20 more refused only by Quint's name phases |
+| 800 generated expressions (nested lets, every operator, lambdas, matches, records), in the container only | 800 | 659 | 225 Quint accepts: 224 equal, 1 we refuse; 575 Quint refuses: 435 at Quint's place, 132 elsewhere, 8 we read |
+
+The command for the two last rows and Quint's repository: `QUINT_EXAMPLES=<folder of .qnt>
+QUINT_EXAMPLES_RECORDED=<folder of their recordings> cargo test -p earnest_quint_syntax every_file_of
+-- --include-ignored --nocapture`. No file of Quint's is committed.
+
+What differs, with the reason:
+
+- An error's place on a refused file, for about 9% of mutated files. Quint's parser predicts with
+  lookahead over every alternative at once (ANTLR's ALL(*)), and when every alternative dies it
+  falls back to the one that ended the expression earliest, so its error lands where that leaves
+  it. The crate does that fallback for a call's parentheses, `match`, `and {`/`or {`, an index and
+  a binary `-` (at Quint's place for all the probes in the scratch runs), not in general.
+- Nested `let`s whose bodies start with `-`, `[`, `(`, `and`, `or`, `iff`, `implies` or `leadsTo`
+  (generated only, never in a real file): where several readings parse, the crate takes the value
+  that ends latest and then retries at each such token; Quint decides each by lookahead. 1
+  generated file Quint accepts is refused, and 8 Quint refuses with `QNT008` or `QNT006` (a
+  reserved word read as a name) are read.
+- A syntax error in an imported file: Quint ignores it in phases 1 and 2 and reads on in a tree its
+  parser repaired. The crate refuses the import as `unreadable`, naming the imported file's own
+  error.
+
+### What Quint's parser rewrites before it writes [read, then ran on the samples]
+
+- An infix operator becomes an application of its opcode: `+ iadd`, `- isub`, `* imul`, `/ idiv`,
+  `% imod`, `^ ipow`, `> igt`, `< ilt`, `>= igte`, `<= ilte`, `== eq`, `!= neq`, `and`, `or`, `iff`,
+  `implies`, `leadsTo`. A prefix `-` is `iuminus`. A single `=` in an expression is `eq` and the
+  error `QNT006`.
+- `a -> b` is `Tup(a, b)`; `(a, b)` is `Tup`; `()` is `Tup()`; `[a, b]` is `List`; `e[i]` is
+  `nth(e, i)`; `if (c) a else b` is `ite(c, a, b)`; `x' = e` is `assign(x, e)`, the name's id after
+  the value's.
+- `and { ... }` and `or { ... }` are `and` and `or` of the list; `all { ... }` is `actionAll`,
+  `any { ... }` is `actionAny`.
+- `{ a: 1, b: 2 }` is `Rec("a", 1, "b", 2)`. With a spread, the fields are `with` applied in the
+  order written, wherever the spread is: `{ b: 2, ...r, a: 1 }` is `with(with(r, "b", 2), "a", 1)`;
+  `{ ...r }` is `r` itself. Two spreads are `QNT012`; a field twice is `QNT016`.
+- `e.f` is `field(e, "f")`; `e._1` to `e._99` are `item(e, 1)` and so on; `e.f(a)` is `f(e, a)`.
+- A definition with parameters has a `lambda` body carrying the definition's qualifier. Annotated
+  parameters give the definition `typeAnnotation: { kind: "oper", args, res }` (no id); the older
+  `def f(x): T` gives `typeAnnotation: T`. A definition with no `=` gets the body `true`.
+  `pure val` and `pure def` are written `pureval` and `puredef`.
+- A definition inside an expression is a `let`; `nondet x = e body` is a `let` whose definition
+  has the qualifier `nondet`.
+- `match e { | A(x) => a | B => b | _ => c }` is `matchVariant(e, "A", x => a, "B", _ => b, "_", _ => c)`.
+- `x => e` and `(x, y) => e` are lambdas with the qualifier `def`. `((a, b)) => e` is a lambda of
+  one parameter `quintTupledLambdaParam<id>` and a `let a = item(p, 1)` (qualifier `pureval`, the
+  parameter's id) for each name, the first name innermost.
+- A sum type `type T = A | B(int)` is the typedef (its `sum` type has the typedef's id) and one
+  definition per constructor: `val A: T = variant("A", Tup())` and
+  `def B(__BParam): (int) => T = variant("B", __BParam)`. With type parameters the constructors
+  return `T[a, ...]`. `type T = A`, one variant without a payload and without a leading `|`, is an
+  alias to the type `A` (Quint's grammar prefers the sum rule there), and spends ids it never
+  writes.
+- `val (a, b) = e` is `val quintDestructTemp<id> = e` and `val a = item(temp, 1)`,
+  `val b = item(temp, 2)`; `val { a, b } = e` uses `field(temp, "a")`. Inside an expression they are
+  nested `let`s. `_` is skipped. The field definitions' ids have no place in the source map.
+- `q::debug(e)` gains a first argument: the call's text, tokens joined without spaces. That string's
+  id has no place in the source map.
+- `Map[a, b]` is the function type and the error `QNT015`; `T(a)` as a type is `QNT009`; a type
+  name in lowercase is `QNT007`; an unbound type variable is `QNT014`; a qualified name where a
+  plain one is needed is `QNT008`; a reserved word as a name is `QNT008`.
+- A doc comment is each `///` line without its first four characters and its newline, the lines
+  joined by newlines, no doc when that is empty: `///@check` is `check`, a blank `///` after a line
+  ends the doc with a newline, `//` and `/* */` give nothing. On a sum type it lands on the last
+  constructor; on a destructuring, on the last name.
+- An instance's `.*` sets `identityOverride: true`.
+- Integers lose their `_` and hex is written in decimal, of any size; strings are raw (no escapes).
+- A tuple type's fields are named `"0"`, `"1"`, ...; the type `()` has fields `{ kind: "empty" }`,
+  unlike `Tup()`'s unit row; `a => b` is an `oper` of one argument.
+- The source map's `sourceIndex` is keyed by the position of each file's first entry, and an
+  end column is the start column plus the length in characters, even across lines.
+
+### The grammar, production by production [ran]
+
+Every production of `Quint.g4` at `v0.33.1` and the sample that has it (all in
+`crates/earnest_quint_syntax/tests/samples/`):
+
+| Production | Sample |
+| --- | --- |
+| `modules`, `module`, several modules, module doc | `modules.qnt`, `docs.qnt` |
+| `HASHBANG_LINE` | `hashbang.qnt` |
+| `const`, `var`, `assume` (named and `_`) | `declarations.qnt` |
+| `operDef`: `val`, `def`, `pure val`, `pure def`, `action`, `run`, `temporal`, `nondet`; annotated, older form, header only, `;`, trailing comma, `_` parameter, `()` | `declarations.qnt` |
+| `valDestructuring`, `pureValDestructuring`, tuple and record patterns, `_` | `lets.qnt`, `docs.qnt` |
+| `typeAbstractDef`, `typeAliasDef`, `typeDefHead` with parameters | `declarations.qnt`, `types.qnt` |
+| `typeSumDef`: with and without payload, leading `|`, parameters, one variant, `A(())` | `sums.qnt` |
+| `type`: `int`, `str`, `bool`, tuples, unit, records, empty record, row variables, `->`, `=>`, `(..) => ..`, `Set[..]`, `List[..]`, applications, parentheses, qualified names | `types.qnt`, `imports.qnt` |
+| `importMod`, `exportMod` in every form, `from` | `imports.qnt` |
+| `instanceMod`: `as` and `.*`, `from`, trailing comma | `imports.qnt`, `modules.qnt` |
+| `lambda`: `x =>`, `(x) =>`, `(x, y) =>`, `((a, b)) =>`, `_ =>` | `lambdas.qnt` |
+| `matchSumExpr`: labels, parameters, `_`, leading `|`, nested | `matching.qnt` |
+| `ifElse`, `record`, spread, `tuple`, `unit`, `pair`, `list`, `listApp`, `dotCall` (field, `_1`, call, infix names), `operApp` (names, `and`, `or`, `Set`, `List`, empty arguments), `andExpr`, `orExpr`, `actionAll`, `actionAny`, `braces`, `paren`, `asgn` | `expressions.qnt` |
+| every operator, precedence and associativity | `operators.qnt` |
+| `literalOrId`: decimal, `_`, hex, big integers, `true`, `false`, strings (empty, Unicode, across lines), `from` and `as` as names | `literals.qnt` |
+| `letIn` (and bodies that start with `-`, `[`, `(`, `and`, `or`) | `lets.qnt` |
+| `q::debug` | `debug.qnt` |
+| `DOCCOMMENT` on a module, definition, constant, variable, sum type, run, instance, destructuring | `docs.qnt` |
+| refusals: unclosed brace, missing `=`, keyword as a name, unterminated string, stray character, `/* ` unclosed, one-tuple, `() =>`, mixed parameters, `QNT006`, `QNT007`, `QNT008`, `QNT009`, `QNT012`, `QNT013`, `QNT014`, `QNT015`, `QNT016`, `QNT098`, `QNT101`, `QNT405`, empty file, a declaration outside a module, a trailing doc | `refused/` |
+
+### Left to slice 2
+
+- `table`, `depth` on `const` and `var`, and the order of declarations within a module (phase 4).
+- Quint's refusals of a name not found (`QNT404`), two definitions of one name (`QNT101`), a cycle
+  of declarations (`QNT099`), an override that is not a constant (`QNT406`).
+- Phase 2 is done, including its refusals `QNT013` (an import that can't be loaded), `QNT098` (a
+  cyclic import), `QNT408` (two paths that differ only in case), and the two its module sort
+  makes, `QNT101` (two modules of one name) and `QNT405` (an unknown module).
