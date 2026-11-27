@@ -434,6 +434,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "earnest_quint_syntax"
+version = "0.1.0"
+
+[[package]]
 name = "earnest_rs"
 version = "0.1.0"
 dependencies = [
