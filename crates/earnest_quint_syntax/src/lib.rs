@@ -17,6 +17,7 @@
 //! So [`Parsed::output`] is what `quint parse --out` writes, and [`Parsed::source_map`] the
 //! file `quint parse --source-map` writes.
 
+mod applications;
 mod compile;
 mod files;
 mod flatten;

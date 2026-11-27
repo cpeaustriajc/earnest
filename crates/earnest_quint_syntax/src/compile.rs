@@ -1,11 +1,45 @@
+use crate::applications::Applications;
 use crate::files::Parsed;
-use crate::flatten::{Table, error_text, field_mut, flatten_modules, id_of, text};
+use crate::flatten::{Table, field_mut, flatten_modules, id_of, text};
 use crate::ids::Ids;
 use crate::json::Json;
 use crate::lexer::lex;
 use crate::names::{Raised, resolve};
 use crate::parser::parse;
 use crate::problem::Problem;
+use std::collections::{HashMap, HashSet};
+
+fn written_plainly(written: &Json) -> bool {
+    match written {
+        Json::Object(fields) => {
+            !matches!(text(written, "kind"), "app" | "var")
+                && fields.iter().all(|(_, inner)| written_plainly(inner))
+        }
+        Json::List(items) => items.iter().all(written_plainly),
+        _ => true,
+    }
+}
+
+fn plain_variables(modules: &[Json]) -> HashSet<u64> {
+    modules
+        .iter()
+        .flat_map(|module| items_of(module, "declarations"))
+        .filter(|declaration| text(declaration, "kind") == "var")
+        .filter(|declaration| {
+            declaration
+                .get("typeAnnotation")
+                .is_some_and(written_plainly)
+        })
+        .filter_map(id_of)
+        .collect()
+}
+
+fn items_of<'a>(value: &'a Json, key: &str) -> &'a [Json] {
+    match value.get(key) {
+        Some(Json::List(items)) => items,
+        _ => &[],
+    }
+}
 
 /// What `quint compile --target json` is told to flatten and check: `--main`, `--init`,
 /// `--step`, `--invariant` and `--temporal`, each as the text given on the command line.
@@ -35,6 +69,8 @@ pub struct Compiled {
     table: Table,
     main: String,
     copies: Vec<(u64, u64)>,
+    declared: HashMap<u64, Json>,
+    plain: HashSet<u64>,
 }
 
 impl Compiled {
@@ -64,6 +100,52 @@ impl Compiled {
         &self.copies
     }
 
+    /// The entries of Quint's `types` for the variables of the main module: each variable's
+    /// declared type with its aliases inlined, as Quint's type pass gives it, under the ids of the
+    /// definition it was copied from. The reader reads these for `fieldNames` of a variable.
+    ///
+    /// A variable whose written type applies a type constructor (`Option[int]`) or has a type
+    /// variable is left out: Quint's type pass gives it a type of its own making, which only that
+    /// pass reproduces. The rest of `types` is the type pass's.
+    pub fn variable_types(&self) -> Json {
+        let copied_from: HashMap<u64, u64> = self.copies.iter().copied().collect();
+        let mut found = Vec::new();
+        for declaration in items_of(self.main_module(), "declarations") {
+            if text(declaration, "kind") != "var" {
+                continue;
+            }
+            let Some(id) = id_of(declaration) else {
+                continue;
+            };
+            let key = id.to_string();
+            if found.iter().any(|(known, _)| *known == key) {
+                continue;
+            }
+            let mut original = id;
+            while !self.declared.contains_key(&original) {
+                match copied_from.get(&original) {
+                    Some(earlier) => original = *earlier,
+                    None => break,
+                }
+            }
+            if !self.plain.contains(&original) {
+                continue;
+            }
+            if let Some(written) = self.declared.get(&original) {
+                found.push((
+                    key,
+                    Json::object(vec![
+                        ("typeVariables", Json::List(Vec::new())),
+                        ("rowVariables", Json::List(Vec::new())),
+                        ("type", written.clone()),
+                    ]),
+                ));
+            }
+        }
+        found.sort_by_key(|(key, _)| key.parse::<u64>().unwrap_or(0));
+        Json::Object(found)
+    }
+
     /// The whole of what `quint compile --target json` writes to stdout, without `types` and
     /// `effects`, which the type and effect passes add.
     pub fn output(&self) -> Json {
@@ -76,6 +158,10 @@ impl Compiled {
             ("main", Json::text(&self.main)),
         ])
     }
+}
+
+fn unresolved(message: String) -> Problem {
+    argument_error("QNT000", message)
 }
 
 fn argument_error(code: &str, message: String) -> Problem {
@@ -138,6 +224,22 @@ impl Parsed {
     pub fn compile(&self, target: &Target) -> Result<Compiled, Problem> {
         let mut modules = self.modules.clone();
         let mut ids = self.ids.clone();
+        let plain = plain_variables(&modules);
+        let mut parse_table = Table {
+            entries: self.table.clone(),
+            order: self.order.clone(),
+        };
+        let mut typecheck = Applications::new();
+        typecheck.table(&mut parse_table).map_err(unresolved)?;
+        for module in &mut modules {
+            if let Some(Json::List(declarations)) = field_mut(module, "declarations") {
+                for declaration in declarations {
+                    typecheck
+                        .declaration(&parse_table, declaration)
+                        .map_err(unresolved)?;
+                }
+            }
+        }
         let Some(main_at) = modules
             .iter()
             .position(|module| text(module, "name") == target.main)
@@ -181,14 +283,12 @@ impl Parsed {
         }
         let resolution = resolve(&mut modules);
         let errors = resolution.errors.clone();
-        let table = Table::of(resolution);
+        let mut table = Table::of(resolution);
         check_roles(&roles, &errors, &table)?;
         if let Some(first) = errors.first() {
-            return Err(argument_error(
-                first.code,
-                format!("name resolution failed: {}", error_text(&errors)),
-            ));
+            return Err(argument_error(first.code, first.message.clone()));
         }
+        Applications::new().table(&mut table).map_err(unresolved)?;
         let flat = flatten_modules(&modules, &table, &mut ids)
             .map_err(|message| argument_error("QNT000", message))?;
         Ok(Compiled {
@@ -196,6 +296,8 @@ impl Parsed {
             table: flat.table,
             main: target.main.clone(),
             copies: flat.copies,
+            declared: flat.declared,
+            plain,
         })
     }
 }

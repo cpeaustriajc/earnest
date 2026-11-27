@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, VecDeque};
 pub struct Parsed {
     pub(crate) modules: Vec<Json>,
     pub(crate) table: BTreeMap<u64, Entry>,
+    pub(crate) order: Vec<u64>,
     pub(crate) ids: Ids,
 }
 
@@ -163,6 +164,7 @@ pub fn read(path: &str, mut load: impl FnMut(&str) -> Option<String>) -> Result<
     Ok(Parsed {
         modules,
         table: resolution.table,
+        order: resolution.order,
         ids,
     })
 }

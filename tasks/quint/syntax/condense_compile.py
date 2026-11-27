@@ -37,6 +37,18 @@ def decoded(value, pool):
     return value
 
 
+def field_names_arguments(value, found):
+    if isinstance(value, dict):
+        if value.get("kind") == "app" and value.get("opcode") == "fieldNames":
+            for argument in value.get("args", []):
+                found.append(str(argument["id"]))
+        for item in value.values():
+            field_names_arguments(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            field_names_arguments(item, found)
+
+
 def first_error(text):
     for line in text.splitlines():
         line = line.strip()
@@ -72,9 +84,25 @@ def main():
                 continue
             if compact(output) != stdout:
                 sys.exit(f"{args}: Quint's stdout is not the compact JSON of what it holds")
+            variables = [
+                str(declaration["id"])
+                for module in output["modules"]
+                for declaration in module["declarations"]
+                if declaration["kind"] == "var"
+            ]
+            types = output.get("types", {})
+            variable_types = {id: types[id] for id in sorted(set(variables), key=int) if id in types}
+            arguments = []
+            field_names_arguments(output["modules"], arguments)
+            argument_types = {id: types[id] for id in sorted(set(arguments), key=int) if id in types}
             for key in LEFT_OUT:
                 output.pop(key, None)
-            entry = {"args": args, "output": encoded(output, pool, index)}
+            entry = {
+                "args": args,
+                "output": encoded(output, pool, index),
+                "variableTypes": encoded(variable_types, pool, index),
+                "fieldNamesTypes": encoded(argument_types, pool, index),
+            }
             if decoded(entry["output"], pool) != output:
                 sys.exit(f"{args}: the condensed recording does not give back Quint's")
             written.append(entry)

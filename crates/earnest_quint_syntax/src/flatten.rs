@@ -241,7 +241,7 @@ fn unshadow(module: &Json, table: &mut Table) -> Json {
     module
 }
 
-fn resolve_alias<'a>(table: &'a Table, written: &'a Json) -> &'a Json {
+pub(crate) fn resolve_alias<'a>(table: &'a Table, written: &'a Json) -> &'a Json {
     if text(written, "kind") == "const"
         && let Some(entry) = id_of(written).and_then(|id| table.get(id))
         && entry.text("kind") == "typedef"
@@ -1103,6 +1103,7 @@ pub(crate) struct Flat {
     pub(crate) modules: Vec<Json>,
     pub(crate) table: Table,
     pub(crate) copies: Vec<(u64, u64)>,
+    pub(crate) declared: HashMap<u64, Json>,
 }
 
 pub(crate) fn flatten_modules(
@@ -1117,6 +1118,17 @@ pub(crate) fn flatten_modules(
         .map(|module| unshadow(module, &mut table))
         .collect();
     let (inlined, mut flat_table) = inline_aliases(&unique, &table);
+    let declared = inlined
+        .iter()
+        .flat_map(|module| items(module, "declarations"))
+        .filter(|declaration| text(declaration, "kind") == "var")
+        .filter_map(|declaration| {
+            Some((
+                id_of(declaration)?,
+                declaration.get("typeAnnotation")?.clone(),
+            ))
+        })
+        .collect();
     let mut state = Modules {
         aliases: inlined
             .iter()
@@ -1161,5 +1173,6 @@ pub(crate) fn flatten_modules(
         modules: state.flattened,
         table: flat_table,
         copies,
+        declared,
     })
 }

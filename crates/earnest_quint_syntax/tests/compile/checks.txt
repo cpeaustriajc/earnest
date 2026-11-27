@@ -1,0 +1,249 @@
+compile --target json --main A --init init --step step --invariant ok tasks/quint/review/aliasruns/aliasruns.qnt
+compile --target json --main As --init init --step step --invariant ok,noDownAtTop,small tasks/quint/imports/as.qnt
+compile --target json --main AsImport --init L::init --step L::step tasks/quint/first/Shapes.qnt
+compile --target json --main AsInstance --init P::init --step P::step tasks/quint/first/Shapes.qnt
+compile --target json --main B --init init --step step --invariant nonneg tasks/quint/review/nospace/nospace.qnt
+compile --target json --main B --init init --step step tasks/quint/review/aliasruns/aliasruns.qnt
+compile --target json --main Bad --init init --step step --invariant ok tasks/quint/imports/assume.qnt
+compile --target json --main Blinding --init init --step step --invariant levelOk tasks/quint/setups/lamp.qnt
+compile --target json --main Both --init init --step step --invariant apart,tagged,A::ok,B::ok tasks/quint/imports/star.qnt
+compile --target json --main Bright --init init --step step --invariant levelOk tasks/quint/setups/lamp.qnt
+compile --target json --main Broken --init init --step step --invariant high --temporal stays tasks/quint/marked/names/names.qnt
+compile --target json --main ByName --init init --step step --invariant ok tasks/quint/review/migrated/more.qnt
+compile --target json --main ByName --init init --step step --invariant ok tasks/quint/setups/more.qnt
+compile --target json --main ByOwn --init init --step step --invariant ok tasks/quint/review/migrated/more.qnt
+compile --target json --main ByOwn --init init --step step --invariant ok tasks/quint/setups/more.qnt
+compile --target json --main Cased --init init --step step tasks/quint/marked/cased/cased.qnt
+compile --target json --main Chooses --init init --step step --invariant S::inRange,T::inRange,bothInRange,pair,side tasks/quint/views/override/setups.qnt
+compile --target json --main Comma --init init --step step --invariant inRange,small,tiny tasks/quint/review/wrapped/wrapped.qnt
+compile --target json --main Dim --init init --step step --invariant levelOk,darkWhenOff tasks/quint/setups/lamp.qnt
+compile --target json --main Direct --init init --step step --invariant ok tasks/quint/imports/assume.qnt
+compile --target json --main Direct --init init --step step --invariant small tasks/quint/review/exported/exported.qnt
+compile --target json --main Exported --init init --step step --invariant ok,below --temporal grows tasks/quint/review/migrated/more.qnt
+compile --target json --main Exported --init init --step step --invariant ok,below --temporal grows tasks/quint/setups/more.qnt
+compile --target json --main Exporter --init init --step step tasks/break_it/models/quint_third/exporter/exporter.qnt
+compile --target json --main FirstSteps --init init --step step --invariant bounded tasks/quint/first/FirstSteps.qnt
+compile --target json --main Four --init init --step step --invariant inside,notAll tasks/quint/setups/pure.qnt
+compile --target json --main FromFile --init F::init --step F::step tasks/quint/first/Shapes.qnt
+compile --target json --main Good --init init --step step --invariant ok tasks/quint/imports/assume.qnt
+compile --target json --main H1002 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H1002.qnt
+compile --target json --main H1006 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H1006.qnt
+compile --target json --main H1010 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H1010.qnt
+compile --target json --main H1013 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H1013.qnt
+compile --target json --main H14 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H14.qnt
+compile --target json --main H25 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H25.qnt
+compile --target json --main H37 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H37.qnt
+compile --target json --main H45 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H45.qnt
+compile --target json --main H54 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H54.qnt
+compile --target json --main H63 --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4 tasks/break_it/models/quint_second/random/H63.qnt
+compile --target json --main HelperRun --init init --step step tasks/quint/first/HelperRun.qnt
+compile --target json --main Helpers --init init --step step tasks/quint/first/Helpers.qnt
+compile --target json --main High --init init --step step --invariant below,small --temporal reaches tasks/quint/setups/ints.qnt
+compile --target json --main Holds --init init --step step --invariant low --temporal bounded tasks/quint/marked/names/names.qnt
+compile --target json --main Inherits --init init --step step --invariant inRange,specView,specGroup tasks/quint/views/override/setups.qnt
+compile --target json --main Large --init init --step step --invariant C::inRange,C::belowLimit,C::atTop --temporal C::alwaysInRange tasks/quint/marked/specs/clock.qnt
+compile --target json --main Large --init init --step step --invariant C::inRange,C::belowLimit,C::atTop,C::belowSix --temporal C::alwaysInRange tasks/quint/changes/clock.qnt
+compile --target json --main Large --init init --step step --invariant inv tasks/quint/review/migrated/clock.qnt
+compile --target json --main Large --init init --step step --invariant inv tasks/quint/setups/clock.qnt
+compile --target json --main Low --init init --step step --invariant below,small --temporal reaches tasks/quint/setups/ints.qnt
+compile --target json --main M --init init --step step --invariant K,p1 tasks/quint/marked/nonbool/nonbool.qnt
+compile --target json --main Mixed --init init --step step tasks/quint/first/Shapes.qnt
+compile --target json --main Named --init init --step step --invariant B::ok,B::below --temporal B::grows tasks/quint/review/migrated/more.qnt
+compile --target json --main Named --init init --step step --invariant B::ok,B::below --temporal B::grows tasks/quint/setups/more.qnt
+compile --target json --main Named --init init --step step --invariant S::inRange,belowThree,S::stage,half tasks/quint/views/imported/spec.qnt
+compile --target json --main Named --init init --step step --invariant S::ok tasks/quint/review/twosetups/twosetups.qnt
+compile --target json --main Named --init init --step step tasks/break_it/models/quint_second/named_runs/named_runs.qnt
+compile --target json --main Nested --init init --step step --invariant ok tasks/quint/setups/compiled.qnt
+compile --target json --main Once --init init --step step --invariant small,shownD tasks/quint/views/override/setups.qnt
+compile --target json --main One --init init --step step --invariant bounded tasks/quint/setups/runs.qnt
+compile --target json --main One --init init --step step --invariant small tasks/break_it/models/quint_sixth/broken_run_one_name/broken_run_one_name.qnt
+compile --target json --main OneName --init init --step step tasks/break_it/models/quint_third/one_name/one_name.qnt
+compile --target json --main OnlyRuns --init Fixed::init --step Fixed::step tasks/quint/first/OnlyRuns.qnt
+compile --target json --main Overrides --init init --step step --invariant inRange,mine,specGroup tasks/quint/views/override/setups.qnt
+compile --target json --main Own --init init --step step tasks/break_it/models/quint_third/output/output.qnt
+compile --target json --main OwnRuns --init init --step step tasks/quint/first/OwnRuns.qnt
+compile --target json --main OwnVariables --init A::init --step A::step tasks/quint/first/Shapes.qnt
+compile --target json --main Pair --init init --step step --invariant ok,apart tasks/quint/review/migrated/more.qnt
+compile --target json --main Pair --init init --step step --invariant ok,apart tasks/quint/setups/more.qnt
+compile --target json --main Plain --init init --step step --invariant inRange tasks/quint/review/importedrun/importedrun.qnt
+compile --target json --main Plain --init init --step step --invariant inRange tasks/quint/review/importedtests/importedtests.qnt
+compile --target json --main Plain --init init --step step --invariant ok,below --temporal grows tasks/quint/review/migrated/more.qnt
+compile --target json --main Plain --init init --step step --invariant ok,below --temporal grows tasks/quint/setups/more.qnt
+compile --target json --main Plain --init init --step step tasks/quint/marked/names/names.qnt
+compile --target json --main PlainAs --init Main::init --step Main::step tasks/quint/first/Plain.qnt
+compile --target json --main PlainFrom --init O::init --step O::step tasks/quint/first/Plain.qnt
+compile --target json --main PlainNested --init H::init --step H::step tasks/quint/first/Plain.qnt
+compile --target json --main PlainStar --init init --step step tasks/quint/first/Plain.qnt
+compile --target json --main Plays --init init --step step tasks/break_it/models/quint_second/runs_not_played/runs_not_played.qnt
+compile --target json --main Plays --init init --step step tasks/quint/marked/runs/runs.qnt
+compile --target json --main Printing --init init --step step --invariant annBelowFive tasks/quint/imports/printing.qnt
+compile --target json --main Q14A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q14.qnt
+compile --target json --main Q14B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q14.qnt
+compile --target json --main Q14C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q14.qnt
+compile --target json --main Q20A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q20.qnt
+compile --target json --main Q20B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q20.qnt
+compile --target json --main Q20C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q20.qnt
+compile --target json --main Q26A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q26.qnt
+compile --target json --main Q26B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q26.qnt
+compile --target json --main Q26C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q26.qnt
+compile --target json --main Q29A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q29.qnt
+compile --target json --main Q29B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q29.qnt
+compile --target json --main Q29C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q29.qnt
+compile --target json --main Q2A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q2.qnt
+compile --target json --main Q2B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q2.qnt
+compile --target json --main Q2C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q2.qnt
+compile --target json --main Q32A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q32.qnt
+compile --target json --main Q32B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q32.qnt
+compile --target json --main Q32C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q32.qnt
+compile --target json --main Q34A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q34.qnt
+compile --target json --main Q34B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q34.qnt
+compile --target json --main Q34C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q34.qnt
+compile --target json --main Q38A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q38.qnt
+compile --target json --main Q38B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q38.qnt
+compile --target json --main Q38C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q38.qnt
+compile --target json --main Q5A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q5.qnt
+compile --target json --main Q5B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q5.qnt
+compile --target json --main Q5C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q5.qnt
+compile --target json --main Q9A --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q9.qnt
+compile --target json --main Q9B --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q9.qnt
+compile --target json --main Q9C --init init --step step --invariant inv0,inv1,inv2 --temporal t0,t1,t2,t3,t4,t5 tasks/break_it/models/quint_fourth/random/Q9.qnt
+compile --target json --main Reached --init init --step step --invariant high tasks/quint/marked/names/names.qnt
+compile --target json --main Reexported --init init --step step --invariant ok,small tasks/quint/review/migrated/more.qnt
+compile --target json --main Reexported --init init --step step --invariant ok,small tasks/quint/setups/more.qnt
+compile --target json --main Renamed --init init --step step --invariant ok tasks/quint/setups/compiled.qnt
+compile --target json --main RunFromHelper --init init --step step tasks/quint/first/RunFromHelper.qnt
+compile --target json --main RunsOnly --init Main::init --step Main::step tasks/quint/first/RunsOnly.qnt
+compile --target json --main RunsOnlyNamed --init init --step step tasks/quint/first/RunsOnly.qnt
+compile --target json --main S --init init --step step --invariant ok,notAmberTwice tasks/quint/setups/shadow.qnt
+compile --target json --main S1 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S10 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S11 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S12 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S13 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S14 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S15 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S16 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S17 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S2 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S3 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S4 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S5 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S6 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S7 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S8 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main S9 --init init --step step --invariant darkWhenOff tasks/quint/setups/many.qnt
+compile --target json --main Setup --init init --step step --invariant bounded tasks/quint/review/falseassume/falseassume.qnt
+compile --target json --main Setup --init init --step step --invariant bounded tasks/quint/review/specassume/specassume.qnt
+compile --target json --main Setup --init init --step step --invariant bounded tasks/quint/review/spechelper/spechelper.qnt
+compile --target json --main Setup --init init --step step --invariant bounded tasks/quint/review/sumtype/sumtype.qnt
+compile --target json --main Setup --init init --step step --invariant greenAtThree tasks/quint/review/typesmodule/setup.qnt
+compile --target json --main Setup --init init --step step --invariant inRange,paired,known tasks/quint/setups/kinds.qnt
+compile --target json --main Several --init F::init --step F::step tasks/quint/first/Shapes.qnt
+compile --target json --main Single --init init --step step --invariant ok tasks/quint/setups/compiled.qnt
+compile --target json --main Small --init init --step step --invariant inRange tasks/quint/views/defs/defs.qnt
+compile --target json --main Small --init init --step step --invariant inRange,belowLimit,atTop --temporal alwaysInRange tasks/quint/changes/clock.qnt
+compile --target json --main Small --init init --step step --invariant inRange,belowLimit,atTop --temporal alwaysInRange tasks/quint/marked/specs/clock.qnt
+compile --target json --main Small --init init --step step --invariant inRange,stage tasks/quint/views/imported/spec.qnt
+compile --target json --main Small --init init --step step --invariant timeBounded,skewOk --temporal allHeard,timeAdvances,fairHear,leads tasks/quint/review/migrated/clock.qnt
+compile --target json --main Small --init init --step step --invariant timeBounded,skewOk --temporal allHeard,timeAdvances,fairHear,leads tasks/quint/setups/clock.qnt
+compile --target json --main SmallBits --init init --step step --temporal allHeard,timeAdvances,fairHear,leads tasks/quint/checks/smallbits/clockbits.qnt
+compile --target json --main SmallBits --init init --step step --temporal allHeard,timeAdvances,fairHear,leads tasks/quint/setups/clockbits.qnt
+compile --target json --main Star --init init --step step --invariant ok,noDownAtTop,small tasks/quint/imports/star.qnt
+compile --target json --main StarImport --init init --step step tasks/quint/first/Shapes.qnt
+compile --target json --main StarInstance --init init --step step tasks/quint/first/Shapes.qnt
+compile --target json --main StepIsChainOnward --init init --step step --invariant counted tasks/quint/first/Helpers.qnt
+compile --target json --main Three --init init --step step --invariant bounded tasks/quint/setups/runs.qnt
+compile --target json --main Tight --init init --step step --invariant V::withinCap,neverFull,belowHalf tasks/quint/setups/own.qnt
+compile --target json --main Top --init init --step step --invariant small tasks/quint/review/exported/exported.qnt
+compile --target json --main Two --init init --step step --invariant V::ok,V1::fine tasks/quint/setups/more.qnt
+compile --target json --main Two --init init --step step --invariant mutex --temporal moves tasks/quint/samples/ring.qnt
+compile --target json --main TwoChecked --init init --step step --invariant V::ok,V1::fine tasks/quint/review/migrated/more.qnt
+compile --target json --main TwoInstances --init init --step step tasks/quint/first/TwoInstances.qnt
+compile --target json --main Unset --init init --step step tasks/quint/first/Unset.qnt
+compile --target json --main UseB --init init --step step --invariant small tasks/quint/review/samename/b.qnt
+compile --target json --main Uses --init init --step step --invariant later tasks/quint/marked/faults/faults.qnt
+compile --target json --main W3 --init init --step step --invariant ok tasks/quint/review/barecomma/barecomma.qnt
+compile --target json --main Whole --init init --step step --invariant small tasks/quint/review/twosetups/twosetups.qnt
+compile --target json --main bank --init init --step step --invariant nonNegative tasks/quint/marked/specs/bank.qnt
+compile --target json --main big --init init --step step --invariant belowBig tasks/quint/confirm/confirm.qnt
+compile --target json --main big --init init --step step --invariant mutex,holderKnown,bounded,grantsBounded --temporal drains,someGrant,served tasks/break_it/models/quint_second/project/setups.qnt
+compile --target json --main board --init init --step step --invariant xNeverBehind,xHasTwo tasks/quint/samples/board.qnt
+compile --target json --main checked --init init --step step --invariant belowThree,belowThree,half tasks/quint/views/checked/checked.qnt
+compile --target json --main choose --init init --step step --invariant ok tasks/quint/checks/choose/choose.qnt
+compile --target json --main counter --init init --step step --invariant inRange tasks/quint/checks/inrange/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange tasks/quint/views/cache3/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,parity tasks/quint/views/cache4/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,shown tasks/quint/views/cache1/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,shown tasks/quint/views/cache2/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,tooBig tasks/quint/checks/counter/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,tooBig tasks/quint/checks/imported/specs/counter.qnt
+compile --target json --main counter --init init --step step --invariant inRange,tooBig tasks/quint/checks/wide/counter.qnt
+compile --target json --main dead --init init --step step --invariant ok --temporal later,sooner tasks/quint/checks/temporal/dead.qnt
+compile --target json --main dead --init init --step step --invariant ok tasks/quint/checks/dead/dead.qnt
+compile --target json --main endless --init init --step step --invariant small tasks/break_it/models/quint_third/output/output.qnt
+compile --target json --main falseRuns --init init --step step tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
+compile --target json --main fault --init init --step step --invariant P::annBelowFive tasks/quint/imports/printing.qnt
+compile --target json --main halves --init init --step step --invariant halfAbove tasks/quint/confirm/confirm.qnt
+compile --target json --main house --init init --step step --invariant tickBound,neverLit tasks/quint/samples/parts.qnt
+compile --target json --main huge --init init --step step --invariant mutex,holderKnown,bounded,grantsBounded --temporal drains,someGrant,served tasks/break_it/models/quint_second/project/setups.qnt
+compile --target json --main lamp --init init --step step --invariant litOrDark tasks/quint/changes/lamp.qnt
+compile --target json --main ledger --init init --step step --invariant conserved,noDebt,someoneEmpty tasks/quint/samples/ledger.qnt
+compile --target json --main lift --init init --step step --invariant inside,low --temporal reachesTop tasks/quint/confirm/confirm.qnt
+compile --target json --main light --init init --step step --invariant fewCars,shown,side tasks/quint/views/kinds/light.qnt
+compile --target json --main lost --init init --step step --invariant zero tasks/quint/marked/lost/lost.qnt
+compile --target json --main marks --init init --step step --invariant small tasks/quint/views/refused/marks.qnt
+compile --target json --main mixed --init init --step step --invariant inBounds tasks/quint/checks/inbounds/mixed.qnt
+compile --target json --main mixed --init init --step step --invariant inBounds,downAtZero,agree,neverFourDown tasks/quint/checks/mixed/mixed.qnt
+compile --target json --main named --init init --step step --invariant fresh,D::bounded --temporal D::drains tasks/quint/imports/setups.qnt
+compile --target json --main near --init init --step step --invariant small tasks/quint/views/near/near.qnt
+compile --target json --main once --init init --step step --invariant inRange,parity,sign tasks/quint/views/twice/twice.qnt
+compile --target json --main outside --init init --step step --invariant small,shown tasks/quint/views/outside/outside.qnt
+compile --target json --main pair --init init --step step --invariant bothMutex,fewGrants tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main plain --init init --step step --invariant small tasks/quint/views/defs/defs.qnt
+compile --target json --main played --init init --step step tasks/quint/views/checked/checked.qnt
+compile --target json --main pool --init init --step step --invariant notBoth,allDone tasks/quint/samples/pool.qnt
+compile --target json --main problems --init init --step step --invariant small,chosen tasks/quint/checks/problems/problems.qnt
+compile --target json --main ranges --init init --step step tasks/quint/confirm/confirm.qnt
+compile --target json --main reachableOnly --init init --step step --invariant two tasks/break_it/models/quint_sixth/reachable_only/reachable_only.qnt
+compile --target json --main reads --init init --step step --invariant natural,booleans,names,only,operators,folded,small tasks/quint/checks/reads/reads.qnt
+compile --target json --main refused --init init --step step --invariant small tasks/quint/views/quintrefuses/refused.qnt
+compile --target json --main refused --init init --step step --invariant small,shown tasks/quint/views/quintrefuses/refused.qnt
+compile --target json --main repeated --init init --step step --invariant small,listed --temporal strong,fairPick tasks/quint/checks/problems/problems.qnt
+compile --target json --main reportMarks --init init --step step --invariant belowTwo,belowNine,atFive,atOne tasks/break_it/models/quint_sixth/report_marks/report_marks.qnt
+compile --target json --main runplace --init init --step step tasks/quint/checks/runplace/runplace.qnt
+compile --target json --main scenarios --init S::init --step S::step tasks/quint/imports/setups.qnt
+compile --target json --main setup --init init --step step --invariant ok tasks/quint/confirm/fixtures/skipped/skipped.qnt
+compile --target json --main setups --init init --step step --invariant mutex,holderKnown,Two::bounded --temporal Two::drains,Two::someGrant,Two::served tasks/break_it/models/quint_second/project/setups.qnt
+compile --target json --main sg2 --init init --step step --invariant ok --temporal t,v tasks/break_it/models/quint_fifth/unknown_same/sg2.qnt
+compile --target json --main shop --init init --step step --invariant shownWasAccepted,acceptedWasPlaced tasks/quint/views/bare/shop.qnt
+compile --target json --main shop --init init --step step --invariant shownWasAccepted,acceptedWasPlaced,seen,retried tasks/quint/views/labels/shop.qnt
+compile --target json --main small --init init --step step --invariant inRange tasks/break_it/models/quint_fourth/named_helpers/named_helpers.qnt
+compile --target json --main starts --init init --step step --invariant small tasks/quint/checks/starts/starts.qnt
+compile --target json --main stuck --init init --step step --invariant ok tasks/quint/checks/broken/stuck.qnt
+compile --target json --main stuck --init init --step step --invariant ok tasks/quint/checks/stuck/stuck.qnt
+compile --target json --main tally --init init --step step tasks/quint/samples/tally.qnt
+compile --target json --main tallyfails --init init --step step tasks/quint/samples/tallyfails.qnt
+compile --target json --main three --init init --step step --invariant bounded,counted --temporal drains tasks/quint/imports/setups.qnt
+compile --target json --main three --init init --step step --invariant mutex,holderKnown,bounded,grantsBounded,neverTwoGrants --temporal drains,someGrant,served,everyoneIdle tasks/break_it/models/quint_second/project/setups.qnt
+compile --target json --main threeChecked --init init --step step --invariant V::mutex,V::holderKnown,V::bounded,V::GuardedBreak --temporal V::everyoneRequests,V::everyoneHolds,V::eachDrains tasks/break_it/models/quint_fourth/project/setups.qnt
+compile --target json --main threeChecked --init init --step step --invariant V::mutex,V::holderKnown,V::bounded,V::GuardedBreak --temporal V::everyoneRequests,V::everyoneHolds,V::eachDrains tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main threeG --init init --step step --invariant V::mutex,V::holderKnown,V::bounded --temporal V::gRequests,V::gHolds,V::gDrains,V::gServed,V::gIdle tasks/break_it/models/quint_fifth/project/setups.qnt
+compile --target json --main threeKnown --init init --step step --invariant V::GuardedBreak tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main threePick --init init --step step --invariant V::mutex,V::holderKnown,V::bounded --temporal V::pickRequests,V::pickHolds,V::pickSettles tasks/break_it/models/quint_fourth/project/setups.qnt
+compile --target json --main tight --init init --step step --invariant mutex,holderKnown,bounded,grantsBounded --temporal drains,someGrant,served tasks/break_it/models/quint_second/project/setups.qnt
+compile --target json --main twice --init init --step step --invariant inRange,count,bigness tasks/quint/views/twice/twice.qnt
+compile --target json --main two --init init --step step --invariant bounded,counted,neverAllOpen --temporal drains tasks/quint/imports/setups.qnt
+compile --target json --main twoChecked --init init --step step --invariant V::mutex,V::holderKnown,V::bounded,V::grantsBounded --temporal V::everyoneRequests,V::everyoneHolds,V::eachDrains tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main twoG --init init --step step --invariant V::mutex,V::holderKnown,V::bounded,V::grantsBounded --temporal V::gRequests,V::gHolds,V::gDrains,V::gServed,V::gIdle tasks/break_it/models/quint_fifth/project/setups.qnt
+compile --target json --main twoGuard --init init --step step --invariant V::GuardedBreak tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main twoPick --init init --step step --invariant V::mutex,V::holderKnown,V::bounded,V::grantsBounded --temporal V::pickRequests,V::pickHolds,V::pickSettles tasks/break_it/models/quint_fourth/project/setups.qnt
+compile --target json --main unread --init init --step step --invariant small,shown tasks/quint/views/unread/unread.qnt
+compile --target json --main wide --init init --step step --invariant inRange tasks/quint/checks/wide/counter.qnt
+compile --target json --main wide --init init --step step --invariant inRange tasks/quint/views/numbers_bare/wide.qnt
+compile --target json --main wide --init init --step step --invariant inRange,shown tasks/quint/views/numbers/wide.qnt
+compile --target json --main wider --init init --step step --invariant below tasks/quint/views/numbers_bare/wide.qnt
+compile --target json --main wider --init init --step step --invariant below,shown tasks/quint/views/numbers/wide.qnt
+compile --target json --main witness --init W::init --step W::step tasks/break_it/models/quint_fourth/project/setups.qnt
+compile --target json --main witness --init W::init --step W::step tasks/break_it/models/quint_third/project/setups.qnt
+compile --target json --main words --init init --step step --invariant counted tasks/quint/confirm/confirm.qnt
+compile --target json --main wrong --init init --step step --invariant small,three tasks/quint/marked/failing/wrong.qnt
