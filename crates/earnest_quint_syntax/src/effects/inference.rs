@@ -9,6 +9,7 @@ use crate::json::Json;
 use crate::names::{Entry, Raised, number};
 use crate::printing_ir::expression_text;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
 use std::rc::Rc;
 
 pub(crate) struct Crash(pub(crate) String);
@@ -635,9 +636,44 @@ pub(crate) fn analyze_added(
     Ok(())
 }
 
+/// A hasher for the names in a [`NameSet`]: a multiply and rotate over eight bytes at a time,
+/// as rustc's own `FxHasher`, where the standard one spent most of the effect pass on a file of
+/// deeply nested lambdas. A set is only asked whether it holds a name, never iterated, so the
+/// hasher decides no order and no answer.
+#[derive(Clone, Copy, Default)]
+struct NameHasher(u64);
+
+impl NameHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.add(u64::from_le_bytes(word));
+        }
+    }
+
+    fn write_u8(&mut self, byte: u8) {
+        self.add(u64::from(byte));
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.add(u64::try_from(value).unwrap_or(u64::MAX));
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct NameSet {
-    known: HashSet<Rc<str>>,
+    known: HashSet<Rc<str>, BuildHasherDefault<NameHasher>>,
 }
 
 impl NameSet {
