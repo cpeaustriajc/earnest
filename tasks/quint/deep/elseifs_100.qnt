@@ -1,0 +1,11 @@
+/// @check
+module elseifs_100 {
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 3) x + 1 else 0
+  val deep = if (x == 0) 0 else if (x == 1) 1 else if (x == 2) 2 else if (x == 3) 3 else if (x == 4) 4 else if (x == 5) 5 else if (x == 6) 6 else if (x == 7) 7 else if (x == 8) 8 else if (x == 9) 9 else if (x == 10) 10 else if (x == 11) 11 else if (x == 12) 12 else if (x == 13) 13 else if (x == 14) 14 else if (x == 15) 15 else if (x == 16) 16 else if (x == 17) 17 else if (x == 18) 18 else if (x == 19) 19 else if (x == 20) 20 else if (x == 21) 21 else if (x == 22) 22 else if (x == 23) 23 else if (x == 24) 24 else if (x == 25) 25 else if (x == 26) 26 else if (x == 27) 27 else if (x == 28) 28 else if (x == 29) 29 else if (x == 30) 30 else if (x == 31) 31 else if (x == 32) 32 else if (x == 33) 33 else if (x == 34) 34 else if (x == 35) 35 else if (x == 36) 36 else if (x == 37) 37 else if (x == 38) 38 else if (x == 39) 39 else if (x == 40) 40 else if (x == 41) 41 else if (x == 42) 42 else if (x == 43) 43 else if (x == 44) 44 else if (x == 45) 45 else if (x == 46) 46 else if (x == 47) 47 else if (x == 48) 48 else if (x == 49) 49 else if (x == 50) 50 else if (x == 51) 51 else if (x == 52) 52 else if (x == 53) 53 else if (x == 54) 54 else if (x == 55) 55 else if (x == 56) 56 else if (x == 57) 57 else if (x == 58) 58 else if (x == 59) 59 else if (x == 60) 60 else if (x == 61) 61 else if (x == 62) 62 else if (x == 63) 63 else if (x == 64) 64 else if (x == 65) 65 else if (x == 66) 66 else if (x == 67) 67 else if (x == 68) 68 else if (x == 69) 69 else if (x == 70) 70 else if (x == 71) 71 else if (x == 72) 72 else if (x == 73) 73 else if (x == 74) 74 else if (x == 75) 75 else if (x == 76) 76 else if (x == 77) 77 else if (x == 78) 78 else if (x == 79) 79 else if (x == 80) 80 else if (x == 81) 81 else if (x == 82) 82 else if (x == 83) 83 else if (x == 84) 84 else if (x == 85) 85 else if (x == 86) 86 else if (x == 87) 87 else if (x == 88) 88 else if (x == 89) 89 else if (x == 90) 90 else if (x == 91) 91 else if (x == 92) 92 else if (x == 93) 93 else if (x == 94) 94 else if (x == 95) 95 else if (x == 96) 96 else if (x == 97) 97 else if (x == 98) 98 else if (x == 99) 99 else 100
+  /// @check
+  val holds = deep == x
+  /// @check
+  val broken = deep != 2
+}
