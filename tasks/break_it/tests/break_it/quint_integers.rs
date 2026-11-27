@@ -61,14 +61,18 @@ const HOLDING: [&str; 4] = [
 const TLC_LIMIT: &str = "the model declares the number 18446744073709551616, and TLC's \
                          integers hold 32 bits, from -2147483648 to 2147483647";
 
-fn case_folder() -> PathBuf {
+fn case_folder(case: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("models/quint_integers")
-        .join(CASE)
+        .join(case)
 }
 
 fn recorded(name: &str) -> String {
-    let path = case_folder().join(name);
+    recorded_in(CASE, name)
+}
+
+pub(crate) fn recorded_in(case: &str, name: &str) -> String {
+    let path = case_folder(case).join(name);
     fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{} can't be read: {error}", path.display()))
 }
@@ -80,6 +84,10 @@ fn program(path: &Path, text: &str) {
 }
 
 fn ran(arguments: &[&str]) -> (String, String) {
+    ran_in(CASE, arguments)
+}
+
+pub(crate) fn ran_in(case: &str, arguments: &[&str]) -> (String, String) {
     let folder = TempDir::new().expect("a temporary folder can be made");
     let fake = folder.path().join("fake");
     let java = folder.path().join("java");
@@ -87,16 +95,19 @@ fn ran(arguments: &[&str]) -> (String, String) {
     fs::create_dir_all(&java).expect("the folder of the stand-in for Java can be made");
     program(&fake.join("quint"), RECORDED);
     program(&java.join("java"), NO_TLC);
+    let compiled = format!("compile.{case}.json");
     for name in [
         "parse.json",
         "sourcemap.json",
-        "compile.bignum.json",
+        compiled.as_str(),
         "verify.txt",
         "test.txt",
     ] {
-        fs::write(fake.join(name), recorded(name)).expect("a recorded output can be copied");
+        fs::write(fake.join(name), recorded_in(case, name))
+            .expect("a recorded output can be copied");
     }
-    fs::write(folder.path().join("bignum.qnt"), recorded("bignum.qnt"))
+    let model = format!("{case}.qnt");
+    fs::write(folder.path().join(&model), recorded_in(case, &model))
         .expect("the model can be copied");
     fs::write(folder.path().join("tla2tools.jar"), "").expect("a stand-in jar can be written");
     let output = Command::new(binary())
