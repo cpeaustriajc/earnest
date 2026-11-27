@@ -1,9 +1,7 @@
 use earnest_quint_syntax::{Target, read};
 use std::env;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
-use std::time::Duration;
 
 const SMALL: &str = "module small {\n  var x: int\n  action init = x' = 0\n  action step = x' = x + 1\n  val ok = x >= 0\n}\n";
 const JOBS: usize = 8;
@@ -165,48 +163,21 @@ fn alone(test: &str) -> bool {
     false
 }
 
-fn threads_now() -> usize {
-    std::fs::read_dir("/proc/self/task").map_or(0, Iterator::count)
-}
-
-fn longer() -> String {
-    let items: Vec<String> = (0..300).map(|item| item.to_string()).collect();
-    SMALL.replace(
-        "  val ok",
-        &format!("  val s = Set({})\n  val ok", items.join(", ")),
-    )
-}
-
-fn most_threads_during<T>(work: impl FnOnce() -> T) -> (usize, T) {
-    let done = AtomicBool::new(false);
-    let most = AtomicUsize::new(0);
-    let before = threads_now();
-    let result = thread::scope(|scope| {
-        let watcher = scope.spawn(|| {
-            while !done.load(Ordering::SeqCst) {
-                most.fetch_max(threads_now(), Ordering::SeqCst);
-                thread::sleep(Duration::from_millis(1));
-            }
-        });
-        thread::sleep(Duration::from_millis(20));
-        let result = work();
-        done.store(true, Ordering::SeqCst);
-        watcher.join().expect("the watcher ends");
-        result
-    });
-    (most.load(Ordering::SeqCst) - before - 1, result)
+fn threads_started_by<T>(work: impl FnOnce() -> T) -> (usize, T) {
+    let before = earnest_quint_syntax::threads_started();
+    let result = work();
+    (earnest_quint_syntax::threads_started() - before, result)
 }
 
 fn started_by_each_entry(bytes: usize) -> [usize; 3] {
-    let text = longer();
     earnest_quint_syntax::on_a_stack_of(bytes, || {
-        let (reading, parsed) = most_threads_during(|| {
+        let (reading, parsed) = threads_started_by(|| {
             read("small.qnt", |path| {
-                (path == "small.qnt").then(|| text.clone())
+                (path == "small.qnt").then(|| SMALL.to_owned())
             })
             .expect("read")
         });
-        let (checking, checked) = most_threads_during(|| parsed.typecheck().map(drop));
+        let (checking, checked) = threads_started_by(|| parsed.typecheck().map(drop));
         assert!(checked.is_ok(), "{checked:?}");
         let target = Target {
             main: "small".to_owned(),
@@ -215,7 +186,7 @@ fn started_by_each_entry(bytes: usize) -> [usize; 3] {
             invariant: Some("ok".to_owned()),
             temporal: None,
         };
-        let (compiling, compiled) = most_threads_during(|| parsed.compile(&target).map(drop));
+        let (compiling, compiled) = threads_started_by(|| parsed.compile(&target).map(drop));
         assert!(compiled.is_ok(), "{compiled:?}");
         [reading, checking, compiling]
     })

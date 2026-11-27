@@ -537,14 +537,35 @@ Earnest reads these run operators as `quint test` judges them:
 | `A.then(B)` | `B` is the next step. A step that can't happen breaks the run, but for the last step after a `nondet` at the top of the run, where the value is skipped |
 | `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
 | `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
-| `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint |
+| `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint. A false `assert` in the run's first action is an error that `fail()` does not turn into a pass |
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step. In the run's first action, or as the whole run (`run t = assert(f(1) == 2)`), a false `P` breaks the run, as `quint test` fails it |
 | a condition with no step, such as `run t = f(1) == 1` | The run holds when the condition is true and is broken when it is false |
 | `nondet` and `val` at the top of the run | Each value of the `nondet` is played, and a value the run is false for is skipped, as below; a `val` is a constant |
 | a run's name | That run, played in place |
 | a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |
 
-A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses.
+A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. Whether the step can happen at all is judged as `quint test` judges it, below.
+
+### A `nondet` inside a step
+
+`quint test` plays a step's `nondet` as it plays one at the top of a run: it picks a value, and where the action is false for it, it tries the next value of a set of fewer than 100 values and keeps the first one of a set of 100 values or more. An `any` tries its branches in a random order until one can happen. Earnest judges each step the same way, from every state the run reaches, and takes the strict side where Quint samples:
+
+- **Fewer than 100 values:** the `nondet` is false only where the action is false for every value, as before.
+- **100 values or more:** the `nondet` is false where the action is false for one value, since Quint can pick that one first. The step is still played for every value it can happen with.
+- **Nested `nondet`s** follow the rule level by level: `nondet a = 0.to(9).oneOf() nondet b = 0.to(199).oneOf() all { a == 3 or b == 7, x' = a }` can always happen, since Quint tries `a` = 3 in the end; with `b == 7` alone it can be false for every `a`. An `any` or an `if` is false only where each branch can be.
+- **A set read from the state** (`s.oneOf()`) is counted in each state the step is played from, so the same step can be retried in one state and not in another.
+
+A step that can be false so is then what a false step is in a run: an error that breaks it in the middle of a chain (the first part of a `then`, a round of `reps`, the action of an `expect`), and false where it is the run's last step or its only action, where a `nondet` at the top of the run tries its next value as above. A broken run names the value:
+
+```text
+  broken  midPickTest
+    start  x = 0
+    why    with `n` = 0, step 1, `midPickTest`, can't happen here, and `quint test` tries no other value of a `nondet` over 100 values or more
+```
+
+The run's first action is judged the same way, with ``with `n` = 0, the run's first action can't happen, …``, the check's `init` too. Under `A.fail()` only the values the step can happen with count: the run is broken where one exists, whatever Quint picks first. The search is not changed: `init`, `step`, invariants and temporal properties take every value of a `nondet`, as `quint verify` does.
+
+As at the top of a run, earnest counts the values of the whole set, where Quint counts each part of a set of tuples, maps or records apiece: `tuples(0.to(9), 0.to(19))`, of 200 values, is not retried, and a step false for one pair can break a run that `quint test` passes.
 
 ### A `nondet` at the top of a run
 

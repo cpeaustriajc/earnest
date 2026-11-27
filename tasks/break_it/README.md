@@ -3380,3 +3380,192 @@ two `nondet`s, an optional `val`, a first action, up to three `then` steps (`rep
 chains two steps, a guarded step), `expect` and `fail()`; one in five also picks inside a step.
 Seeds 1 to 400, `quint test` against `earnest verify --json`: 400 agree (319 without a pick inside
 a step, 81 with one; 120 hold, 280 broken), none differ.
+
+## Seventh Quint pass
+
+An adversarial pass over the meaning of what earnest reads from a `.qnt` file now that it reads
+the file itself: runs and the retries of a `nondet` at their top, integers past 64 bits with `/`
+and `%`, the assumptions of setups, marks, reports and `confirm --quint`; made on commit 9871a6f
+of the integration branch with Quint 0.33.1 from npm (`quint test --backend typescript`, and
+`quint verify --backend tlc` with the Apalache it fetched). Its tests are in
+`tests/break_it/quint_seventh.rs` and its files in `models/quint_seventh/`. The tests run the
+`earnest` binary on the `.qnt` file; the one about `confirm --quint` serves the recorded `quint
+test` output through a small program in place of `quint`. Each `.qnt` file has its recordings
+under `crates/earnest_quint_syntax/tests/quint/`.
+
+What became of the four findings, all on the integration branch: the step's own `nondet` over 100
+values or more is fixed by #99 (its section follows this one); the lone false `assert` after a
+`nondet` at `171f2d9b` and the range past 64 bits at `1fa66cda`, each attacked again by the pass
+and found correct; `confirm --quint` gives a cause only to the run that reaches it since
+`e782398b`. With #99 in, `pickTest` of the `confirm` model agrees with `quint test`, so its test
+now asserts that the run that divides carries the cause and that no other run is listed. The
+sections below describe the build the pass ran on.
+
+### A step's own `nondet` over 100 values or more passes runs that `quint test` fails
+
+`models/quint_seventh/big_step_pick/big_step_pick.qnt`: `init.then(nondet n = 0.to(199).oneOf()
+all { n == 7, x' = n }).then(step)`, the same with the pick as the last step, the same with the
+pick as the first action, and the same over `0.to(9)`. `quint test --backend typescript` fails the
+first three after one sample each (`Error [QNT513]: Cannot continue in `then` because the
+highlighted expression evaluated to false`, and for the last step `Error [QNT511]: Test
+lastPickTest returned false`) and passes the fourth after 10 000. Earnest says `pass`, all four
+`holds`. Quint retries a `nondet` over fewer than 100 values wherever it stands, in a step as at
+the top of a run (`QUINT_RETRY_NONDET_SMALLER_THAN`); over a larger set a step keeps the value it
+picked, and is false for 199 of the 200 here. Earnest retries only a run's top `nondet` by that
+bound (`Plan.falls` in `crates/earnest_check/src/witness.rs`, built in
+`crates/earnest_quint/src/runs.rs`), and plays a step as possible when any value of its own
+`nondet` gets it through. The docs say "earnest tries every choice … so it finds every failure
+sampling finds", which this contradicts. The same holds inside `reps`
+(`init.then(3.reps(i => nondet n = 0.to(149).oneOf() all { n == i, x' = n }))`) and for a big pick
+nested under a small one. `confirm --quint` says `differs` on each, unless finding 4 hides it.
+Right result: `broken` for the three, `holds` for the fourth. Test:
+`a_step_that_picks_from_100_values_or_more_is_not_retried_so_a_false_pick_breaks_the_run`.
+
+### A false `assert` that is the whole run after a `nondet` passes
+
+Fixed on the integration branch at 171f2d9b, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: the `assert` inside `or { }` on either side, in either
+branch of an `if`, in a `val` used later, under two nested top `nondet`s, in a run that calls the
+run, in a `pure def`, under `not` and `implies`, in `all { }` with no assignment, and behind a
+guard that keeps it from being reached (`and { n >= 4, assert(n >= 4) }`, `if`, `or`, `implies`, a
+step's own guard): 19 runs, each as `quint test` says.
+
+`models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt`: `nondet n = 0.to(4).oneOf()
+assert(n >= 3)`, the same inside `and { assert(n >= 3), n >= 0 }`, after a `val m = n + 1`, and
+inside a first action `all { assert(n >= 3), x' = n }`. `quint test` fails all four within a few
+samples, each with `Error [QNT508]: Assertion failed`. Earnest breaks the fourth and says `holds`
+for the other three. The docs list a false `assert` among the errors that break a run at once.
+Likely cause: in `crates/earnest_quint/src/runs.rs`, `plans`, a run that is a condition is worked
+out with `pure`, and a false value becomes `must_not_finish`, which under a top `nondet` is a
+false combination to skip, not an error; `assert` is read there as a plain condition. The seeded
+generator below met it in 6 of 120 models. Test:
+`a_false_assert_that_is_the_whole_run_after_a_nondet_is_an_error_not_a_skipped_value`.
+
+### A run's own `nondet` over a range past 64 bits is refused as read from the state
+
+Fixed on the integration branch at 1fa66cda, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: a range across `2^63` with a guarded first action
+and `expect` (broken, QNT508), the same with a middle step (broken, QNT513), a range below
+`-(2^63)` with `/` in `expect` (broken), two nested ranges past `2^64` and `2^65` (holds), 150
+values from `2^63` with one false (broken), an empty range past 64 bits (broken, QNT511), `%` of
+the picks, a `map` of the range and `n * n` past `2^124` (holds): 9 runs, each as `quint test`
+says. A range of 2 001 values is refused by earnest's documented limit of 1 000 combinations.
+
+`models/quint_seventh/big_top_range/big_top_range.qnt`: `nondet n = (2 ^ 63 - 1).to(2 ^ 63 +
+1).oneOf() init.expect(x <= n)`, and the same range written as digits. `quint test` passes both
+(`passed 10000 test(s)`). Earnest makes the file `unreadable`: ``a run's own `nondet` over a set
+read from the state: pick inside the step that uses it``. The range reads no state, and the same
+range picked inside a step, or in `init`, is read; a range whose ends fit in 64 bits is read at the
+top of a run too. Cause: `crates/earnest_quint/src/reader.rs`, `picked_from_set`, sends a range
+with an end that is a `Value::Big` to `Picked::Computed`, which `runs.rs` takes for a set read
+from the state. Right result: the runs played, both `holds`, as the docs say the ends of a range
+keep every digit. Test:
+`a_run_s_own_nondet_over_a_range_past_64_bits_is_played_not_called_a_set_read_from_the_state`.
+
+### `confirm --quint` gives the division cause to runs that reach no division
+
+`models/quint_seventh/division_blamed/division_blamed.qnt`: a run `(-7) / 2 == -4`, which `quint
+test` truncates and fails, beside the big step pick of the first finding, which reaches no `/` and
+no `%`. `earnest confirm --quint` prints `cannot` for the check, and under both runs ``Quint can't
+confirm this: the check's runs use `/` or `%`, which `quint test` truncates toward zero …``. The
+docs give that cause to "a run the check plays [that] reaches `/` or `%`" and say "only what the
+check reaches counts". Because the cause is worked out for the check, not for each run
+(`apps/earnest/src/confirm_quint.rs`, the `reasons` handed to every comparison), one dividing run
+turns every other run's real difference into `cannot`, and `confirm` exits as it would for a known
+cause. Right result: `differs` for `pickTest`, `cannot` only for `halfTest`. Test:
+`confirm_names_the_division_cause_on_the_run_that_divides_and_on_no_other`.
+
+### Two seeded random comparisons
+
+`models/quint_seventh/random/generate.py SEED OUT` writes a module `GSEED` of two integer
+variables: an `init` with or without a `nondet`, up to five guarded actions (`/` and `%` with
+negative operands in guards and updates in half the seeds), two marked invariants, two marked
+temporal properties (`weakFair` of an action or the step over `(x, y)`, `(y, x)`, `x` or `y`, with
+`eventually`, `leadsTo` or `always(eventually(…))`), and four runs: a `nondet` (or two) at the top
+over 2 to 150 values from bases 0, −3, 2^62 and an offset near 2^31 or 2^62, then `then`, `reps`,
+`expect`, `fail()`, a guarded last step, in-step picks over 3, 10 or 120 values, a lone `assert`,
+and a pure run dividing a negative number. Each model was checked with `earnest verify --json
+--jobs 1 --no-cache`, `--jobs 4 --no-cache` and cached, with `quint test --backend typescript
+--match 'Test$'`, and, when its numbers fit TLC, with one `quint verify --backend tlc` per
+property. `generate_runs.py` writes runs only, of nested `any`, `if`, in-step picks over 2 to 5
+values, `reps`, `expect` and `fail()`, under a top `nondet` or none, compared with `quint test`.
+`generate.py`, seeds 1 to 120 (44 with an offset past 31 bits, compared with `quint test` only;
+57 with negative division): the three `earnest` runs give equal verdicts and counts on all 120; 301
+property verdicts equal TLC's (3 more were lost to the Apalache port clash below), and the 76
+state counts TLC printed in full equal earnest's (1 780 states). Of 480 runs, 464 agree with
+`quint test`; the 16 others are the second finding (7 runs in 6 models), the first (2) and
+`quint test`'s truncation, which the docs name (7). `generate_runs.py`, seeds 1 to 300: 239 models
+Quint typechecks (the generator leaks a name in the others, and earnest refuses those too), 1 434
+runs, the three `earnest` runs equal, and all but one run as `quint test` says. That one, seed 261,
+is the strict side the docs name: `nondet n = 0.to(4).oneOf() init.then(3.reps(_ => …pick w in
+0.to(2)…)).then(all { x + y != 0, … })` is false where all three picks are 0, so earnest breaks it,
+and `quint test` fails it only when that happens for each of the five values `n` retries, about
+once in 27^5 samples (`passed 10000 test(s)` three times).
+
+### Attacked and found correct
+
+- Integers past 64 bits in runs, each against `quint test`: `-(2^63) / (-1) == 2^63`, `MIN %
+  (-1) == 0`, `(2^64) / 3` and `% 3`, `(2^64 * 2^64) / 2^64`, `(-2) ^ 63`, `3 ^ 40`, a range from
+  `-(2^63)` and one across `2^63 - 1` (`size`), a set and a map key of `2^63` written two ways,
+  and a state search whose step is `x' = x / (-1)` from `-(2^63)` (2 states): 22 runs, all
+  `holds` in both.
+- A top `nondet` and its retries: an empty set alone (broken, QNT511), an empty inner set for one
+  outer value (holds), an empty set in a middle step (broken, QNT513); a small outer `nondet` with
+  an inner one over 200 values, as the run's guard or a step's (holds, as Quint passes it, since
+  the outer one retries), and the reverse order; 99 and 100 values with a false first action
+  (both broken, QNT513).
+- Assumptions: a setup `import Lock(N = 0).* from "./spec"` whose spec assumes `N > 0`, with its
+  own run, a run of the spec and a spec run marked `@check broken`: states searched and runs
+  played as `quint test --main Zero`; a setup's own false `assume`: `unreadable`, as Quint's TLC
+  run stops (`Assumption … is false`); a false `assume` in a helper module imported whole into a
+  checked module: `pass`, as `quint verify --backend tlc --main UsesHelper` gives `[ok]`.
+- Fairness with a variable past `2^63`: a counter from `2^63 - 3` to `2^63 + 2` beside a
+  toggling variable; `weakFair(inc, (x, y))` and `weakFair(inc, x)` give `eventually` (holds),
+  without fairness it breaks, marked `@check broken` (expected); 12 states.
+- `confirm --quint`: `differs` on the step-pick runs and on the lone `assert` runs (when no run
+  of the check divides); `cannot` with TLC's refusal on a property that reaches `%` by `-2`
+  through a `pure def`.
+- Marks: `@check broken` on a pure false run and on a run false for every value (`(expected)`),
+  `@check reachable`, a run a retry rescues marked `@check broken` (`holds  … a counterexample
+  was expected`, as `quint test` passes it), `--rule` of a run and of a property, cached and
+  `--jobs 1`; `earnest report` prints `verify`'s lines for each.
+- TypeScript and Rust division: a TypeScript model refuses `/`, `%`, `| 0`, `Math.floor`,
+  `Math.trunc` and `Math.ceil` with the operator named; a Rust model refuses `div_euclid` and
+  `rem_euclid`, and `i8::MIN / -1` is a fault (``computes a number outside `i8` ``). No model that
+  mixes the rules was found: each language gives one rule, and the ambiguous forms are refused.
+
+### Reading findings
+
+None: every file earnest refused here, Quint refused too (a `nondet` whose set is `2^63 - 1.to(…)`
+without parentheses, `QNT204` in both), except the range of the third finding, which is a
+meaning, not a reading, of the file.
+
+### Usability notes
+
+- `earnest report` prints `start  x = 0` under a pure run marked `@check broken`, where `earnest
+  verify` prints no state: the run has none.
+- `--rule pickTest` of a check that searches states prints `1 states`.
+- A `fail` line keeps the reason `(every expected counterexample was found)` when a run broke the
+  check, which reads as if the marks were the cause.
+- Running `quint verify --backend tlc` in parallel makes the Apalache servers collide on port
+  8822 (`Address already in use`), which `confirm --quint` then reports as `cannot` with `Quint
+  stopped: Error while starting Apalache server`; a second `confirm` beside a sweep is enough to
+  meet it.
+
+### Not tried
+
+Windows; Quint's Rust backend (it could not be fetched); `confirm --tlc` on the generated models;
+`@view` on Quint checks; `--base` beyond the sixth pass's cases; imports over several folders
+beyond one spec file and one setups file, which orchestrator B's reviewer covered.
+
+a step, 81 with one; 120 hold, 280 broken), none differ. With a second argument, `big`, it picks from 100 values or more inside steps too (below).
+
+### A `nondet` over 100 values or more inside a step (issue #99)
+
+Found by the seventh Quint pass: `init.then(nondet n = 0.to(199).oneOf() all { n == 7, x' = n }).then(step)` passed, where `quint test --backend typescript` fails it after one test with QNT513. Quint's evaluator keeps the first value of a set of 100 values or more, so the step is false for 199 of them; earnest took the step as able to happen when any value worked. Now every `nondet` of a step of a run is judged as the evaluator judges it: over fewer than 100 values it is false only where every value is, over 100 or more where one is, nested `nondet`s level by level, and an `any` (which Quint tries in a random order until a branch can happen) or an `if` only where each branch is. A step that can be false so is an error in the middle of a chain and false as the last step or the only action, as #86 set out. The first action of a run is judged the same way, the check's `init` too; the search is not changed.
+
+`models/quint_nondet_step/` holds five modules, 45 runs, each beside its recordings for `crates/earnest_quint_syntax`. Against `quint test --backend typescript` (0.33.1), every verdict is Quint's but one: `big_pick.qnt` (the pass's four runs), `nested.qnt` (small outside big inside and the reverse, siblings in one `all`, `any`, `if`, a big inner pick next to an `any` branch that can't happen, and `tuples(0.to(9), 0.to(19))`), `chains.qnt` (a set held in the state of 150 and of 50 values, `reps`, `fail()` where some value and where no value lets the step happen, a run and a parameterised run that chain steps, `expect`, a big inner pick under a retried top `nondet` as the last step and in the middle), `first_action.qnt` (the check's `init`, a first action written in place of 200, 100 and 99 values, an `any` first action, a step of 100 and of 99 values; the search finds its 5 states and the invariant holds) and `assert_fail.qnt`. The one that differs is `tupleTest`: Quint counts 10 and 20 values, one count for each part, and retries; earnest counts 200 pairs and breaks the run, which is #86's strict choice, said in the docs. The tests are in `tests/break_it/quint_nondet_step.rs`; each runs the `earnest` binary on the `.qnt` file and quotes what `quint test` printed.
+
+Found while building, and fixed with it: **a false pass, older than this change.** `{ nondet n = Set(0, 1, 2, 3).oneOf() all { assert(n < 2), x' = n }.fail() }` passed on 9871a6f6; `quint test` fails it with QNT508. A false `assert` in a run's first action left the run with no start state, which `fail()` took as the action that can't happen. It now breaks the run (`assert_fail.qnt`).
+
+`models/quint_sixth/nondet_random/generate.py SEED big` adds steps that pick from 100, 99, 120 and a number of values read from the state (`x.to(x + 119)`, `0.to(x * 60)`), alone, nested both ways, in an `any` and in an `if`; with `big` left out it prints the modules it printed before, byte for byte. Seeds 1 to 400 with `big`, `quint test` against `earnest verify --json`: 395 agree (115 hold, 280 broken; 275 pick from one of these sets in a step or the first action). Of the other 5, 3 are `unreadable`, not a verdict: a run of one action in parentheses is read as a `nondet` at its top, and its 1,000 combinations are past the cap. 2 depend on sampling, and earnest says `broken`: seed 338, a last step false for 20 of 120 values under six retried top combinations, which `quint test` fails about once in 47,000 tests; seed 159, false for a quarter of 100 values under fifteen. The old seeds 1 to 400 without `big`: 400 agree (120 hold, 280 broken), as before.
