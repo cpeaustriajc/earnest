@@ -490,7 +490,17 @@ pub struct Plan {
     pub must_not_finish: bool,
     /// What a branch on which the run is false does to the script.
     pub falls: Falls,
+    /// Values the run's first action can pick, inside it, for which it can't happen, though it
+    /// can for others: `quint test` tries no other value of a `nondet` over 100 values or
+    /// more, so the first action can be false. Each value comes with its name. Empty when the
+    /// first action can't be false so.
+    pub start_falls: Vec<(String, Value)>,
 }
+
+/// The number of values below which `quint test` tries the next value of a `nondet` where
+/// the action it picks for is false. Over a set of this many values or more, it keeps the
+/// value it picked first.
+pub const RETRIED_BELOW: usize = 100;
 
 /// What a branch of a [`Plan`] on which the run is false does, as against one that ends in
 /// an error. An error always breaks the script.

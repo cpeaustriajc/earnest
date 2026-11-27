@@ -58,6 +58,7 @@ fn plan(steps: Vec<Stage>) -> Plan {
         steps,
         must_not_finish: false,
         falls: earnest_ir::Falls::Breaks,
+        start_falls: Vec::new(),
     }
 }
 

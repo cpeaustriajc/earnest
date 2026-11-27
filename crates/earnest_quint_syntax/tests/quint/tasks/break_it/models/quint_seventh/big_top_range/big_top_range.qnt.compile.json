@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tbigTopRange\t--init\tinit\t--step\tstep\ttasks/break_it/models/quint_seventh/big_top_range/big_top_range.qnt","error":"error: [QNT404] Name 'step' not found"}]}

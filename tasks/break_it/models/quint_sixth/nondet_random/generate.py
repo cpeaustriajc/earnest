@@ -1,6 +1,15 @@
 import random, sys
 
 SETS = ["Set(0).filter(v => v > 0)", "Set(1)", "Set(1, 2)", "Set(1, 2, 3)", "Set(0, 1, 2, 3)", "0.to(4)"]
+BIG_SETS = ["0.to(119)", "0.to(99)", "0.to(98)", "{x}.to({x} + 119)", "0.to({x} * 60)"]
+BIG_TESTS = ["true", "p < 100", "p == 500", "p % 2 == {x} % 2", "p >= {x}", "p != 3"]
+BIG_STEPS = [
+    "nondet p = {set}.oneOf() all {{ {test}, x' = {x} + p % 2 }}",
+    "nondet q = Set(0, 1).oneOf() nondet p = {set}.oneOf() all {{ {test} or q == 1, x' = {x} + q }}",
+    "nondet p = {set}.oneOf() nondet q = Set(0, 1).oneOf() all {{ {test}, q == p % 2, x' = {x} + q }}",
+    "any {{ nondet p = {set}.oneOf() all {{ {test}, x' = {x} + 1 }}, all {{ {x} > 1, x' = {x} }} }}",
+    "nondet p = {set}.oneOf() if (p < 50) x' = {x} + 1 else all {{ {test}, x' = {x} }}",
+]
 
 
 def condition(rnd, names, reads=True):
@@ -10,7 +19,12 @@ def condition(rnd, names, reads=True):
                       + ([f"{names[0]} + {names[1]} == 3"] if len(names) > 1 else []))
 
 
-def run(rnd, number):
+def big_step(rnd, x="x"):
+    shape, set, test = rnd.choice(BIG_STEPS), rnd.choice(BIG_SETS), rnd.choice(BIG_TESTS)
+    return shape.format(set=set.format(x=x), test=test.format(x=x), x=x)
+
+
+def run(rnd, number, big=False):
     names = ["n"] + (["k"] if rnd.random() < 0.4 else [])
     tops = "".join(f"nondet {name} = {rnd.choice(SETS)}.oneOf() " for name in names)
     if rnd.random() < 0.2:
@@ -19,6 +33,8 @@ def run(rnd, number):
     inner = rnd.random() < 0.2
 
     def first():
+        if big and rnd.random() < 0.3:
+            return f"({big_step(rnd, '0')})"
         roll = rnd.random()
         if roll < 0.4:
             return "init"
@@ -29,6 +45,8 @@ def run(rnd, number):
         return f"all {{ {condition(rnd, names, False)}, x' = {rnd.choice(names)} }}"
 
     def step():
+        if big and rnd.random() < 0.5:
+            return big_step(rnd)
         roll = rnd.random()
         if roll < 0.25:
             return "step"
@@ -50,9 +68,9 @@ def run(rnd, number):
     return f"  run r{number}Test = {{ {tops}{body} }}", inner
 
 
-def model(seed):
+def model(seed, big=False):
     rnd = random.Random(seed)
-    text, inner = run(rnd, 0)
+    text, inner = run(rnd, 0, big)
     return f"""/// @check
 module S{seed} {{
   var x: int
@@ -67,4 +85,4 @@ module S{seed} {{
 
 
 if __name__ == "__main__":
-    print(model(int(sys.argv[1]))[0], end="")
+    print(model(int(sys.argv[1]), sys.argv[2:] == ["big"])[0], end="")
