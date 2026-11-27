@@ -31,13 +31,15 @@ val retried = { retried: Orders.filter(o => carried.get(o) > 0).size() }
 ```text
 rule changes since origin/main
   added      Small.inRange  "The time stays between zero and the limit."  specs/clock.qnt
-  added      Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+  added      Small.tickTest (witness)  specs/clock.qnt
 ```
 
 - Every property and run of a check in a file the base does not have is `added`, and every one of a file only the base has is `removed`.
 - A rule is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark changes between `@check`, `@check broken` and `@check reachable`. It is `reworded` when only its sentence changed. A reformatted file, or an edit of a helper under a rule, lists nothing.
 - The base is read from a copy of its `.qnt` files, so imports are read as the base has them. A file that is the same at the base, imports included, starts no `quint`; any other starts one `quint parse`, cached for the next run.
 - A file that can't be read at the base, native or Quint, is named on a `not compared` line under `rule changes since <base>`, with why, and in a new `notCompared` key in JSON, so the section no longer says `none` for it. A check whose marks are unreadable at the base is named alone, and the other checks of its file are compared; a mark that belongs to no check, such as a `/// @View` typo, is named with its line and column, and every check is compared. The stderr warning stays.
+- A file or a Quint check that is unreadable now is `not compared` with `unreadable now`, native or Quint, and the rules it had at the base are no longer listed as `removed`. A deleted file, and a module whose mark was taken off, still list theirs as `removed`.
+- A rule with no sentence of its own prints no quoted sentence in the rule changes, as its result line does.
 - A folder given twice under two spellings no longer lists the rules of its files as `removed`, for native and Quint models alike.
 - `--model` and `--rule` narrow Quint checks as they narrow native models. The output of a folder with no `.qnt` file is the same as before.
 

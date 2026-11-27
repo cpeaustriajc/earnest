@@ -216,7 +216,7 @@ Their `holds` is their source, normalized as conditions are (see below). It is w
 | `change` | Meaning |
 |---|---|
 | `added` | Present in the working tree, absent at `--base` |
-| `removed` | Present at `--base`, absent in the working tree (deleted rule, deleted model, deleted or renamed file, file that no longer imports the library, or file that became unreadable) |
+| `removed` | Present at `--base`, absent in the working tree (deleted rule, deleted model, deleted or renamed file, or file that no longer imports the library). A file that is there but unreadable now is `not compared`, not `removed` |
 | `loosened` | Some reachable state of the new model, as declared or in one of its setups, satisfies the new rule and breaks the old rule |
 | `tightened` | Some reachable state, as declared or in one of its setups, satisfies the old rule and breaks the new rule, and no reachable state loosens it |
 | `changed` | The condition changed semantically, but no reachable state separates old and new, the old condition cannot be evaluated against the new model, or one condition faults without another state loosening or tightening it. A rule about runs, a witness or a setup that means something else is always `changed`: no state is searched for it |
@@ -230,6 +230,7 @@ Additional rules for `--base`:
 - A part is listed when what it says changed, not when the model under it changed. An edit of an action's `when` or `changes`, of a field's declaration or initial value, or of an action that is not fair lists nothing for a witness, setup or rule about runs that is otherwise the same. `earnest verify` judges each of them again on the new model and fails when one no longer holds. For example, a witness that plays `turn` is not listed when `turn` gets a stricter `when`, though it may now be `broken`; a rule about runs is `changed` when `turn` becomes fair. An edit of a setup's values lists the setup once, as `changed`, and not each witness that names it.
 - Renamed files or models report each rule twice: `removed` under the old name and `added` under the new name.
 - Two models with the same name in one file are compared in their order: the first with the first model of that name at `--base`, the second with the second.
+- A file that is in the working tree and unreadable there, native or Quint, is `not compared` too, with `unreadable now` (`"reason": "unreadableNow"`), and the rules it had at the base are not listed as `removed`; a file unreadable at both ends gets the one line of the base, since it is the base that can't be read whatever is fixed now. `--model` and `--rule` narrow these lines by the models and rules the file had at the base.
 - A file unreadable at the base commit can't be compared. It is named on a line of its own after the changes, in the text and in the report, and the section then never says `none` alone, so it can't be read as "nothing changed". The same warning goes to stderr:
 
   ```text
@@ -252,13 +253,13 @@ rule changes since origin/main
   changed    Small.belowLimit  specs/clock.qnt
     was  "The time reaches the limit, so it is not always below it."  broken: time < Limit
     now  "The time reaches the limit, so it is not always below it."  broken: time <= Limit
-  removed    Small.tickTest (witness)  "The Quint run `tickTest` passes"  specs/clock.qnt
+  removed    Small.tickTest (witness)  specs/clock.qnt
 ```
 
-- The id is the name the check sees, as the result lists it. A run has the kind `witness`. A property or a run with no sentence has the sentence the result gives it, as ``The Quint invariant `inRange` holds``.
+- The id is the name the check sees, as the result lists it. A run has the kind `witness`. A property or a run with no sentence of its own prints no quoted sentence, as its result line does, and its `says` in JSON is the one the result JSON gives it, as ``Quint invariant `inRange` ``.
 - `holds` is the definition's source with each run of white space as one space, after `broken: ` or `reachable: ` when it is marked so.
 - A rule is `added` or `removed` by its name within its check. It is `changed` when its definition's expression, as `quint parse` writes it, says something else, or when its mark turns from `@check` to `@check broken` or `@check reachable`. It is `reworded` when only its sentence changed. Ids and source positions are left out of the comparison, and each lambda's parameters and each name local to a block (`{ val t = n + 1 t > 0 }`) are numbered by their place, so a reformatted file, a comment, a renamed parameter or a renamed local lists nothing. An edit of a helper or of the model under a rule lists nothing either, even when it changes the rule's verdict: a `val` the rule reads, the constant an instance gives (`import Spec(N = 3)`), `init` or `step`.
-- Every rule of a check in a `.qnt` file the base does not have is `added`. Every rule of a check the working tree no longer has is `removed`: a file only the base has, a check removed from its file, and a check that is unreadable now, as a native file that became unreadable lists its rules.
+- Every rule of a check in a `.qnt` file the base does not have is `added`. Every rule of a check the working tree no longer has is `removed`: a file only the base has, a check removed from its file, and a module whose `/// @check` mark was taken off. A file that no longer parses, or a check that is unreadable now, is `not compared` with the reason `unreadable now` instead, as a native file unreadable now is.
 - The base side is read from a copy of the base's `.qnt` files under `.earnest/quint/`, so a file's imports are read as the base has them. A file whose bytes, and whose imported files' bytes, are the same at the base starts no `quint` for the base. Any other file starts `quint parse` once, and the result is cached for the next run against the same commit.
 - A file that can't be read at the base is `not compared`, with its reason. The reasons in JSON, and the words of the text line, are:
 
@@ -267,6 +268,7 @@ rule changes since origin/main
   | `unreadable` | `unreadable at <base>` | `quint parse` refuses the file at the base, or it imports a file from outside the repository |
   | `checksFile` | `an earnest.quint.json lists its checks at <base>` | the base holds an `earnest.quint.json` beside it |
   | `quintNotFound` | `no quint was found to read it at <base>` | no `quint` is installed |
+  | `unreadableNow` | `unreadable now` | the file, or the check, is unreadable in the working tree. The results print why, so the entry has no `problem` and stderr no warning |
   | `marks` | `its marks are unreadable at <base>: <line>:<column> <problem>` | a mark is unreadable at the base, as `earnest verify` would report it there |
 
 - The base is judged as `earnest verify` would judge it: every check it would judge there is compared, and only what it would not is `not compared`.
