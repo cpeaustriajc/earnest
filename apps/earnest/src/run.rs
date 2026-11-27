@@ -440,6 +440,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             &ran.outcome,
             (&readable.expected, &readable.reachable),
             model,
+            ExpectedPaths::LeftOut,
         ),
         position: readable.position,
     })
@@ -449,8 +450,8 @@ pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool
     expected.iter().any(|name| name == whole_of(&rule.id))
 }
 
-fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
-    let mut lines = vec![format!("reached  {}", one_line(name))];
+fn with_its_path(head: String, name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
+    let mut lines = vec![head];
     let path = outcome
         .rules
         .iter()
@@ -466,10 +467,18 @@ fn reached_lines(name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
     lines
 }
 
-fn detail_of(
+/// Whether the path to a counterexample that was expected is printed under its line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpectedPaths {
+    LeftOut,
+    Printed,
+}
+
+pub(crate) fn detail_of(
     outcome: &Outcome,
     (expected, reachable): (&[String], &[String]),
     model: &Model,
+    paths: ExpectedPaths,
 ) -> Vec<String> {
     let notation = model.symbols.notation();
     if expected.is_empty() {
@@ -480,9 +489,17 @@ fn detail_of(
         let is_reachable = reachable.contains(name);
         match group_verdict(name, outcome) {
             Some(Verdict::Broken) if is_reachable => {
-                lines.extend(reached_lines(name, outcome, model));
+                let head = format!("reached  {}", one_line(name));
+                lines.extend(with_its_path(head, name, outcome, model));
             }
-            Some(Verdict::Broken) => lines.push(format!("broken  {}  (expected)", one_line(name))),
+            Some(Verdict::Broken) => {
+                let head = format!("broken  {}  (expected)", one_line(name));
+                if paths == ExpectedPaths::Printed {
+                    lines.extend(with_its_path(head, name, outcome, model));
+                } else {
+                    lines.push(head);
+                }
+            }
             Some(Verdict::Holds) if is_reachable => {
                 lines.push(format!("never reached  {}", one_line(name)));
             }

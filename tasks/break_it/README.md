@@ -3131,6 +3131,15 @@ are those of the fifth pass: `quint verify --backend tlc` (Apalache 0.62.4) and 
 --backend typescript`; the checks file is compared with the build of 6dceb43, the last commit that
 reads it.
 
+What became of the five findings, all on the integration branch after the pass: the first was
+decided as behaviour to keep, and the docs now say that a check judging only properties marked
+`broken` or `reachable` stops once each is found (the checks file stopped for the same property,
+and a model with no end has to pass); its test asserts that. The other four are fixed: the
+leftover-file message writes an expression in the copy's names and lists a line that takes the
+place of the copy's own `init` or `step`; `earnest report` words marked rules as `earnest verify`
+does, with the path under a met mark; and a run marked `broken` that a compiled check can't play
+is one of the runs not played. The sections below describe the build the pass ran on.
+
 ### A check whose only marks are `@check reachable` stops early and counts part of the model
 
 `models/quint_sixth/reachable_only/reachable_only.qnt`: `x` counts from 0 to 10 and stays there;
@@ -3214,7 +3223,10 @@ the report "the shortest path to each broken rule": the paths are there, but the
 met mark from a broken rule, and the unmet marks, are not. Right result: the report says what
 `earnest verify` says, `(expected)`, `reached`, `holds … a counterexample was expected` and
 `never reached`. Test:
-`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`.
+`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`. Fixed on the integration branch at 4102d68: the report prints `earnest verify`'s lines for
+marked rules, with the path under a met mark; on this branch after the merge `report` prints
+`broken  belowTwo  (expected)`, `holds  belowNine  a counterexample was expected`, `never
+reached  atFive` and `reached  atOne`.
 
 ### A run marked `@check broken` that a compiled check can't play makes the check unreadable
 
@@ -3233,7 +3245,10 @@ that should not, but a project whose setups import names one by one loses every 
 known-failing run. Naming the run in `One`'s doc, `/// @check broken badRun`, does the same; `/// @check
 badRun` there gives `unfinished`. Right result: `unfinished`, `small` holds, `badRun` and `fineTest` not played.
 Test:
-`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`.
+`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`. Fixed
+on the integration branch at 4102d68: such a run is one of the runs not played. After the merge,
+with the mark on the run and with `/// @check broken badRun` in `One`'s doc: `unfinished  One  3
+states … (runs not played: fineTest, badRun …)`, `small` judged.
 
 ### Marks and legal Quint that are refused or ignored
 
