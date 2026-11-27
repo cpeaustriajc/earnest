@@ -26,6 +26,7 @@ mod quint_problems;
 mod quint_reads;
 mod quint_review;
 mod quint_runs;
+mod quint_samples;
 mod quint_setups;
 mod quint_temporal;
 mod quint_views;
