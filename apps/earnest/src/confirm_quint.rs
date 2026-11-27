@@ -37,6 +37,10 @@ const NO_JAVA: &str = "Java was not found on PATH, and `quint verify --backend t
                        to run TLC, so the state count and the properties are not compared";
 const SAMPLED: &str = "`quint test` tries random choices of a run, and the checker tries every \
                        choice";
+const TLC_REFUSES_REMAINDER: &str = "The second argument of % should be a positive number";
+const REMAINDER_BELOW_ONE: &str = "TLC refuses `%` by a divisor below 1 (\"The second argument \
+                                  of % should be a positive number\"), where the checker takes \
+                                  `a % b` as `a - b * (a / b)` for every divisor but zero";
 const UNSURE_WHICH: &str = "the checker can't tell which of its results is this property";
 
 #[cfg(windows)]
@@ -105,6 +109,8 @@ pub(crate) fn read_verify(stdout: &str, stderr: &str, exit: Option<i32>) -> Veri
         Verified::Violated
     } else if exit == Some(0) && has(NO_VIOLATION) {
         Verified::Holds(read_tlc(stdout).distinct_states)
+    } else if stdout.contains(TLC_REFUSES_REMAINDER) || stderr.contains(TLC_REFUSES_REMAINDER) {
+        Verified::Stopped(REMAINDER_BELOW_ONE.to_owned())
     } else {
         Verified::Stopped(
             quint_error(stdout, stderr)

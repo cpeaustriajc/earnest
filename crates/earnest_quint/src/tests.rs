@@ -23,6 +23,7 @@ const WIDE: &str = include_str!("../fixtures/wide.json");
 const MANY: &str = include_str!("../fixtures/many.json");
 const OVERFLOW: &str = include_str!("../fixtures/overflow.json");
 const START_FAULT: &str = include_str!("../fixtures/startfault.json");
+const START_FLOOR: &str = include_str!("../fixtures/startfloor.json");
 const BANK: &str = include_str!("../../../tasks/quint/models/bank.json");
 const SHAPES: &str = include_str!("../../../tasks/quint/models/shapes.json");
 const REFUSED: &str = include_str!("../fixtures/refused.json");
@@ -503,7 +504,17 @@ fn a_step_that_unfolds_into_too_many_actions_is_refused() {
 
 #[test]
 fn a_fault_while_working_out_the_start_states_is_refused() {
-    refused_with(START_FAULT, "`init`", "a negative number");
+    refused_with(START_FAULT, "`init`", "by zero");
+}
+
+#[test]
+fn a_division_with_negative_numbers_in_the_start_states_floors() {
+    assert_eq!(
+        model(START_FLOOR).runs.starts,
+        Some(vec![vec![Value::Int(-14)]]),
+        "`(-7) / 2 + (-7) % (-2) * 10` is -4 + -1 * 10, as Quint's TLC run computes it, where \
+         `quint test` truncates to -3 + -1 * 10"
+    );
 }
 
 #[test]

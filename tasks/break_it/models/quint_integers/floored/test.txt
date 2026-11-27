@@ -1,0 +1,27 @@
+
+  floored
+    1) flooredTest failed after 1 test(s)
+    ok truncatedTest passed 1 test(s)
+    2) wideFlooredTest failed after 1 test(s)
+    ok positiveTest passed 10000 test(s)
+
+  2 passing (508ms)
+  2 failed
+
+  1) flooredTest:
+       Error [QNT508]: Expect condition does not hold true
+        at floored.qnt:46:21
+        46:   run flooredTest = init.then(step).expect(q == -4 and r == -1)
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Use --seed=0x848c96e8d5927 --match=flooredTest to repeat.
+  2) wideFlooredTest:
+       Error [QNT508]: Expect condition does not hold true
+        at floored.qnt:48:25
+        48:   run wideFlooredTest = init.then(4.reps(_ => step)).expect(q == -9223372036854775809 and r == 1)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    Use --seed=0x848c96e8d5928 --match=wideFlooredTest to repeat.
+
+
+  Use --verbosity=3 to show executions.
+  Further debug with: quint test --verbosity=3 floored.qnt
+error: Tests failed

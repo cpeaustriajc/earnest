@@ -27,11 +27,15 @@ pub enum Fault {
     /// number holds exactly. A Quint model's numbers have no size, so it gets this only for a
     /// power whose exponent is past 32 bits.
     Overflow,
-    /// A remainder with a negative number or a divisor below 1, where languages disagree.
+    /// A remainder with a negative number or a divisor below 1, where languages disagree. A
+    /// Quint model takes the floored remainder instead and has [`Fault::ByZero`] for zero.
     Remainder,
     /// A division with a negative number or a divisor below 1, where languages disagree on the
-    /// result and Rust panics on a divisor of zero.
+    /// result and Rust panics on a divisor of zero. A Quint model takes the floor of the exact
+    /// quotient instead and has [`Fault::ByZero`] for zero.
     Division,
+    /// A division or a remainder by zero in a Quint model, which has no value.
+    ByZero,
     /// A number is outside the integer type the model file gives it, where Rust stops a test
     /// build and wraps around in a release build.
     Outside(IntType),
@@ -74,6 +78,7 @@ impl Fault {
             Self::Division => {
                 "takes a division with a negative number or a divisor below 1".to_owned()
             }
+            Self::ByZero => "takes a division or a remainder by zero".to_owned(),
             Self::Outside(ty) => format!("computes a number outside `{}`", ty.name()),
             Self::Missing => "reads a key, a position or a case that is not there".to_owned(),
             Self::Undefined => {
@@ -608,7 +613,7 @@ fn beyond(
     fault: Fault,
     frame: &mut Frame<'_>,
 ) -> Evaluated {
-    if !frame.unbounded || !matches!(fault, Fault::Overflow | Fault::WrongKind) {
+    if !frame.unbounded || !retried(fault) {
         return Err(fault);
     }
     match op {
@@ -643,6 +648,13 @@ fn beyond(
         }
         _ => Err(fault),
     }
+}
+
+pub(crate) fn retried(fault: Fault) -> bool {
+    matches!(
+        fault,
+        Fault::Overflow | Fault::WrongKind | Fault::Division | Fault::Remainder
+    )
 }
 
 fn ordered(order: Order, found: std::cmp::Ordering) -> bool {
@@ -682,17 +694,25 @@ fn whole_pair(first: &Value, second: Option<&Value>) -> Result<(BigInt, BigInt),
 }
 
 fn whole_arithmetic(math: Math, left: BigInt, right: BigInt) -> Evaluated {
-    let negative = left < BigInt::ZERO || right < BigInt::from(1);
     let answer = match math {
         Math::Add => left + right,
         Math::Subtract => left - right,
         Math::Multiply => left * right,
-        Math::Remainder if negative => return Err(Fault::Remainder),
-        Math::Remainder => left % right,
-        Math::Divide if negative => return Err(Fault::Division),
-        Math::Divide => left / right,
+        Math::Remainder | Math::Divide if right == BigInt::ZERO => return Err(Fault::ByZero),
+        Math::Remainder => floored(left, &right).1,
+        Math::Divide => floored(left, &right).0,
     };
     Ok(Value::whole(answer))
+}
+
+fn floored(left: BigInt, right: &BigInt) -> (BigInt, BigInt) {
+    let quotient = &left / right;
+    let remainder = left - right * &quotient;
+    if remainder != BigInt::ZERO && (remainder < BigInt::ZERO) != (*right < BigInt::ZERO) {
+        (quotient - 1, remainder + right)
+    } else {
+        (quotient, remainder)
+    }
 }
 
 fn whole_power(base: &BigInt, power: &BigInt) -> Evaluated {
