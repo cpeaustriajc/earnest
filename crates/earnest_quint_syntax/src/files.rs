@@ -33,8 +33,10 @@ struct Pending {
 
 /// Reads the file at `path` and every file it imports, as `quint parse` reads them.
 ///
-/// `path` is absolute, with `/` between its parts, as Quint names the file in its source map.
-/// `load` gives the text of a file by such a path, or nothing when it can't be read.
+/// `path` has `/` between its parts and names the file in the source map as given: Quint
+/// gives the absolute path there, and a relative one stays relative. An imported file is named
+/// by joining the importing file's folder and the `from` path, then removing `.` and `..`.
+/// `load` gives the text of a file by such a name, or nothing when it can't be read.
 ///
 /// # Errors
 ///
