@@ -24,6 +24,7 @@ mod quint_first;
 mod quint_front_end;
 mod quint_imports;
 mod quint_marks;
+mod quint_nested;
 mod quint_partial;
 mod quint_picks;
 mod quint_problems;
