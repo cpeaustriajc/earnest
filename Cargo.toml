@@ -30,17 +30,17 @@ earnest_value = { path = "crates/earnest_value", version = "=0.1.0" }
 clap = { version = "4.6.7", features = ["derive"] }
 hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
 num-bigint = "0.5.1"
-oxc_allocator = "0.152.0"
-oxc_ast = "0.152.0"
-oxc_parser = "0.152.0"
-oxc_span = "0.152.0"
-oxc_syntax = "0.152.0"
+oxc_allocator = "0.160.0"
+oxc_ast = "0.160.0"
+oxc_parser = "0.160.0"
+oxc_span = "0.160.0"
+oxc_syntax = "0.160.0"
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 quote = "1.0.47"
 rustc-hash = "2.1.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
-syn = { version = "2.0.119", features = ["full", "extra-traits"] }
+syn = { version = "3.0.10", features = ["full", "extra-traits"] }
 vstd = "=0.0.0-2026-11-22-0344"
 
 assert_cmd = "2.2.2"
