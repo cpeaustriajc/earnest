@@ -227,6 +227,7 @@ impl<'a> Run<'_, 'a> {
                 if values.is_empty() {
                     return self.push(Plan {
                         must_not_finish: true,
+                        starts: Some(vec![Vec::new()]),
                         ..self.without_steps(chosen)
                     });
                 }
@@ -266,7 +267,7 @@ impl<'a> Run<'_, 'a> {
             }
             _ => {
                 let holds = self.reader.pure(expr)?;
-                let starts = self.init.is_none().then(|| vec![Vec::new()]);
+                let starts = Some(vec![Vec::new()]);
                 match constant_of_a_run(&holds, self.reader.slots)? {
                     Some(Settled::Value(Value::Bool(holds))) => self.push(Plan {
                         must_not_finish: !holds,
