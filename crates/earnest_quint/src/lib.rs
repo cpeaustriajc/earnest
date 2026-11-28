@@ -317,6 +317,8 @@ mod actions_tests;
 #[cfg(test)]
 mod arguments_tests;
 #[cfg(test)]
+mod called_tests;
+#[cfg(test)]
 mod first_tests;
 #[cfg(test)]
 mod fixes_tests;

@@ -1203,3 +1203,147 @@ impl Search<'_> {
         witnesses.chain(scripts).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Combination, Ends, judged};
+    use crate::outcome::Path;
+    use earnest_ir::Call;
+    use earnest_value::Value;
+
+    fn nowhere() -> (Path, String) {
+        (
+            Path {
+                start: Vec::new(),
+                steps: Vec::new(),
+            },
+            "false here".to_owned(),
+        )
+    }
+
+    fn ends(through: bool, fell: bool, called: &[usize]) -> Ends {
+        Ends {
+            through,
+            fell: fell.then(nowhere),
+            called: called
+                .iter()
+                .map(|call| {
+                    let (path, why) = nowhere();
+                    (*call, path, why)
+                })
+                .collect(),
+            error: None,
+        }
+    }
+
+    fn one_call() -> Vec<Call> {
+        vec![Call {
+            says: "the run `start`".to_owned(),
+            last: Some(1),
+            ends_the_run: false,
+            reason: String::new(),
+        }]
+    }
+
+    fn chosen(values: &[i64]) -> Vec<Vec<(String, Value)>> {
+        values
+            .iter()
+            .map(|value| vec![("n".to_owned(), Value::Int(*value))])
+            .collect()
+    }
+
+    #[test]
+    fn a_called_run_false_for_every_value_it_retries_is_an_error() {
+        let calls = one_call();
+        let picks = chosen(&[0, 1]);
+        let all: Vec<Combination<'_>> = picks
+            .iter()
+            .map(|chosen| Combination {
+                chosen,
+                retried: &[true],
+                within: &[Some(0)],
+                calls: &calls,
+                ordered: &[false],
+                ends: ends(false, false, &[0]),
+            })
+            .collect();
+        assert_eq!(judged(&all, 0).error, Some((0, Some(0))));
+    }
+
+    #[test]
+    fn a_called_run_true_for_one_value_it_retries_is_no_error_and_what_follows_counts() {
+        let calls = one_call();
+        let picks = chosen(&[0, 1]);
+        let all = [
+            Combination {
+                chosen: &picks[0],
+                retried: &[true],
+                within: &[Some(0)],
+                calls: &calls,
+                ordered: &[false],
+                ends: ends(false, false, &[0]),
+            },
+            Combination {
+                chosen: &picks[1],
+                retried: &[true],
+                within: &[Some(0)],
+                calls: &calls,
+                ordered: &[false],
+                ends: ends(true, true, &[]),
+            },
+        ];
+        let found = judged(&all, 0);
+        assert_eq!(found.error, None);
+        assert_eq!(
+            found.fell,
+            Some((1, None)),
+            "the run is false after the call for `n` = 1, and the call returned, so no other \
+             `n` is tried"
+        );
+    }
+
+    #[test]
+    fn a_later_part_of_an_or_counts_only_where_the_parts_before_can_be_false() {
+        let parts = chosen(&[1, 2]);
+        let mut second = ends(false, false, &[]);
+        second.error = Some(nowhere());
+        let all = [
+            Combination {
+                chosen: &parts[0],
+                retried: &[false],
+                within: &[None],
+                calls: &[],
+                ordered: &[true],
+                ends: ends(true, false, &[]),
+            },
+            Combination {
+                chosen: &parts[1],
+                retried: &[false],
+                within: &[None],
+                calls: &[],
+                ordered: &[true],
+                ends: second,
+            },
+        ];
+        let found = judged(&all, 0);
+        assert_eq!(found.error, None, "the second part is never played");
+        assert!(found.through);
+    }
+
+    #[test]
+    fn a_called_run_with_no_nondet_that_ends_the_run_makes_it_false() {
+        let calls = vec![Call {
+            ends_the_run: true,
+            ..one_call().remove(0)
+        }];
+        let all = [Combination {
+            chosen: &[],
+            retried: &[],
+            within: &[],
+            calls: &calls,
+            ordered: &[],
+            ends: ends(false, false, &[0]),
+        }];
+        assert_eq!(judged(&all, 0).fell, Some((0, Some(0))));
+    }
+}
