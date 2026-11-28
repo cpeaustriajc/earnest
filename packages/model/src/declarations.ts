@@ -28,12 +28,17 @@ export const MOST_VALUES_LISTED = 1_000_000;
  * starts when it has no `.initial`; `null` means it starts at every value. `adopt` turns what
  * `.initial` accepts into a value, and `decode` reads a value back from its JSON form, throwing
  * when the JSON is of another kind. `libraryKind` is the kind of the first part whose values are
- * objects of this library, or `null` when every value is plain JavaScript.
+ * objects of this library, or `null` when every value is plain JavaScript. `source` is the `m`
+ * expression that builds it. `fields` is a record's declaration of each field, and `inner` the
+ * declaration an optional adds `null` to; other kinds leave both out.
  */
 export interface Shape<T, In = T> {
   readonly kind: string;
+  readonly source: string;
   readonly count: number;
   readonly libraryKind: string | null;
+  readonly fields?: Fields;
+  readonly inner?: Declaration<unknown, never>;
   readonly rest: { readonly value: T } | null;
   values(): readonly T[];
   has(value: unknown): value is T;
@@ -49,10 +54,15 @@ const shown = (value: unknown): string =>
 const unreadable = (kind: string, json: Json): Error =>
   new Error(`${JSON.stringify(json)} can't be read as a ${kind}`);
 
-const optionalOf = <T, In>(inner: Shape<T, In>): Shape<T | null, In | null> => ({
+const optionalOf = <T, In>(
+  inner: Shape<T, In>,
+  declared: Declaration<unknown, never>,
+): Shape<T | null, In | null> => ({
   kind: "optional",
+  source: `${inner.source}.optional()`,
   count: inner.count + 1,
   libraryKind: inner.libraryKind,
+  inner: declared,
   rest: null,
   values: () => [null, ...inner.values()],
   has: (value): value is T | null => value === null || inner.has(value),
@@ -94,6 +104,34 @@ export class Declaration<T, In = T> {
    */
   get libraryKind(): string | null {
     return this.#shape.libraryKind;
+  }
+
+  /**
+   * The `m` expression that declares the same values, as a model file writes it, such as
+   * `m.int(0, 3).optional()` or `m.record({ seat: m.enum(["A", "B"]) })`. It leaves out
+   * `.initial`. Code that writes model files puts it after `m.model`'s field names.
+   */
+  get source(): string {
+    return this.#shape.source;
+  }
+
+  /**
+   * For a declaration made with `m.record`, the declaration of each field, as given to
+   * `m.record`; `null` for every other kind, an optional record included. Code that checks a
+   * value field by field reads it, as `@earnestjs/xstate` does to let an optional field inside a
+   * record be missing.
+   */
+  get fields(): Fields | null {
+    return this.#shape.fields ?? null;
+  }
+
+  /**
+   * For a declaration made with `.optional()`, the same declaration without `null` and without
+   * `.initial`; `null` for every other kind. Code that checks a value against the declaration
+   * step by step reads it, as `fields` is read for a record.
+   */
+  get inner(): Declaration<unknown, never> | null {
+    return this.#shape.inner ?? null;
   }
 
   /**
@@ -155,7 +193,10 @@ export class Declaration<T, In = T> {
     if (this.kind === "optional" || this.kind === "owned lock") {
       throw new Error(`an ${this.kind} can't be made optional: it already has a null value`);
     }
-    return new Declaration(optionalOf(this.#shape), this.#initial);
+    return new Declaration(
+      optionalOf(this.#shape, new Declaration<T, In>(this.#shape)),
+      this.#initial,
+    );
   }
 }
 
@@ -224,6 +265,7 @@ const same = <T>(value: T): T => value;
 export const booleanOf = (): Declaration<boolean> =>
   new Declaration({
     kind: "boolean",
+    source: "m.boolean()",
     libraryKind: null,
     count: 2,
     rest: null,
@@ -244,6 +286,7 @@ export const int = (lo: number, hi: number): Declaration<number> => {
   }
   return new Declaration({
     kind: "number",
+    source: `m.int(${lo}, ${hi})`,
     libraryKind: null,
     count: hi - lo + 1,
     rest: null,
@@ -271,6 +314,7 @@ const choice = <T extends string | number | boolean>(
   }
   return new Declaration({
     kind: "enum",
+    source: `${builder}([${listed.map((option) => JSON.stringify(option)).join(", ")}])`,
     libraryKind: null,
     count: listed.length,
     rest: null,
@@ -293,6 +337,9 @@ export const oneOf = <const T extends string | number | boolean>(
   options: readonly T[],
 ): Declaration<T> => choice("m.oneOf", options);
 
+const propertyName = (name: string): string =>
+  /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
+
 const product = <T>(prefixes: readonly (readonly T[])[], options: readonly T[]): T[][] =>
   prefixes.flatMap((prefix) => options.map((option) => [...prefix, option]));
 
@@ -309,7 +356,9 @@ export const record = <F extends Fields>(fields: F): Declaration<StateOf<F>> => 
     entries.every(([name, declared]) => declared.has(value[name]));
   return new Declaration({
     kind: "record",
+    source: `m.record({${entries.length === 0 ? "" : ` ${entries.map(([name, declared]) => `${propertyName(name)}: ${declared.source}`).join(", ")} `}})`,
     count: combinationCount(entries),
+    fields: Object.freeze({ ...fields }),
     libraryKind:
       entries.find(([, declared]) => declared.libraryKind !== null)?.[1].libraryKind ?? null,
     rest: null,
@@ -372,6 +421,7 @@ const mapsOver = <K, V>(keys: readonly K[], values: readonly V[]): MapValue<K, V
 export const set = <T>(item: Declaration<T, never>): Declaration<SetValue<T>> =>
   new Declaration({
     kind: "set",
+    source: `m.set(${item.source})`,
     libraryKind: "set",
     count: 2 ** item.count,
     rest: { value: SetValue.of<T>([]) },
@@ -402,6 +452,7 @@ export const map = <K, V>(
   const value = holdable("m.map", valueDeclared);
   return new Declaration({
     kind: "map",
+    source: `m.map(${key.source}, ${value.source})`,
     libraryKind: "map",
     count: (value.count + 1) ** key.count,
     rest: { value: MapValue.of<K, V>([]) },
@@ -459,6 +510,7 @@ export const seq = <T>(
   const max = wholeLimit("m.seq's max", limit.max);
   return new Declaration({
     kind: "sequence",
+    source: `m.seq(${item.source}, { max: ${max} })`,
     libraryKind: "sequence",
     count: listCount(item.count, max),
     rest: { value: SeqValue.of<T>([]) },
@@ -484,6 +536,7 @@ export const queue = <T>(
   const capacity = wholeLimit("m.queue's capacity", limit.capacity);
   return new Declaration({
     kind: "queue",
+    source: `m.queue(${item.source}, { capacity: ${capacity} })`,
     libraryKind: "queue",
     count: listCount(item.count, capacity),
     rest: { value: QueueValue.of<T>(capacity, []) },
@@ -505,6 +558,7 @@ export const queue = <T>(
 const plainLock = (): Declaration<LockValue> =>
   new Declaration({
     kind: "lock",
+    source: "m.lock()",
     libraryKind: "lock",
     count: 2,
     rest: { value: LockValue.of(false) },
@@ -525,6 +579,7 @@ const ownedLock = <Owner>(owner: Declaration<Owner, never>): Declaration<OwnedLo
   }
   return new Declaration({
     kind: "owned lock",
+    source: `m.lock(${owner.source})`,
     libraryKind: "owned lock",
     count: owner.count + 1,
     rest: { value: OwnedLockValue.of<Owner>(null) },
@@ -560,6 +615,7 @@ const staged = <Stage extends string, T extends ModelValue>(
   const values = stages.map(at);
   return new Declaration({
     kind,
+    source: `m.${kind}()`,
     libraryKind: kind,
     count: values.length,
     rest: values[0] === undefined ? null : { value: values[0] },
@@ -606,6 +662,7 @@ export const retry = (limit: { readonly max: number }): Declaration<RetryValue> 
   const max = wholeLimit("m.retry's max", limit.max);
   return new Declaration({
     kind: "retry",
+    source: `m.retry({ max: ${max} })`,
     libraryKind: "retry",
     count: max + 1,
     rest: { value: RetryValue.of(max, 0) },
