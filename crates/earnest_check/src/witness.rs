@@ -2,7 +2,8 @@ use crate::explore::{Search, Starts};
 use crate::outcome::{Change, Named, Path, RuleKind, RuleOutcome, Step, Verdict};
 use crate::picks::{combinations_of, sets_for, sets_of};
 use earnest_ir::{
-    Action, Code, Falls, Fault, Field, Frame, Model, Pick, Plan, RETRIED_BELOW, Script, Witness,
+    Action, Call, Code, Falls, Fault, Field, Frame, Model, Pick, Plan, RETRIED_BELOW, Script,
+    Witness,
 };
 use earnest_value::Value;
 use rustc_hash::FxHashSet;
@@ -62,6 +63,7 @@ struct Fell {
 struct Ends {
     through: bool,
     fell: Option<(Path, String)>,
+    called: Vec<(usize, Path, String)>,
 }
 
 struct Course<'a> {
@@ -75,6 +77,8 @@ struct Course<'a> {
     witness_expects: Option<&'a Code>,
     must_not_finish: bool,
     slots: usize,
+    calls: &'a [Call],
+    closing: Vec<Option<usize>>,
 }
 
 impl<'a> Course<'a> {
@@ -103,6 +107,8 @@ impl<'a> Course<'a> {
             witness_expects: Some(&witness.expect),
             must_not_finish: false,
             slots: witness.slots,
+            calls: &[],
+            closing: Vec::new(),
         }
     }
 
@@ -112,10 +118,18 @@ impl<'a> Course<'a> {
         picked: (&[Pick], usize),
     ) -> Self {
         let (picks, number) = picked;
-        let (skips, last_false) = match &plan.falls {
-            Falls::Retried { last_step, .. } => (true, *last_step),
-            _ => (false, false),
+        let (skips, last_false, calls): (bool, bool, &[Call]) = match &plan.falls {
+            Falls::Retried {
+                last_step, calls, ..
+            } => (true, *last_step, calls),
+            _ => (false, false, &[]),
         };
+        let mut closing = vec![None; plan.steps.len().saturating_add(1)];
+        for (position, call) in calls.iter().enumerate() {
+            if let Some(slot) = call.last.and_then(|last| closing.get_mut(last)) {
+                *slot = Some(position);
+            }
+        }
         Self {
             start_falls: &plan.start_falls,
             skips,
@@ -153,6 +167,8 @@ impl<'a> Course<'a> {
             witness_expects: None,
             must_not_finish: plan.must_not_finish,
             slots: script.slots,
+            calls,
+            closing,
         }
     }
 }
@@ -160,24 +176,67 @@ impl<'a> Course<'a> {
 struct Combination<'p> {
     chosen: &'p [(String, Value)],
     retried: &'p [bool],
+    within: &'p [Option<usize>],
+    calls: &'p [Call],
     ends: Ends,
 }
 
-fn judged(all: &[Combination<'_>], depth: usize) -> (bool, Option<usize>) {
-    if all.iter().all(|each| each.chosen.len() <= depth) {
-        let through = all.iter().any(|each| each.ends.through);
-        return (
-            through,
-            all.iter().position(|each| each.ends.fell.is_some()),
-        );
+type Record = (usize, Option<usize>);
+
+#[derive(Default)]
+struct Judged {
+    through: bool,
+    fell: Option<Record>,
+    called: Vec<(usize, usize)>,
+    error: Option<Record>,
+}
+
+fn at_leaf(all: &[Combination<'_>]) -> Judged {
+    let mut judged = Judged {
+        through: all.iter().any(|each| each.ends.through),
+        ..Judged::default()
+    };
+    for (position, each) in all.iter().enumerate() {
+        if judged.fell.is_none() && each.ends.fell.is_some() {
+            judged.fell = Some((position, None));
+        }
+        for (call, ..) in &each.ends.called {
+            let picks = each.within.contains(&Some(*call));
+            let ends_the_run = each.calls.get(*call).is_some_and(|found| found.ends_the_run);
+            if ends_the_run && !picks {
+                judged.fell.get_or_insert((position, Some(*call)));
+            } else if !judged.called.iter().any(|(kept, _)| kept == call) {
+                judged.called.push((*call, position));
+            }
+        }
     }
-    let retried = all
-        .first()
-        .and_then(|first| first.retried.get(depth))
-        .copied()
-        .unwrap_or(false);
-    let (mut through, mut first_fell, mut every_fell) = (false, None, true);
-    let mut done: usize = 0;
+    judged
+}
+
+fn resolved(mut judged: Judged, call: usize, calls: &[Call]) -> Judged {
+    let Some(found) = judged.called.iter().position(|(kept, _)| *kept == call) else {
+        return judged;
+    };
+    let (_, position) = judged.called.remove(found);
+    let record = (position, Some(call));
+    if calls.get(call).is_some_and(|each| each.ends_the_run) {
+        if judged.fell.is_none_or(|(kept, _)| position < kept) {
+            judged.fell = Some(record);
+        }
+    } else {
+        judged.error = Some(record);
+    }
+    judged
+}
+
+fn judged(all: &[Combination<'_>], depth: usize) -> Judged {
+    let Some(deep) = all.iter().find(|each| each.chosen.len() > depth) else {
+        return at_leaf(all);
+    };
+    let retried = deep.retried.get(depth).copied().unwrap_or(false);
+    let scope = deep.within.get(depth).copied().flatten();
+    let mut found = Judged::default();
+    let (mut every_fell, mut done) = (true, 0_usize);
     let mut rest = all;
     while let Some(first) = rest.first() {
         let value = first.chosen.get(depth).map(|(_, value)| value);
@@ -186,23 +245,41 @@ fn judged(all: &[Combination<'_>], depth: usize) -> (bool, Option<usize>) {
             .take_while(|each| each.chosen.get(depth).map(|(_, value)| value) == value)
             .count();
         let (group, after) = rest.split_at(same);
-        let (can_get_through, fell) = judged(group, depth.saturating_add(1));
-        through |= can_get_through;
-        match fell {
-            Some(position) => {
-                first_fell.get_or_insert_with(|| done.saturating_add(position));
+        let under = judged(group, depth.saturating_add(1));
+        let moved = |(position, record): Record| (done.saturating_add(position), record);
+        if let Some(error) = under.error {
+            found.error = Some(moved(error));
+            return found;
+        }
+        found.through |= under.through;
+        if let Some(fell) = under.fell {
+            found.fell.get_or_insert(moved(fell));
+        }
+        let fell_here = match scope {
+            None => under.fell.is_some(),
+            Some(call) => under.called.iter().any(|(kept, _)| *kept == call),
+        };
+        every_fell &= fell_here;
+        for (call, position) in under.called {
+            if !found.called.iter().any(|(kept, _)| *kept == call) {
+                found.called.push((call, done.saturating_add(position)));
             }
-            None => every_fell = false,
         }
         done = done.saturating_add(same);
         rest = after;
     }
-    let fell = if retried && !every_fell {
-        None
-    } else {
-        first_fell
-    };
-    (through, fell)
+    if retried && !every_fell {
+        match scope {
+            None => found.fell = None,
+            Some(call) => found.called.retain(|(kept, _)| *kept != call),
+        }
+    }
+    match scope {
+        Some(call) if !deep.within.iter().take(depth).any(|each| *each == Some(call)) => {
+            resolved(found, call, deep.calls)
+        }
+        _ => found,
+    }
 }
 
 fn every_input(action: &Action, given: Option<&[Value]>) -> Option<Vec<Vec<Value>>> {
@@ -284,12 +361,29 @@ impl Player<'_, '_> {
         Ok(())
     }
 
+    fn closes(&self, done: usize) -> Option<usize> {
+        self.course.closing.get(done).copied().flatten()
+    }
+
+    fn fall_in(&mut self, call: usize, path: &Path, why: String) -> Result<(), Stop> {
+        if !self.course.skips {
+            return Err(Stop::Broken(path.clone(), why));
+        }
+        if !self.ends.called.iter().any(|(kept, ..)| *kept == call) {
+            self.ends.called.push((call, path.clone(), why));
+        }
+        Ok(())
+    }
+
     fn none_happened(&mut self, number: usize, leg: &Leg<'_>, path: &Path) -> Result<(), Stop> {
         if leg.refused {
             self.ends.through = true;
             return Ok(());
         }
         let why = none_can_happen(number, leg);
+        if let Some(call) = self.closes(number.saturating_sub(1)) {
+            return self.fall_in(call, path, why);
+        }
         if !self.course.last_false || number < self.course.legs.len() {
             return Err(Stop::Broken(path.clone(), why));
         }
@@ -299,6 +393,14 @@ impl Player<'_, '_> {
     fn finish(&mut self, state: &[Value], path: &Path) -> Result<(), Stop> {
         if let Some(expects) = self.course.witness_expects {
             self.check(expects, state, path, "what the witness expects")?;
+        }
+        if let Some(call) = self.closes(self.course.legs.len()) {
+            let says = self
+                .course
+                .calls
+                .get(call)
+                .map_or("the run", |found| found.says.as_str());
+            return self.fall_in(call, path, format!("{says} picks from an empty set here"));
         }
         if !self.course.must_not_finish {
             self.ends.through = true;
@@ -418,6 +520,9 @@ impl Player<'_, '_> {
             "with {picked}, step {number}, `{}`, can't happen here, {NOT_RETRIED}",
             fell.id
         );
+        if let Some(call) = self.closes(number.saturating_sub(1)) {
+            return self.fall_in(call, path, why);
+        }
         if !self.course.last_false || number < self.course.legs.len() {
             return Err(Stop::Broken(path.clone(), why));
         }
@@ -809,10 +914,18 @@ impl Search<'_> {
                 }
                 other => return other,
             }
-            if let Falls::Retried { retried, .. } = &plan.falls {
+            if let Falls::Retried {
+                retried,
+                within,
+                calls,
+                ..
+            } = &plan.falls
+            {
                 combinations.push(Combination {
                     chosen: &plan.chosen,
                     retried,
+                    within,
+                    calls,
                     ends,
                 });
             }
@@ -820,12 +933,35 @@ impl Search<'_> {
         if combinations.is_empty() {
             return Ended::Held;
         }
-        let (through, fell) = judged(&combinations, 0);
-        let found = fell
-            .and_then(|position| combinations.get_mut(position))
-            .and_then(|found| Some((found.chosen, found.retried, found.ends.fell.take()?)));
+        let mut judged = judged(&combinations, 0);
+        while judged.error.is_none()
+            && let Some((call, _)) = judged.called.first().copied()
+        {
+            let calls = combinations.first().map_or(&[][..], |first| first.calls);
+            judged = resolved(judged, call, calls);
+        }
+        if let Some((position, Some(call))) = judged.error {
+            return Self::called_error(&mut combinations, (position, call), |chosen, why| {
+                self.with_chosen(chosen, why)
+            });
+        }
+        let found = judged
+            .fell
+            .and_then(|(position, record)| {
+                let found = combinations.get_mut(position)?;
+                let ends = &mut found.ends;
+                let taken = match record {
+                    None => ends.fell.take(),
+                    Some(call) => {
+                        let at = ends.called.iter().position(|(kept, ..)| *kept == call)?;
+                        let (_, path, why) = ends.called.remove(at);
+                        Some((path, why))
+                    }
+                };
+                Some((found.chosen, found.retried, found.within, taken?))
+            });
         match found {
-            None if through => Ended::Held,
+            None if judged.through => Ended::Held,
             None => Ended::Broken(
                 Path {
                     start: Vec::new(),
@@ -833,8 +969,12 @@ impl Search<'_> {
                 },
                 NONE_GETS_THROUGH.to_owned(),
             ),
-            Some((chosen, retried, (path, why))) => {
-                let after = if retried.iter().all(|each| *each) {
+            Some((chosen, retried, within, (path, why))) => {
+                let mut own = retried
+                    .iter()
+                    .zip(within.iter().chain(std::iter::repeat(&None)))
+                    .filter(|(_, scope)| scope.is_none());
+                let after = if own.all(|(each, _)| *each) {
                     "; the run is false for every value its `nondet`s pick, or can be, so \
                      `quint test` fails it"
                 } else {
@@ -844,6 +984,52 @@ impl Search<'_> {
                 Ended::Broken(path, self.with_chosen(chosen, &format!("{why}{after}")))
             }
         }
+    }
+
+    fn called_error(
+        combinations: &mut [Combination<'_>],
+        (position, call): (usize, usize),
+        with_chosen: impl Fn(&[(String, Value)], &str) -> String,
+    ) -> Ended {
+        let unplayed = || {
+            Ended::Broken(
+                Path {
+                    start: Vec::new(),
+                    steps: Vec::new(),
+                },
+                "a run it calls is false, and something comes after it".to_owned(),
+            )
+        };
+        let Some(found) = combinations.get_mut(position) else {
+            return unplayed();
+        };
+        let says = found
+            .calls
+            .get(call)
+            .map_or("the run it calls", |each| each.says.as_str());
+        let Some(at) = found.ends.called.iter().position(|(kept, ..)| *kept == call) else {
+            return unplayed();
+        };
+        let (_, path, why) = found.ends.called.remove(at);
+        let retried = found
+            .retried
+            .iter()
+            .zip(found.within)
+            .filter(|(_, scope)| **scope == Some(call))
+            .all(|(each, _)| *each);
+        let after = if retried {
+            format!(
+                "; {says} is false for every value its `nondet`s pick, or can be, and something \
+                 comes after it, so `quint test` stops the run there with an error"
+            )
+        } else {
+            format!(
+                "; {says} is false here, `quint test` tries no other value of a `nondet` over 100 \
+                 values or more, and something comes after it, so it stops the run there with an \
+                 error"
+            )
+        };
+        Ended::Broken(path, with_chosen(found.chosen, &format!("{why}{after}")))
     }
 
     fn played_outcome(id: &str, says: &str, ended: Ended) -> RuleOutcome {

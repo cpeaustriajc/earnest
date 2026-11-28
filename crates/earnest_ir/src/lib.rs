@@ -520,7 +520,29 @@ pub enum Falls {
         /// For each value of [`Plan::chosen`], whether Quint tries the other values of its
         /// set when the run is false for it: it does when the set has fewer than 100 values.
         retried: Vec<bool>,
+        /// For each value of [`Plan::chosen`], the position in `calls` of the called run whose
+        /// `nondet` picked it, which Quint tries again while that run is false, or `None` for a
+        /// `nondet` tried again while the whole run is false.
+        within: Vec<Option<usize>>,
+        /// The runs the run calls with a `nondet` of their own, where something comes after
+        /// them, so that a called run that is false is an error.
+        calls: Vec<Call>,
     },
+}
+
+/// A run called inside another with a `nondet` of its own, as Quint plays it: its `nondet` is
+/// tried again while the called run is false, and the called run that stays false is an
+/// error, since something comes after it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Call {
+    /// What the called run is, for a message, such as ``the run `start` ``.
+    pub says: String,
+    /// The position in [`Plan::steps`] of the called run's last step, where the called run is
+    /// false when the step can't happen; [`Plan::steps`]' length when the called run is false
+    /// once the steps before it are taken; `None` when the called run can't be false.
+    pub last: Option<usize>,
+    /// Whether the called run being false makes the whole run false, rather than an error.
+    pub ends_the_run: bool,
 }
 
 /// A generalised witness: steps that each choose among alternatives, with conditions after
