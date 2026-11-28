@@ -467,3 +467,30 @@ fn search_reason(model: &Value) -> Value {
     );
     Value::Null
 }
+
+#[test]
+fn a_report_of_a_check_with_runs_not_played_says_unfinished_and_fails_as_verify_does() {
+    let quint = Quint::new();
+    let verify = quint.earnest(&["verify", "--model", "Single", "specs/compiled.qnt"]);
+    verify.exits(1);
+    assert!(
+        verify.stdout.starts_with("unfinished  Single  3 states"),
+        "{verify}"
+    );
+    let report = quint.earnest(&["report", "--model", "Single", "specs/compiled.qnt"]);
+    report.exits(1);
+    let line = report
+        .stdout
+        .lines()
+        .find(|line| line.starts_with("**"))
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        line.starts_with("**unfinished** · Single · 3 states · runs not played"),
+        "the search passed, but a run was not played\n{report}"
+    );
+    assert!(
+        !line.contains("so far"),
+        "the search itself ended\n{report}"
+    );
+}

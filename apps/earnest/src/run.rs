@@ -453,20 +453,7 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched
-                .reason
-                .filter(|reason| {
-                    readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND
-                })
-                .or_else(|| {
-                    (!readable.runs_not_played.is_empty()).then(|| {
-                        let reason = not_played_reason(&readable.runs_not_played);
-                        match &readable.not_built {
-                            Some(cause) => format!("{reason}: {cause}"),
-                            None => reason,
-                        }
-                    })
-                }),
+            reason: reason_of(searched.reason, readable),
             rules: searched.rules,
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
@@ -559,6 +546,22 @@ pub(crate) fn detail_of(
 
 pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
     !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
+}
+
+/// The reason a check's result gives: the search's, unless runs were not played and the search
+/// gave no reason but that every expected path was found, when it names the runs not played.
+pub(crate) fn reason_of(searched: Option<String>, readable: &Readable) -> Option<String> {
+    searched
+        .filter(|reason| readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND)
+        .or_else(|| {
+            (!readable.runs_not_played.is_empty()).then(|| {
+                let reason = not_played_reason(&readable.runs_not_played);
+                match &readable.not_built {
+                    Some(cause) => format!("{reason}: {cause}"),
+                    None => reason,
+                }
+            })
+        })
 }
 
 pub(crate) fn not_played_reason(runs: &[String]) -> String {
