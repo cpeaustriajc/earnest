@@ -26,25 +26,38 @@ pub struct Unreadable<'a> {
     pub problems: &'a [String],
 }
 
-fn result_line(section: &Section<'_>) -> String {
+fn result_line(detailed: &Detailed<'_>) -> String {
+    let section = &detailed.charted.section;
     let outcome = section.outcome;
+    let status = match (detailed.answered, outcome.status) {
+        (_, Status::Fail) | (Answered::All, _) => word(&outcome.status),
+        (Answered::InPart, _) => UNREADABLE.to_owned(),
+        (Answered::RunsNotPlayed(_), Status::Pass) => word(&Status::Unfinished),
+        (Answered::RunsNotPlayed(_), status) => word(&status),
+    };
+    let reason = match detailed.answered {
+        Answered::RunsNotPlayed(reason) => Some(reason),
+        Answered::All | Answered::InPart => outcome.reason.as_deref(),
+    };
     let so_far = if outcome.status == Status::Unfinished {
         " so far"
     } else {
         ""
     };
     let mut parts = vec![
-        format!("**{}**", word(&outcome.status)),
+        format!("**{status}**"),
         prose(section.name),
         format!("{} states{so_far}", outcome.states),
     ];
-    parts.extend(outcome.reason.as_deref().map(prose));
+    parts.extend(reason.map(prose));
     parts.push(code_span(section.file));
     parts.join(" · ")
 }
 
+const UNREADABLE: &str = "unreadable";
+
 fn unread_lines(file: &Unreadable<'_>) -> Vec<String> {
-    let mut lines = vec![format!("unreadable  {}", one_line(file.file))];
+    let mut lines = vec![format!("{UNREADABLE}  {}", one_line(file.file))];
     lines.extend(
         file.problems
             .iter()
@@ -95,11 +108,28 @@ pub struct Detailed<'a> {
     /// The lines of the fenced block, in place of the path to each broken rule and each
     /// finding of the outcome. `None` prints those.
     pub detail: Option<&'a [String]>,
+    /// How much of what the model asks its outcome answers. Anything short of
+    /// [`Answered::All`] keeps the section from reading as a pass.
+    pub answered: Answered<'a>,
+}
+
+/// How much of what a model asks its outcome answers, for [`Detailed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Answered<'a> {
+    /// All of it: the result line says the outcome's status.
+    All,
+    /// All but some runs that were not played. The result line says `unfinished` in place of
+    /// `pass`, and gives this reason in place of the outcome's.
+    RunsNotPlayed(&'a str),
+    /// Only part, as the model was read only in part. The result line says `unreadable`,
+    /// unless the outcome failed. Say in `detail` what was left out.
+    InPart,
 }
 
 fn model(detailed: &Detailed<'_>) -> String {
     let section = &detailed.charted.section;
-    let mut blocks = vec![format!("## {}", prose(section.name)), result_line(section)];
+    let mut blocks = vec![format!("## {}", prose(section.name)), result_line(detailed)];
     blocks.extend(detailed.charted.chart.map(str::to_owned));
     let detail = detailed
         .detail
@@ -175,6 +205,7 @@ pub fn report_with_charts(
         .map(|charted| Detailed {
             charted: *charted,
             detail: None,
+            answered: Answered::All,
         })
         .collect();
     report_with_details(&detailed, unreadable, changes)

@@ -126,7 +126,11 @@ a number read from an optional goes through it. `m.setOf(a, b)`, `m.seqOf(a, b)`
 or a collection. Every declaration has `values()`, which lists what it declares in the order the
 checker tries them, `has(value)`, `starts()`, `count` and `fromJson(json)`. Its `libraryKind` is
 `null` when every value is plain JavaScript (booleans, numbers, texts, `null` and records of
-those), and otherwise names the part that holds this library's objects, such as `"set"`.
+those), and otherwise names the part that holds this library's objects, such as `"set"`. Its
+`source` is the `m` expression that declares the same values, such as `m.int(0, 3).optional()`,
+without `.initial`, for code that writes a model file. A record's `fields` gives the declaration
+of each field, and an optional's `inner` the declaration without `null` and without `.initial`;
+both are `null` for other kinds, for code that checks a value one part at a time.
 `combinationsOf(fields)` lists every row of one value per field, in the order `explore` tries an
 action's inputs: the first field varies fastest.
 

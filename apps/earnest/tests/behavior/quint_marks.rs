@@ -323,9 +323,9 @@ fn a_folder_with_a_checks_file_is_unreadable_at_it_with_what_to_write_for_every_
         "1. `clock.qnt`, the check of `Small`: write these lines above `module Small` \
          (`clock.qnt:14`):\n      /// @check inRange, alwaysInRange\n",
         "2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to \
-         `clock.qnt`, and mark nothing in `Small` for it:\n      /// @check broken \
-         V::belowLimit\n      module SmallBroken {\n        import Clock(Limit = 3) as V\n        \
-         action init = V::init\n        action step = V::step\n      }\n",
+         `clock.qnt`, and mark nothing in `Small` for it:\n      /// @check init = V::init, \
+         step = V::step\n      /// @check broken V::belowLimit\n      module SmallBroken {\n        \
+         import Clock(Limit = 3) as V\n      }\n",
         "so `tickTest` is played from now on, which the entry left out",
         "3. `clock.qnt`, the check of `Large`: write these lines above `module Large` \
          (`clock.qnt:18`):\n      /// @check C::inRange\n",

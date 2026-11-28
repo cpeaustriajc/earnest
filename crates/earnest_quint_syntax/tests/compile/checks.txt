@@ -1,4 +1,5 @@
 compile	--target	json	--main	A	--init	init	--step	step	--invariant	ok	tasks/quint/review/aliasruns/aliasruns.qnt
+compile	--target	json	--main	All	--init	init	--step	step	--invariant	ok,small,low	tasks/quint/nested/imports.qnt
 compile	--target	json	--main	As	--init	init	--step	step	--invariant	ok,noDownAtTop,small	tasks/quint/imports/as.qnt
 compile	--target	json	--main	AsImport	--init	L::init	--step	L::step	tasks/quint/first/Shapes.qnt
 compile	--target	json	--main	AsInstance	--init	P::init	--step	P::step	tasks/quint/first/Shapes.qnt
@@ -16,6 +17,7 @@ compile	--target	json	--main	ByOwn	--init	init	--step	step	--invariant	ok	tasks/
 compile	--target	json	--main	Cased	--init	init	--step	step	tasks/quint/marked/cased/cased.qnt
 compile	--target	json	--main	Chooses	--init	init	--step	step	--invariant	S::inRange,T::inRange,bothInRange,pair == pair,side == side	tasks/quint/views/override/setups.qnt
 compile	--target	json	--main	Comma	--init	init	--step	step	--invariant	inRange,small,tiny	tasks/quint/review/wrapped/wrapped.qnt
+compile	--target	json	--main	Deep	--init	init	--step	step	--invariant	small,tiny,wide	tasks/quint/nested/deep.qnt
 compile	--target	json	--main	Dim	--init	init	--step	step	--invariant	levelOk,darkWhenOff	tasks/quint/setups/lamp.qnt
 compile	--target	json	--main	Direct	--init	init	--step	step	--invariant	ok	tasks/quint/imports/assume.qnt
 compile	--target	json	--main	Direct	--init	init	--step	step	--invariant	small	tasks/quint/review/exported/exported.qnt
@@ -41,6 +43,7 @@ compile	--target	json	--main	Helpers	--init	init	--step	step	tasks/quint/first/H
 compile	--target	json	--main	High	--init	init	--step	step	--invariant	below,small	--temporal	reaches	tasks/quint/setups/ints.qnt
 compile	--target	json	--main	Holds	--init	init	--step	step	--invariant	low	--temporal	bounded	tasks/quint/marked/names/names.qnt
 compile	--target	json	--main	Inherits	--init	init	--step	step	--invariant	inRange,specView == specView,specGroup == specGroup	tasks/quint/views/override/setups.qnt
+compile	--target	json	--main	Inside	--init	init	--step	step	--invariant	H::fine	tasks/quint/nested/imports.qnt
 compile	--target	json	--main	Large	--init	init	--step	step	--invariant	C::inRange,C::belowLimit,C::atTop	--temporal	C::alwaysInRange	tasks/quint/marked/specs/clock.qnt
 compile	--target	json	--main	Large	--init	init	--step	step	--invariant	C::inRange,C::belowLimit,C::atTop,C::belowSix	--temporal	C::alwaysInRange	tasks/quint/changes/clock.qnt
 compile	--target	json	--main	Large	--init	init	--step	step	--invariant	inv	tasks/quint/review/migrated/clock.qnt
@@ -156,6 +159,8 @@ compile	--target	json	--main	StepIsChainOnward	--init	init	--step	step	--invaria
 compile	--target	json	--main	Three	--init	init	--step	step	--invariant	bounded	tasks/quint/setups/runs.qnt
 compile	--target	json	--main	Tight	--init	init	--step	step	--invariant	V::withinCap,neverFull,belowHalf	tasks/quint/setups/own.qnt
 compile	--target	json	--main	Top	--init	init	--step	step	--invariant	small	tasks/quint/review/exported/exported.qnt
+compile	--target	json	--main	Top	--init	init	--step	step	tasks/quint/nested/nested.qnt
+compile	--target	json	--main	Twice	--init	init	--step	step	--invariant	ok	tasks/quint/nested/unplayed.qnt
 compile	--target	json	--main	Two	--init	init	--step	step	--invariant	V::ok,V1::fine	tasks/quint/setups/more.qnt
 compile	--target	json	--main	Two	--init	init	--step	step	--invariant	mutex	--temporal	moves	tasks/quint/samples/ring.qnt
 compile	--target	json	--main	TwoChecked	--init	init	--step	step	--invariant	V::ok,V1::fine	tasks/quint/review/migrated/more.qnt
@@ -165,6 +170,7 @@ compile	--target	json	--main	UseB	--init	init	--step	step	--invariant	small	task
 compile	--target	json	--main	Uses	--init	init	--step	step	--invariant	later	tasks/quint/marked/faults/faults.qnt
 compile	--target	json	--main	W3	--init	init	--step	step	--invariant	ok	tasks/quint/review/barecomma/barecomma.qnt
 compile	--target	json	--main	Whole	--init	init	--step	step	--invariant	small	tasks/quint/review/twosetups/twosetups.qnt
+compile	--target	json	--main	Wraps	--init	init	--step	step	tasks/quint/nested/broken.qnt
 compile	--target	json	--main	ands_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/ands_100.qnt
 compile	--target	json	--main	assertAfterNondet	--init	init	--step	step	tasks/break_it/models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt
 compile	--target	json	--main	assertFail	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/assert_fail.qnt

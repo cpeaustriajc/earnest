@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tWraps\t--init\tinit\t--step\tstep\ttasks/quint/nested/broken.qnt","error":"Error: Internal error while flattening [QNT404] Name 'Outer::A::K' not found"}]}

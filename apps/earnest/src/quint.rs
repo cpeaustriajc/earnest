@@ -324,8 +324,8 @@ fn unbuilt(job: &Job, problem: Problem) -> Problem {
         message: format!(
             "the check lists only runs, and the module `{}` sees no `{}` and `{}`, which compiling \
              it as Quint needs, nor does it import a module that has an `init` and a `step`: \
-             name in the check an `init` and a `step` the module sees, such as `A::init` of an \
-             `import Spec as A`. Quint's message: {}",
+             name an `init` and a `step` the module sees in its mark, as `/// @check init = \
+             A::init, step = A::step` under `import Spec as A`. Quint's message: {}",
             check.main, check.init, check.step, problem.message
         ),
         ..problem
@@ -567,8 +567,8 @@ fn job_of(candidate: &Candidate, plan: Plan) -> Job {
                 .file_name()
                 .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
             main: plan.main,
-            init: "init".to_owned(),
-            step: "step".to_owned(),
+            init: plan.init,
+            step: plan.step,
             invariants: plan.invariants,
             temporal: plan.temporal,
             runs: plan.runs,
@@ -656,6 +656,8 @@ struct Compiled {
     model: earnest_ir::Model,
     expected: Vec<String>,
     reachable: Vec<String>,
+    not_judged: Vec<String>,
+    unread: Vec<Located>,
 }
 
 fn compiled_once(
@@ -750,14 +752,16 @@ fn read_check(
 ) -> Result<Compiled, Vec<Located>> {
     let json = compiled.map_err(|problem| vec![Located::new(problem, None, None)])?;
     let (json, views) = without_labels(job, &json)?;
-    let model = if runs_only(&job.check) {
-        earnest_quint::read_runs(&job.shown, &json, runs)
+    let read = if runs_only(&job.check) {
+        earnest_quint::read_runs_in_part(&job.shown, &json, runs)
     } else {
-        earnest_quint::read_viewed(&job.shown, &json, runs, &views)
+        earnest_quint::read_viewed_in_part(&job.shown, &json, runs, &views)
     };
-    let mut model = model.map_err(|found| at_marks(job, &views, found))?;
+    let read = read.map_err(|found| at_marks(job, &views, found))?;
+    let mut model = read.model;
     job.model_name().clone_into(&mut model.name);
-    let expected = expected_ids(job, &model, unplayed)
+    let left_out: Vec<String> = unplayed.iter().chain(&read.not_judged).cloned().collect();
+    let expected = expected_ids(job, &model, &left_out)
         .map_err(|problem| vec![Located::new(problem, None, None)])?;
     let reachable = as_marked(job, &mut model);
     Ok(Compiled {
@@ -765,6 +769,8 @@ fn read_check(
         model,
         expected,
         reachable,
+        not_judged: read.not_judged,
+        unread: at_marks(job, &views, read.unread),
     })
 }
 
@@ -902,45 +908,61 @@ pub(crate) fn checked(listed: &[Listed], jobs: usize) -> Vec<ModelFile> {
                 model,
                 expected,
                 reachable,
-            }) => ModelFile {
-                path: job.shown.clone(),
-                source: format!(
-                    "{json}\n{:?}\n{:?}\n{:?}\n{:?}",
-                    job.check,
-                    job.reachable,
-                    job.said,
-                    job.labels.names().collect::<Vec<_>>()
-                ),
-                declared: vec![Declared {
-                    name: model.name.clone(),
-                    rules: model.rule_ids().map(str::to_owned).collect(),
-                }],
-                content: Content::Models(vec![Readable {
-                    draft: None,
-                    model,
-                    position: 0,
-                    expected,
-                    reachable,
-                    counted: true,
-                    not_built: (!runs_not_played.is_empty())
-                        .then(|| not_built(job, typechecked.get(&job.real), places.get(&job.real)))
-                        .flatten(),
-                    runs_not_played,
-                    quint: Some(as_asked(job)),
-                }]),
-            },
-            Err(located) => {
-                let problems = match places.get(&job.real) {
-                    Some(found) => {
-                        place_all(located, found, &job.check.main, &job.real, &job.shown)
-                    }
-                    None => located.into_iter().map(|each| each.problem).collect(),
-                };
-                unreadable(&job.shown, vec![declared(job)], problems)
+                not_judged,
+                unread,
+            }) => {
+                let unread = placed_all(unread, places.get(&job.real), job);
+                ModelFile {
+                    path: job.shown.clone(),
+                    source: format!(
+                        "{json}\n{:?}\n{:?}\n{:?}\n{:?}\n{not_judged:?}\n{unread:?}",
+                        job.check,
+                        job.reachable,
+                        job.said,
+                        job.labels.names().collect::<Vec<_>>()
+                    ),
+                    declared: vec![Declared {
+                        name: model.name.clone(),
+                        rules: model
+                            .rule_ids()
+                            .map(str::to_owned)
+                            .chain(not_judged.iter().cloned())
+                            .collect(),
+                    }],
+                    content: Content::Models(vec![Readable {
+                        draft: None,
+                        model,
+                        position: 0,
+                        expected,
+                        reachable,
+                        counted: true,
+                        not_built: (!runs_not_played.is_empty())
+                            .then(|| {
+                                not_built(job, typechecked.get(&job.real), places.get(&job.real))
+                            })
+                            .flatten(),
+                        runs_not_played,
+                        not_judged,
+                        unread,
+                        quint: Some(as_asked(job)),
+                    }]),
+                }
             }
+            Err(located) => unreadable(
+                &job.shown,
+                vec![declared(job)],
+                placed_all(located, places.get(&job.real), job),
+            ),
         });
     }
     one_per_file(files)
+}
+
+fn placed_all(located: Vec<Located>, places: Option<&Places>, job: &Job) -> Vec<Problem> {
+    match places {
+        Some(found) => place_all(located, found, &job.check.main, &job.real, &job.shown),
+        None => located.into_iter().map(|each| each.problem).collect(),
+    }
 }
 
 fn one_per_file(files: Vec<ModelFile>) -> Vec<ModelFile> {

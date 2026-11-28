@@ -169,6 +169,7 @@ mod tests {
                 cached: false,
                 reason: None,
                 runs_not_played: Vec::new(),
+                not_judged: Vec::new(),
                 rules: Vec::new(),
                 findings: Vec::new(),
             },

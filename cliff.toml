@@ -1,0 +1,90 @@
+[changelog]
+header = """
+# Changelog
+
+Changes to Earnest on `main`, newest first. Nightly builds update this file automatically. For curated user-facing highlights, see the [docs changelog](https://earnest.cpeaustriajc.dev/changelog/).
+"""
+body = """
+
+{% if version %}\
+## {{ version }}{% if timestamp %} - {{ timestamp | date(format="%Y-%m-%d") }}{% endif %}
+{% else %}\
+## Unreleased
+{% endif %}\
+{% set group_order = ["Added", "Changed", "Performance", "Fixed", "Documentation", "Maintenance & Dependencies"] %}\
+{% for entry in commits | commit_groups(groups=group_order) %}
+### {{ entry.group }}
+{% for commit in entry.commits %}\
+{% if commit.extra and commit.extra.preprocessed %}{% set source = commit.extra.preprocessed %}{% else %}{% set source = commit.message %}{% endif %}\
+{% set line = source | split(pat="\n") | first | trim %}\
+{% if line is containing("https://github.com/cpeaustriajc/earnest/pull/") %}\
+{% set pr_num = line | split(pat="https://github.com/cpeaustriajc/earnest/pull/") | last | split(pat=")") | first %}\
+{% if pr_num is matching("^[0-9]+$") %}\
+{% set dup_issue = "([#" ~ pr_num ~ "](https://github.com/cpeaustriajc/earnest/issues/" ~ pr_num ~ "))" %}\
+{% set pr_link = "([#" ~ pr_num ~ "](https://github.com/cpeaustriajc/earnest/pull/" ~ pr_num ~ "))" %}\
+{% if line is containing(" " ~ dup_issue ~ " " ~ pr_link) %}\
+{% set line = line | replace(from=" " ~ dup_issue ~ " " ~ pr_link, to=" " ~ pr_link) %}\
+{% elif line is containing(dup_issue) %}\
+{% set line = line | replace(from=dup_issue, to=pr_link) | trim_end_matches(pat=" " ~ pr_link) %}\
+{% endif %}\
+{% endif %}\
+{% endif %}\
+{% set has_link = line is containing("https://github.com/cpeaustriajc/earnest/pull/") or line is containing("https://github.com/cpeaustriajc/earnest/issues/") %}\
+{% set short_id = commit.id | truncate(length=7, end="") %}\
+{% if line is matching("^(feat|fix|perf|docs?|refactor|revert|ci|chore|build|test|style|deps)(\\([^():]+\\))?!?:\\s+\\S") %}\
+{% set prefix = line | split(pat=":") | first %}\
+{% set rest = line | split(pat=":") | slice(start=1) | join(sep=":") | trim | upper_first %}\
+- {% if prefix is containing("(") %}**{{ prefix | split(pat="(") | last | split(pat=")") | first }}:** {% endif %}{% if prefix is ending_with("!") %}**Breaking:** {% endif %}{{ rest }}{% if not has_link %} ([{{ short_id }}](https://github.com/cpeaustriajc/earnest/commit/{{ commit.id }})){% endif %}
+{% else %}\
+- {{ line | upper_first }}{% if not has_link %} ([{{ short_id }}](https://github.com/cpeaustriajc/earnest/commit/{{ commit.id }})){% endif %}
+{% endif %}\
+{% endfor %}\
+{% endfor %}
+"""
+trim = true
+render_always = false
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+commit_preprocessors = [
+  { pattern = '(?m)^Earnest-PR-Branch:[^\r\n]*\r?\n?', replace = '' },
+  { pattern = "(?s)^Merge pull request #([0-9]+) from [^/\\n\\r]+/([^\\n\\r]+)[\\r\\n]+[ \\t]*(\\S[^\\n\\r]*).*", replace = "${3} ([#${1}](https://github.com/cpeaustriajc/earnest/pull/${1}))\n\nEarnest-PR-Branch: ${2}" },
+  { pattern = "(?s)^Merge pull request #([0-9]+) from [^/\\n\\r]+/([^\\n\\r]+)[\\r\\n\\s]*$", replace = "Merge pull request #${1} (${2}) ([#${1}](https://github.com/cpeaustriajc/earnest/pull/${1}))\n\nEarnest-PR-Branch: ${2}" },
+  { pattern = '^T[0-9]+(?:,\s*T[0-9]+)*:\s*', replace = '' },
+  { pattern = '\(#([0-9]+)\)', replace = '([#${1}](https://github.com/cpeaustriajc/earnest/issues/${1}))' },
+]
+commit_parsers = [
+  { message = '^chore\(changelog\):', skip = true },
+  { message = '(?i)^[^\n]*(changelog[^\n]*\[skip ci\]|\[skip ci\][^\n]*changelog)', skip = true },
+  { message = '^Merge (branch|remote-tracking branch|commit) ', skip = true },
+  { message = '^feat(\([^():]+\))?!?:', group = "Added" },
+  { message = '^perf(\([^():]+\))?!?:', group = "Performance" },
+  { message = '^fix(\([^():]+\))?!?:', group = "Fixed" },
+  { message = '^docs?(\([^():]+\))?!?:', group = "Documentation" },
+  { message = '^(refactor|revert)(\([^():]+\))?!?:', group = "Changed" },
+  { message = '^(ci|chore|build|test|style|deps)(\([^():]+\))?!?:', group = "Maintenance & Dependencies" },
+  { field = "author.name", pattern = '(?i)dependabot|renovate', group = "Maintenance & Dependencies" },
+  { message = '(?i)^Build the command line each night', group = "Added" },
+  { message = '(?m)^Earnest-PR-Branch: (ci|dependabot|renovate)/', group = "Maintenance & Dependencies" },
+  { message = '(?m)^Earnest-PR-Branch: (agent-setup|rust-[0-9]|claude/t[0-9]|claude/stop-hook|release/trusted-publishing)', group = "Maintenance & Dependencies" },
+  { message = '(?i)^Bump .* (group|from) ', group = "Maintenance & Dependencies" },
+  { message = '(?i)^[^\n]*(Claude Code setup|settings\.json|just check|check job|\bCI\b|GitHub Actions|dependabot|trusted publishing|newest release|stop hook|pre-commit|ast-grep|Verus|property test|benchmark)', group = "Maintenance & Dependencies" },
+  { message = '(?m)^Earnest-PR-Branch: feat/', group = "Added" },
+  { message = '(?m)^Earnest-PR-Branch: perf/', group = "Performance" },
+  { message = '(?m)^Earnest-PR-Branch: fix/', group = "Fixed" },
+  { message = '(?m)^Earnest-PR-Branch: docs?/', group = "Documentation" },
+  { message = '(?m)^Earnest-PR-Branch: redesign/', group = "Changed" },
+  { message = '(?i)^[^\n]*(README|Starlight|docs site|documentation)\b', group = "Documentation" },
+  { message = '(?i)^(fix|resolve|correct|repair|prevent|avoid)\b', group = "Fixed" },
+  { message = '(?i)^(speed up|optimi[sz]e|faster)\b', group = "Performance" },
+  { message = '(?i)^(add|introduce|support|implement|check |replace archsnap|publish to crates)', group = "Added" },
+  { message = '.*', group = "Changed" },
+]
+filter_commits = false
+exclude_paths = ["CHANGELOG.md"]
+ignore_tags = ".*-nightly.*"
+sort_commits = "newest"
+
+[remote]
+offline = true
