@@ -76,6 +76,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 | `/// @check a, b` | a `module` | the module is a check, and it also judges `a` and `b`, which it sees, as if they were marked `/// @check`. Only this check judges them |
 | `/// @check broken a, b` | a `module` | the same, with `a` and `b` expected to break |
 | `/// @check reachable a` | a `module` | the same, with a state expected to make the value `a` true |
+| `/// @check init = a, step = b` | a `module` | the check starts from the action `a` and steps with the action `b`, as `quint verify --init a --step b` does. Either may be given alone; the other is the module's own `init` or `step`. It goes with the names the mark judges, as `/// @check init = badInit, step = badStep, guarded` |
 | `/// @check` | a `val` or `def` of type `bool` with no parameters, or a `temporal` definition | the property must hold, in every check that sees it |
 | `/// @check broken` | the same | the property must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
 | `/// @check reachable` | a `val` or `def` of type `bool` | a reachable state must make it true. The result prints `reached  atTop` and the path to that state |
@@ -91,7 +92,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A name a module's doc lists twice in one mark, as `/// @check small, small`, is `unreadable`, and the message says the name is listed twice. A name listed after two marks, as `/// @check small` and `/// @check broken small`, is `unreadable` too. A mark on the definition and another word for that name in a check's doc are not two marks: the check's doc wins, and that is how one setup says a property of the spec breaks there.
 - A mark on a `val` that does not give a boolean, such as `pure val K = 3`, is judged and is a `fault`: the message names the definition and its mark and says it does not give a boolean. The check fails.
 - A check plays every run it sees whose name ends in `Test`, as `quint test --main` plays them, and every marked or named run. The runs of a module it imports are played as described in [Runs](#runs).
-- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has no states field: `pass  OnlyRuns  0 ms  0 rules, 4 runs`. Its JSON keeps `"states": 0`.
+- A check whose module sees an `init` and a `step`, by those names or by the names its mark gives them, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has no states field: `pass  OnlyRuns  0 ms  0 rules, 4 runs`. Its JSON keeps `"states": 0`.
 - A mark may stand on any line of a doc comment, and a definition's doc comment holds one mark.
 - The result line of each `.qnt` model counts its rules and its runs, `5 rules, 2 runs`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
 - Each of these is `unreadable`, at the line of the mark:
@@ -100,12 +101,13 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
   - `@Check` or `@CHECK`, a doc line whose first word is `@check` in another case: the message says the mark is written `@check`;
   - a `//` or `/* */` comment that starts with `@check` on the lines directly above a module, a `val`, a `temporal` definition or a run: a mark is a doc comment, `/// @check`, and a mark is removed by deleting it, not by commenting it out. A `@check` elsewhere in a comment, as in a URL or the middle of a line, is not read;
   - a second mark in one doc comment;
-  - names after a mark on a definition: names go in a module's doc comment;
+  - names after a mark on a definition, or an `init =` or a `step =` there: they go in a module's doc comment;
   - a mark on something no check judges: an `action`, a `var`, a `const`, an `import` or `instance`, a `type`, or a definition with parameters;
   - `@check reachable` on anything but a `val` or `def` value;
   - a name in a module's doc comment that the module does not see;
   - a marked module that leaves a constant unset: mark a module that sets it, as `module Small { import Clock(Limit = 3).* }`;
-  - a marked module with a property to judge and no `init` or `step` by those names: the message shows the `action init = ...` or `action step = ...` to write;
+  - in a module's mark, an `init =` or a `step =` that names something the module does not see, something that is not an `action` with no parameters, or no name at all, one given twice, or one followed by an expression, such as `step = x + 1`: a mark holds names only, so the message says to declare the `action` and name it;
+  - a marked module with a property to judge and no `init` or `step`, by those names or in its mark: the message shows the `/// @check init = ...` or `/// @check step = ...` to write, or the `action init = ...` or `action step = ...`;
   - a marked module with nothing to judge: no property and no run to play;
   - a marked definition or run that no check sees, such as a mark on a spec whose setups are not marked.
 - A `reachable` mark that no reachable state meets prints `never reached  atTop` and fails the check. A search stopped by `--max-states` or `--time-limit` before it is judged prints `unknown  atTop`, and the model is `unfinished`, as for `broken`.
@@ -115,16 +117,35 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
 - `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
-### What a checks file said
+### Another start or step
 
-A check that needs another `init` or `step`, or a second check of one module with other properties, is a module of its own that imports the spec under a name:
+A check that starts from another action or steps with another one names them in its mark, as Quint's `--init` and `--step` flags name them. A guard such as `Bug implies Inv` is a `val` that the mark names:
+
+```quint title="specs/door.qnt"
+module Door {
+  var count: int
+  action init = count' = 0
+  action step = count' = if (count < 3) count + 1 else count
+  action badInit = count' = 5
+  action badStep = count' = if (count < 9) count + 2 else count
+  val small = count <= 3
+  val guarded = (count > 3) implies count <= 9
+}
+
+/// @check init = badInit, step = badStep, guarded
+/// @check broken small
+module Bad {
+  import Door.*
+}
+```
+
+`Bad` searches 3 states, as `quint verify --main Bad --backend tlc --init badInit --step badStep --invariants guarded` does. A second check of one module with other properties is a module of its own that imports the spec under a name, and names what it sees under that name:
 
 ```quint title="specs/vault.qnt"
+/// @check init = V::init, step = V::stepForever
 /// @check broken V::nonNegative
 module vaultForever {
   import vault as V
-  action init = V::init
-  action step = V::stepForever
 }
 ```
 
@@ -369,9 +390,9 @@ For such a check, earnest builds from the file typechecked as Quint the module t
 | Definitions of its own | `val neverLate = time < MaxTime` | `neverLate` |
 | A spec imported whole | `import Light.*`, where `Light` has variables, types (of its own or from a types module in another file), `assume`s and helpers imported under a name (`import Lib as L`) | `color`, `L::inc` |
 
-The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
+The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
+A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the module's mark, or `init` and `step`, when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt

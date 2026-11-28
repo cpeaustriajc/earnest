@@ -5,6 +5,23 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: a Quint check names its `init` and `step` in its mark
+
+A check that started from another action or stepped with another one needed a module of its own that declared `action init = …` and `action step = …` by those names. A module's mark now names them, as Quint's `--init` and `--step` flags do:
+
+```quint
+/// @check init = badInit, step = badStep, guarded
+module Bad {
+  import Door.*
+}
+```
+
+- **The whole check follows the choice:** the search, the runs, the cache, `--base`, `--json` and `earnest confirm --quint`, which passes `--init badInit --step badStep`. Either may be given alone; the other stays the module's own `init` or `step`. Under `import Door as D` the names are `D::badInit` and `D::badStep`.
+- **Mistakes are `unreadable` at the mark:** a name the module does not see, one that is not an `action` with no parameters, `init =` or `step =` given twice or with no name, an expression after the `=`, and `init =` or `step =` on a definition's mark. Each message says what to write.
+- **What to write is said the new way:** a check that searches and sees no `step`, and a check of runs only that can't be compiled, now say to write `/// @check init = …, step = …`, where they spoke of naming them "in the check".
+
+Checks that name no `init` or `step` are unchanged. See [Another start or step](/reference/quint/#another-start-or-step).
+
 ## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
 
 A `.qnt` file was `unreadable` when a run called a run with a `nondet` of its own (`anyStart.then(step)`, `init.then(threeStart)`), or joined chains with `if`, `and`, `or` or `any`. The problem said ``a chain of steps where one step is wanted … never in `init`, `step` or a property`` and named the run "the definition". `quint test` plays these runs, and earnest now does too, with Quint's verdict:

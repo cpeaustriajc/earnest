@@ -14,6 +14,7 @@ mod quint_actions;
 mod quint_arguments;
 mod quint_changes;
 mod quint_checks;
+mod quint_chosen;
 mod quint_confirm;
 mod quint_data;
 mod quint_deep;

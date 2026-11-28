@@ -324,8 +324,8 @@ fn unbuilt(job: &Job, problem: Problem) -> Problem {
         message: format!(
             "the check lists only runs, and the module `{}` sees no `{}` and `{}`, which compiling \
              it as Quint needs, nor does it import a module that has an `init` and a `step`: \
-             name in the check an `init` and a `step` the module sees, such as `A::init` of an \
-             `import Spec as A`. Quint's message: {}",
+             name an `init` and a `step` the module sees in its mark, as `/// @check init = \
+             A::init, step = A::step` under `import Spec as A`. Quint's message: {}",
             check.main, check.init, check.step, problem.message
         ),
         ..problem
@@ -567,8 +567,8 @@ fn job_of(candidate: &Candidate, plan: Plan) -> Job {
                 .file_name()
                 .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
             main: plan.main,
-            init: "init".to_owned(),
-            step: "step".to_owned(),
+            init: plan.init,
+            step: plan.step,
             invariants: plan.invariants,
             temporal: plan.temporal,
             runs: plan.runs,
