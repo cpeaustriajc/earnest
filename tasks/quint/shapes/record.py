@@ -1,4 +1,3 @@
-# Records, with the real Quint, which names `quint compile --main U --invariant` accepts in each shape: run from this folder.
 import re,subprocess,json,glob,os,sys
 Q='/tmp/claude-0/q/node_modules/.bin/quint'
 os.makedirs('fixtures',exist_ok=True)

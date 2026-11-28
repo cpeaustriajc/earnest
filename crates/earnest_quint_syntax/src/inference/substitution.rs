@@ -217,8 +217,6 @@ fn kept(changed: Option<Value>, original: &Value, any: &mut bool) -> Value {
     }
 }
 
-/// The items with the substitutions applied to each, in order; the list itself, not a copy,
-/// when no item changed.
 fn applied_list(substitutions: &[Substitution], items: &Value, any: &mut bool) -> Value {
     let mut built: Option<Vec<Value>> = None;
     for (at, item) in items.as_items().iter().enumerate() {

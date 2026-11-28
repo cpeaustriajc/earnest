@@ -697,12 +697,8 @@ fn compiled_once(
         .collect()
 }
 
-/// A check read, or why not, and the runs `quint test` would not play in it.
 type ReadCheck = (Result<Compiled, Vec<Located>>, Vec<String>);
 
-/// Each check read from what was compiled for it, with the runs `quint test` would not play.
-/// The JSON is walked as deep as the file is nested, so this runs on a large stack, also on the
-/// command's thread, whatever stack that one has: one thread for all the checks, not one each.
 fn read_compiled(
     checks: &[Job],
     compiled: Vec<Result<(String, bool), Problem>>,

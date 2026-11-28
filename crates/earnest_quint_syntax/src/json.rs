@@ -2,9 +2,6 @@ use std::fmt::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
-/// Set by a test: every object the types table and the alias inliner write is shared, not only
-/// those held twice, so that any reading that does not see through a [`Json::Shared`] shows as
-/// a difference in the output. `EARNEST_QUINT_SHARE_EVERY_OBJECT=1` sets it for a whole run.
 static SHARE_EVERY_OBJECT: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
@@ -169,8 +166,6 @@ impl Drop for Json {
 }
 
 impl Json {
-    /// Moves what this value holds to `pending`, so that dropping it drops nothing nested: a
-    /// shared value gives up what it holds only when this is its last holder.
     fn take_children(&mut self, pending: &mut Vec<Json>) {
         match self {
             Self::List(items) => pending.append(items),

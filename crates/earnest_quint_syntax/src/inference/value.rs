@@ -13,7 +13,6 @@ pub(crate) struct Memo {
     json: HashMap<usize, Json>,
 }
 
-/// A value's content with each part named by the number the [`Interner`] gave it.
 #[derive(Hash, PartialEq, Eq)]
 enum Node {
     Undefined,

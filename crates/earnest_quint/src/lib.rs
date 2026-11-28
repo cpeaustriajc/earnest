@@ -195,18 +195,10 @@ pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Loc
     )
 }
 
-/// How deep expressions may nest in a compiled module a person gives earnest: as deep as in a
-/// `.qnt` file that earnest reads itself, counted as its front end counts them.
 const TREE_DEPTH: usize = 4_000;
 
-/// How deep `{` and `[` may nest in such a module: two for each level of an expression (an
-/// `app` and its `args`), and room for the module, its declarations and a definition around
-/// them.
 const MOST_NESTED: usize = 2 * TREE_DEPTH + 8;
 
-/// Where the first `{` or `[` of `json` nested deeper than [`MOST_NESTED`] is, found with no
-/// recursion and no parse. Given the file's own text, not [`json::exact`]'s, whose quotes around
-/// a long number would move the column.
 fn too_deep(json: &str) -> Option<Place> {
     let mut depth: usize = 0;
     let mut in_string = false;
@@ -244,7 +236,6 @@ fn too_deep(json: &str) -> Option<Place> {
     None
 }
 
-/// Who wrote the JSON a reader is given.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Written {
     /// The front end, for a `.qnt` file: it refused a file nested deeper than its bounds before

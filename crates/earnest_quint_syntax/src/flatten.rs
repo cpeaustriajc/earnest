@@ -249,8 +249,6 @@ fn unshadow(module: &Json, table: &mut Table) -> Json {
     module
 }
 
-/// The table, with the type each alias stands for once found: a chain of aliases is followed
-/// once, not once for each alias in it.
 struct Inliner<'a> {
     table: &'a Table,
     resolved: RefCell<HashMap<u64, Json>>,

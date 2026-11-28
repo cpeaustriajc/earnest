@@ -179,8 +179,6 @@ fn spot(entry: &Value) -> Option<(String, u32, u32)> {
     Some((file, line, column))
 }
 
-/// The JSON the front end wrote, read with no limit on its nesting: the front end refuses a file
-/// nested deeper than its own bounds before it writes any.
 fn from_front_end(text: &str) -> Option<Value> {
     let mut reader = serde_json::Deserializer::from_str(text);
     reader.disable_recursion_limit();
@@ -717,9 +715,6 @@ impl Places {
     }
 }
 
-/// Of the JSON the front end wrote for `quint compile`, each module's name and each
-/// declaration's name and qualifier: the rest is skipped as it is read, so the `types` table
-/// and the expressions are never held.
 #[derive(Deserialize)]
 struct CompiledModules {
     #[serde(default)]

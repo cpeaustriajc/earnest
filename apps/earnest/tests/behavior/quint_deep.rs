@@ -10,8 +10,6 @@ use std::fs;
 
 use crate::support::{Run, Sandbox, model, repository, rule};
 
-/// Every shape the CLI is tested on at 100 deep. Nested past about 60, any of them was refused
-/// by the 128 levels of `serde_json`'s limit, which no longer apply to the front end's JSON.
 const AT_100: [&str; 9] = [
     "nots_100",
     "parens_100",
@@ -24,9 +22,6 @@ const AT_100: [&str; 9] = [
     "implies_100",
 ];
 
-/// The shapes whose depth the stacks are tested at: every walk of the file recurses 300 levels,
-/// in the text and in Quint's tree, and the parser 500. Deeper files are built by the tests
-/// below that run on the system's stack and at the front end's bounds.
 const DEEPER: [&str; 4] = ["nots_300", "sums_300", "parens_300", "parens_500"];
 
 fn sample(name: &str) -> String {
@@ -294,10 +289,6 @@ fn a_compiled_module_nested_5000_deep_is_refused_with_the_nesting_and_the_bound_
     assert!(!run.stdout.contains("recursion limit"), "{run}");
 }
 
-/// A library for `LD_PRELOAD` that refuses only a thread asked for with 512 MiB of stack, the
-/// command's thread of `main.rs`, so that the command runs on the process's main thread at the
-/// system's stack, as it does where the system grants no such thread. It writes the file
-/// `$REFUSED_MARK` when it refuses one, so a test knows the command ran there.
 #[cfg(target_os = "linux")]
 const ONLY_THE_SYSTEMS_STACK: &str = r#"
 #define _GNU_SOURCE
@@ -319,9 +310,6 @@ int pthread_create(pthread_t *thread, const pthread_attr_t *attributes, void *(*
 }
 "#;
 
-/// `earnest` with `arguments`, its command on the process's main thread with 1 MiB of stack,
-/// the main thread's stack on Windows and less than any Linux or macOS gives. Linux only: the
-/// library is built with `cc` and loaded with `LD_PRELOAD`.
 #[cfg(target_os = "linux")]
 fn on_the_systems_stack(sandbox: &Sandbox, arguments: &[&str]) -> Run {
     let source = sandbox.path().join("refuse.c");
@@ -409,8 +397,6 @@ fn on_the_systems_stack_a_file_nested_1000_deep_is_judged() {
     );
 }
 
-/// A stand-in for Quint 0.33.1 that knows one answer: `quint test` plays `divTest` and it passes,
-/// as `quint test` truncates `(-7) / 2` to -3.
 const QUINT_TEST_TRUNCATES: &str = "#!/bin/sh
 case \"$1\" in
   --version) echo \"0.33.1\" ;;

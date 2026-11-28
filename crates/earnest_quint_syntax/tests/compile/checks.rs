@@ -11,8 +11,6 @@ struct Tally {
     differences: Vec<String>,
 }
 
-/// A comparing thread, on a stack as large as the crate's own: it compares and drops the outputs
-/// as deep as the checks are nested.
 fn spawn_large<'scope, T: Send + 'scope>(
     scope: &'scope thread::Scope<'scope, '_>,
     work: impl FnOnce() -> T + Send + 'scope,
