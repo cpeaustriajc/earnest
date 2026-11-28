@@ -657,6 +657,7 @@ State 1: <Initial predicate>
                 cached: false,
                 reason: None,
                 runs_not_played: Vec::new(),
+                not_judged: Vec::new(),
                 rules: rules
                     .iter()
                     .map(|(id, verdict)| RuleResult {

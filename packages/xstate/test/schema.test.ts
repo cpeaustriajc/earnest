@@ -188,7 +188,7 @@ const kinds = [
       { on: true, level: 0 },
       { on: true, level: 1 },
     ],
-    [{ on: true }, { on: true, level: 2 }, { on: true, level: 0, more: 1 }, null],
+    [{ level: 0 }, { on: true, level: 2 }, { on: true, level: 0, more: 1 }, null],
   ],
 ] as const;
 

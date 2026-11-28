@@ -1,5 +1,6 @@
 use crate::marks::{
-    Doc, Kind, Mark, commented_mark, constant_unset, listed_twice, misplaced_mark,
+    Doc, Kind, Mark, Role, chosen_empty, chosen_not_a_name, chosen_not_action, chosen_off_module,
+    chosen_twice, chosen_unseen, commented_mark, constant_unset, listed_twice, misplaced_mark,
     module_mark_alone, named_twice, names_alone, names_off_module, names_unended, no_init_or_step,
     not_judged, not_seen, not_seen_named, nothing_to_judge, read_doc, second_mark, starts_a_mark,
     unknown_mark, unspaced_source,
@@ -30,6 +31,8 @@ pub(crate) type Spot = (PathBuf, u32, u32);
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Plan {
     pub(crate) main: String,
+    pub(crate) init: String,
+    pub(crate) step: String,
     pub(crate) invariants: Vec<String>,
     pub(crate) temporal: Vec<String>,
     pub(crate) expected: Vec<String>,
@@ -277,7 +280,9 @@ fn definition_problems(locator: &Placer<'_>, each: &Marked<'_>, doc: &Doc) -> Ve
     let Some(mark) = doc.marks.first() else {
         return found;
     };
-    let wrong = if let [only] = mark.names.as_slice()
+    let wrong = if !mark.chosen.is_empty() {
+        Some(chosen_off_module(&each.name))
+    } else if let [only] = mark.names.as_slice()
         && mark.kind == Kind::Holds
     {
         Some(unknown_mark(&format!("@check {only}")))
@@ -301,6 +306,7 @@ fn is_judged(places: &Places, id: u64, doc: &Doc) -> Option<(Kind, Option<String
     };
     (doc.wrong.is_empty()
         && mark.names.is_empty()
+        && mark.chosen.is_empty()
         && what_is(places, id).is_none()
         && fits(places, id, mark.kind))
     .then(|| (mark.kind, doc.says.clone()))
@@ -353,6 +359,68 @@ fn named_in_module(
     }
 }
 
+fn chosen_actions(
+    locator: &Placer<'_>,
+    (main, doc_text, doc): (&str, &str, &Doc),
+    problems: &mut Vec<Problem>,
+) -> (Option<String>, Option<String>) {
+    let places = locator.places;
+    let visible = places.visible(main);
+    let mut init: Option<String> = None;
+    let mut step: Option<String> = None;
+    let mut given: Vec<Role> = Vec::new();
+    for mark in &doc.marks {
+        for each in &mark.chosen {
+            let at = |message: &str| locator.at_module((main, doc_text), mark.line, message);
+            if given.contains(&each.role) {
+                problems.push(at(&chosen_twice(each.role)));
+                continue;
+            }
+            given.push(each.role);
+            let name = each.name.as_str();
+            let refused = if name.is_empty() {
+                Some(chosen_empty(each.role))
+            } else if !is_a_name(name) {
+                Some(chosen_not_a_name(each.role, name))
+            } else if let Some(found) = visible.iter().find(|seen| seen.name == name) {
+                action_refused(places, found.id)
+                    .map(|what| chosen_not_action(each.role, name, what))
+            } else {
+                Some(chosen_unseen(each.role, name, main))
+            };
+            if let Some(message) = refused {
+                problems.push(at(&message));
+                continue;
+            }
+            let slot = match each.role {
+                Role::Init => &mut init,
+                Role::Step => &mut step,
+            };
+            *slot = Some(name.to_owned());
+        }
+    }
+    (init, step)
+}
+
+fn is_a_name(text: &str) -> bool {
+    names_alone(text).is_some_and(|names| names.len() == 1)
+}
+
+fn action_refused(places: &Places, id: u64) -> Option<&'static str> {
+    match (places.kind_of(id), places.qualifier_of(id)) {
+        (Some("def"), Some("action")) if places.takes_parameters(id) => {
+            Some("an `action` with parameters")
+        }
+        (Some("def"), Some("action")) => None,
+        (Some("def"), Some(TEMPORAL)) => Some("a `temporal` definition"),
+        (Some("def"), Some(RUN)) => Some("a `run`"),
+        (Some("def"), Some("val" | "pureval")) => Some("a `val`"),
+        (Some("def"), Some("def" | "puredef")) => Some("a `def`"),
+        (Some("def"), Some(_)) => Some("a definition that is not an `action`"),
+        _ => what_is(places, id),
+    }
+}
+
 fn without_init_or_step(
     locator: &Placer<'_>,
     (main, doc_text): (&str, &str),
@@ -362,7 +430,7 @@ fn without_init_or_step(
     let action = places
         .own_actions(main)
         .into_iter()
-        .find(|each| *each != INIT && *each != STEP)
+        .find(|each| *each != plan.init && *each != plan.step)
         .unwrap_or("...");
     let judged: Vec<String> = plan
         .invariants
@@ -370,7 +438,7 @@ fn without_init_or_step(
         .chain(&plan.temporal)
         .map(|name| format!("`{name}`"))
         .collect();
-    [INIT, STEP]
+    [plan.init.as_str(), plan.step.as_str()]
         .into_iter()
         .filter(|missing| !places.sees(main, missing))
         .map(|missing| {
@@ -459,8 +527,11 @@ fn plan_of(
     for each in &judged {
         seen.extend(spot_key(places.spot_of(each.id)));
     }
+    let (init, step) = chosen_actions(locator, (main, doc_text, doc), &mut problems);
     let mut plan = Plan {
         main: main.to_owned(),
+        init: init.unwrap_or_else(|| INIT.to_owned()),
+        step: step.unwrap_or_else(|| STEP.to_owned()),
         ..Plan::default()
     };
     let mut marked_runs: Vec<String> = Vec::new();

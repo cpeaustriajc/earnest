@@ -3,7 +3,7 @@ title: Install
 description: Install the nightly build of the earnest checker, or build it from source.
 ---
 
-Early access ships as a nightly build of `main`. The install script downloads the archive for your machine and checks its SHA-256 against the `.sha256` file beside it. Then it installs `earnest` in `~/.local/bin`, or in `%LOCALAPPDATA%\Programs\earnest` on Windows.
+Early access ships as nightly builds of `main`. The install script downloads the archive for your machine and checks its SHA-256 against the `.sha256` file beside it. Then it installs `earnest` in `~/.local/bin`, or in `%LOCALAPPDATA%\Programs\earnest` on Windows.
 
 ```sh title="macOS and Linux"
 curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | sh
@@ -15,7 +15,28 @@ irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | ie
 
 Set `EARNEST_INSTALL_DIR` to install in another folder. Run the script again to update to the newest night.
 
-Each night that `main` moves, the `v0.1.0-nightly` pre-release on the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page is rebuilt from `main` and replaced. To verify a downloaded archive by hand, keep the archive and its `.sha256` file in the same folder and run:
+Each night that `main` changes more than `CHANGELOG.md`, the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page gets two pre-releases built from that commit:
+
+| Tag | Replaced |
+|---|---|
+| `v0.1.0-nightly` | Every night that `main` changes more than `CHANGELOG.md` |
+| `v0.1.0-nightly.YYYYMMDD` (UTC date) | Never |
+
+Dated releases older than 90 days are removed by the nightly workflow. Pin one that is newer than that.
+
+## Pin a build
+
+Set `EARNEST_VERSION` for `install.sh` or `install.ps1`, putting a dated tag from the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page in place of `v0.1.0-nightly.YYYYMMDD`. The script downloads that release's archive for your machine and checks its SHA-256 against the `.sha256` file beside it. Every machine that names the tag gets the same binary.
+
+```sh title="macOS and Linux"
+curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | EARNEST_VERSION=v0.1.0-nightly.YYYYMMDD sh
+```
+
+```powershell title="Windows"
+$env:EARNEST_VERSION = 'v0.1.0-nightly.YYYYMMDD'; irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex
+```
+
+To fetch the archive yourself, download it and its `.sha256` file from `https://github.com/cpeaustriajc/earnest/releases/download/<tag>/`, keep both in one folder, and run:
 
 ```sh
 sha256sum --check earnest-linux-x64-gnu.tar.gz.sha256   # Linux

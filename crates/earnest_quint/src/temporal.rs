@@ -964,6 +964,7 @@ pub(crate) fn temporal<'a>(
     let mut refused = Vec::new();
     for conjunct in conjuncts(&listed.expr) {
         let Some(def) = properties.temporal_def(conjunct) else {
+            properties.reader.unread.whole = true;
             PROPERTIES.clone_into(&mut properties.reader.within);
             refused.extend(
                 properties
@@ -977,10 +978,14 @@ pub(crate) fn temporal<'a>(
             continue;
         };
         let name = &def.name;
+        if properties.reader.left.temporal.contains(name) {
+            continue;
+        }
         name.clone_into(&mut properties.reader.within);
         let mut parts = Vec::new();
         if let Err(refusal) = properties.property(&def.expr, step, None, &mut parts) {
             refused.push(refusal);
+            properties.reader.unread.temporal.push(name.clone());
             continue;
         }
         if parts.is_empty() {
