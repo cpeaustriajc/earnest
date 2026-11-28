@@ -1,5 +1,8 @@
 //! Everything a model file imports: `use earnest::model::{Domain, Model, model, require};`.
 //!
+//! [`Behavior`] also gives a test what a model says about whole runs: [`Eventually`],
+//! [`Witnessed`] and [`Setup`].
+//!
 //! [`Domain`] and [`Model`] are each a trait and the derive that implements it. The value
 //! types ([`Set`], [`Map`], [`Seq`], [`Queue`], [`Lock`], [`Timer`], [`Request`], [`Retry`])
 //! never change in place: every operation gives back a new value and leaves the one it was
@@ -140,6 +143,55 @@ pub struct Claim {
     pub holds: bool,
 }
 
+/// A rule about runs, `#[eventually("...")]`, judged in one state.
+///
+/// A rule about runs holds or breaks over whole runs, so one state can't judge it: a test walks
+/// the states and reads these, as `earnest verify` does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Eventually {
+    /// The id: the name of the method.
+    pub id: &'static str,
+    /// The sentence from `#[eventually("...")]`.
+    pub says: &'static str,
+    /// What the method named by `after = method` returned in the state, so whether the rule
+    /// starts here. `None` when the rule names none and starts in every start state.
+    pub after: Option<bool>,
+    /// What the rule's own method returned in the state: whether a run that comes here has
+    /// reached what it wants.
+    pub reaches: bool,
+}
+
+/// A witness, `#[witness("...")]`, played from one state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Witnessed {
+    /// The id: the name of the method.
+    pub id: &'static str,
+    /// The sentence from `#[witness("...")]`.
+    pub says: &'static str,
+    /// The id of the setup named by `setup = method`, whose start states the checker plays the
+    /// witness from. `None` for the model's own start states.
+    pub setup: Option<&'static str>,
+    /// What the method returned when played from this state: `None` when a step can't happen,
+    /// else whether what it expects is true after the last step. A witness that returns `bool`,
+    /// because none of its steps can fail, gives `Some` of its result. From a start state (of
+    /// its setup, when it names one), `Some(true)` is the checker's `holds`. A step that takes a
+    /// field outside the values it declares breaks the witness for the checker, where the
+    /// method can still give `Some(true)`.
+    pub played: Option<bool>,
+}
+
+/// A setup, `#[setup("...")]`, applied to one state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Setup<State> {
+    /// The id: the name of the method.
+    pub id: &'static str,
+    /// The sentence from `#[setup("...")]`.
+    pub says: &'static str,
+    /// The state with the fields the setup writes changed. Applied to each start state of the
+    /// model, it gives the setup's start states.
+    pub state: State,
+}
+
 /// What a model can do from one state: implemented by `#[model]` on the `impl` block.
 ///
 /// It lets a test walk a model without naming its methods, for example to find the step with
@@ -232,6 +284,22 @@ pub trait Behavior: Sized {
     /// Every end in source order, with whether it marks this state as a correct place to
     /// stop.
     fn ends(&self) -> Vec<Claim>;
+
+    /// Every rule about runs in source order, judged in this state. Empty for a model without
+    /// one.
+    fn eventually(&self) -> Vec<Eventually> {
+        Vec::new()
+    }
+
+    /// Every witness in source order, played from this state. Empty for a model without one.
+    fn witnesses(&self) -> Vec<Witnessed> {
+        Vec::new()
+    }
+
+    /// Every setup in source order, applied to this state. Empty for a model without one.
+    fn setups(&self) -> Vec<Setup<Self>> {
+        Vec::new()
+    }
 }
 
 /// Whether `test` is true for every value of `T`. Name the type: `forall::<Guest>(|g| ...)`.

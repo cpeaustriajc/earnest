@@ -1,8 +1,14 @@
-use crate::changes::Difference;
-use crate::reading::ModelFile;
-use crate::run::{Checked, ModelResult, Status};
-use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines};
+use crate::changes::{Difference, NotRead, for_the_chart, whys};
+use crate::reading::{ModelFile, Readable};
+use crate::run::only_runs_not_played;
+use crate::run::{
+    Checked, FindingResult, ModelResult, RuleResult, SetupName, Status, is_expected_result,
+    whole_of,
+};
+use earnest_chart::{RuleChange, RuleChanges, one_line, rule_change_lines_noting};
+use earnest_check::EVERY_EXPECTED_FOUND;
 use earnest_diagnostics::Problem;
+use earnest_ir::Model;
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -13,6 +19,7 @@ const STATUS_WIDTH: usize = 10;
 pub(crate) struct Since<'a> {
     pub(crate) base: &'a str,
     pub(crate) changes: &'a [Difference],
+    pub(crate) not_compared: &'a [NotRead],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,17 +46,85 @@ impl Summary {
     }
 }
 
+const EXPECTED: &str = "broken";
+const REACHED: &str = "reached";
+
+#[derive(Debug, Serialize)]
+struct ExpectedRule<'a> {
+    #[serde(flatten)]
+    rule: &'a RuleResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected: Option<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+struct Expecting<'a> {
+    name: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setup: Option<&'a SetupName>,
+    file: &'a str,
+    line: u32,
+    status: Status,
+    states: usize,
+    milliseconds: u64,
+    cached: bool,
+    reason: Option<&'a str>,
+    rules: Vec<ExpectedRule<'a>>,
+    findings: &'a [FindingResult],
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Shown<'a> {
+    Plain(&'a ModelResult),
+    Expecting(Expecting<'a>),
+}
+
+fn shown<'a>(result: &'a ModelResult, (expected, reachable): Marked<'_>) -> Shown<'a> {
+    if expected.is_empty() {
+        return Shown::Plain(result);
+    }
+    Shown::Expecting(Expecting {
+        name: &result.name,
+        setup: result.setup.as_ref(),
+        file: &result.file,
+        line: result.line,
+        status: result.status,
+        states: result.states,
+        milliseconds: result.milliseconds,
+        cached: result.cached,
+        reason: result.reason.as_deref(),
+        rules: result
+            .rules
+            .iter()
+            .map(|rule| ExpectedRule {
+                rule,
+                expected: if is_expected_result(reachable, rule) {
+                    Some(REACHED)
+                } else {
+                    is_expected_result(expected, rule).then_some(EXPECTED)
+                },
+            })
+            .collect(),
+        findings: &result.findings,
+    })
+}
+
 #[derive(Debug, Serialize)]
 struct Document<'a> {
-    models: Vec<&'a ModelResult>,
+    models: Vec<Shown<'a>>,
     unreadable: Vec<&'a Problem>,
     skipped: &'a [String],
     #[serde(rename = "noModel")]
     no_model: &'a [String],
     #[serde(rename = "ruleChanges")]
     rule_changes: &'a [Difference],
+    #[serde(rename = "notCompared", skip_serializing_if = "<[_]>::is_empty")]
+    not_compared: &'a [NotRead],
     summary: Summary,
 }
+
+type Marked<'a> = (&'a [String], &'a [String]);
 
 fn counted(count: usize, one: &str, many: &str) -> String {
     let noun = if count == 1 { one } else { many };
@@ -77,6 +152,20 @@ impl Verified<'_> {
         }
     }
 
+    fn readable_of(&self, checked: &Checked) -> Option<&Readable> {
+        self.files
+            .iter()
+            .filter(|file| file.path == checked.result.file)
+            .flat_map(ModelFile::models)
+            .find(|readable| checked.is_of(readable))
+    }
+
+    fn expected_of(&self, checked: &Checked) -> Marked<'_> {
+        self.readable_of(checked).map_or((&[], &[]), |readable| {
+            (readable.expected.as_slice(), readable.reachable.as_slice())
+        })
+    }
+
     pub(crate) fn text(&self) -> String {
         let mut lines = Vec::new();
         let mut checked = self.checked.iter().peekable();
@@ -85,7 +174,15 @@ impl Verified<'_> {
                 lines.extend(unreadable_lines(file));
             }
             while let Some(next) = checked.next_if(|next| next.result.file == file.path) {
-                lines.push(model_line(&next.result));
+                let counts = self
+                    .readable_of(next)
+                    .filter(|readable| readable.counted)
+                    .map(|readable| (counts_of(&readable.model), only_runs(&readable.model)));
+                lines.push(model_line(
+                    &next.result,
+                    counts.as_ref().map(|(text, only)| (text.as_str(), *only)),
+                ));
+                lines.extend(not_played_line(&next.result));
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
         }
@@ -95,10 +192,15 @@ impl Verified<'_> {
                 .iter()
                 .map(Difference::for_the_chart)
                 .collect();
-            lines.extend(rule_change_lines(&RuleChanges {
-                base: since.base,
-                changes: &changes,
-            }));
+            let whys = whys(since.not_compared, since.base);
+            let not_compared = for_the_chart(since.not_compared, &whys);
+            lines.extend(rule_change_lines_noting(
+                &RuleChanges {
+                    base: since.base,
+                    changes: &changes,
+                },
+                &not_compared,
+            ));
         }
         lines.extend(skipped_line(self.skipped.len()));
         lines.extend(no_model_line(self.no_model.len()));
@@ -108,11 +210,16 @@ impl Verified<'_> {
 
     pub(crate) fn json(&self) -> Result<String, String> {
         let document = Document {
-            models: self.checked.iter().map(|checked| &checked.result).collect(),
+            models: self
+                .checked
+                .iter()
+                .map(|checked| shown(&checked.result, self.expected_of(checked)))
+                .collect(),
             unreadable: self.files.iter().flat_map(ModelFile::problems).collect(),
             skipped: self.skipped,
             no_model: self.no_model,
             rule_changes: self.since.map_or(&[], |since| since.changes),
+            not_compared: self.since.map_or(&[], |since| since.not_compared),
             summary: self.summary(),
         };
         serde_json::to_string_pretty(&document)
@@ -120,18 +227,49 @@ impl Verified<'_> {
     }
 }
 
-fn model_line(result: &ModelResult) -> String {
-    let so_far = if result.reason.is_some() {
+fn only_runs(model: &Model) -> bool {
+    model.rules.is_empty() && model.runs.eventually.is_empty() && !model.runs.scripts.is_empty()
+}
+
+fn counts_of(model: &Model) -> String {
+    let mut rules: Vec<&str> = Vec::new();
+    let always = model.rules.iter().map(|rule| rule.id.as_str());
+    let eventually = model.runs.eventually.iter().map(|rule| rule.id.as_str());
+    for id in always.chain(eventually).map(whole_of) {
+        if !rules.contains(&id) {
+            rules.push(id);
+        }
+    }
+    let mut runs: Vec<&str> = Vec::new();
+    for id in model.runs.scripts.iter().map(|script| whole_of(&script.id)) {
+        if !runs.contains(&id) {
+            runs.push(id);
+        }
+    }
+    format!(
+        "{}, {}",
+        counted(rules.len(), "rule", "rules"),
+        counted(runs.len(), "run", "runs")
+    )
+}
+
+fn model_line(result: &ModelResult, counts: Option<(&str, bool)>) -> String {
+    let so_far = if result.reason.as_deref().is_some_and(|reason| {
+        reason != EVERY_EXPECTED_FOUND && !only_runs_not_played(reason, &result.runs_not_played)
+    }) {
         " so far"
     } else {
         ""
     };
     let mut fields = vec![
         format!("{:<STATUS_WIDTH$}", result.status.word()),
-        one_line(&result.name),
-        format!("{} states{so_far}", result.states),
-        format!("{} ms", result.milliseconds),
+        one_line(&result.run_name()),
     ];
+    if !counts.is_some_and(|(_, only_runs)| only_runs && result.states == 0) {
+        fields.push(format!("{} states{so_far}", result.states));
+    }
+    fields.push(format!("{} ms", result.milliseconds));
+    fields.extend(counts.map(|(text, _)| text.to_owned()));
     fields.extend(result.reason.as_ref().map(|reason| format!("({reason})")));
     if result.cached {
         fields.push("(cached)".to_owned());
@@ -139,28 +277,52 @@ fn model_line(result: &ModelResult) -> String {
     fields.join(INDENT)
 }
 
+fn not_played_line(result: &ModelResult) -> Option<String> {
+    if result.runs_not_played.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{INDENT}note{INDENT}runs not played: {} (written in a module this one imports, whose \
+         runs are dropped when it is compiled as Quint: the checker plays them only in a setup it \
+         builds itself; \
+         as a last resort, write them in this module to play them here)",
+        one_line(&result.runs_not_played.join(", "))
+    ))
+}
+
 pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
-    file.problems()
-        .iter()
-        .map(|problem| {
-            format!(
-                "{}:{}:{}{INDENT}{}{INDENT}{}",
-                one_line(&problem.file),
-                problem.line,
-                problem.column,
-                one_line(&problem.feature),
-                one_line(&problem.message)
-            )
-        })
-        .collect()
+    let mut lines = Vec::new();
+    for problem in file.problems() {
+        let mut message = problem.message.lines();
+        lines.push(format!(
+            "{}:{}:{}{INDENT}{}{INDENT}{}",
+            one_line(&problem.file),
+            problem.line,
+            problem.column,
+            one_line(&problem.feature),
+            one_line(message.next().unwrap_or_default())
+        ));
+        lines.extend(
+            message
+                .map(str::trim_end)
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| format!("{INDENT}{INDENT}{line}")),
+        );
+    }
+    lines
 }
 
 pub(crate) fn unreadable_lines(file: &ModelFile) -> Vec<String> {
-    let mut lines = vec![format!(
+    let mut header = format!(
         "{:<STATUS_WIDTH$}{INDENT}{}",
         "unreadable",
         one_line(&file.path)
-    )];
+    );
+    if let Some(check) = file.quint_check() {
+        header.push_str(INDENT);
+        header.push_str(&one_line(check));
+    }
+    let mut lines = vec![header];
     lines.extend(
         problem_lines(file)
             .into_iter()
@@ -269,6 +431,7 @@ mod tests {
     fn result(name: &str, file: &str, status: Status) -> ModelResult {
         ModelResult {
             name: name.to_owned(),
+            setup: None,
             file: file.to_owned(),
             line: 2,
             status,
@@ -276,11 +439,15 @@ mod tests {
             milliseconds: 1,
             cached: false,
             reason: None,
+            runs_not_played: Vec::new(),
             rules: vec![RuleResult {
                 id: "fine".to_owned(),
                 says: "All is fine".to_owned(),
                 verdict: "holds".to_owned(),
                 path: None,
+                kind: None,
+                reason: None,
+                repeats_from: None,
             }],
             findings: Vec::new(),
         }
@@ -289,6 +456,7 @@ mod tests {
     fn checked() -> Vec<Checked> {
         vec![
             Checked {
+                position: 0,
                 result: result("A", "src/a.model.ts", Status::Fail),
                 detail: vec![
                     "stuck  nothing can happen".to_owned(),
@@ -296,6 +464,7 @@ mod tests {
                 ],
             },
             Checked {
+                position: 0,
                 result: ModelResult {
                     states: 1000,
                     milliseconds: 3,
@@ -343,6 +512,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
             model: "A".to_owned(),
             id: "fresh".to_owned(),
             change: Kind::Added,
+            part: None,
             was: None,
             now: Some(Wording {
                 says: "New".to_owned(),
@@ -357,6 +527,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
             since: Some(Since {
                 base: "origin/main",
                 changes: &changes,
+                not_compared: &[],
             }),
         };
         let text = verified.text();
@@ -458,6 +629,7 @@ unfinished  Z  1000 states so far  3 ms  (state limit of 1000)  (cached)
     #[test]
     fn a_model_or_file_name_with_a_line_break_stays_on_one_line() {
         let named = Checked {
+            position: 0,
             result: result(
                 "First\nSecond\u{b}Third",
                 "first\nsecond.model.ts",

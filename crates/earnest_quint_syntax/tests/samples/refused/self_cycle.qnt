@@ -1,0 +1,3 @@
+module SelfCycle {
+  import SelfCycle.*
+}

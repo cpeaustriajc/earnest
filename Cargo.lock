@@ -319,6 +319,8 @@ dependencies = [
  "earnest_check",
  "earnest_diagnostics",
  "earnest_ir",
+ "earnest_quint",
+ "earnest_quint_syntax",
  "earnest_rs",
  "earnest_semantic",
  "earnest_threads",
@@ -422,6 +424,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "earnest_quint"
+version = "0.1.0"
+dependencies = [
+ "earnest_diagnostics",
+ "earnest_ir",
+ "earnest_value",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "earnest_quint_syntax"
+version = "0.1.0"
+dependencies = [
+ "earnest_check",
+ "earnest_quint",
+ "earnest_threads",
+]
+
+[[package]]
 name = "earnest_rs"
 version = "0.1.0"
 dependencies = [
@@ -487,6 +509,7 @@ dependencies = [
 name = "earnest_value"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
  "proptest",
  "rustc-hash",
  "serde_json",

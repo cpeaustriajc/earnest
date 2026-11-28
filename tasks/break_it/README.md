@@ -252,11 +252,9 @@ beside the deep one and asserts that it is still reported.
 ### `explore` and `%` of a negative number
 
 `third_b/remainder.model.ts`, model `Rem`, `n` from 0 to 2 (3 states). The rule `below` is
-`(s.n - 1) % 3 !== 99`. At `n = 0` the left side is `-1 % 3`. The root `README.md` makes `%` on
-a negative number a fault, so `below` is `unknown` with a fault after 0 steps, which is what the
-checker reports. `explore` runs the file as JavaScript and reports `holds`, and no finding.
-`explore` cannot intercept `%`, so the smallest fix may be one sentence in the contract that it
-does not. Test: `explore_in_node_gives_unknown_for_a_remainder_of_a_negative_number`.
+`m.rem(s.n - 1, 3) !== 99`. At `n = 0` the left side is `m.rem(-1, 3)`. Since issue 94, `m.rem`
+is JavaScript's `%` in the checker as in `explore`: `-1 % 3` is -1, so `below` holds in both, with
+no finding. Test: `explore_in_node_and_the_checker_agree_on_a_remainder_of_a_negative_number`.
 
 ### Suspected, no test
 
@@ -907,3 +905,2848 @@ without a number TLC can't hold, and for a quantifier, where it is stricter.
 
 `--time-limit` across `--jobs` (timed). tla-rs. Windows. A `confirm` that is excused for a
 true difference, as above.
+
+## Seventh pass
+
+A seventh adversarial pass, made on commit d82552f against the code for witnesses, rules about
+runs (`m.eventually` and `fair: true`) and setups (`m.setup`), in TypeScript models. Its tests
+are in `tests/break_it/seventh.rs` and its files in `models/seventh/`. Every file passes `tsc`
+with `strict` against `packages/model`. Every number below is derived by hand from the model and
+the contract (the brief of issue #51, `packages/model/src/model.ts`, `reference/output.md`).
+Each test fails today. TLC could not be run in this pass (see "Not covered").
+
+### `--rule` refused for every model that has a setup
+
+`seventh/jar.model.ts`, model `Jar`: `n` from 0, `cap` 2, `add` while `n < cap`, `full` at `n ===
+cap`, the rule `low` (`s.n <= 1`) and the setup `small` (`cap: 1`). As declared: `n` 0, 1, 2 (3
+states), `low` broken after two steps. In `small`: `n` 0, 1 (2 states), `low` holds. `verify
+--rule low` checks the one model that has `low`, in both of its runs, and exits 1. Today it
+prints ``error: the rule `low` is in the models `Jar`, `Jar`: name one with `--model` `` and
+exits 2, for every rule, eventually rule and witness of the declared run; the advice can't be
+followed, since `--model Jar` names both runs (with `--model Jar` the run works). Cause:
+`apps/earnest/src/select.rs`, the match on `with_rule.len()`, counts each setup's run as another
+model. `earnest tla` has the same advice for two setups whose ids give one module name (`$one`
+and `_one` both give `Jar__one`). Test:
+`a_rule_of_a_model_with_a_setup_can_be_chosen_with_rule_alone`.
+
+### `--base` does not list a removed eventually rule or witness
+
+`seventh/changes/before/climb.model.ts`: `Climb` (`n` 0 to 3) with the eventually rule `climbs`
+and the witness `three`; `after/climb.model.ts` is the same file without both. With `--base
+HEAD`, `removed` is "present at `--base`, absent in the working tree (deleted rule ...)", and
+both are listed in `rules` (with a `kind`). Today `ruleChanges` is empty; a removed setup is not
+listed either, though it takes a whole run away. Right result: `climbs` and `three` `removed`.
+Cause: `model_changes` in `apps/earnest/src/changes.rs` compares only `draft.rules`, never
+`draft.runs`. Test: `a_removed_rule_about_runs_and_a_removed_witness_are_listed_as_removed`.
+
+### A rule loosened in a setup's states is listed as `changed`
+
+`seventh/changes/{before,after}/large.model.ts`: `Jar` with `cap` 1 as declared and the setup
+`large` (`cap: 2`); only `low` changes, from `s.n <= 1` to `s.n <= 2`. As declared `n` is 0 or 1,
+where the two conditions agree. In `large` the state `n = 2, cap = 2` is reached after two
+steps: it passes the new rule and breaks the old one, and the run `Jar (large)` goes from `fail`
+to `pass`. `loosened` is "some reachable state of the new model satisfies the new rule and breaks
+the old rule". Today: `changed`. Cause: `rule_changes` in `apps/earnest/src/changes.rs` keeps
+only the target with `runs.chosen.is_none()` and `told_apart` searches the declared start states
+only. Test: `a_rule_loosened_in_the_states_of_a_setup_is_listed_as_loosened`.
+
+### Two models of one name on one line share a cached result
+
+`seventh/one_line.model.ts`: `export const A = m.model("Jar", ...); export const B =
+m.model("Jar", ...);` on line 3. `A`: `n` 0 to 2, an end at 2, no rule: `pass`, 3 states. `B`:
+`k` 0, 1, an end at 1, `lowB` (`s.k === 0`) broken after one step: `fail`, 2 states. The first
+`verify --json` says exactly that and exits 1. The second, from `.earnest/`, says `pass`, 3
+states for both and exits 0: a broken rule is gone. Cause: `ModelResult::is_of` in
+`apps/earnest/src/run.rs` finds a cached result by name, line and setup id, which both models
+share. Test: `two_models_of_one_name_on_one_line_keep_their_own_cached_results`.
+
+### Two models of one name in one file are compared with each other under `--base`
+
+`seventh/changes/{before,after}/twins.model.ts`: `A = m.model("Jar", ...)` (`n` 0 to 2, rule
+`lowA`) and `B = m.model("Jar", ...)` (`n` 0 to 3, rule `lowB`). With the file as committed,
+`--base HEAD` lists `lowB` `added` and `lowA` `removed`, though nothing changed ("unchanged rules
+are omitted"). After `lowB` goes from `s.n <= 1` to `s.n <= 2` (`n = 2` is reached in `B`, so it
+is `loosened`), the list is the same two wrong entries and the loosening is not listed. Right
+result: nothing, then `lowB` `loosened` alone. Cause: `rule_changes` in
+`apps/earnest/src/changes.rs` pairs each model with `old.iter().find(|draft| draft.name ==
+new.name)`, the first base model of that name, for both. The fourth pass found two files with a
+model of one name each correct. Test:
+`two_models_of_one_name_in_one_file_are_each_compared_with_their_own_base`.
+
+### Settled after the pass
+
+All five tests pass. The runs of one model (as declared and in each setup) are one model to
+`--rule`, so `--rule low` checks `low` in both runs of `Jar` (unit tests in
+`apps/earnest/src/select.rs`); `tla` and `confirm` number two runs of one model whose module
+names TLA+ spells alike apart (`Jar__one`, `Jar__one_2`), and still refuse two models of one
+name (tests in `apps/earnest/src/commands.rs`). `--base` lists rules about runs, witnesses and
+setups as `added`, `removed`, `reworded` or `changed`, with `kind` in JSON and the kind in
+round brackets after the id in text: a witness and a setup keep their source text in the
+TypeScript reader, and an eventually rule is compared by its `after` and `reaches` (tests in
+`apps/earnest/src/changes.rs`, `crates/earnest_ts/src/members.rs` and
+`crates/earnest_chart/tests/writer/report.rs`). A rule is `loosened` or `tightened` when a
+state of the model as declared or of any of its setups tells the old rule from the new. Two
+models of one name in one file are told apart by their order in the file, in the cache and
+under `--base`; `unreadable` was not taken, since the tests of this pass ask for both models
+to be checked (unit tests in `apps/earnest/src/run.rs` and `changes.rs`). `m.step((inc), {})`
+is read as `m.step(inc, {})`. The Rust reader reads no witness or setup yet, so the source
+text of both is filled in by the TypeScript reader only.
+
+### Attacked and found correct
+
+Each compared with `explore` in Node (status, states, rules with paths, reasons and
+`repeatsFrom`, findings) and derived by hand:
+
+- Weak fairness: a fair action enabled at one state of a loop (broken, the loop passes a state
+  where it is off), two fair actions each enabled at one state of a loop, a fair action with an
+  input of which one value stutters and one leaves the loop (holds), a fair action that only
+  stutters, an end inside a loop (the run goes on), a stuck state, several start states, `after`
+  true at a start, true only where `reaches` is, true in no reachable state, a loop reached only
+  after `reaches` held; the TLA+ export of each (`WF_vars(Next)`, one `WF_vars` per fair action,
+  `<>` and `~>`).
+- Shortest paths: grids of 90 751 and 4 004 031 states whose nearest loop is 551 and 3 991
+  steps in, 4 steps long (`--jobs 1` and `4`, the same path), a triangle of 80 601 states with 401 stuck states at the same depth and
+  `after` at the middle (the same tie broken the same way by the checker, Node and every
+  `--jobs`).
+- `unknown`: `--max-states` under, at and over the count, an out-of-range step, a fault in an
+  action's change, a fault in an end; a fault in another plain rule leaves the eventually rule
+  judged (`holds`), the same in Node.
+- Setups of an optional, a record with its fields out of order, a set of records, a sequence, a
+  sum and a constant, `null` for an optional, a field with several start values; witnesses that
+  name a setup are played and listed in its run only; `explore` with `setup` agrees on every
+  run; `tla` gives each setup its own `Init`.
+- Witness inputs: a negative constant, `1 + 1`, `-0`, `2e0`, `0x1`, `1_0`, a record, a set with
+  a repeated member, `null` for an optional; `m.step` on an action without inputs.
+- The reader: 31 spellings of `m.eventually`, `m.setup` and `m.witness` (`&&`, `.call`, `m[".."]`,
+  a comma, an IIFE, a record, a list, destructuring, `satisfies`, `!`, `let`, `var`, `export
+  default`, a bare statement, a block, `if`, `export { x as y }`, an import of the model from
+  another file): each refused with a sentence, none dropped. `after: undefined`, `fair:
+  undefined`, `setup: undefined`, `{ reaches }` written short and `m.step((inc), {})` are legal
+  TypeScript and refused.
+- TLA+ names: fields `Spec`, `vars`, `ELSE` and `Action_go` beside an action `go`, ids with `$`
+  and `é`, `a$` beside `a_`, `ok$` beside `ok_`: each renamed apart; a model `Jar_big` beside the
+  setup `big` of `Jar` is refused. Sentences with quotes, `\`, tabs and line breaks in text,
+  JSON and the report.
+- `--jobs` 1, 2, 3, 4 and 8 and three cached runs over 13 files with setups: identical JSON.
+
+### Seen, not written up
+
+- A model named `"Jar (big)"` beside the setup `big` of `Jar` gives two text lines `Jar (big)`
+  (the JSON tells them apart by `setup`).
+- `earnest chart` prints one diagram per run with no word of which setup it is.
+
+### Not covered
+
+TLC: `earnest confirm --tlc` and running `tla2tools.jar` were refused by this session's
+permission rules, so no eventually verdict was compared with TLC; the exports were read by hand.
+tla-rs. `--time-limit`.
+
+## Eighth pass
+
+An eighth adversarial pass, made on commit fdbd03a against witnesses, rules about runs and
+setups in TypeScript and Rust models, their TLA+ export, `earnest confirm --tlc`, `explore` in
+Node, and `--base`. Its tests are in `tests/break_it/eighth.rs` and its files in
+`models/eighth/`. Every TypeScript file is read by `earnest`, and every Rust file compiles
+against `crates/earnest` with `rustc`. Every expected result below is derived by hand from the
+contract (`reference/output.md`, `typescript.md`, `rust.md`, `cli.md`). Each of the four tests
+fails today. TLC (`tla2tools.jar`, latest release) ran in this pass, through `earnest confirm
+--tlc`, and agreed with the checker everywhere (see "Attacked and found correct").
+
+### A line break before a `.` in a condition is listed as a change
+
+`eighth/changes/{before,after}/bag.model.ts`: `Bag` with a set `items` of 0 to 2, the rule
+`small` (`s.items.size <= 3`), the eventually rule `holdsTwo` (`reaches: (s) => s.items.has(2)`)
+and the witness `two` (`expect: (s) => s.items.has(2)`). The only edit puts `.size` and `.has(2)`
+on the next line, as a formatter does when a line is long. The contract says "Comments and
+whitespace edits do not count as changes; conditions are normalized so each run of whitespace
+is a single space", so `ruleChanges` is empty. Today all three are `changed`, with `holds`
+`s.items .size <= 3`, `reaches: s.items .has(2)` and `... (s) => s.items .has(2), }`.
+`eighth/changes/{before,after}/ladder.rs` is the Rust form: the witness `three` written `let
+after = self.up()?.up()?.up()?;` and then one `.up()?` a line, as `rustfmt` writes a chain that
+is too long; today `three` is `changed` (`self .up()? .up()? .up()?`). A comment between `?` and
+`.` does the same. Cause: `condition_text` in `crates/earnest_ast/src/lib.rs` turns each run of
+whitespace into one space, so whitespace added where there was none is kept, and `by_text` in
+`apps/earnest/src/changes.rs` (and the search in `told_apart`, which finds no state for a plain
+rule and so says `changed`) compares that text. Tests:
+`a_line_break_before_a_dot_in_a_typescript_condition_is_no_rule_change`,
+`a_witness_chain_wrapped_one_step_a_line_in_rust_is_no_rule_change`.
+
+### `--rule` on a witness of a setup lists no rule change
+
+`eighth/changes/{before,after}/climb.model.ts`: `Climb` (`n` 0 to 3), the setup `half` (`n:
+2`) and the witness `last` of `half`, whose steps go from `[up]` to `[up, m.step(up, {})]` and
+whose `expect` goes from `s.n === 3` to `s.n === 4`. Its `holds` changed, so it is `changed`,
+and `verify --base HEAD` lists it so. `--rule <id>` "selects each result that lists that id",
+here `Climb (half)` alone, and `--rule low --base HEAD` lists every change of `Climb`. Today
+`verify --rule last --base HEAD` prints `rule changes since HEAD  none` (`ruleChanges` empty).
+Cause: `rule_changes` in `apps/earnest/src/changes.rs` compares only the targets with
+`runs.chosen.is_none()`, the model as declared, which `--rule last` does not select. Test:
+`a_changed_witness_of_a_setup_is_listed_when_rule_names_it`.
+
+### A Rust rule about runs whose `after` changed is not listed
+
+`eighth/changes/{before,after}/gate.rs`: `Gate` (`coins` 0 to 2, `open`), `pay` while `coins <
+2`, `unlock` at 2 coins, and `#[eventually("Once the visitor pays, the gate opens", after =
+paid)]` with the helper `paid` going from `self.coins >= 1` to `self.coins >= 2`. In Rust,
+`after = name` is the only way to say where the rule starts. The TypeScript twin
+`eighth/changes/{before,after}_ts/gate.model.ts` makes the same edit to `after: (s) => s.coins
+>= 1` and is listed `changed` (`after: s.coins >= 1; reaches: s.open` to `after: s.coins >= 2;
+reaches: s.open`), as "a rule about runs ... whose `holds` changed is always `changed`". The
+Rust file lists nothing. Cause: `after` in `crates/earnest_rs/src/runs.rs` gives the condition
+the text `name`, and `condition_of` in `apps/earnest/src/changes.rs` compares that, so no edit
+of the helper is ever seen; a plain rule's helpers are compared by evaluating the base helper
+("changing a constant or helper that weakens a rule still reports `loosened`"). Test:
+`a_rust_rule_about_runs_whose_after_helper_changed_is_listed_as_its_twin_is`.
+
+### Legal files refused with a clear message (minor, no test)
+
+- A Rust witness whose condition reads `self` after the chain (`Some(after.n == 1 && self.n ==
+  0)`): "the model file does not define this name".
+- A Rust setup value `-7 / 2` or `-7 % 2`, also through a constant: "takes a division with a
+  negative number"; `1 << 3` and `u8::MAX / 30` in a setup: outside the library.
+
+### Seen, not written up
+
+- `verify --base HEAD --rule last` where the witness `last` exists only at the base exits 2 with
+  ``no model has a rule `last` ``; `--model` has the documented exception for a removed model,
+  `--rule` has none written.
+
+### Settled after the pass
+
+All four tests pass. Two condition texts are one part under `--base` when they differ only in
+white space that joins no two words: `same_condition_text` in `crates/earnest_ast/src/lib.rs`
+keeps a space only between two word letters (letters, digits, `_`, `$`) and keeps quoted text
+whole, and every comparison of `--base` asks it; `condition_text`, and so every printed text,
+is unchanged (tests in `crates/earnest_ast/tests/tree.rs`). `--rule <id> --base` compares each
+model where some run lists the id, so the witness `last` of the setup `half` is listed; and a
+rule, rule about runs or witness that only the base has is listed `removed`, as `--model` does
+for a removed model, with exit 2 only when neither side has the id (unit test in
+`apps/earnest/src/select.rs`, tests `a_rule_named_by_rule_that_is_only_at_the_base_is_listed_removed`
+and `..._neither_here_nor_at_the_base_exits_2` in `apps/earnest/tests/behavior/runs_setups.rs`,
+the first failing before the fix). A Rust `after = name` has the text `name: <body of the
+helper>` (`paid: self.coins >= 2`), so an edit of the helper is `changed` and the report shows
+the condition (test in `crates/earnest_rs/tests/read/runs.rs`). Other helpers and constants
+that a rule about runs, a witness or a setup uses are still not compared, which `output.md`
+now says. The legal Rust files of the minor finding stay refused; `rust.md` says that a setup's
+values are written out or named constants, and that a witness condition after a chain reads the
+bound state only.
+
+### Attacked and found correct
+
+- TLC as the oracle (`earnest confirm --tlc`): 220 generated TypeScript models with two fields,
+  2 to 4 actions (half fair, a third with an input of which some values are refused or stutter),
+  an end in 40 %, and 1 to 3 eventually rules with and without `after`; 60 generated models with
+  up to two setups and witnesses each (123 runs): `same` for every one. By hand: a fair action and
+  an unfair one that make the same arrow (broken in both: TLA+ steps carry no action name), a
+  fair action with an input whose only possible value at one loop state stutters, text, sets,
+  maps, an optional record and `m.forall` in conditions, the ids `Init`, `Next`, `Spec`, `vars`
+  and `WF_vars`, a constant `after` and `reaches`, a Rust and a TypeScript twin with a fair
+  two-input action and a setup (each module `same`).
+- The export read by hand: `Spec` with `WF_vars(Action_id)` over the `\E` of the inputs, the
+  `IF InRange ... ELSE FALSE` guards, `Stop` as a stutter, a Rust `after = helper` inlined as its
+  body, a setup's `Init`. A condition's text keeps its own guards (`\E item : (sound /\ test)`),
+  so it has a value where the checker faults, and `confirm` excuses those states.
+- An independent oracle for the checker (a fair-cycle search written apart): 300 generated
+  models with three fields, 608 verdicts the same, and each of the 282 broken paths is a run:
+  every step a move of the model, a state the rule starts in after which `reaches` stays false,
+  a loop that closes, does not stutter and takes each fair action or passes a state where it
+  can't happen, or a last state no action changes.
+- `explore` in Node with and without `setup` against `verify --json` on the 123 runs above and
+  the conformance files: status, states, rules with paths, reasons and `repeatsFrom`, findings.
+- The Rust reader against the compiled model (`starts()`, `witnesses()`, `setups()`,
+  `eventually()`): a helper method and a free function of one name used by `after`, a helper
+  method with the name of a field used by `after` and in a witness, setups through a constant,
+  a negative constant, an enum, `Some` of a nested record, `(2 + 3) * 2 - 1` and `-(3)`; witness
+  inputs in parameter order with a constant, an enum input, a bare `Self` action in the chain,
+  a bound name that shadows a field, a helper and a free function called on the bound name, an
+  input refused by `require!`.
+- `--base`: comments in a TypeScript condition, witness and setup; a setup renamed while a
+  witness names it (`removed`, `added`, the witness `changed`); a Rust file with rules about runs
+  and witnesses that becomes unreadable (each `removed` with its kind, in text and JSON).
+- Setups around the cache, limits and selection: a setup's value edited and put back, sentences
+  edited (read from the cache with the new sentences), `--max-states` hit in the model as
+  declared only, `--time-limit 1` hit in one setup only (`unfinished` there, `unknown` for its
+  eventually rule, exit 1, summary `2 pass, 0 fail, 1 unfinished`), `--rule` on a witness of a
+  setup in `verify`, `chart` and `report`, `earnest tla` naming `Pad_high`.
+
+### Not covered
+
+tla-rs. `--jobs` (the seventh pass compared 1 to 8). Windows. Quint models.
+
+## Ninth pass
+
+A ninth adversarial pass, made on commit 7773aea against witnesses, rules about runs, fair
+actions and setups in TypeScript and Rust models, `explore` and `replay` in Node, `chart`,
+`report`, `--jobs` and `--base`. Its tests are in `tests/break_it/ninth.rs` and its files in
+`models/ninth/`. Every expected result below is derived by hand from the contract
+(`reference/output.md`, `typescript.md`, `rust.md`, `tla.md`). Each of the five tests fails
+today. TLC and tla-rs could not be run in this pass (see "Not covered").
+
+### A second space inside a text is no change to `--base`
+
+`ninth/changes/{before,after}/word.model.ts`: `Word` with `text` one of `"a b"` and `"a  b"`,
+starting at `"a b"`, and `done` false; `say` sets `done`, an end at `done`. The only edit turns
+`"a b"` into `"a  b"` in the rule about runs `spaced` (`reaches: (s) => s.text === ...`), the
+witness `once` (`steps: [say]`, `expect` the same test) and the setup `single` (`{ text: ... }`).
+No action changes `text`, so it stays `"a b"` as declared. Before, `spaced` holds in the start
+state and `once` holds after `say`. After, `spaced` is broken (`say`, then nothing changes the
+state, and `text` is never `"a  b"`), `once` is broken (`expect` is false after `say`), and
+`Word (single)` starts in the other state `text = "a  b"`. The model goes from `pass` to `fail`.
+`output.md` says that `"a b"` is not `"ab"`, so quoted text is compared as written, and "a rule
+about runs, a witness or a setup whose `holds` changed is always `changed`": the right list is
+`spaced`, `once` and `single`, each `changed`. Today `ruleChanges` is empty (`rule changes since
+HEAD  none`). `ninth/changes/{before,after}/word.rs` is the Rust form (a `#[one_of]` text field with both
+values, the rule about runs `spaced` and the setup `single`): the same, nothing listed. A plain
+rule with the same edit is listed, since its states are searched. Cause: `condition_text` in
+`crates/earnest_ast/src/lib.rs` joins every run of white space into one space, inside quoted
+text too (`split_whitespace` over the whole text), so both sides reach `same_condition_text`
+already equal, and `by_text` in `apps/earnest/src/changes.rs` compares only that text. Tests:
+`a_second_space_inside_a_typescript_text_is_a_rule_change`,
+`a_second_space_inside_a_rust_text_is_a_rule_change`.
+
+### What Prettier writes for an unchanged file is listed as rule changes
+
+`ninth/changes/before/door.model.ts` is written by hand; `after/door.model.ts` is exactly what
+`prettier --use-tabs` (3.8.1, the repository's `npx prettier`) prints for it. Prettier turns
+`'open'` into `"open"`, `s =>` into `(s) =>`, and wraps long calls with a trailing comma; no
+condition, step or start value changes, and `Door` passes with 2 states before and after. The
+contract: "`changed`: the condition changed semantically" and "Comments and whitespace edits do
+not count as changes". The right list is empty. Today three entries are `changed`: the plain rule
+`known` (`s.pos === 'shut' || ...` to `s.pos === "shut" || ...`; no state tells two equal
+conditions apart, so the text decides), the rule about runs `opens` (`reaches: s.pos === 'open'`
+to `"open"`) and the witness `once` (`expect: s => ...` to `expect: (s) => ..., }`).
+`ninth/changes/{before,after}/jar.model.ts` is the same with a setup: Prettier wraps
+`m.setup(Jar, "...", { n: 1, cap: 2 })` one field a line and adds a trailing comma, and `small`
+is `changed` (`{ n: 1, cap: 2 }` to `{ n: 1, cap: 2, }`) though `Jar (small)` starts in the same
+state. Cause: `same_condition_text` in `crates/earnest_ast/src/lib.rs` drops only white space, so
+a quote style, a trailing comma or parentheses around one parameter is a different text, and
+`by_text` and the text check after `told_apart` in `apps/earnest/src/changes.rs` call that a
+change. Tests: `prettier_quotes_and_parentheses_are_no_rule_change`,
+`prettier_wrapping_a_setup_is_no_rule_change`.
+
+### `replay` in Node refuses every path of a setup
+
+`ninth/replay/jar.model.ts`: `Jar` (`n` 0 to 3, from 0), `add` while `n < 3`, an end at 3, the
+rule `low` (`s.n <= 2`), the rule about runs `empties` (`reaches: (s) => s.n === 0`) and the
+setup `half` (`n: 2`). `earnest verify --json` gives `low` broken in `Jar` after three steps, and
+in `Jar (half)` both `low` and `empties` broken by the path `n = 2`, `add`, `n = 3` (the run
+then stays). `typescript.md`: "`replay(Model, path, { exports })` steps through a path from
+`earnest verify --json` one action at a time and returns every state along the path." The right
+result for both paths of `Jar (half)` is `[{ n: 2 }, { n: 3 }]`. Today `replay` throws `Jar: the
+path does not begin at a start state of the model` for each, with or without `setup: half` in
+the options; the path of `Jar` replays. Cause: `replay` in `packages/model/src/replay.ts` looks
+the start up in `model.starts()`, the model as declared, and `ReplayOptions` has no `setup`, as
+`explore` has. The Rust `replay(&start, &path)` is given the start state by its caller.
+Test: `replay_in_node_walks_the_paths_of_a_setup`.
+
+### Settled after the pass
+
+All five tests pass. `--base` no longer tells by text whether a part changed. `lower_with_earlier_parts`
+in `crates/earnest_semantic/src/lib.rs` lowers every rule, rule about runs, witness and setup of
+the base draft against the new model's fields with the base's constants and helpers, sharing the
+new model's symbols (`None` for one that can't be read there), and `apps/earnest/src/changes.rs`
+compares each with its namesake: a plain rule's `holds` (then `told_apart` as before), a rule
+about runs' `after` and `reaches` and the set of fair actions, a witness's setup id, steps (action
+ids and input values) and `expect`, a setup's start values by field. Equal is not listed, or
+`reworded` when only the sentence differs; unequal, or a base part that can't be read against
+the new fields, is `changed`. So `"a  b"` against `"a b"` is `changed` (it is another text value)
+and what Prettier or rustfmt writes for an unchanged file is no change; an edit of a constant or a
+helper a rule about runs, a witness or a setup uses is `changed`, and an action that became fair
+makes each rule about runs `changed` (the second item below). The printed text is still
+`condition_text`; `same_condition_text` decides nothing any more (it stays, for its tests in
+`crates/earnest_ast/tests/tree.rs`). Unit tests in `apps/earnest/src/changes.rs` (a Prettier-style
+and a rustfmt-style reformatting of the conformance clock, a changed constant and helper in
+TypeScript and Rust, quotes and a second space in a text, a newly fair action) and in
+`crates/earnest_semantic/tests/lower/earlier.rs`; `reference/output.md` and the changelog say so.
+`replay(Model, path, { exports, setup })` in Node starts from the setup's start states, worked
+out by `startsOf` in `packages/model/src/search.ts`, which `explore` now uses too (tests in
+`packages/model/test/replay.test.ts`); in Rust the caller gives the start, and
+`crates/earnest/tests/model/runs.rs` and `rust.md` show the setup method applied to a start
+state.
+
+### Seen, not written up
+
+- `earnest confirm --tla-rs` on a model whose only broken part is a rule about runs prints
+  `same  Oven  4 states  fail  (tla-rs)` (unit test in `apps/earnest/src/confirm.rs`): `fail`
+  comes from a verdict tla-rs was not asked about, and the line does not say so. `tla.md` says
+  `--tla-rs` compares only the state count and the plain rules.
+- A rule about runs whose verdict changes because an action became `fair` is not listed by
+  `--base` (no part's text changed); `output.md` says these parts are compared by text only.
+
+### Attacked and found correct
+
+- `--jobs` 1, 2, 4 and 8 on a 3 000 000-state model (two runs) with three rules about runs, two
+  fair actions and a setup: identical JSON apart from `milliseconds`, 2.4 to 3.2 s, about as long
+  as the search; and on an 80 000-state ring with three broken rules about runs in two runs.
+- The printed loop, against an oracle written apart (Tarjan, fair groups, a shortest-entry
+  search from every state where the rule starts, at its depth): an 80 000-state ring with 200
+  start states, a fair action enabled at one state in eleven, a fair action that a down step
+  can undo, `after` true at many depths, and `reaches` true in states before the rule starts.
+  Each of the six broken verdicts has the shortest entry, a path of real moves, a loop that
+  closes, never reaches, and takes each fair action or passes a state where it can't happen.
+  `explore` in Node gives the same status, states, paths, reasons and `repeatsFrom` with and
+  without `setup`. `replay` reproduces every state of each path of the model as declared.
+- `chart` and `report` with `--max-arrows 2`, a view with `state`, `group` and `title`, a broken
+  rule about runs in the model and in a setup, and a model name, sentences and labels with
+  `<b>`, `*`, `` ` ``, `|`, `#`, `[a](b)`, `-->`, `"`, `{` and a line break: the report's
+  sections and paths agree with `verify`, every name is escaped.
+- `--base`: `same_condition_text` against two-character operators, `- -`, `< -`, `! ==` (`==` is
+  refused), a template literal (refused outside views), Rust `& &` and chains; `--rule` naming a
+  witness, a rule about runs and a setup id when the setup and its witness were removed (each
+  `removed`, setup id exit 2); the cache across an edit of `fair:` only.
+- The docs example of a broken rule about runs (`CartBroken`) prints what `output.md` shows.
+
+### Not covered
+
+TLC and tla-rs: running `tla2tools.jar` through `earnest confirm --tlc` and installing
+`tla-tools` were refused by this session's permission rules, so no verdict was compared with an
+external checker. Rust formatting (`rustfmt` adds no comma after `..self.clone()`, and no model
+here wraps a call's arguments). Windows. Quint models.
+
+## Tenth pass
+
+A tenth adversarial pass, made on commit 32050db against the fixes of the ninth pass (`--base`
+by what each part lowers to, `replay` with a setup in Node) and against rules about runs, fair
+actions, witnesses and setups in TypeScript and Rust models. Its tests are in
+`tests/break_it/tenth.rs` and its files in `models/tenth/`. Every expected result below is
+derived by hand from the contract (`reference/output.md`, `typescript.md`, `rust.md`). Both tests
+fail today. TLC was run only through the repository's TLC tests (see "Not covered").
+
+### A witness's inputs are compared in the order each version declares them
+
+`tenth/changes/{before,after}/dial.model.ts`: `Dial` (`n` 0 to 3, from 0), the action `turn` with
+the inputs `to` (0 to 3) and `by` (1 or 2), possible while `n === 0 && by === 2`, setting `n` to
+`to`; an end at `n !== 0`; the witness `once` (`steps: [m.step(turn, { to: 1, by: 2 })]`, `expect:
+(s) => s.n === 1`). The only edit declares the inputs as `{ by: ..., to: ... }` in place of `{ to:
+..., by: ... }`. The witness still plays `turn` with `to` 1 and `by` 2 and holds before and after
+(4 states, `pass`). `output.md`: "A witness is `changed` when its setup, its steps (each action and
+its input values) or its `expect` changed", and the order of a setup's fields does not count. The
+right list is empty. Today `once` is `changed`, with the same text under `was` and `now`.
+
+`tenth/changes/{before,after}/dial.rs` is the Rust twin, where the reverse happens: the only
+edit is `fn turn(&self, #[range(0, 3)] to: u8, #[range(1, 2)] by: u8)` becoming `fn turn(&self,
+#[range(1, 2)] by: u8, #[range(0, 3)] to: u8)`, the body and the witness `self.turn(1, 2)?` left
+as written. Rust passes arguments by position, so the witness played `to` 1, `by` 2 and now plays
+`by` 1, `to` 2: `require!(self.n == 0 && by == 2)` is false, the method gives `None` (both files
+compile against `crates/earnest`, and `once()` gives `Some(true)` before and `None` after), and
+`earnest verify` says `once` is broken (`step 1, `turn`, can't happen here`), `Dial` going from
+`pass` to `fail`. Its input values changed, so the right list is `once` `changed`. Today
+`ruleChanges` is empty (`rule changes since HEAD  none`), in text and JSON, with `--rule once`,
+`--model Dial` and `--jobs 3` alike.
+
+Cause: `same_steps` in `apps/earnest/src/changes.rs` compares `was.input == now.input`, and
+`Played::input` holds the values "in the order of `Action::inputs`" of the draft each side was
+lowered against (`played` in `crates/earnest_semantic/src/lib.rs` walks `action.inputs` of
+`self.draft`, the base draft for the old witness). Two orders are compared position by position:
+TypeScript names its inputs, so a reordering is seen as a change; Rust gives them by position, so
+a reordering that changes the values is not. Tests:
+`inputs_declared_in_another_order_leave_a_typescript_witness_unchanged`,
+`parameters_swapped_under_a_rust_witness_change_the_witness`.
+
+### Contract unclear (no test)
+
+- What a witness, a rule about runs and a setup depend on. `output.md` lists what makes each
+  `changed` (`after`, `reaches`, the set of fair actions; setup, steps, `expect`; start values),
+  and says an edit of a constant or a helper a part uses counts. It does not say whether an edit
+  of an action the witness plays or a rule about runs is judged over, or of a field's
+  declaration or initial value, counts. With `tenth/changes/before/dial.model.ts` and `when: (s,
+  { by }) => s.n === 0 && by === 1`, `once` goes from holds to broken and nothing is listed; with
+  `cap` declared `.initial(3)` in place of `.initial(2)`, a setup that names only other fields
+  starts in another state and is not listed. Reading one: these parts are their own text and the
+  values in it, as today, and a verdict may flip with nothing listed (as for a plain rule whose
+  model changed). Reading two: "a field starts at another value" and "each action" include what
+  the setup and the steps run on, so each is `changed`. The docs should say which.
+- "A witness is `changed` when its setup ... changed": its setup's id (today), or also the
+  values of the setup it names (today the setup is listed and the witness is not).
+
+### Attacked and found correct
+
+- `replay` in Node with `setup`, over every path `verify --json` prints, for a TypeScript model
+  with a set, an optional, a fair action, two setups (one starting a set field, one three fields),
+  witnesses of both setups and of the model, an out-of-range step in a setup's witness and
+  out-of-range findings in two setups: every path replays, and from `repeatsFrom` the loop comes
+  back to the same state; `explore` with `setup` gives the same status, states and rules (paths,
+  verdicts, `repeatsFrom`) on every run. The same with a queue, a set, an optional, a lock and two
+  fair actions, and with a map of records, a sequence, a timer, a request, a retry and a fair
+  action whose input is a map key.
+- The Rust twin of that model (an enum set, `#[range]` fields, a fair action, two setups, three
+  witnesses, `after = full`) against the TypeScript one: the same states, verdicts, paths, reasons
+  and `repeatsFrom` in each run, apart from the spelling of ids and variants. Read in
+  `crates/earnest_macros/src/behavior.rs`, not run: `eventually()`, `witnesses()` and `setups()`
+  list the methods in file order with the unraw method name and the sentence as written, the
+  checker's order and ids.
+- A witness step that changes nothing (holds), a rule about runs that only a stuttering action
+  could put off (holds).
+- `--base` with `--rule`, `--model`, both, an unknown rule, an unknown model, an end named as a
+  rule and `--jobs 3`: the same listing, or exit 2 with the documented sentence.
+
+### Settled after the pass
+
+Both tests pass. `same_steps` in `apps/earnest/src/changes.rs` compares each step by its action
+id and, for each input name of the base draft's action, the value given to it, found by that name
+in the new draft's action (`same_step`). The base witness is lowered against the base draft's
+actions, so its values carry the names the base file gave them, as the doc comment of
+`EarlierParts` now says. The rest of `--base` was read for the same mistake: setups compare their
+starts by field, and rules about runs compare the set of fair action ids. Unit tests in
+`apps/earnest/src/changes.rs`:
+`a_witness_gives_its_values_to_the_same_input_names_whatever_order_they_are_declared_in`,
+`a_rust_witness_whose_arguments_now_go_to_other_parameters_is_changed`.
+
+The two unclear items are settled by reading one: a part is listed when what it says changed
+(its condition, `after`, `reaches` and the set of fair actions, the setup it names by id, its
+steps, `expect`, its start values, and the constants and helpers it uses), not when the model
+under it changed (an action's `when` or `changes`, a field's declaration or initial value, an
+action that is not fair). An edit of a setup's values lists the setup once and not the witnesses
+that name it. `reference/output.md` says so under "Rule changes" (the bullet that starts "A part
+is listed when what it says changed"). The binary already did this; tests in
+`apps/earnest/tests/behavior/changes.rs` pin it:
+`r20_an_edited_action_under_an_unchanged_witness_lists_nothing_and_verify_judges_it_again`,
+`r20_an_edited_initial_value_under_an_unchanged_setup_lists_nothing`,
+`r20_an_edited_setup_is_listed_once_and_not_under_the_witness_that_names_it`,
+`r20_a_rule_about_runs_is_not_listed_when_an_action_that_is_not_fair_changed`,
+`r20_a_rule_about_runs_is_changed_when_an_action_becomes_fair`.
+
+### Not covered
+
+TLC: `earnest confirm --tlc target/tools/tla2tools.jar` on models of this pass (a queue, a set,
+a lock and an optional with two fair actions and a setup that starts the queue; a map of records,
+a sequence, a timer, a request and a retry with a fair action whose input is a map key and a
+setup that starts the map) was refused by this session's auto mode classifier ("Undermining
+Oversight"), so no verdict of a model written here was compared with TLC.
+`cargo test --locked -p earnest_break_it --features tlc --test tlc` ran with the jar from the
+latest release: 9 passed, in 173 s. tla-rs. Windows. Quint models (out of scope).
+
+## Eleventh pass
+
+An eleventh adversarial pass, made on commit 52cc2ea against witnesses, rules about runs, fair
+actions and setups in TypeScript and Rust models: their verdicts, paths, loops, `why` lines and
+state counts against an oracle written apart, `--jobs`, TLC and tla-rs, `explore` and `replay` in
+Node, the Rust twin and its compiled witness methods, and then `--rule`, the cache and `--base`.
+It found nothing wrong, so it adds no test and no model. The generators and the oracle are
+Python, need minutes rather than seconds, and are not kept; they are described below with their
+seeds, so a later pass can write them again.
+
+### The oracle and the generators
+
+The oracle reads the generated model, not earnest's code: it enumerates the start states (the
+last field changing fastest), searches breadth first with the actions in declaration order and
+the first input changing fastest, and drops each arrow that keeps the state as it is. For a
+rule about runs it takes the states where `reaches` is false, splits them into strongly
+connected groups (Tarjan), and calls a state doomed when no arrow changes it, or when it is in
+a group with an arrow inside that, for each fair action, has a state where no arrow of that
+action leaves, or an arrow of that action inside the group. The rule is broken when a state
+where it starts (`after` true, or a start state, with `reaches` false) leads to a doomed state
+through states where `reaches` is false; the shortest way in is the least depth of such a state
+plus the distance from it. A witness is played from each start state in order.
+
+Each broken rule about runs that earnest printed was then replayed against the oracle: the
+start is a start state, every step can happen and gives the printed state and changes it, some
+state at or before `repeatsFrom` is one where the rule starts and `reaches` is false from there
+to the end, the loop closes and is not empty, each fair action is taken on the loop or has a
+state of the loop where it can't change the state, a run with no loop ends in a state no action
+changes, the `why` line is the one `output.md` gives for it, and the steps before the loop are
+as many as the oracle's shortest way in. Each broken witness: the first start state that breaks
+it and the length of its path. Each plain rule: the verdict and the depth of its path. The state
+count, when no state went out of range.
+
+- **Free models** (seed 1, 50 models; seeds 100 to 119, 1000 to 1199 and 3000 to 3099, 200 models
+  each): one to three integer fields of 0 to 4, with and without `.initial`; one to four actions,
+  half fair, a third with one or two inputs, `when` built from `===`, `!==`, `<`, `<=`, `&&`, `||`
+  and `!`, changes by `m.rem`, a constant, another field, a condition, or `+ 1`, which can leave
+  the range; an end in four in ten; zero to two plain rules (seeds 3000 on); one to three rules
+  about runs, half with `after`; zero to two setups; zero to three witnesses of zero to four
+  steps, some naming a setup. 128 226 runs: 256 509 verdicts of rules about runs (45 991 broken
+  by a loop, 51 102 by a state the run stays in, 14 142 `unknown`), 95 912 witnesses, 37 926
+  plain rules.
+- **Phases** (seeds 1 to 59 and 100 to 599, 200 models each): a phase `p` of 0 to 4 and a ring
+  `x` of 2 to 5 values, sometimes a flag `y`; per phase a spin round the ring (some only on part
+  of it, some that keep `x` below a bound as it is and move it above, some with an input), a step
+  to the next phase from one place on the ring or from part of it, sometimes a step back, each
+  fair or not at random; `after` and `reaches` on the phase and the ring, so `after` is often true
+  inside a loop and `reaches` often only at a start or in the last phase. The shapes aimed at are
+  groups chained one after another, a doomed group reached only through a late `after`, fair
+  actions enabled on part of a loop, and two fair actions that take turns. 156 573 runs: 391 212
+  verdicts (159 759 broken by a loop, 50 765 by a state the run stays in), 55 994 witnesses.
+- **Large** (seeds 5000 to 5009, 20 models each, two to four fields of 8 to 40): 402 runs,
+  6 829 866 states, 779 verdicts, 287 witnesses. Seed 777: 12 models of 104 052 to 586 040
+  states found by trying models of three fields of 50 to 99 until each had 10^5 states or more
+  (26 runs with their setups, 5 703 247 states, 54 verdicts, 7 witnesses).
+- **`--max-states`** 1, 2, 3, 5, 8 and 13 over seeds 1 to 20 (100 free models each): 24 210 runs.
+  Of 48 786 verdicts of rules about runs, the 21 276 whose run was cut are all `unknown`, never
+  `holds`, and the rest equal the oracle; of 18 600 witnesses, each is what playing only the first
+  `--max-states` start states gives (877 `unknown`, where no start played broke it and more were
+  left).
+
+Every comparison agreed: no verdict, path, loop, `why` line or state count differed.
+
+### Also attacked and found correct
+
+- `--jobs`: 1, 2, 4, 8, 1, 4 and 8 on seeds 5000 to 5002 and on the 12 models of seed 777 (10^5
+  to 6 x 10^5 states, with setups, rules about runs and witnesses); 1, 2, 4, 8 and 3 on the
+  phase seeds 10 and 11, the Rust seed 5 and free seed 3010: the same JSON byte for byte apart
+  from `milliseconds`.
+- TLC (`tla2tools.jar` of the latest release at `target/tools`, through `earnest confirm --tlc`,
+  run in the foreground): 406 runs `same`, of free, phase and Rust models (seeds 100, 101, 3000,
+  phase 7, Rust 5). The same command in the background was refused by this session's auto mode
+  classifier.
+- tla-rs 0.3.0 (`cargo install` as `just tla-rs` does): `earnest confirm --tla-rs` on 100 files of
+  seed 3001, 197 runs `same`. tla-rs is not run on rules about runs by `confirm`, so each rule
+  about runs that earnest judged was given to tla-rs alone, with the module `earnest tla` wrote
+  and a configuration of `SPECIFICATION Spec`, `CHECK_DEADLOCK FALSE` and its one `PROPERTY`:
+  7 499 verdicts (free seeds 3002 to 3005, Rust seeds 5 to 8, phase seeds 1 to 4), each the same
+  (`Temporal property ... was violated` for `broken`, `No error has been found` for `holds`).
+- `explore` in Node, with `setup` for a setup's result, against `verify --json` (status, states,
+  rules with paths, reasons and `repeatsFrom`, findings) on free seeds 100 and 1000 to 1040 and
+  phase seeds 1 to 5: 18 113 runs, the same; `replay` with `setup` of every one of the 25 041
+  paths (apart from witnesses broken by a step out of range) ends in the printed last state.
+- The Rust twin: each free model of seeds 1 to 99 written as a `.rs` file (`#[range]` `u8`
+  fields, `require!`, `if` for a condition, `%`, a helper for each `after`, witnesses as chains
+  of `?`): 19 911 runs, the same JSON as the TypeScript form apart from `file` and `line`.
+  Compiled against `crates/earnest` in a crate of its own (seeds 1 to 21), each witness method
+  called from every start state, and from every start state with the setup applied, gives
+  `Some(true)` everywhere exactly where `verify` says `holds`: 3 028 witnesses.
+- `--rule <id>` for every id of 60 files of each of free seeds 3000 to 3002, with the file named:
+  796 selections, each the same verdicts and paths as the run without `--rule`, in every result.
+- The cache: two cached runs of seed 3005 give the JSON of `--no-cache`; cached runs with
+  `--rule`, `--max-states` and both before a full run of seed 3006 leave it the same as with
+  `--no-cache`, and `--max-states 5` and `--time-limit 100` agree cached and not.
+- `--base` on a Rust model: `fair` written without a space is no change; `fair` taken off an
+  action lists each rule about runs `changed`; an action renamed `r#a0` is no change.
+
+### Contract unclear (no test)
+
+- `output.md` says a rule about runs is `unknown` when the search did not finish, a state went
+  out of range or something faulted, "unless a run that breaks it was found". earnest never looks
+  for such a run then: all 21 276 verdicts cut by `--max-states` above, and every one with a state
+  out of range, are `unknown`. `typescript.md` ("the verdict is `unknown`, never `holds`") reads
+  the same. Whether `broken` may come from a search that did not finish is not said.
+
+Settled after the pass: `output.md` now says a run that breaks a rule about runs is looked for
+only after a search that finished, so a search that stopped early never gives `broken` for one.
+The binary did that already.
+
+### Not covered
+
+Fields of other kinds (booleans, enums, optionals, records, collections) in the generators;
+prior passes tried them by hand. `explore` in Node on the large models. A compiled Rust witness
+whose step leaves the range (the docs name that difference). `--time-limit` beyond one run,
+`chart` and `report`. Windows. Quint models.
+
+## First Quint pass
+
+An adversarial pass over the Quint reader (`crates/earnest_quint`, the `.qnt` side of
+`apps/earnest`), made on commit e66f839 of the integration branch with Quint 0.33.1. Its tests
+are in `tests/break_it/quint_first.rs` and its files in `models/quint_first/`: each `.qnt` beside
+the `.json` that `quint compile --target json` wrote for it, which the tests read, so they need
+no Node. Each of the five tests fails today. The oracles: `quint verify --backend tlc` (Apalache
+0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties, and Quint's
+TypeScript evaluator (`quint --backend typescript`, `quint run --backend typescript`, `quint test
+--backend typescript`) for single values and runs; Quint's Rust evaluator could not be fetched
+(GitHub answered `Forbidden`). Only cases where earnest matches neither backend are findings: the
+32-bit and negative `/` and `%` cases the spike measured are left out.
+
+### `range` that counts down is a fault
+
+`models/quint_first/range_down.qnt`: `n` from 3 down to 1 (3 states), the invariant `short` is
+`range(n, 1).length() <= n`. Quint's TypeScript evaluator gives `range(3, 1)` as `[3, 2]` (the
+REPL prints `[3, 2]`), Quint's TLC run gives `[]` (`range(3, 1) == []` holds, `== [3, 2]` is
+violated). Either way `short` holds: `quint verify --backend tlc --invariant short
+range_down.qnt` prints `[ok] No violation found`, and so does `quint run --backend typescript
+--invariant short`. Earnest: `fail`, `fault  the rule short computes a power or a run of numbers
+that is not defined in this state` in the start state, `short` `unknown`. Cause: `Op::Ascending`
+in `crates/earnest_ir/src/eval.rs` returns `Fault::Undefined` for `lo > hi`, and `data.rs` maps
+`range` to it. Right result: `short` holds, or the file refused naming `range` (the two backends
+disagree on the value). Test: `a_range_that_counts_down_is_not_a_fault`.
+
+### `setToMap` keeps the other pair of a key given twice
+
+`models/quint_first/set_to_map.qnt`: the invariant `firstKept` is
+`Set((1, 3), (1, 2)).setToMap() == Map(1 -> 2)`. Both backends give `Map(1 -> 2)`: TLC keeps the
+first pair in its order, the TypeScript evaluator the last it was given (the REPL prints
+`Map(1 -> 2)`; for `Set((1, 2), (1, 3))` it prints `Map(1 -> 3)` and TLC still gives
+`Map(1 -> 2)`). `quint verify --backend tlc --invariant firstKept` prints `[ok] No violation
+found`. Earnest: `firstKept` broken in the start state. With text values it goes the same way:
+`Set((2, "x"), (1, "y"), (2, "a")).setToMap()` is `Map(1 -> "y", 2 -> "a")` in both backends and
+`2 -> "x"` in earnest. Cause: `Data::SetToMap` in `crates/earnest_quint/src/data.rs` folds the
+pairs in earnest's order with `MapOp::Set`, so the last pair of a key wins. Right result:
+`firstKept` holds, or the file refused naming `setToMap`. Test:
+`a_set_of_pairs_with_a_key_twice_becomes_the_map_both_backends_give`, changed after the pass to
+`a_set_of_pairs_with_a_key_twice_is_a_fault_that_names_set_to_map` (see "Settled after the
+pass": the two backends agree on this sample only by chance).
+
+### `fold` over maps, sets and lists takes another order than both backends
+
+`models/quint_first/fold_order.qnt`: three invariants fold a set into a list of sizes:
+`maps` is `Set(Map(2 -> 0), Map(1 -> 0, 3 -> 0)).fold(List(), (sizes, m) =>
+sizes.append(m.keys().size())) == [1, 2]`, `sets` the same over `Set(Set(2), Set(1, 2, 3))` with
+`[1, 3]`, `lists` over `Set([2], [1, 2, 3])` with `[1, 3]`. TLC sorts a set of collections by
+size first (a start state printed by TLC: `sets = <<{}, {2}, {1, 2, 3}>>`, `lists = <<<<>>,
+<<2>>, <<1, 2, 3>>>>`, `maps = <<(2 :> 0), (1 :> 0 @@ 3 :> 0)>>`), the TypeScript evaluator folds
+in the written order, and both agree here: `quint verify --backend tlc` and `quint run --backend
+typescript` find no violation of any of the three. Earnest folds in the order of its own values,
+where `{1, 2, 3}` comes before `{2}` (lexicographic, as Rust orders a `BTreeSet`, a `Vec` and a
+`BTreeMap`), and all three are broken in the start state. The same order is what a
+`S.fold(List(), (l, e) => l.append(e))` turns into a list, which a project then reads with
+`head()` or an index. Texts and variants are a third order (TLC `"a", "b", "ab", "B"`, earnest
+`"B", "a", "ab", "b"`), not written as a test because the two backends differ there. Quint leaves
+the order of `fold` unspecified, but a check here gives the verdict neither backend gives.
+Cause: `Expr::Fold` over a set walks earnest's `Value` order (`crates/earnest_value`). Right
+result: each holds, or the file refused naming `fold`. Test:
+`a_fold_over_maps_sets_and_lists_takes_the_order_both_backends_take`.
+
+### Fairness of an action the step joins with another is judged on the join
+
+`models/quint_first/fair_part.qnt`: `step = all { any { move, rest }, tick }`, where `move` is
+`all { x < 3, x' = x + 1 }`, `rest` is `x' = x` and `tick` is `all { t < 1, t' = t + 1 }`; 3
+states, and every behaviour ends after one step in `x = 1, t = 1` or `x = 0, t = 1`. The property
+`reachesThree` is `weakFair(move, (x, t)) implies eventually(x == 3)`. `move` alone does not give
+`t'`, so `ENABLED <<move>>_(x, t)` is `x < 3`, true in both end states, where no step can happen:
+no fair behaviour exists, and the property holds. Quint's TLC run stops: `quint verify --backend
+tlc --temporal reachesThree fair_part.qnt` prints `The action formula A appearing in a WF_v(A) or
+SF_v(A) operator does not specify the primed value of the variable t occurring in the state
+formula v` and `[failure] TLC encountered an error`. Earnest: `reachesThree` broken after `move`
+(`x: 0 -> 1, t: 0 -> 1`, "nothing changes the state from here"). Cause: `fair_part` in
+`crates/earnest_quint/src/temporal.rs` takes `step.parts["move"]`, the paths of `move` already
+joined with `tick`, so the fairness is of `move` and `tick` together. Right result: `holds`, or
+the file refused naming `weakFair`, never `broken`. Test:
+`fairness_of_an_action_the_step_joins_with_another_is_not_judged_broken`.
+
+### Membership in a wide range runs out of memory
+
+`models/quint_first/wide_range.qnt`: `n` from 0 to 2 (3 states), the invariant `inBounds` is
+`n.in(0.to(1000000000))`. Quint's TLC run and `quint run --backend typescript` find no violation
+in under a second. Earnest builds the whole set in every state: with 1 000 000 000 it asks for
+16 000 000 016 bytes at once (`memory allocation of 16000000016 bytes failed`, exit 134 under a
+4 GiB limit; without a limit the kernel killed it here, with no line printed), and with
+10 000 000 it passes in 1.8 s for 3 states. Cause: `Op::Interval` in
+`crates/earnest_ir/src/eval.rs` makes the set before `SetOp::Has` asks for one item; `nondet` and
+`powerset` refuse sets past 1 000 000 values, an expression does not. Right result: `pass` with
+3 states. The test runs earnest under `ulimit -v 4194304` so that it fails fast instead of
+taking the machine's memory. Test: `membership_in_a_wide_range_does_not_run_out_of_memory`.
+
+### Legal Quint that earnest refuses
+
+Each line is a construct `quint typecheck` accepts, the message earnest gives (feature, then the
+message, with the place it reports). Every message names the construct; the ones marked
+*unclear* do not say why or what to write instead. Constructs a project with records, sets,
+maps, `int` and `str` fields, setups and `nondet ... oneOf()` is likely to use come first.
+
+| Construct | Message |
+|---|---|
+| `nondet b = Bool.oneOf()`, `Bool.size()` | `` `Bool` ``: the compiled file does not say what this name is, in the definition `step` (*unclear*) |
+| `x.in(Nat)`, `x.in(Int)` | `` `Nat` `` / `` `Int` ``: the compiled file does not say what this name is (*unclear*) |
+| `S.getOnlyElement()` | `` `getOnlyElement` ``: the compiled file does not say what this name is (*unclear*) |
+| `match` used as an action: `match o { Some(n) => all { x' = n, ... } \| None => all { ... } }` | `` `assign` ``: an action used inside an expression, in the definition `step` (*unclear*: points at an assignment, not at `match`) |
+| `weakFair(step, vars)` with `val vars = (x, o)`, Quint's usual way to write it | `` `weakFair` ``: fairness over something that is not a tuple of the state variables (*unclear*: it is a tuple of all of them) |
+| `weakFair(step, x)` where the module has more variables | `` `weakFair` ``: fairness over only some of the state variables is not read: list them all |
+| `weakFair(mv(1), (x, o))` | `` `weakFair` ``: fairness of an action given arguments is not read: name the step or one of its actions |
+| `weakFair(a, ...)` where `a` is an action inside a top-level action of `step` | fairness of something that is not the step or one of its top-level actions |
+| `strongFair(step, ...)` | `` `strongFair` ``: only `weakFair(A, vars)` is read as fairness, not strong fairness |
+| `always(enabled(step))`, `always(next(x) >= x)`, `always(step.orKeep(...))`, `always(eventually(step.mustChange(...)))` | `` `enabled` `` / `` `next` `` / `` `orKeep` `` / `` `mustChange` ``: a temporal operator inside `always` (or `eventually`) is not read: only `eventually(P)`, `always(P)`, `always(eventually(P))` and leads-to over state conditions are |
+| `eventually(always(P))` | `` `always` ``: `eventually(always(…))` is not read: the checker finds runs that reach a state, not runs that stay |
+| `not(eventually(P))` | `` `eventually` ``: a temporal operator under `not` is not read |
+| `assert(P)` inside an action that is not a run step | `` `assert` ``: run operators are read only in a `run` |
+| `S.chooseSome()` | `chooseSome`, whose choice Quint's backends make differently, is not read |
+| `l.foldr(...)`, also in a definition nothing uses | `foldr` is not read: write `foldl`, in the definition `unused` (the whole check is refused for a helper no check reads) |
+| `S.allListsUpTo(n)`, `allLists` | the set of every list over a set is not read |
+| `nondet m = setOfMaps(K, V).oneOf()` | the set of every map between two sets is not read |
+| `r.fieldNames()` | the field names of a record are not read |
+| `q::debug(...)` | `q::debug` is not read |
+| `pure def app(f: int => int, v: int): int = f(v)` called with a lambda | an operator as a value: an operator passed as a value is not read yet |
+| the same called with a named operator, `app(inc, x)` | `` `inc` ``: an operator used as a value |
+| `nondet v = 0.to(2000000).oneOf()` | `` `nondet v` ``: a range of more than 1000000 values |
+| `S.powerset()` of 20 items or more | the powerset of a set of more than 19 items |
+| `init` with more than 1 000 000 combinations of its `nondet`s | `init` picks among more than 1000000 combinations |
+| a literal past 64 bits, `x < 100000000000000000000` | `` `1e+20` ``: an integer beyond 64 bits (*unclear*: the number is shown as `1e+20`) |
+| a run that does not start with `init`, `2.reps(i => ...)` as a whole run | a run that does not start with `init`: Quint plays a run from no state, at line 1, column 1 (the place is not given) |
+| `0.reps(...)` | a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset |
+| an action parameter named like a variable, `action mv(y: int): bool = all { ..., y' = y }` | `` `y_28` ``: an assignment to something that is not a variable (Quint compiles `y'` to the parameter too, and its simulator stops with `Variable y not set`) |
+| `runs: true` on a setup whose `...Test` runs are written in the imported spec | not refused: none of them is played and the check passes, while `quint test --main Setup` plays `Setup::Spec::upTest` (the docs say so; flattening setups is another builder's) |
+
+Read and judged as Quint does (`quint typecheck` clean, verdict as TLC or `quint test`): `val`
+and `def` inside an action, `match` in an assigned value, record spread, generic sum types and
+operators, `type` aliases for variables, a lambda over a tuple pattern, `nondet` over
+`powerset`, `tuples`, records, a mapped set and map keys, nested maps, maps with record keys,
+lists of records, tuple and text variables, definitions used before they are written, shadowed
+lambda parameters and `let` names, `[1, 2][1]`, `init` that calls another action, `import
+Spec(...) as S` with `S::init`, `S::step`, `S::inv` and a temporal property through `S::`.
+
+### Attacked and found correct
+
+- 134 single expressions over every builtin `data.rs` and `builtins.rs` map, on edge values
+  (empty and nested collections, sets of records and variants, maps with tuple, record and
+  variant keys, `put`, `set` and `setBy` on a missing key, `slice`, `replaceAt` and `nth` at
+  and past the bounds, `head` and `tail` of empty lists, `indices`, `0^0`, `2^(-1)`, division by
+  zero, `iff`, `implies` chains, string equality, `match` with and without `_`, tuples in
+  tuples, `fold` with `-` and `* 2 +`, `foldl`, `mapBy`, `Map` with a key twice): each value equal
+  to the TypeScript evaluator's, each runtime error a fault, apart from the findings above and
+  `fold` whose TypeScript order is the written one (TLC's order agrees with earnest on integers).
+- A step with an action called twice with different arguments, a guard that reads a key only
+  when another guard is true, `x' = y` beside `y' = x`, `nondet` inside `any` inside `all` with a
+  guard after the `any`: 870 states and four invariant verdicts, as TLC.
+- 19 temporal properties on two models where the answer depends on stuttering (an action that is
+  a stutter in some states, a branch that only stutters, `nondet` inside a fair action, fairness
+  of the step, of an action of two branches against fairness of each branch, of a nested `any`,
+  `always(eventually)`, `leadsTo`, `always(P implies eventually(Q))`, conjunctions numbered
+  `#2`, a property that fails in one of two start states): every verdict as TLC.
+- 21 runs against `quint test --backend typescript`: `fail()` after the first, a middle and the
+  last step, `nondet` at the top and inside a step where one value disables it, `expect` in the
+  middle, after `init` and at the end, `reps` of 1 and 3 with the index, `assert`, `any`, a run
+  that calls a run, an alias of `init`, constant runs, arguments read from the state.
+- Two setups of one spec with constants of type `int`, `Set[str]`, a record, `str -> int`,
+  `List[int]` and `bool`, used in `init`, a `nondet` set, a guard and a fold (22 and 114 states,
+  each verdict and the temporal property as TLC); `earnest confirm --tlc` on the `.qnt` gives
+  `same` for both.
+- `weakFair(step, x) implies ...` on a step that stops at `x = 2`: `eventually(x == 5)` broken,
+  `eventually(x == 2)`, `leadsTo` and `always(eventually(x == 2))` holding, as TLC.
+- Compiled modules past 64 KiB (`G4` is 119 KiB): read whole through `earnest verify G4.qnt`,
+  though `quint compile` cuts its output at 65 536 bytes when its standard output is a pipe.
+- The caches: an edit of an imported file and of the spec in both directions changes the verdict
+  each time, never printing the old one.
+- The checks file: wrong types, unknown keys, an unknown `main`, invariant or run name, a
+  temporal name that is a `val`, `init` naming the step, a missing file: each `unreadable`
+  naming the key or Quint's error, exit 1.
+- A seeded random comparison, `tests/tlc/quint_random.rs` (see below).
+
+### A seeded random comparison
+
+`models/quint_first/random/generate.py SEED` prints a module with an `int`, a `bool`, a
+`Set[int]`, an `int -> int`, a record and a `List[int]`; two to four guarded actions with
+`nondet` over written sets, `put`, `setBy`, `mapBy`, `with`, `slice`, `tail`, `replaceAt`, an
+`if` in assigned values, sometimes a nested `any`, and two or three random invariants with
+`fold`, `foldl`, `exists`, `forall`, `iff`, `implies` and `indices`. Seeds 1 to 59 were compared with `quint verify
+--backend tlc` (one run for the state count, one for each invariant): all 59 agree on the state
+count (1 to 2 649 states) and on all 148 verdicts. Ten of them (seeds 4, 6, 16, 21, 25, 28, 29,
+33, 47 and 56, 8 to 2 304 states, 25 verdicts of both kinds) are committed as `random/G*.qnt`,
+their compiled `random/G*.json` and `random/expected.json`, Quint's TLC answers;
+`every_seeded_quint_model_has_the_states_and_verdicts_of_quint_s_tlc_run` in
+`tests/tlc/quint_random.rs` reads the JSON with no Node, compares earnest's states and verdicts
+with `expected.json`, and runs `earnest confirm --tlc` on each. It passes today (28 s):
+`cargo test --locked -p earnest_break_it --features tlc --test tlc quint_random`, here with
+`EARNEST_TLC_JAR` naming the TLC inside Apalache's jar
+(`~/.quint/apalache-dist-0.62.4/apalache/lib/apalache.jar`), since downloading `tla2tools.jar`
+was refused by this session's permission rules. To make more:
+`python3 generate.py SEED > GSEED.qnt` and `quint compile --target json --main GSEED --invariant
+inv0,inv1[,inv2] GSEED.qnt > GSEED.json`, with the output going to a file: through a pipe
+`quint` 0.33.1 stops writing after 65 536 bytes.
+
+### Seen, not written up
+
+- A refusal in a run is reported at line 1, column 1 of the `.qnt` file, though `quint parse`
+  gave the run's place.
+- `--rule inRange` on a check of a setup says `no model has a rule inRange` (exit 2): the id is
+  `Small::Spec::inRange`. The docs' table says "`--rule inRange` selects it" and the runs
+  section says the id is flattened; a project whose checks are all setups has to write the
+  long ids.
+- Two entries `{"file": "a.qnt", ...}` and `{"file": "./a.qnt", ...}` with the same `main` are
+  two models named `a`; the docs say the same `file` and `main` twice is `unreadable`.
+- Paths and the chart print a tuple as `{_1: 1, _2: 5}` and a variant as `{tag: "Aa", value:
+  {}}`, earnest's own encoding, not Quint's `(1, 5)` and `Aa`.
+- The docs say that for a `nondet` at the top of a run "Quint takes another value when the run
+  is false for one". `quint test --backend typescript` on
+  `nondet v = Set(1, 2).oneOf() init.then(put1(v)).expect(x == 1)` fails ("failed after 2
+  test(s)", `Expect condition does not hold true`): it does not retry there, which is what
+  earnest does too (inside a step it does retry, as earnest plays every value).
+- The version of `quint` is kept by the program's real path, size and modification time; a
+  wrapper script that starts another `quint` without changing keeps the old version text.
+
+### Not covered
+
+The Rust evaluator of Quint (could not be fetched). Apalache's own checking (`quint verify`
+without `--backend tlc`). `oneOf` over a set computed from the state and setups flattened by
+earnest, which other builders are adding. Windows.
+
+### Settled after the pass
+
+Merged with the integration branch at ea7e3fb (Quint slices 3 and 4). All five tests pass; only
+the `setToMap` test asserts something else than it did.
+
+- `range(s, e)` with `s >= e` is `[]`, as Quint's TLC run gives. Quint's own `builtin.qnt`
+  does not define it: "`i` is inclusive and `j` is exclusive. The behavior is undefined when `i`
+  is greater than `j`" (0.33.1); `[]` is also every `i` with `s <= i < e`.
+  `data.rs` maps `range` to a choice: `Op::Ascending` when `s < e`, else the empty list, so
+  `Op::Ascending`, which no TypeScript or Rust model uses, is unchanged. `short` holds.
+- `setToMap` of a set with two pairs for one key is a fault: ``the rule `firstKept` gives
+  `setToMap` two pairs with one key, which Quint's backends keep differently (TLC the first in
+  its order, the evaluator the last written) in this state`` (`MapOp::Once`, `Fault::KeyTwice`).
+  `Set((1, 3), (1, 2))` gives `Map(1 -> 2)` in both backends only because TLC's first and the
+  evaluator's last pair happen to be the same one; `Set((1, 2), (1, 3))` splits them. So the
+  test, which is not on `origin/main`, now asserts the fault and its message. With every key
+  once the map is unchanged.
+- A `fold` over a set walks `Op::InTlcOrder`, the set's items in the order TLC's `CHOOSE` takes
+  them (`ApaFoldSet` takes `CHOOSE x \in S : TRUE` first). From `compareTo` in TLC's
+  `SetEnumValue`, `TupleValue`, `FcnRcdValue` and `RecordValue`: size or length first, then a
+  set's normalized items, a tuple's or list's items by position, a function's keys and then its
+  values, a record's names and then its values, item by item. Numbers and booleans already
+  agreed. Texts and record field names stay alphabetical (TLC compares `UniqueString` by the
+  order it first met them), and `reference/quint.md` says so. `Value`'s `Ord` is unchanged. The
+  values of a `nondet` over a set that does not change are listed in the same order; `map`,
+  `flatten`, `tuples` and `setToMap` build sets or maps, where the order does not show, and
+  `toList` and `chooseSome` are refused. Shown on `models/quint_first/fold_seeded/` (generated
+  by `generate.py 63 28`): 28 folds of four items each over sets, lists, maps, tuples and
+  records of `int` and `bool` and over sets of lists, lists of sets, tuples of a set, maps to and
+  from sets, records of a list and a set, sets of tuples and lists of maps, each compared with
+  the list of its items in that order. `quint verify --backend tlc` finds no violation, and a
+  copy with one list reversed is violated (`The invariant of q_inv is equal to FALSE`);
+  earnest holds all 28 (`seeded_folds_over_nested_sets_take_the_order_quint_tlc_run_takes`).
+- `weakFair(A, vars)` where a path of `A` alone does not assign a variable of `vars` is
+  refused: ``` `weakFair` ```: ``` `weakFair(move, …)`, where `move` alone does not give `t'`,
+  is not read: Quint's TLC runs stop on such a formula ```. Fairness of the whole step and of an
+  action that assigns every variable is read as before.
+- `x.in(a.to(b))`, `a.to(b).contains(x)` and `S.subseteq(a.to(b))` compare with the ends.
+  `Op::Interval` and `Op::Ascending` of more than 1 000 000 numbers (`MOST_RANGE_VALUES`) are
+  `Fault::TooWide`, ``builds a range (`a.to(b)` or `range(a, b)`) of more than the 1000000
+  numbers a range may hold``: one comparison before the set is built. The fault does not carry
+  the two ends: with them `Fault` grew from 1 to 24 bytes and `wide` ran 3.3 % more
+  instructions, past its budget. `wide_range` passes with
+  3 states in 5 ms.
+
+The TLA+ export (`earnest confirm --tlc`) writes a fold over `Op::InTlcOrder` with its own
+order predicate, sizes first, and not with `CHOOSE x \in S : TRUE`. TLC's `CHOOSE` order
+depends on how a value was built: a function from `MapSet(MapSet(EmptyMap, 2, 3), 0, 3)` keeps
+its domain as `<<2, 0>>`, so TLC put `(0 :> 0 @@ 3 :> 3)` before `(0 :> 3 @@ 2 :> 3)` there, while
+Quint's own encoding gives normalized functions (the seeded comparison above agrees). A second
+value for a key of `setToMap` is written as `Fault`. `confirm --tlc` gives `same` on
+`fold_seeded`, `fold_order` and `set_to_map`
+(`tlc_on_the_export_folds_sets_in_the_order_earnest_folds_them` in `tests/tlc/quint_random.rs`).
+
+Unit tests: `crates/earnest_ir/tests/tlc_order.rs` and `crates/earnest_quint/src/fixes_tests.rs`
+(fixture `fixes.qnt`, compiled once with its invariants and two temporal properties as
+`fixes.json` and once with only `bumpFair` as `fairpart.json`). Two bullets of "Seen, not
+written up" no longer hold on the merged tree: `--rule inRange` selects the invariant of a
+setup, and `runs: true` on a setup plays the spec's `upTest`.
+
+Proof on the tree merged with the integration branch at a94146b (Quint reads 1, #64):
+`just same-answers origin/main` finds 0 differences in its three sweeps and 64 in the model files,
+all from 16 files under `tasks/conformance/runs/` and `tasks/conformance/setups/` that
+`origin/main` leaves unreadable (rules about runs and setups); `just counts` and `just benchmark`
+are met with no record changed; `cargo test --locked -p earnest_break_it --features tlc --test
+tlc` passes its 12 tests with `tla2tools.jar` (with the TLC inside Apalache's jar, three
+`confirm --tlc` tests fail on the integration branch's own head as well).
+
+## Second Quint pass
+
+An adversarial pass over what was merged after the first one (setups built from one `quint
+typecheck`, `oneOf` over sets from the state, the #63 fixes, Reads 1 (#64) and Reads 2 (#65)), made
+on commit 7f18149 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_second.rs` and its files in `models/quint_second/`: each `.qnt` beside the
+JSON `quint compile --target json` (or `quint typecheck`) wrote for it, to a file, so the tests need
+no Node. Each of the seven tests there, and one more under `tests/tlc/`, fails today. The oracles:
+`quint verify --backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants
+and temporal properties, `quint test --backend typescript` for runs, and `quint run --backend
+typescript` and `--backend rust` (which could be fetched this time) for single values.
+`tla2tools.jar` is the one the `v1.8.0` release link serves today (`TLC2 Version 2026.11.26.020825
+(rev: 1138302)`). Only cases where earnest matches neither backend, or contradicts its own docs, are
+findings.
+
+### A lambda or a `match` inside a temporal property is a fault
+
+`models/quint_second/temporal_lambda.qnt`: `s` goes from `Set()` to `Set(5)` (2 states), and
+`temporal small = always(s.forall(e => e < 9))`. `quint verify --backend tlc --temporal small`
+prints `[ok] No violation found`. Earnest: `fail`, ``fault  the rule `small` uses a value of the
+wrong kind in this state`` after the one step, and `small` is `unknown`; the same condition as an
+invariant holds. Any temporal property is hit the first time a lambda in it is applied: `always`,
+`eventually`, `always(eventually(...))`, leads-to, with or without fairness, a lambda written in
+the property or in a `val` or `def` it uses (`temporal t = always(allSmall)`), and a `match`
+(`pure def isInc(c) = match c { ... }` in a property). It is the most likely of these findings to
+meet a project: `always(eventually(NODES.forall(n => peers.get(n).status == "idle")))` in the
+project model below faults the same way, and the random comparison met it in 72 of its 84
+default seeds. Cause:
+`temporal()` in `crates/earnest_quint/src/temporal.rs` builds each `Rule` and `Eventually` with
+`slots: 0`, where `invariants` in `model.rs` gives `reader.slots`, so what a lambda or a `match`
+binds has no slot in the frame. Right result: `small` holds. Test:
+`a_lambda_inside_a_temporal_property_is_judged_as_tlc_judges_it`.
+
+### A `nondet` inside a branch of a `match` of actions picks where the branch does not match
+
+`models/quint_second/match_nondet.qnt`: `type T = A(int) | B(Set[int])`, `t` starts as `A(1)`,
+and `step = match t { | A(n) => all { x' = n, t' = B(Set(2, 3)) } | B(s) => all { nondet w =
+s.oneOf() all { x' = w, t' = t } } }`. `quint verify --backend tlc --invariant small` finds 4
+distinct states and `[ok]`; `quint run --backend typescript --invariant small` finds no
+violation. Earnest: `fail`, ``fault  the condition of the action `step#2` uses a value of the
+wrong kind in this state`` in the start state, and `small` is `unknown`. In a larger model with
+`quint test` passing, every run through such an action broke with ``step 1: the set the action
+`exec#3` picks from uses a value of the wrong kind here``. In `t = A(1)` the `B` branch binds
+`s` to `A`'s value `1` and works out `1.oneOf()`. A guard inside the branch (`s.size() > 0`) is
+fine; only a `nondet` is hit. Cause: `cases` in
+`crates/earnest_quint/src/reader.rs` puts `tag == "B"` first among the path's guards, but the
+branch's `nondet` is a pick of the path, whose set the search works out before it tests any
+guard. Right result: `pass`, 4 states, `small` holds. Test:
+`a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`.
+
+### `fold` over tuples of ten or more items does not take TLC's order, which the docs promise
+
+`models/quint_second/fold_tuple10.qnt`: `Wide = Set((0, 0, 0, 0, 0, 0, 0, 0, 0, 1), (0, 1, 0,
+0, 0, 0, 0, 0, 0, 0))`, and the invariant `lastFirst` is `Wide.fold(List(), (l, t) =>
+l.append(t))[0] == (0, 0, 0, 0, 0, 0, 0, 0, 0, 1)`. `quint verify --backend tlc --invariant
+lastFirst` prints `[ok] No violation found`; so does `quint run --backend typescript` (the REPL
+prints the other order for the same fold, `[(0, 1, …), (0, …, 1)]`). `quint run --backend rust`
+finds a violation, as earnest does. Earnest: `lastFirst` broken in the start state. This one is
+borderline by the pass's rule, since one backend agrees: it is written up because the docs
+promise "the items of `S` in the order TLC takes them" and then describe, as TLC's, an order
+TLC does not take ("A tuple of ten or more items compares its tenth item before its second").
+Either the order or that sentence is wrong. Apalache writes a Quint
+tuple as a TLA+ tuple, a function on `1..n`, and TLC compares it item by item from the first:
+folding five 11-item tuples into a list, TLC's state prints `<<0, …, 0, 1>>, <<0, …, 1, 0>>,
+<<0, 0, 1, …>>, <<0, 1, …>>, <<1, …>>`, where earnest prints `(0, 0, 1, …), (0, 1, …), (0, …,
+0, 1), (0, …, 1, 0), (1, …)`: it compares the fields `_1, _10, _11, _2, …` by name. `earnest
+confirm --tlc` can't see it: the export writes the same order (`pick.v_1 < other.v_1 \/ … v_10
+… v_2`), and on a copy of the module whose invariant reads a variable (`n == 0 implies …`) it
+says `same` while Quint's TLC run holds. Cause: earnest holds a Quint tuple as a record of the
+fields `_1`, `_2`, …, and `Op::InTlcOrder` (`crates/earnest_ir`) compares a record's fields by
+name. Right result: `lastFirst` holds, as TLC's order gives it (the test asserts that), or the
+docs say the order differs from TLC's for such tuples. Test:
+`a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`.
+
+### The runs of a spec imported only under a name are dropped
+
+`models/quint_second/named_runs/named_runs.qnt`: `module Named { import Spec(K = 3) as C }`, the
+spec has `run upTest = init.then(step).expect(v == 1)`, and the check is `{ "main": "Named",
+"init": "C::init", "step": "C::step", "runs": true }`. `quint test --main Named` prints `ok
+Named::C::upTest passed 1 test(s)`. Earnest: `pass  Named  4 states` with no run listed. With
+`"runs": ["C::upTest"]` it is `unreadable`, ``the check names this run, and the compiled module
+has no run of this name``; with `["upTest"]`, ``... plays them only for a setup it builds itself
+from one `import Spec(...).*` ``. The docs list "An instance under a name" among the setups
+earnest builds and say a check's `runs` list may name `C::tickTwice`. The same check beside a
+second check of the same file whose module imports `.*` plays both runs (`tasks/quint/setups`,
+whose `Named` passes its behaviour test that way). Cause: `apps/earnest/src/quint.rs` typechecks
+a file only when `Places::may_be_a_setup` (`apps/earnest/src/places.rs`) is true for one of its
+checks, which asks for `imports_all_of_an_instance`. A file whose setups are all `as C` is
+compiled check by check, and `quint compile` drops the spec's runs, without a word. Every `as C`
+seed of the random comparison lost its four runs this way. Right result: `upTest` listed and
+holding. The test plays it with a fake `quint` that hands back the recorded `typecheck.json` and
+`Named.json`. Test: `the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them`.
+
+### `confirm --tlc` reads a broken temporal property as `unknown`
+
+`models/quint_second/confirm/broken_eventually.qnt`: `done` goes from `false` to `true`, and
+`temporal finish = eventually(done)` with no fairness: earnest says broken (the run may stutter
+at `done = false`), and so does Quint's TLC run (`[violation] Found an issue`). `earnest confirm
+--tlc tla2tools.jar broken_eventually.json` prints `differs`, ``rule finish: the checker says
+broken, TLC says unknown (Temporal property Eventually_finish was violated.)``. TLC printed the
+violation; `confirm.rs` reads a rule about runs as broken only on the exact line
+`Temporal properties were violated.` (`PROPERTY_BROKEN`). TLC's `tlc2/output/MP.class` has
+three forms: with one property name it writes `Temporal property %1% was violated.`, with
+several `Temporal properties A, B were violated.`, with none the old `Temporal properties were
+violated.`. Both jars here (the `v1.8.0` release's `tla2tools.jar` and the TLC inside Apalache
+0.62.4's jar) name the property. So it is earnest's comparison, not the export and not TLC's
+reading. This is the `differs` the #65 builder saw, and the cause of the #63 builder's three
+failing tests: `cargo test --locked -p earnest_break_it --features tlc --test tlc` here fails
+`runs::tlc_confirms_every_model_and_setup_of_the_runs_and_setups_conformance_models`,
+`runs::tlc_judges_every_rule_about_runs_of_small_generated_models_as_earnest_does` and
+`stutters::tlc_judges_every_quint_temporal_property_with_its_own_fairness_as_earnest_does` with
+the standalone jar too (9 passed, 3 failed, each on `TLC says unknown (Temporal property
+Eventually_p0 was violated.)`). It is the TLC version, not Apalache's jar, a flag or the
+manifest: the standalone jar those tests passed with was an older TLC (downloading an older
+release to show it was refused by this session's permission rules). A project that only has
+Quint's Apalache can use `confirm --tlc` for state counts, invariants and temporal properties
+that hold, but every broken rule about runs reads `differs`. The test gives `confirm` a fake
+`java` that prints TLC's recorded output. Right result: `same`. Test:
+`confirm_reads_a_temporal_property_that_tlc_names_as_violated_as_broken`.
+
+### `confirm --tlc` reads an invariant that reads no variable as `unknown`
+
+`models/quint_second/confirm/constant_false.qnt`: `val never = Set(1, 2).size() == 3`. Earnest
+says broken in the start state. TLC judges a formula that reads no variable before the search
+and prints `Error: The invariant of Rule_never is equal to FALSE`, not `Invariant Rule_never is
+violated`; `read_tlc` keeps it as an error, and `confirm` prints `differs`, ``the checker says
+broken, TLC says unknown (The invariant of Rule_never is equal to FALSE)``. Quint's own TLC run
+stops on the same module (`[failure] TLC encountered an error`). In a setup, every constant is
+replaced by its value, so an invariant over constants only (`val sane = N > 0`, when false)
+meets this. `fold_tuple10` meets it too. Right result: `same`. Test:
+`confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken`.
+
+### `confirm --tlc` can't compare variants whose values have different types
+
+`models/quint_second/confirm/variant_compare.qnt`: `type Holder = Nobody | Held(str)`, `holder` goes
+from `Nobody` to `Held("a")` while a map gets a key (`m' = m.put(1, 1)`), and the invariant `known`
+is `holder == Nobody or holder == Held("a")`. Earnest and `quint verify --backend tlc` say it holds
+in both states. `earnest confirm --tlc` prints `differs`, ``rule known: the checker says holds, TLC
+says unknown (Evaluating invariant Rule_known failed.)``: TLC stops with `Attempted to check
+equality of string "a" with non-string: <<>>`. The export writes a variant as the record `[tag |->
+"Held", value |-> "a"]`, and `Nobody` as `[tag |-> "Nobody", value |-> <<>>]`. TLC compares a
+record's fields in the order it first met their names, and the export's helper `MapSet(map, key,
+value)`, written whenever the model updates a map, makes it meet `value` before `tag`, so TLC
+compares `"a"` with `<<>>` before it sees that the tags differ. Without the map the same module is
+`same`. Apalache writes a variant as a record with one field named by the tag (`[Held |-> "a"]`, as
+TLC's state prints show in Quint's own runs), which TLC compares without error. The project model
+meets it on its state count and every rule (`holder == Held(n)`, `net` of three kinds of message).
+Right result: `same`. The test runs TLC, so it is in `tests/tlc/` behind the `tlc` feature, as the
+first pass's TLC tests are: `cargo test --locked -p earnest_break_it --features tlc --test tlc
+quint_second`. Test: `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
+
+### A cached result is served after the check's `runs` changed
+
+`models/quint_second/cached_runs/cached_runs.qnt`: `run upTest = init.then(step).expect(v == 1)` and
+`run downTest = init.then(step).expect(v == 0)`; `quint test` passes `upTest` and fails `downTest`.
+Check it with `"runs": ["upTest"]` (`pass`), then change the entry to `"runs": ["downTest"]` and run
+`earnest verify` again: it prints `pass  cached_runs  3 states  0 ms  (cached)`, the first run's
+result with `upTest` holding, where `earnest verify --no-cache` prints `fail` with `downTest`
+broken. The same from `true` to a list, from a list to none, and on a built setup (the project
+model's `setups` kept `releaseTest` after its `runs` became `["grantTest"]`). The docs say a
+compiled module is reused while the check's `runs` are the same, and that the result cache serves "a
+check whose compiled JSON is unchanged". Cause: the result cache's key holds the compiled (or built)
+JSON as `source` (`apps/earnest/src/quint.rs`), and `quint compile` takes no runs, so the JSON is
+the same; `key_of` puts `runs` in the compile cache's key only. The runs are chosen later, in
+`read_located(…, &job.check.runs)`. Right result: the second run plays `downTest` and fails, as a
+full run does. The test plays it with a fake `quint` that hands back the recorded `parse.json` and
+`cached_runs.json`. Test: `a_cached_result_is_not_served_for_a_check_whose_runs_changed`.
+
+### Legal Quint that earnest still refuses
+
+Constructs `quint typecheck` accepts, beyond the first pass's table and the docs' list of what is
+still refused. Marked *likely* where a project with constants, setups, sum types and liveness is
+likely to write it; *unclear* where the message does not say what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| `temporal served = weakFair(step, vars) implies NODES.forall(n => always(P(n) implies eventually(Q(n))))` (*likely*) | `` `always` ``: a temporal operator under `forall` is not read, in the definition `setups::Two::served`. Clear, but the definition is named by Quint's long name. Writing the `forall` inside (`always(eventually(NODES.forall(n => …)))`) is read, and then faults (the first finding) |
+| `assume Positive = N > 0` in a module checked as it is (*likely*, *unclear*) | `a declaration`: a declaration the reader does not know, such as an import or an instance, at 1:1: it names neither `assume` nor its line. In a spec used through a setup the `assume` is dropped without a word, `N = 0` included; Quint's TLC run drops it too (`[ok]` for `Bad` with `N = 0`), so it is not a finding |
+| a spec that imports a types module (`import types.* from "./types"`) (*likely*) | not refused: each setup of it is compiled, one Node start for each check, and the spec's runs are not played (the docs say so). The runs written in the setup module itself are played |
+| `init = match M { \| Fixed(n) => x' = n \| Range(s) => all { nondet v = s.oneOf() x' = v } }` (*unclear*) | `` `nondet v` ``: a `nondet` whose value is not `oneOf` a set, in the definition `init`: it is `oneOf` a set, the one the branch binds. In a step the same shape is read, and faults (the second finding) |
+| `weakFair(R::step, (P::v, R::v))` with two instances `P`, `R` | refused as the docs say, with Quint's long names in the message: ``where `Both::R::step` alone does not give `Both::P::v'` `` |
+
+### Attacked and found correct
+
+- Setups (`import Spec(…).*`, `as C`, two instances of one spec, a setup with its own `var`, a
+  spec that imports a types module), 13 checks with 3 to 177 048 states: a constant given by
+  the setup's own name where the spec has a constant of that name (`import Spec(A = 1, B = A)
+  as C` with the setup's `pure val A = 7`: `B` is 7), by an expression over an imported module
+  (`S = Set(L, L + 1)` with the spec's own `L = 100`), by a lambda (`S = Set(0).map(x => x +
+  Two)`) and by `getOnlyElement` of a map, a `nondet` of the spec that shadows a constant or the
+  name an override reads (`nondet Two` beside `K = Two`), a parameter and a lambda parameter
+  named like a constant, the setup's own `val`, `def` and `pure val` with the spec's names
+  under `as C`, constants of type variant, tuple, `int -> { id: int, msgs: List[Msg] }`, set
+  and text, `init` and `step` given as `C::init`, `C::step`, fairness over `(P::v, R::v)`. Every
+  state count, invariant and temporal verdict as `quint verify --backend tlc`, every run as
+  `quint test`, and every built check equal to the same check read from `quint compile --main`
+  (states and verdicts).
+- `oneOf` over sets from the state, 160 states: a set of records filtered through a map, a range
+  up to a value of a map picked by an earlier `nondet`, a set of tuples, `exclude(Set(o1))` in
+  `init`, an empty set, fairness of the action that picks: 4 invariants, 4 temporal properties
+  and 4 runs (one `fail()`) as TLC and `quint test`.
+- Folds and ranges: sets of maps of sets, of records, of variants, of mapped sets, of sets of
+  tuples with texts and a set picked by `nondet` and mapped to ranges, folded into lists, each
+  in TLC's order but the tuples of ten or more items; `0.to(999999)` and `range(0, 1000000)`
+  (exactly 1 000 000), negative ends, `in` a backwards range, `subseteq` of an empty range, `in`
+  `-10^9..10^9`, `setToMap` with each key once and of the empty set: 10 invariants as TLC.
+  `1.to(1000000).fold(0, …)` holds in earnest, and TLC ran out of memory on it.
+- Fairness of an action that assigns every variable only on some paths can't be written: Quint's
+  effect checker refuses `if`, `match` and `any` whose branches assign different variables
+  (`QNT000 Expected [x,y] and [x] to be the same`).
+- Operators as arguments, 9 states, 17 invariants: a lambda that reads a `nondet` and a state
+  variable, a parameter named like a variable (`shadow(x, x => x + 1)`), two levels with
+  reordered parameters (`app2`, `flip`, `compose`, `outer`), an operator handed to `map`,
+  `filter` and `fold`, `Bool`, `Nat` and `Int` in every position the docs list,
+  `getOnlyElement`, `fieldNames`, `foldr` on `[]`. As TLC (with `foldr`, `getOnlyElement` and an
+  operator handed straight to a builtin wrapped in lambdas, which Apalache refuses otherwise) and
+  as `quint run --backend typescript` and `--backend rust` on the direct forms.
+- A definition reached only through a setup's constant, a temporal property, a run, `init` or
+  fairness: a `chooseSome` in it is refused in each, naming the definition.
+- `match` of actions nested, with `_`, inside `any` and `all`, a branch value read in a guard;
+  `assert` true in a step and at the start of a run step; `weakFair(step, vars2)` with `val vars2
+  = vars`; `not(eventually(P))`, and `not(always(P))` with and without fairness: 15 states, 3
+  invariants, 4 temporal properties, 4 runs as TLC and `quint test`, once each `nondet` is out of
+  the `match`.
+- Printing: nested tuples, `()`, a variant inside a variant, a map with tuple keys and variant
+  values, a set of tuples, records named `{ tag, value }` and `{ _1 }`, in text, JSON, chart and
+  `earnest report`, as the docs' table says; `confirm --tlc` says `same` for both modules.
+- Paths: every broken invariant's path has as many steps as TLC's breadth-first counterexample
+  (9, 3, 1 and 0 steps in the samples, and every seed of the random comparison from seed 44).
+  The four mismatches (seeds 5, 67 and 72: 2 steps in earnest, 3 in the batch) came from TLC
+  running with four workers, whose counterexample need not be the shortest: run again, TLC's
+  trace has the same 2 steps each time.
+- `confirm --tlc` says `same` on 11 of the samples above (`ByOuter`, `Whole`, `Setup2`, `op`,
+  `OverName`, `Both`, `Dot`, `Cap`, `CapLambda`, and the printing samples `pr` and `tagrec`);
+  where it says
+  `differs`, it is one of the three `confirm` findings (`Setup1` and the `oneOf` sample compare
+  variants of different value types, the `match` sample has broken rules about runs).
+- The cache and `--rule`: 68 rules in 7 folders, a second cached run and `--rule` for each rule
+  give the verdict and the path length of a full `--no-cache` run.
+
+### A seeded random comparison
+
+`models/quint_second/random/generate.py SEED [plain]` prints a spec module `SpecSEED` and a setup
+`HSEED`, either `import SpecSEED(…).*` or `import SpecSEED(LIM = Lim, …) as C` with the setup's own
+`pure val Lim`. The spec has three constants (`LIM: int`, `KEYS: Set[str]`, `START: (int, str)`), a
+sum type `Cmd = Inc(int) | Put((str, int)) | Clear`, six variables (a map, a queue of `Cmd`, a
+variant, a tuple, a boolean picked in `init` with `Bool.oneOf()`), two operators that take operators
+(`useOp(f, v)`, `both(g, a, b)` with its parameters reversed), two `match` helpers, and three to
+five actions: `enqueue` (`oneOf` a written set of variants), `process` (a `match` on the queue's
+head), `spend` (`oneOf` the keys of the map with a positive value, then `1.to(m.get(nk))`), `lower`
+(`0.to(n)`), `toggle`, `drop` (`oneOf` the queue's indices). Three random invariants, five temporal
+properties (`eventually`, fairness of the step and of one random action, `always(eventually)`,
+leads-to, `not(eventually)`) and four runs (`then`, `reps`, `expect`, `fail()`). With `plain`, the
+temporal properties use no lambda and no `match`, so the first finding does not hide the rest. Each
+seed was compared with `quint verify --backend tlc` (one run for the state count, one for each
+property; earnest's path of a broken invariant against the length of TLC's counterexample from seed
+44 on and in the `plain` seeds), with `quint test --main HSEED` for the runs, and with earnest
+reading the same check from `quint compile --main HSEED`.
+
+Seeds 1 to 84 and, with `plain`, 1001 to 1030 were compared: 114 setups (57 of them `as C`) of
+14 to 4 238 states, 1 368 answers (8 properties and 4 runs each). Every state count is TLC's,
+every built setup reads as its `quint compile` does, and 1 002 answers agree. The others are the
+findings above: 138 temporal properties in 72 of the 84 default seeds are `unknown` where TLC
+answers (the first finding: a lambda or a `match` in the property, or the fault it raises cutting
+the search short), none in the `plain` seeds; the 4 runs of each of the 57 `as C` seeds are not
+played (the fourth finding, 228 runs). Four broken invariants (seeds 5, 67 and 72) had a path one
+step shorter than the batch's TLC counterexample; run again, TLC's trace has earnest's length
+each time (see the paths bullet above). Nothing else differed. Seeds 17 to 22 and 32 to 35 were
+run again after their first TLC runs clashed on the Apalache server's port.
+
+Ten that agree on everything are committed: seeds 14, 25, 37, 45, 54 and 63, and 1002, 1006, 1010
+and 1013 made with `plain`, all `.*` setups of 98 to 1 560 states, each `.qnt` beside the `quint
+typecheck` output earnest builds it from, and `expected.json`, Quint's answers (80 verdicts, 40
+runs). `every_seeded_setup_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test` plays them
+through a fake `quint` that hands back the recorded typecheck, so the setup is built by earnest, and
+passes today. To make another: `python3 generate.py SEED [plain] > HSEED.qnt` and `quint typecheck
+HSEED.qnt --out HSEED.typecheck.json`.
+
+### A model written as a project writes one
+
+`models/quint_second/project/`: `types.qnt` (a node name, `Msg = Request(Node) | Grant(Node) |
+Release(Node)`, `Holder = Nobody | Held(Node)`, a record `Peer`), `lock.qnt` (a lock server:
+constants `NODES`, `MAX_SENT`, `CAPACITY`; `peers: Node -> Peer`, the network as a
+`List[Msg]` queue, a waiting list, the holder, a count; `request` and `release` pick a node
+from a set worked out from the state, `deliver` is a `match` on the queue's head; five
+invariants and four temporal properties under `weakFair(step, vars)`) and `setups.qnt` (five
+setups: `as Two` with its own `init`, `step`, invariants and two runs, and four `.*` setups, one
+with its own run and one with a constant given by a `pure val`), checked from one
+`earnest.quint.json`. States: 179, 2 412, 1 752, 33 765 and 177 048. Every state count, every
+invariant (one broken, after 9 steps in both), every temporal property and the three runs are as
+`quint verify --backend tlc` and `quint test`, but `everyoneIdle` (`always(eventually(NODES.forall(n
+=> peers.get(n).status == "idle")))`), which faults as the first finding says. Timing on 4 cores,
+with the random comparison running beside it: `earnest verify` of all five, first run (three
+Node starts) 7.8 s, a second run with nothing changed 0.07 s; `huge` alone, 177 048 states, 1.2
+s of search in 9.9 s; `quint verify --backend tlc --main huge` 10.1 s for the four invariants and
+22.7 s for three temporal properties.
+
+### Usability notes
+
+- Messages name a setup's definitions by Quint's long names, where the docs say names print
+  short: ``in the definition `setups::Two::served` ``, ``which `ViaConst::Spec::ok` reaches through
+  `ViaConst::Spec::K` ``, ``where `Both::R::step` alone does not give `Both::P::v'` ``.
+- The branches of a `match` action are numbered in a path (`deliver#2`, `deliver#3`): the
+  reader has to count the branches to know that `#2` is `Grant`.
+- A `nondet` that shadows a constant prints as Quint renamed it: `1. step  A_51 = 3`.
+- A step of a map of records prints the whole map before and after (steps of the project
+  model are up to 404 characters on one line).
+- In JSON a record `{ tag: "A", value: 1 }` and the variant `A(1)` are both `{"tag": "A",
+  "value": 1}`, as in ITF; only the text says which.
+- Variant tags in a `fold` take TLC's first-met order there (`Set(Alpha(1), Zed(1), Zed(0))`
+  folds `Zed(0), Zed(1), Alpha(1)` in TLC and `Alpha(1), Zed(0), Zed(1)` in earnest). The docs
+  say so of texts and field names, not of tags.
+- `earnest replay` does not exist: the CLI has `verify`, `chart`, `report`, `tla` and `confirm`,
+  and replay is the TypeScript library's, so a printed Quint path can't be replayed.
+- When TLC prints no state count, `confirm` shows the first line TLC wrote to its standard
+  error, which here is the JVM's `Picked up JAVA_TOOL_OPTIONS: -Djavax.net.ssl.trustStore=…`
+  notice, not TLC's error.
+- Several `quint verify --backend tlc` started together fail on the Apalache server's port
+  (`Failed to bind to address 0.0.0.0:8822`); `--server-endpoint localhost:PORT` per process
+  avoids it. This is Quint's, not earnest's, but it costs a comparison script an evening.
+
+### Not covered
+
+Windows. Apalache's own checking. An older `tla2tools.jar` (the download was refused), so the
+plural TLC message is read from `MP.class`, not seen. `earnest replay` on a Quint path (no such
+command). Cases where only one Quint backend was asked: the TypeScript REPL's order for a fold
+over tuples disagrees with `quint run`, and was not followed further.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-2` (#70), merged with the integration branch and the pass's final
+write-up. The eight tests pass with no assertion changed. TLC is the `v1.8.0` release's
+`tla2tools.jar` (`TLC2 Version 2026.11.26.020825`); every test of `cargo test --locked -p
+earnest_break_it --features tlc --test tlc` passes with it, the three `runs` and `stutters` tests
+that failed before among them.
+
+- **`confirm --tlc` and the current TLC.** `confirm.rs` reads `Temporal property X was
+  violated.`, `Temporal properties A, B were violated.` and the old `Temporal properties were
+  violated.` as broken, and `The invariant of X is equal to FALSE` (and TLC's longer "is a
+  constant-level formula ... evaluates to FALSE." wording) as `X` violated. `confirm` passes no
+  `-tool`, so it still reads TLC's text; no flag was added. The other lines it reads were checked
+  against the jar's `MP.class`: `Invariant X is violated.` and `... by the initial state:` were
+  read already, every configuration has `CHECK_DEADLOCK FALSE`, the export writes no `ASSUME`,
+  an evaluation error stays an error (`unknown`), and the count line has today's form. Tests:
+  `confirm_reads_a_temporal_property_that_tlc_names_as_violated_as_broken`,
+  `confirm_reads_an_invariant_that_tlc_finds_false_without_a_state_as_broken`, and two unit tests
+  in `confirm.rs` for each wording.
+- **A lambda or a `match` in a temporal property.** `temporal()` gives each rule and goal the
+  reader's slots after the property is read, as invariants get them; fairness holds no
+  expression. Test: `a_lambda_inside_a_temporal_property_is_judged_as_tlc_judges_it`. The project
+  model's `everyoneIdle` is now judged and `confirm --tlc` says `same` on it.
+- **The result cache and the entry.** The cache's `source` for a Quint check is the JSON and the
+  whole entry as read (`Check`'s `Debug`), so a field added to the entry is in the key without a
+  second change. Tests: `a_cached_result_is_not_served_for_a_check_whose_runs_changed`, and
+  `a_cached_result_is_not_served_for_a_check_whose_entry_changed` for `invariants`, `temporal`,
+  `init`, `step`, `main` and `runs` from a list to `true`.
+- **A `nondet` behind a guard.** The set a `nondet` picks from is worked out only where the guards
+  Quint evaluates before it hold: the branch's tag in a `match`, the test of an `if`, the earlier
+  parts of an `all` (`Path::behind` wraps the set in `Choose(guard, set, {})`). TLC and `quint run
+  --backend typescript` agree on each shape: `models/quint_second/guarded_nondet.qnt` has
+  `all { i < q.length(), nondet w = q[i].oneOf() … }` and `if (i < q.length()) { nondet … }`, 3
+  states, `small` holds in both (the Rust simulator could not be fetched). Tests:
+  `a_nondet_inside_a_match_branch_is_picked_only_where_the_branch_matches`,
+  `a_nondet_behind_a_guard_or_an_if_is_picked_only_where_the_guard_holds`.
+- **Setups under a name.** A file is typechecked when one of its modules has any instance (`as
+  C`, constants by a name, `export`, several instances), not only `.*`. The places cache's fields
+  changed, so entries written before are read again. Where a module is compiled all the same and
+  the check has `"runs": true`, the check is read, plays the runs the compiled module holds, and
+  says which runs of the modules it imports, whose name ends in `Test`, it did not play, named as
+  `quint test` names them (`S::upTest`, `Main::C::upTest`): a `note` line under the result line
+  and `runsNotPlayed` in JSON. The status is what the played runs and rules give. A compiled
+  `.json` read on its own plays the runs it holds, as before, and a run listed by name that only
+  an imported module has stays `unreadable`. (A first version refused such checks; it made
+  eleven of #66's compiled fixtures, and the owner's `import Spec as Main` run modules,
+  unreadable, so it was replaced.) Tests:
+  `the_runs_of_a_spec_imported_under_a_name_are_played_as_quint_test_plays_them`,
+  `runs_true_on_a_compiled_module_says_which_imported_runs_it_did_not_play`.
+- **Tuples of ten items or more.** In a model with such tuples the reader hands `Op::InTlcOrder`
+  the names `_1`, `_2`, … in position order; the order and the export's order predicate compare a
+  record whose fields are all among them by position, as TLC compares a tuple. Below ten items,
+  name order is position order, so those models are unchanged. The docs' sentence about the tenth
+  item is gone. `confirm --tlc` says `same` on `fold_tuple10` and on a copy whose invariant reads
+  a variable over five 11-item tuples, where Quint's TLC run says `[ok]`. Tests:
+  `a_fold_over_tuples_of_ten_items_takes_them_in_the_order_tlc_takes_them`, and
+  `a_tuple_given_its_item_names_compares_its_items_by_position` in `earnest_ir`.
+- **Variants in the TLA+ export.** A module that writes the fields `tag` and `value` begins with
+  `TagBeforeValue == [tag |-> TRUE, value |-> TRUE]`, before `VARIABLES`. TLC parses the checked
+  module before the standard ones, so it meets `tag` first and compares two variants' tags before
+  their values; the exported values are unchanged. `confirm --tlc` says `same` on
+  `variant_compare` and on every setup of the project model (179, 2 412, 1 752, 33 765 and 177 048
+  states). Test: `tlc_compares_variants_whose_values_have_different_types_in_the_export`.
+
+Two notes of the final report, settled with the findings they belong to:
+
+- `init = match Mode { | Fixed(n) => x' = n | Range(s) => all { nondet v = s.oneOf() x' = v }
+  }` with `Mode = Fixed(1)` given by a setup was refused (``a `nondet` whose value is not
+  `oneOf` a set``): the `Range` branch bound `s` to `1` and worked it out. `cases` no longer
+  reads a branch whose tag test is a constant `false`, as TLC never evaluates it; 1 state and
+  `small` holds, as `quint verify --backend tlc`. Test:
+  `a_nondet_in_a_match_branch_of_init_that_a_constant_rules_out_is_not_read`.
+- When TLC prints no state count, `confirm` shows the first line of its standard error that is
+  not a JVM notice (`Picked up JAVA_TOOL_OPTIONS: …`, `Picked up _JAVA_OPTIONS: …`). Test:
+  `the_java_notices_before_tlc_s_error_are_not_its_error` in `confirm.rs`.
+
+A `nondet` that picks from a written set of such tuples tries its values in the same positional
+order, as the docs say. Not changed: the usability notes and the constructs still refused, left
+for a later ticket.
+
+## Third Quint pass
+
+An adversarial pass over what was merged after the second one (runs from any first action and
+modules of runs only, #66; `all`/`any` of conditions and actions as arguments, #67; fairness of an
+action given arguments over some variables and properties that are an `and`, #68; the checks
+file's `name`, `expectCounterexample` and stopping early, #69; the #70 fixes), made on commit
+2adbfe5 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_third.rs` and its files in `models/quint_third/`: each `.qnt` beside the JSON
+Quint wrote for it, to a file, so the tests need no Node. The two tests of the findings fail
+today; the seeded comparison's test passes. The oracles: `quint verify --backend tlc`
+(Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal properties, and
+`quint test --backend typescript` for runs (the Rust evaluator could not be fetched: GitHub
+answered `Forbidden`). `tla2tools.jar` is the `v1.8.0` release's. Only cases where earnest matches
+neither backend, or contradicts its own docs, are findings.
+
+### A temporal property that is a `forall` over an empty set is left out
+
+`models/quint_third/empty_forall.qnt`: `pure val Buyers: Set[str] = Set()` and `temporal
+everyonePays = Buyers.forall(b => eventually(paid.get(b)))`, listed in the check. An empty `and`
+is true in every run. `quint verify --backend tlc --temporal everyonePays` stops with `Error:
+Temporal formula is a tautology (its negation is unsatisfiable).` and `[failure] TLC encountered
+an error`. Earnest: `pass  empty_forall  1 states` with no rule at all (`"rules": []`); `--rule
+everyonePays` says `the model `empty_forall` has no rule `everyonePays``, and the same name in
+`expectCounterexample` makes the check `unreadable` with ``the module `empty_forall` has no
+property of that name``, which is not so. The docs read `S.forall(x => body)` as the `and` of
+`body` for each item, and every listed property is a rule. A setup that gives a set of buyers as
+`Set()` meets it: its liveness property vanishes from the output without a word. Right result: a
+rule `everyonePays` that holds, or the check refused naming it. Test:
+`a_temporal_property_that_is_a_forall_over_an_empty_set_is_still_a_rule`.
+
+### The note of runs not played names a run `quint test` does not play
+
+`models/quint_third/one_name/one_name.qnt`: `module OneName { import Spec.specTest  import
+Spec.init  import Spec.step  import Spec.v  run ownTest = ... }`, where `Spec` has `specTest` and
+`specOverTest`. `quint test --backend typescript --main OneName` prints `ok specTest passed` and
+`ok ownTest passed`, `2 passing`: it plays only the run imported by name. Earnest (`"runs": true`,
+the module is compiled) plays `ownTest` and prints `note  runs not played: specOverTest,
+specTest`, and `"runsNotPlayed": ["specOverTest", "specTest"]`. `specOverTest`, which fails, is
+played by no Quint command here, and a user who reads the note would add it to the module and see
+it fail. Right result: the note names `specTest` alone (or plays it). Test:
+`the_note_of_runs_not_played_names_only_runs_quint_test_plays`.
+
+### Legal Quint that earnest still refuses
+
+Constructs `quint typecheck` accepts, beyond the earlier tables and the docs' list. Marked
+*likely* where a project with per-buyer fairness and witness modules is likely to write it,
+*unclear* where the message does not say what is wrong or what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| `weakFair(buy(p._1), v)` where the step is `nondet p = Set((1, 2), (2, 1)).oneOf() buy(p._1)` (*likely*: Quint has no tuple `nondet`, so a step that picks two things picks a tuple) (*unclear*) | `` `buy` ``: fairness of `buy` given arguments is read only where the step calls `buy` with a `nondet` it picks or a value that does not change. `p` is a `nondet` the step picks; the message does not say that a field of it is the trouble |
+| `weakFair(go(r), t._2)` | ``fairness over `t.item(2)`, which is not the state variables ...``: refused as the docs say, but the message shows Quint's internal `item(2)` for what was written `t._2` (*unclear*) |
+| `temporal p1 = (x == 0).implies(eventually(x == 3))` (*unclear*) | `` `eventually` ``: an `implies` that is not fairness `implies` what must hold is not read. TLC judges it in the start states; the message gives nothing to write instead |
+| `or { always(x <= 3), eventually(y == 5) }` | `` `always` ``: a temporal operator under `or` is not read |
+| a module of runs only, `import Spec as A  import Spec as B`, in a file where another module writes `import Spec as S  export S.*` (`models/quint_third/export_twice/`) (*unclear*) | `` `S::v` ``: the run reads this variable, and it starts with `A::init`, which gives it no value. `quint test --main TwiceImported` passes `ownTest`. Cause: the check is compiled (the spec is imported twice), and `quint compile --main TwiceImported` writes the variable twice under one id, as `A::S::v` and `A::v` (`TwiceImported.json`); the same module alone in a file, or beside the other modules one at a time, compiles to one `A::v` and passes. Quint's own TLC run stops on that compile too (`A_S_v = null`), so only `quint test` reads it. The message names a module the check does not import |
+
+### Attacked and found correct
+
+- Fairness of an action given arguments, over some of the variables (`models` not committed, all
+  in the comparison below as well): an action reached through two `nondet`s with its arguments
+  reversed (`act2(c, b)`), the same action called directly and through a `nondet`
+  (`any { nondet b = … act(b), act(1), idle }`), an argument through a `val c = b`, under an `if`
+  on the `nondet`, an action with a `nondet` inside, `pay(a, b)` and `pay(b, a)` in one `any`, a
+  second action that makes exactly the arrows of `act(0)`, record and tuple arguments, a
+  fairness argument given as a `pure val`, an expression (`3 - 1`) and a record field (`R.who`),
+  `e` that the action changes only in some states, `BUYERS.forall` over a set of records, over an
+  empty set inside fairness, and over a set of one, through a `.*` setup and through `as S`: 50
+  temporal verdicts, each as `quint verify --backend tlc`. The lassos of the broken ones were
+  read by hand: each stops where no fair step changes its `vars`. Refused, as the docs say: an
+  argument computed from the `nondet` (`act(b + 1)`), `t._2` as `vars`.
+- Properties that are an `and`: nested `and`s, bare conditions (judged in the start states),
+  `leadsTo` parts, `fx.implies(fy.implies(…))`, `and(fx, fy).implies(…)`, `fx.implies(and { … })`,
+  `S.forall(k => and { … })`, `not(eventually)` under fairness: 11 properties, as TLC. Refusals
+  inside a part (`strongFair`, `eventually(always)`, `chooseSome`, `exists` over fairness,
+  `enabled`, `not(always(eventually))`) refuse the whole check; none is dropped.
+- `all`/`any` of conditions in a `val`, in a `def` argument, inside `forall` and `filter`, nested,
+  and as guards that a short-circuit keeps from a fault (`all { q.length() > 0, q[0] == 1 }`,
+  `any { not(m.keys().contains(i)), … }`); actions given as arguments with names the callee also
+  binds (`nondet k` in caller and callee, `val k`, a parameter `k`), two levels down, through a
+  lambda, through an argument that is itself a call with an action argument, an `any` of
+  conditions given as an action: 13 invariants and 12 states, as TLC. A `chooseSome` in an
+  argument the callee never uses is not refused, and Quint never evaluates it either.
+- Runs (`quint test --backend typescript`): helpers that chain `then`, `reps` and `expect` with
+  arguments, nested, called inside `reps` with the index, a `nondet` at the top passed to a chain,
+  a run of a run, `assert`, `val`: 25 runs as `quint test`. The same 18 runs from a compiled
+  module, from a module of runs only built from the typecheck with `import base.*` (equal
+  verdicts, reasons and paths) and with `import base as B` (equal verdicts and reasons). A check
+  whose `init` is `start` plays `init.then(…)` from the module's `init`. `quint test`'s default
+  `Test$`: `Test` alone is played, `TestFirst`, `aTests`, `lowtest` are not, as earnest does.
+- Which imported runs are played or named, against `quint test --main X`: `import Spec as A` with
+  `as B` (all four named), `import Deep as D` where `Deep` imports `Helped.*` (`D::deepTest`
+  named, `Helped`'s run not, as `quint test`), an instance under a name and `.*` (played), `export
+  S.*` (played once; `quint test` plays `S::specTest` and `specTest` both), an instance whose spec
+  has an instance (`Outer::M::midTest` named, as `quint test`), two instances mixed in one run.
+  Only `import Spec.specTest` (the second finding) names a run Quint does not play.
+- `nondet` behind guards (#70): `all { q.length() > 0, nondet h = Set(q[0], …) }`, an `if` and a
+  `match` branch with a `nondet` over the branch's list, `init` with a `nondet` over variants,
+  lambdas and `match` in temporal properties and in a `forall` over fairness: 25 states, 2
+  invariants, 3 properties, 4 runs as TLC and `quint test`.
+- The checks file: two checks of different files with one `name` (refused, naming both), the same
+  `name` in two checks files (two models, the cache keeps them apart); stopping early with a fault
+  in the level of the last break and in an earlier level (`fail`, the fault reported), at
+  `--max-states` below the break (`unfinished`), with `--jobs 1`; `expectCounterexample` of a run
+  (met; one that holds is `fail`), of `always`, of `fairness.implies(always(…))` and of a part
+  `not(eventually(…))` (each stops the search, shortest path); a bare-condition part keeps a
+  check from stopping, as the docs' "such parts" says; `--rule` with cached and fresh results.
+- `--rule` on every rule of seeds 1 to 12 of the comparison below, cached and with `--no-cache`:
+  312 selections, each with the verdict, path length and loop of the full run; each second run
+  served from the cache with the same rules; `--max-states 2` and `--time-limit 0` after a
+  cached full run are judged again.
+- `confirm --tlc` (`tla2tools.jar` 1.8): `same` on every fairness and parts model above (six
+  checks, 8 to 25 states), on a module of variants with different payload types inside a map, a
+  set, map keys and a list (101 states, two invariants broken), on `empty_forall` (both leave
+  the property out), and on all six checks of the project model below.
+
+### A seeded random comparison
+
+`models/quint_third/random/generate.py SEED` prints a module `RSEED` of buyers: `BUYERS` of two or
+three, a cap of 1 or 2, a map of counts, a last buyer, a flag and a tuple; `buy(b)` (whose change
+of `last` is, by seed, always or only on a buyer's first buy), sometimes `reset(b)`, and a step
+that calls `buy` through `nondet b = BUYERS.oneOf()` inside an `all` that keeps the other
+variables, sometimes `buy(1)` directly as well, a toggle, an action given as an argument to
+`guarded(a)` whose guard is a random condition, and sometimes a wrap of the tuple. Three random
+invariants (with `all`/`any` of conditions, `forall`, `exists`, `fold`, an operator given a
+lambda); five temporal properties: fairness per buyer over some of the variables (`cnt`, `last`,
+`(cnt, last)`, `{ c: cnt }`, `[last]`, `(cnt, (last))`), of `buy(c)` for one buyer, of the step,
+and their `and`, under `eventually`, an `and` of `always`, a fair `eventually` and a bare
+condition, `leadsTo`, a `forall` per buyer of its own fairness and goal, and nested `and`s with
+`always(eventually)`; four runs that start with `init`, a helper `start(k)` or an `all { … }` in
+place, then `step`, a chained helper `buyTwice(b)`, `reps` and `guarded(…)`, ending in `expect`
+or `fail()`, and a run with a `nondet` before a helper.
+
+Each seed was compared with `quint verify --backend tlc` (one run for the state count, one for
+each property), `quint test --backend typescript --match 'Test$'`, earnest with `--jobs 1` against
+the default, and a second check named `exp` with every invariant TLC breaks in
+`expectCounterexample`. Seeds 1 to 180: 180 models of 10 to 876 states, 1 440 property verdicts and
+900 runs. Every state count is TLC's, every verdict TLC's or `quint test`'s (a property in parts is
+broken when one part is), `--jobs 1` gives the same verdicts and paths, and each `exp` check is
+`pass`, stopped early, with each expected path as long as the full search's and never longer than
+TLC's counterexample. Nothing differed. (One seed's invariant `2 <= 1` is reported by Quint's TLC
+run as `The invariant of q_inv is equal to FALSE` with `[failure]`; earnest says broken, as the
+second pass settled.) The same 60 first seeds were also played as modules of runs only, `module
+WSEED { import RSEED as M … }` with each run written over `M::`: 600 runs, each as `quint test
+--main WSEED`, the module's own runs and `M::`'s.
+
+Ten are committed: seeds 6, 9, 13, 14, 15, 16, 25, 30, 35 and 36 (14 to 876 states), each `.qnt`
+beside `quint compile --target json --main RSEED --invariant inv0,inv1,inv2 --temporal
+t0,t1,t2,t3,t4` (to a file) and `expected.json`, TLC's states and verdicts and `quint test`'s runs
+(130 answers). `every_seeded_model_of_buyers_has_the_states_and_verdicts_of_quint_s_tlc_run_and_quint_test`
+reads them with no Node, with one job and with four, and passes today.
+
+### The project model, extended
+
+`models/quint_third/project/`: the second pass's `types.qnt` and `lock.qnt`, with `requestBy(n)`
+and `releaseBy(n)` (an action per node, guards inside), `stepEach` (`nondet n = NODES.oneOf()`
+before each), a witness helper `startWith(n)`, `val Guard = NODES.size() > 2` and `val
+GuardedBreak = Guard implies neverTwoGrants`, the fairness `fairEach` (an `and` of
+`NODES.forall(n => weakFair(requestBy(n), (peers, net)))`, `weakFair(deliver, vars)`,
+`weakFair(grant, vars)` and the same per node for `releaseBy`), and three properties over it,
+one an `and` of `always`, `always(eventually)` and an `eventually` under `deliver`'s fairness
+alone. `setups.qnt`: `three` and `two` (`.*` setups), `pair` (two copies of the spec, `as L` and
+`as R`, each step of one keeping the other's variables, and a run over both), and `witness`, a
+module of runs only on `import lock(…) as W`, whose runs start with `W::startWith("a")`, with
+helpers that chain steps and take a node (`serveFrom(n)`, `requestTwice(n)`), a `nondet` node
+passed to a helper, `reps`, a `fail()` and two that break. One `earnest.quint.json` of six checks,
+two of them named checks of `three` and `two` with `GuardedBreak` in `expectCounterexample`.
+
+| Check | earnest | `quint verify --backend tlc` / `quint test` |
+|---|---|---|
+| `three` (stepEach) | 314 states; 3 invariants hold, `GuardedBreak` broken (expected, 9 steps), `everyoneRequests` and `everyoneHolds` hold (3 parts each), `eachDrains#3` broken, `oneEachTest` holds | 314; ok ×3; violation at State 10; ok, ok; violation; `oneEachTest` ok |
+| `threeKnown` | `pass`, 253 states, stopped (`every expected counterexample was found`) | 223 states before TLC's stop |
+| `two` | 179 states; 4 invariants and 4 parts hold, `eachDrains#3` broken | 179; ok ×4 (and `GuardedBreak` ok); violation |
+| `twoGuard` | `fail`: `holds  GuardedBreak  a counterexample was expected` | ok: no counterexample, as `Guard` is false with two nodes |
+| `pair` | 322 states; `bothMutex` holds, `fewGrants` broken after 12 steps; `bothTest` holds | 322; ok; violation at State 13; `bothTest` ok |
+| `witness` | `wrongHolderTest` and `tooManyTest` broken, the other five hold, `0 states` | 2 failed, 5 ok |
+
+`earnest confirm --tlc` says `same` on all six (39 s). The same with `--jobs` 1, 2 and 4: every
+path byte for byte equal. Times on 4 cores, with the random comparison running beside it:
+`earnest verify --no-cache` of all six checks 2.6 s (one typecheck and two compiles), and
+1.6 s for `three` alone; `quint verify --backend tlc` 112 s for the 14 runs it takes to judge each
+property alone (about 8 s each, most of it Apalache's start), and `quint test` 2 to 5 s per
+module.
+
+Awkward on the way, none a wrong answer: a property over `weakFair(step, vars)` in a check whose
+step is `stepEach` is refused, and the refusal names `three::lock::step` with Quint's long names;
+`twoGuard` is where a guard written as a `val` meets `expectCounterexample`: with two nodes the
+guard is false, so the known bug can't appear, and the check fails with no hint that the guard is
+why (the same as `quint verify`, which simply finds no violation).
+
+### Usability notes
+
+- A path step of an action called with a written argument prints no argument: `buy(1)` and
+  `buy(R.who)` in one `any` print as `buy` and `buy#2`, where a `nondet` argument prints `b = 1`.
+- With `"runs": ["M::aTest"]` in a module that also has its own `aTest`, the played run prints as
+  `aTest` (the short name, since only one is played), the name of the module's other run.
+- `--rule upTest` on a check that searches plays the run and still searches: on a model with no
+  end the check is `unfinished` at `--max-states` though the only rule judged is a run. With
+  `expectCounterexample` on that run it is met and the check still ends `unfinished`.
+- A refusal inside an action argument or a lambda written in `step` is reported "in the
+  definition `wrap`, which `step` uses" (the callee), though the line and column are those of the
+  argument in `step`.
+- A property in parts with a bare condition (`and { x == 1, always(x < 2) }`) in
+  `expectCounterexample` never stops the search, even when both parts are broken after level 2;
+  the docs' "such parts" says so, but the bare part is judged in the start states and is known
+  from the first level.
+- Messages still name a setup's definitions by Quint's long names (`three::lock::requestBy`), as
+  the second pass noted.
+
+### Not covered
+
+Windows. Apalache's own checking (`quint verify` without `--backend tlc` waits on a prompt about
+temporal support). Quint's Rust evaluator (`Failed to fetch from GitHub: Forbidden`). Setups whose
+spec imports other modules (#71) and invariants written in the checks file (#69's follow-up), as
+asked. After the owner's decision to replace `earnest.quint.json` with marks in the `.qnt` file
+(#72), the checks file's own keys and messages were not attacked further than the name collisions
+above.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-3` (#78), on the integration branch at 6362d76 (#69's invariants as
+expressions, #71). The two tests of the findings pass with no assertion changed. Quint 0.33.1
+from npm, `quint verify --backend tlc` (Apalache 0.62.4) and, for `confirm --tlc`, the `v1.8.0`
+release's `tla2tools.jar` at `target/tools/`.
+
+- **A `forall` over an empty set** (`temporal.rs`): a property whose parts come out empty is one
+  rule of its name that holds (`always(true)`), listed, selected by `--rule`, and in
+  `expectCounterexample` not met (`holds  everyonePays  a counterexample was expected`, the
+  check `fail`). Checked through a `.*` setup that gives the set as `Set()` too. A `forall` over
+  an empty set inside the fairness was already no fairness; Quint's parser takes no `and { }`.
+  Test: `a_temporal_property_that_is_a_forall_over_an_empty_set_is_still_a_rule`.
+- **The note of runs not played** (`places.rs`): each `import`, instance and `export` of the
+  parse is kept with its `defName`. The note is the runs `quint test --main X` plays, less those
+  the compiled module holds: a single name imported, that name; `.*`, `as` and an instance,
+  every `…Test` run of the module and those it exports; an `export` in the module itself, the
+  runs it names, bare. Checked against `quint test` on twelve shapes, each alone in its file
+  (one name; `.*`; `as`; one name and `.*`; one name and `as`; `export Spec.specTest` and a
+  module that imports it; `export S.*` and a module that imports it; a module reached only
+  through `import Star.*`; an instance under a name and `.*`): the note names exactly the runs
+  `quint test` plays and earnest does not. Tests:
+  `the_note_of_runs_not_played_names_only_runs_quint_test_plays`, and
+  `places::tests::the_runs_not_played_are_those_quint_test_plays_through_each_import`.
+- **Fairness given a part of a pick** (`temporal.rs` `inputs_of`, `picked_giving`): an argument
+  the step passes as an expression over one `nondet` alone (`p._1`, `r.who`, `b + 1`) is worked
+  out for each value of the pick, and the picks that give the fairness's value are kept. Each is
+  a `FairStep` of its own and the part is fair to their union, which a part of `Fairness::actions`
+  already is, so `FairStep`, `Search::inputs_by` and the liveness pass are unchanged, and a model
+  without such fairness reads as before. Several arguments over one pick narrow it together
+  (`buy(p._1, p._2)`); more than 1,000 combinations are refused. `models/quint_third/fair_parts/`
+  (two buyers, two items): `payEach`, `payOne` (2 parts), `payOneOnly` over `pay(p._1)` and over
+  `pay(r.who)`, and `allPay`, `onePays`, `oneOnly` over `buy(p._1, p._2)`: 4, 4 and 7 states and
+  every verdict as `quint verify --backend tlc`; `confirm --tlc` `same` on all four checks, the
+  export writing `WF_<<paid>>(Fair_pay_1 \/ Fair_pay_2)` for buyer 1, each fair step with its pick in a set
+  of one. `act(b + 1)`, refused before, is read the same way (`same` with TLC). Test:
+  `fairness_of_an_action_given_a_part_of_a_picked_tuple_or_record_is_judged_as_tlc_judges_it`.
+- **Messages.** `written` prints Quint's surface form: `t._2`, `r.who`, tuples, records,
+  comparisons and `and`/`or`/`implies` infix, with brackets around a nested infix. A condition
+  before `implies` (`(x == 0).implies(eventually(x == 3))`) is judged in the start states, as
+  TLC (`violated` for `x == 0`, ok for `x == 1`) and Apalache (`Found 1 error(s)`, `NoError`)
+  both do: true in every start state, the property is what follows; false in all, it holds;
+  mixed, refused with ``write `always((x == 0) implies eventually(…))` to judge it in every
+  state, or give `init` the start states it is about``. An action or lambda given as an argument
+  is read in its caller's definition (`Reader::callers`), so a refusal inside it says ``in the
+  definition `step` ``. Tests:
+  `a_refusal_writes_the_expression_as_quint_does_names_the_caller_and_says_what_to_write`,
+  `a_condition_implying_a_temporal_formula_is_judged_in_the_start_states_as_tlc_judges_it`.
+- **Output.** An action called with a value that does not change is named with it, the way #71
+  names a `match` branch: `buy(1)` and `buy(R.who)` are `buy  buyer = 1` and `buy  buyer = 2`
+  (Quint's notation, the parameter's last segment). Short names of runs count the module's own
+  runs, so a played `M::aTest` keeps its prefix beside an own `aTest`. `--rule` that names a run
+  and no other rule judges it with the model's actions left out: only the start states are
+  counted, and an endless model ends `pass` (or, with the run in `expectCounterexample`, `pass`
+  with it `broken  (expected)`). Test:
+  `a_step_shows_its_written_argument_a_clashing_run_keeps_its_prefix_and_rule_plays_a_run_alone`.
+- **The `export` file.** #71's typecheck build takes setups, not a module of runs only that
+  imports a spec twice, so `TwiceImported` is still compiled. The reader refuses a compiled module
+  that declares one variable twice under one id: ``` `A::S::v` `quint compile --main
+  TwiceImported` writes this variable twice under one id, as `A::S::v` and `A::v`, so the
+  compiled module is not one Quint means: Quint's own TLC run (`quint verify --backend tlc`)
+  stops on it too, while `quint test` plays the module. Quint compiles it so when another module
+  of the file exports a module this one imports: put the two modules in separate files ```. Test:
+  `a_variable_quint_compile_writes_twice_is_refused_naming_quint_s_compile`.
+
+- **Runs played by a compiled module** (item 7, asked for by the orchestrator after the first
+  push; `places.rs` `runs_played`, one call in `quint.rs`): a compiled module with `export
+  Spec.specTest` holds `specOverTest` too, and earnest played it where `quint test` plays only
+  `specTest`. With `"runs": true` the reader is now given, by name, the runs the compiled module
+  holds that `quint test --main` plays, by the same per-import rule as the note, when it holds
+  others; otherwise `runs` stays as it was. On the twelve shapes above (`quint test --backend
+  typescript`) only `Exporter` changes: it plays `specTest` alone and passes, as `quint test`;
+  on every compiled shape the runs played and the runs noted together are those `quint test`
+  plays. Tests: `a_compiled_module_plays_only_the_runs_quint_test_plays`,
+  `places::tests::a_compiled_module_plays_the_runs_it_holds_that_quint_test_plays`.
+
+Found on the way, not changed: a module that writes `export S.*` plays `S::specTest` once where
+`quint test` plays it under both names (the same run, in a module built from the typecheck).
+
+Tests of earlier Quint slices changed (none is on `origin/main`):
+`temporal::tests::the_actions_are_those_of_the_step` and
+`fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action` (the action
+`move(1)` is `move  d = 1`), `temporal::tests::an_implies_inside_what_must_hold_is_refused`
+(now `a_condition_that_implies_what_must_hold_is_judged_in_the_start_states`: `on` is false at
+the start, so it holds), and
+`arguments_tests::an_action_argument_is_read_twice_two_levels_down_with_a_nondet_and_through_a_lambda`
+(`caller  k = 2`).
+
+Checks, each with its last line, on the tree merged with the integration head 7080544 (#73,
+`confirm --quint`, merged after item 7):
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2181 passed, 0
+  failed.
+- `cargo test -p earnest_break_it --features tlc --test tlc`: 14 passed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%` and
+  `+0.25%`).
+- `just benchmark`: every budget `met` (grid_10m 4 workers 0.724 s, 1 worker 1.960 s).
+- `just same-answers 7080544`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `every model file: 392 runs, 64 differences`, in
+  `tasks/conformance/runs/cart.model.ts`, `cart_broken.model.ts` and `clock.model.ts`, which
+  `origin/main` cannot read (the same 64 as on 6362d76).
+- `tests_kept.py --base origin/main`: `tests kept: 1731 tests, 4977 assertions (base: 1304, 3798)`.
+- `earnest confirm --tlc target/tools/tla2tools.jar`: `same` on the six checks of the project
+  model, on `fair_parts`' three compiles and `start_implies`, and on #68's `buyers`, `FairArgs`,
+  `FairnessInAnd`, `FairnessVal`, `fairshapes` and `fairtuple`; earlier in the slice also on the
+  `tup`, `imp`, `args` and `act(b + 1)` samples.
+
+## Fourth Quint pass
+
+An adversarial pass over what was merged after the third one (#78: properties whose parts come
+out empty, fairness given a part of a pick, conditions before `implies`, steps named with their
+written arguments, `--rule` of a run alone; #71: setups whose spec imports other modules, built
+from the typecheck, `assume`, path printing, `match` branches named by variant), made on commit
+caf9310 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_fourth.rs` and its files in `models/quint_fourth/`: each `.qnt` beside the
+JSON Quint wrote for it, to a file, so the tests need no Node. The oracles: `quint verify
+--backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts, invariants and temporal
+properties, and `quint test --backend typescript` for runs; `confirm --tlc` with the `v1.8.0`
+release's `tla2tools.jar` at `target/tools/`. Only cases where earnest matches neither backend, or
+contradicts its own docs, are findings. The two tests of the findings fail today; the seeded
+comparison's test passes.
+
+### Fairness of an action the step guards is judged with the step's guard
+
+`models/quint_fourth/guarded_fair/`. `guarded_step.qnt`: `pay = all { not(paid), paid' = true,
+open' = open }`, `toggle` flips `open`, and the step is `all { open or paid, any { pay, toggle }
+}`; the property `pays` is `weakFair(pay, (paid, open)) implies eventually(paid)`. TLC reads it as
+`WF_vars(pay)`, whose `ENABLED` is that of `pay` alone: `not(paid)`, true in the start state, where
+the step can't happen. The only behaviour stays in the start state with `pay` enabled forever and
+never taken, so it is not fair, no fair behaviour exists, and the property holds: `quint verify
+--backend tlc --temporal pays guarded_step.qnt` prints `1 distinct states found` and `[ok] No
+violation found`. The same with the step `guardedBranch = any { all { open, pay }, toggle }` (4
+states, `[ok]`), and with an argument, `guarded_fair.qnt`: `any { nondet b = Buyers.oneOf() all
+{ open, pay(b) }, toggle }` and `onePays = weakFair(pay(1), (paid, open)) implies
+eventually(paid.get(1))` (8 states, `[ok]`). Earnest: `broken` in all three, the path `start
+paid = false, open = false` with `the run may stop here, because no step it must take can change
+the state from here` (or `nothing changes the state from here`). It takes `pay` to be enabled only
+where the step can take it, so the guard `open` the step puts before the call counts against the
+fairness. The same holds for `if (open) any { pay, toggle } else toggle` and `any { if (open) pay
+else toggle, toggle }`, and for a `match` that guards the call, `any { match (if (open) Yes else
+No) { | Yes => pay | No => toggle }, toggle }`: all `[ok]` in TLC and broken in earnest. Cause:
+`fair_part` in `crates/earnest_quint/src/temporal.rs` takes `step.parts[name]`, the paths of the
+step that pass through the action, with every guard the step puts around the call, so `ENABLED`
+is the step's and not the action's. `earnest confirm --tlc` says
+`same` on `guarded_fair` and `guarded_step`: the export writes the fairness over the step's
+guarded action too. The docs say a step counts for such fairness "as TLC judges
+`WF_vars(reachDeadline(buyer))`", and refuse an argument the step never gives because "TLC holds
+such a step possible where the step never takes it"; a guard of the step around the call is the
+same case and is not refused. A step of the form `all { not(done), any { … } }` or `if (phase ==
+Run) any { … } else …` meets it. Right result: each property holds, or the check refused naming
+the guard. Test:
+`fairness_of_an_action_the_step_guards_is_judged_by_the_action_alone_as_tlc_judges_it`.
+
+### A spec that imports helpers under a name beside their types module is unreadable
+
+`models/quint_fourth/named_helpers/named_helpers.qnt`: `types` (a sum type), `helpers` (`import
+types.*`, `pure def up`), `spec` (`import types.*`, `import helpers as H`, a constant `N`, `step`
+calls `H::up(x)`, a run `upTest`) and the setup `small` (`import spec(N = 2).*`). The docs read a
+spec that imports modules of definitions and types "at any depth", and a spec that imports under a
+name "as the same spec written with `.*`", from one typecheck. `quint test --backend typescript
+--main small` prints `ok small::spec::upTest passed 1 test(s)`. Earnest compiles the check instead,
+and `quint compile` (so `quint verify` too) stops with `Error: Internal error while flattening
+[QNT404] Name 'small::spec::H::up' not found`: the check is `unreadable`, and the problem's place
+is Quint's own `…/node_modules/@informalsystems/quint/dist/src/cli.js:58:39`. Without the spec's
+own `import types.*`, or with `import helpers.*` in place of `as H`, the same file is built from
+the typecheck: `pass  small  3 states`, `inRange` and `upTest` hold. The test gives earnest a fake
+`quint` that answers `parse` and `typecheck` with `quint typecheck --out`'s JSON
+(`typecheck.json`) and fails `compile` as Quint does. Right result: `pass`, 3 states, `inRange`
+and `upTest` hold. Test:
+`a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_from_the_typecheck`.
+
+### Legal Quint that earnest still refuses
+
+Constructs `quint typecheck` accepts, beyond the earlier tables and the docs' list. Marked
+*likely* where a project replacing its `quint verify` jobs is likely to write it, *unclear* where
+the message does not say what is wrong or what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| a spec that imports `types.*` and `helpers as H`, where `helpers` imports `types.*` too (*likely*: the first finding above) | the check is compiled and `unreadable` with Quint's `Internal error while flattening`, at `…/quint/dist/src/cli.js:58:39` (*unclear*: the place is Quint's own JavaScript, and nothing says that `import helpers.*` reads) |
+| a spec that imports one helpers module both `.*` and `as H` | compiled, as the docs say, and `unreadable` with the same internal error at the same place (*unclear*, as above) |
+| `weakFair(pay(1), …)` where the step calls `pay(b)` only inside `action payG = all { g, nondet b = B.oneOf() pay(b) }`, a top-level action of the step | ``fairness of something that is not the step or one of its top-level actions``, while `any { all { g, pay }, toggle }`, the same guard written in place, is read (and judged as the first finding says) |
+| `BUYERS.forall(b => weakFair(buy(b), cnt))` in a setup where the step picks `b` from `tuples(BUYERS, ITEMS)` and `ITEMS` is `Set()` (*likely*: a setup with an empty set) | ``fairness of `Q6C::Q6spec::buy` given arguments the step never gives it is not read: TLC holds such a step possible where the step never takes it``, as the docs say; the action is named with Quint's long name |
+| `temporal p = weakFair(step, x)` alone, or `and { weakFair(step, x), always(x >= 0) }` | `` `weakFair` is not read in a temporal property`` (*unclear*: fairness is read before `implies`; TLC checks such a property, and finds it violated by a stuttering run) |
+| `weakFair(step, x) implies weakFair(step, x)` | the same message (*unclear*) |
+| `eventually(x == 2) implies always(x <= 2)`, `always(eventually(P)) implies eventually(P)`, `(weakFair(step, x) and eventually(P)) implies eventually(Q)` | ``an `implies` that is not fairness `implies` what must hold is not read`` (*unclear*: nothing to write instead) |
+
+Quint itself refuses a definition or parameter named like a builtin (`size`, `set`, `put`, `next`,
+`length`), with `QNT101`; earnest reports Quint's error at the place Quint gives.
+
+### Attacked and found correct
+
+- Fairness given a part of a pick (#78): `nondet p = tuples(B, Set("x", "y")).oneOf() pay(p._1)`,
+  where two picks give each value, beside a `tick` and an idle step; `weakFair(pay(1), paid)`,
+  `weakFair(pay(2), …)` of a goal it does not serve, `pay(1)` over `(paid, cnt)`, an `and` with
+  `weakFair(tick, cnt)`, and `B.forall(b => weakFair(pay(b), paid))`: 12 states, five verdicts as
+  TLC. `nondet b` and `p._1` calling one action in one step, `buy(1)` called directly beside
+  them, and `take(q._1, q._2)` (two arguments from one pick) are in every seed below.
+- Empty parts (#78): `forall` over a set that is empty in one setup only (`Who = Set()`, `ITEMS
+  = Set()`), nested `forall`s over two constants, an `and` of a `forall` with parts and one with
+  none, a `forall` over `B.filter(b => b > 1)` and over `tuples(Big, Big)`: each property a rule
+  with its parts, the empty ones holding; every verdict TLC gives is earnest's. TLC stops on
+  most of the empty ones (`Temporal formulas containing actions must be of forms <>[]A or
+  []<>A`, `Temporal formula is a tautology`), as the third pass saw.
+- A condition before `implies`: true in both of two start states (`(x >= 0).implies(eventually(x
+  == 3))`, broken as TLC), true in both before a fairness `implies` (broken as TLC), and mixed
+  (refused with the message the docs give).
+- Steps named with written arguments: `go("a b")` twice and `go("c")` in one `any`, a record
+  argument `place({ name: "bo", n: 2 })`, `go("a b")`, `go("a_b")`, `go("a-b")` and `go("a b_2")`
+  in one step: 16 and 9 states, invariants and fairness by name (`weakFair(go("a b"), x)`,
+  `weakFair(go("a-b"), (x, last))`) as TLC; `--rule` of each; `confirm --tlc` `same`, the export
+  keeping each name apart (`Action_go__s____a_b_`, `…__2`, `…__3`); the chart labels each edge.
+- `--rule` of a run alone (#78): 2 start states, no search, `pass`; then the full check 16 states
+  and broken rules, then `--rule` of the run again and of an invariant: each as the full run,
+  never a count from the other. With the run in `expectCounterexample` and holding: `fail`,
+  `holds  t1Test  a counterexample was expected`. `--rule` takes one id (`cannot be used multiple
+  times`).
+- `match` actions (#71): two nested `match`es with a `_` branch, fairness of the `match` action
+  over all and over some variables, an `and` of two fairness, a run through it: 32 states, five
+  verdicts, the run as TLC and `quint test`; `confirm --tlc` `same`; `--jobs 1` the same JSON.
+  Two `match`es side by side in one `all`: 8 states, three verdicts as TLC, `confirm --tlc` `same`.
+- Setups whose spec imports other modules (#71): a types module with a sum type, helpers that
+  import it, `match` in a helper, a `pure val` from a constant of the instance (`Lim = N + Mid`),
+  `assume`s over two constants, a three-deep chain of helpers (`top` imports `mid` imports `base`),
+  two instances of such a spec beside a setup's own `import base.*`, a setup's `pure val Tick`
+  beside the types module's constructor `Tick(int)`: 19, 63, 1, 5, 21 and 2 states and every
+  invariant, temporal verdict and run as TLC and `quint test`. The same setups compiled by `quint
+  compile` and read from the JSON give the same ids, paths and verdicts (only the imported runs,
+  which `quint compile` drops, are missing). `assume` false in the spec, in the setup, in a module
+  checked directly and through its setup: `unreadable` at the assumption, as the docs say.
+- Path printing (#71): a step that appends to a list inside a map and adds a key, adds a key to a
+  nested map, takes one item from a set and adds another, changes a variant inside a map, rotates
+  a list of variants; then everything becomes empty; then new values in empty ones; a record's
+  field and list inside a map, a list losing its head, gaining a middle item, two items at the
+  end, a set of sets: each printed change true to the two states, `start`, `end` and the JSON
+  whole.
+- Runs (#71): a module of runs only over two instances of a spec that imports a types and a
+  helpers module, with a helper that chains a step with a variant argument, a `nondet` before a
+  step, and the spec's runs under `S::` and `T::`; a `.*` setup of it: 11 runs, each as `quint
+  test`.
+- Caches and selections: an edit of a helpers file that a typecheck-built setup imports from
+  another file, back and forth, changes the result each time. On seed 2 below, `--model` of each
+  setup, fresh and cached, equals the full run; `--rule` of each of its 45 rules, fresh and
+  cached (90 runs), gives the full run's verdict and path.
+- `confirm --tlc`: `same` on every model above where it was run, and on seeds 1 and 2 below (six
+  setups, the empty one among them).
+
+Also seen, and already known: a setup built from the typecheck that writes `import spec(N = 2) as
+C` and `export C.*` plays the spec's `upTest` once, where `quint test --main ex1` plays it as
+`ex1::C::upTest` and `upTest`; with `export D.*` of a second instance, `D::upTest` is played once
+where `quint test` also plays `upTest`. This is the known `export S.*` item, here in a setup
+earnest builds itself.
+
+### A seeded random comparison
+
+`models/quint_fourth/random/generate.py SEED` prints one file `QSEED.qnt` laid out as a project
+built from #71 and #78: a types module (`Ev = Buy(int) | Back(int) | Idle`), a helpers module that
+imports it (`bumpTo`, `isBuy` with a `match`, `pure val Zero`), a spec that imports both whole and
+has four constants (`BUYERS`, `ITEMS`, `WATCH`, `CAP`), three `assume`s that hold (one over two
+constants), a `pure val LIMIT` from a constant and a helper, and three `.*` setups: `A` (two
+buyers, one item, `WATCH` both), `B` (one buyer, items `"a"` and `"b c"`), `C` (`WATCH = Set()`).
+The step, shuffled, calls `buy` through a part of a picked tuple (`nondet p = tuples(BUYERS,
+ITEMS).oneOf() buy(p._1)`), through `nondet b`, and sometimes as `buy(1)`; `take(q._1, q._2)`
+with two arguments from one pick; a `match` action `react` with a `_` branch; sometimes a
+toggle. Three random invariants (`match`, `forall`, `exists`, `fold`, `all`/`any` of conditions,
+helpers); six temporal properties: fairness per buyer of `buy(b)` over `BUYERS` or `WATCH` and
+over some of the variables (`cnt`, `(cnt, ev)`, `{ c: cnt }`, `[cnt]`, `(cnt, (ev, got))`, a
+`val`), of `buy(1)`, of `take(b, i)` per buyer and item, of the `match` action, of the step, and
+`and`s of them, under `eventually`, `always(eventually)` and `leadsTo`; an `and` of an `always`
+and a fair `eventually`; a `forall` per item and watched buyer of its own fairness and goal (no
+parts in `C`); a condition before `implies` that holds in the start state; an `always` per watched
+buyer. Three runs from `init` or a helper `startWith(k)`, then `step`, `buy(1)`, the `match`
+action, `reps` or a helper that chains two actions, ending in `expect` or `fail()`, and a run with
+a `nondet` before a helper.
+
+Each seed's three setups were checked by earnest (fresh with all cores, fresh with `--jobs 1`,
+then cached: the three JSON outputs equal), by `quint verify --backend tlc --main QSEEDx` (one run
+of `val everything = true` for the state count, the three invariants together and, when that
+breaks, one by one, each temporal property alone) and by `quint test --backend typescript --main
+QSEEDx`. Seeds 1 to 104, capped at an hour with four workers each against its own Apalache server:
+312 setups of 14 to 240 states, 936 invariant verdicts, 1 664 temporal verdicts and 1 248 runs.
+Every state count, temporal verdict and run is Quint's; every invariant verdict too, except nine:
+`inv2 = 0 == (0 + 2)` (seed 19), `inv1 = not(LIMIT == LIMIT)` (39) and `inv2 = 1 == 2` (50),
+which earnest says are broken in the start state and Quint's TLC run reports as `The invariant of
+q_inv is equal to FALSE` with `[failure]`, as the second pass settled. TLC stopped with an error on
+208 temporal properties, the ones over `WATCH = Set()` in setup `C` (`Temporal formulas containing
+actions must be of forms <>[]A or []<>A`, `Temporal formula is a tautology`); earnest holds them,
+as the docs and the third pass's settled section say. Seeds 1 and 2 also through `confirm --tlc`
+(`same` on all six setups), and seed 2 through `--model` and `--rule` of every rule, above. The
+generator never puts a guard of the step around a fair action, which is the first finding.
+
+Ten are committed: seeds 2, 5, 9, 14, 20, 26, 29, 32, 34 and 38 (14 to 240 states), each `.qnt`
+beside `quint typecheck --out` (`QSEED.json`) and `expected.json`, Quint's answers for each setup
+(400 answers). `every_seeded_setup_over_types_and_helpers_has_the_answers_of_quint_s_tlc_run_and_quint_test`
+gives earnest a fake `quint` that answers with the typecheck, so the setups are built as in a
+project, checks each with one job and with four, and passes today.
+
+### The project model, split into modules
+
+`models/quint_fourth/project/`: the third pass's model with its spec split as a project lays it
+out. `types.qnt` (unchanged), `helpers.qnt` (`import types.*`, `pure def idle`, `fits(used,
+room)`, `holderIs(h, n)` with a `match`, `pure val NoGrants`) and `lock.qnt`, which imports both
+whole and adds two `assume`s over its constants (`roomy`, `named`), `requestTimes(n, times)`, a
+top-level `match` action `settle` (`Nobody` and `Held(n)` branches), and `stepPick`, whose step
+picks `nondet p = tuples(NODES, Set(1, 2)).oneOf()` and calls `requestTimes(p._1, p._2)`. The
+fairness `fairPick` is an `and` of `NODES.forall(n => weakFair(requestTimes(n, 1), (peers,
+net)))`, given a part of the picked tuple, with `deliver`, `grant` and `releaseBy(n)`; three
+properties over it, `pickSettles` an `and` of an `always`, a fair `always(eventually)` under an
+`and` of fairness, and `(grants == 0).implies(weakFair(settle, vars).implies(eventually(…)))`, a
+condition judged in the start states. `setups.qnt`: `three` and `two` (`.*`) and `witness`, a
+module of runs only over `import lock(…) as W` whose runs start with a helper that chains steps,
+a `nondet` before a helper, `requestTimes("a", 2)` and `settle`. Four checks in one
+`earnest.quint.json`, one with `GuardedBreak` in `expectCounterexample`, all built from one
+typecheck.
+
+| Check | earnest | `quint verify --backend tlc` / `quint test` |
+|---|---|---|
+| `three` (stepEach) | 314 states; 3 invariants hold, `GuardedBreak` broken (expected), `everyoneRequests` and `everyoneHolds` hold, `eachDrains#3` broken, `oneEachTest` holds | 314; ok ×3; violation; ok, ok; violation; ok |
+| `threePick` | 2733 states; 3 invariants hold; `pickRequests` holds (3 parts), `pickHolds` broken (3 parts), `pickSettles` part 1 broken, parts 2 and 3 hold | 2733; ok ×3; ok; violation; violation |
+| `twoPick` | 2253 states; 3 invariants hold, `grantsBounded` broken after 25 steps; `pickRequests` holds, `pickHolds` and `pickSettles` broken | 2253; ok ×3, violation; ok; violation; violation |
+| `witness` | `fromATest`, `eachTest`, `doubleTest` hold, `settleTest` and `wrongTest` broken, `0 states` | 3 ok, 2 failed |
+
+The lasso of `pickHolds#2` in `twoPick` was read by hand: both nodes request once, `settle`
+drops both requests, and in the end state every fair action is disabled by its own guard
+(`requestTimes` needs an idle node, `deliver` a message, `grant` a waiting node), so TLC's
+`ENABLED` agrees that the run may stop there. `quint compile --main three --step stepPick` (and
+`two`) with the same properties, read by `earnest verify three.json`, gives the same states,
+verdicts, paths and action ids as the setup built from the typecheck. `earnest confirm --tlc`:
+`same` on all four (71 s). `--jobs` 1, 2 and 4: equal JSON. `--rule pickHolds#2` and `--rule
+pickHolds`, cached and fresh: the verdicts and paths of the full run. `expectCounterexample`
+of the witness runs `wrongTest` and `settleTest`, and of `pickHolds` and `grantsBounded` in
+`twoPick`: `pass`, each `broken (expected)`, the latter searching all 2253 states as the docs
+say. Times on 4 cores, with the seeded comparison running beside it: `earnest verify --no-cache`
+of the four checks with no `.earnest/` (one parse, one typecheck) 3.1 s; `quint verify --backend
+tlc` 1.2 to 3.5 s for each of the 33 properties against a running Apalache server; `quint test`
+4 s per module.
+
+### Usability notes
+
+- A check that falls back to `quint compile` and meets Quint's internal error is reported at
+  Quint's own source, `…/node_modules/@informalsystems/quint/dist/src/cli.js:58:39`, not at the
+  `.qnt` file; the message does not say that the typecheck build was given up or why.
+- A run's path names a step of a `match` with arguments in another order than the search's path:
+  `handle  w = 1 Req` in a run, `handle Req  w = 1` in an invariant's path, for one action.
+- Two `match`es side by side in one action name the action after the last one only: `both C`,
+  `both C#2` (the first `match`'s other branch) and `both _`.
+- Two calls with the same written argument, `go("a b")` twice in one `any`, print the same name
+  in a path (`go  s = "a b"`), and `go  s = "a b"#2` only in the chart.
+- `weakFair(pay(1), …)` is read when the step writes `any { all { open, pay(b) }, … }` and
+  refused (`not the step or one of its top-level actions`) when the same `all` is a named action
+  of the step; the two shapes mean the same to Quint.
+- A random comparison against `quint verify --backend tlc` is slow mainly because each `quint
+  verify` starts Apalache: with a server already running on its port (`apalache-mc server
+  --port=…`, then `--server-endpoint localhost:…`) a property took 1 to 3 s instead of about 5.
+
+### Not covered
+
+Windows. Apalache's own checking (`quint verify` without `--backend tlc`). Quint's Rust evaluator.
+The checks file itself (being replaced by marks in the `.qnt` file, #72), past writing fixtures
+with it. Only part of the 200 seeds asked for: see the seeded comparison.
+
+### Settled after the pass
+
+Fixed on `claude/quint-fixes-3` (#79), with the pass branch merged up to a7fbeeb and the
+integration head 844238e. Both tests of the findings pass with no assertion changed, and so
+does the pass's seeded test of setups over types and helpers. Quint 0.33.1 from npm, `quint
+verify --backend tlc`, and the `v1.8.0` release's `tla2tools.jar`; every `confirm --tlc` below
+ran on a scratch copy of the fixtures.
+
+- **Fairness of an action, by the action alone** (`earnest_ir` `FairStep::alone`, `Alone`;
+  `temporal.rs` `alone`; `earnest_check` `eventually.rs` `possible_alone`, `taken_alone`;
+  `earnest_tla` `alone`). `weakFair(A(c), e)` now gives one fair step that carries `A` read from
+  its own definition with its arguments: each way through it as an action, its own guards and
+  `nondet`s (a set that reads the state is worked out in the state), and the fields it assigns,
+  the others free. In the liveness pass only, and only for a rule with such fairness, the step is
+  possible in a kept state where some way through `A` alone changes a field of `e`, and an arrow
+  counts when some way through `A` alone gives its target on every field `A` assigns and `e`
+  changes, whichever alternative of the step made it. Nothing changed on the search path, in
+  `Model`, `Field` or `Action`; the fairness of the whole step and the #63 refusal are as they
+  were. The export writes `Fair_A_k` as `A` alone (`Fair_A_k_way_j`, no `UNCHANGED` for what `A`
+  leaves free) and the fairness as `WF_e(Fair_A_k)`. Against TLC, every verdict and state count
+  as `quint verify --backend tlc`, and `confirm --tlc` `same`, on: the pass's three fixtures; a
+  sample of eleven steps over `pay`, `toggle` and a counter (`all { open or paid, any { … } }`,
+  `any { all { open, pay }, toggle }`, `if (open) any { … } else toggle`, `any { if (open) pay
+  else toggle, toggle }`, a guard false forever, one always true, `pay` reached guarded and
+  unguarded, a twin action that gives `pay`'s transition, `pay` with its own guard `open` under
+  `any { payOpen, toggle }` and with the toggle held once open (both broken, as TLC), an action
+  whose own successor no state reaches (`n' = 9`), and the fairness of the whole step), 27
+  properties; #68's six fairness fixtures; the third pass's project model; the fourth pass's
+  project model (`three`, `threePick`, `twoPick`, `witness`). The third pass's generator takes
+  `guarded` (`generate.py SEED guarded`; without it the output is unchanged): the call of `buy`
+  under a random condition, in an `all` or an `if`, and the direct `buy(1)` too. Seeds 1 to 40:
+  4 774 states and 200 temporal verdicts, each as TLC (one `quint verify` at a time: runs side
+  by side clash in Apalache and fail). The build before the fix says `broken` on the pass's
+  fixtures and `confirm --tlc` says `same` with it, since its export wrote the step's guarded
+  `pay`; with the fix TLC finds the property holds on the export, so the old verdict would be
+  `differs`. Tests: `fairness_of_an_action_the_step_guards_is_judged_by_the_action_alone_as_tlc_judges_it`,
+  `quint_fourth_fixes::the_tla_export_states_the_fairness_of_the_action_alone_without_the_step_s_guard`,
+  and with TLC `tests/tlc/quint_fourth.rs`
+  `tlc_judges_the_export_of_fairness_of_a_guarded_action_as_the_checker_does` (`same` and
+  `pass` on the three fixtures: the old reading gives `differs`, the old export `fail`).
+- **A spec that reaches a module both whole and through a named import** (`setup.rs`
+  `instance`, `imported_into`): `types`' constructors, reached as `Low` through the spec's own
+  `import types.*` and as `H::Low` through `helpers`, are declared once, under the shorter name
+  (a reference goes by id, so one declaration serves both), and a module reached twice counts
+  once. The fixture is built from the typecheck: `pass  small  3 states`, `inRange` and `upTest`
+  hold, as `quint test`; `confirm --tlc` `same`. Test:
+  `a_spec_that_imports_helpers_under_a_name_beside_their_types_module_is_built_from_the_typecheck`.
+- **Where a failed compile is** (`quint.rs` `quint_place`): only an `at file:line:col` of a
+  `.qnt` file is a place; Quint's own stack (`…/quint/dist/src/cli.js:58:39`) is passed over, so
+  the problem is at the check's `.qnt` file with Quint's message. Test:
+  `quint_fourth_fixes::a_compile_quint_fails_on_is_reported_in_the_qnt_file_and_not_in_quint_s_own_code`.
+
+From the pass's notes, each checked with Quint 0.33.1:
+
+- `weakFair(pay(1), …)` where the step reaches `pay` only inside a named action, `payG = all {
+  open, nondet b = … pay(b) }`, is read by `pay` alone, as the same guard written in place
+  (`temporal.rs` `step_reaches`: an action the step reaches through any definition; one it never
+  reaches stays refused). Both shapes: 8 states, `onePays` holds and `twoPays` is broken, as
+  `quint verify --backend tlc`; `confirm --tlc` `same`; a `payOwn` that carries the guard itself
+  is broken, as TLC. Test: `fairness_of_an_action_behind_a_named_guarded_action_is_read_as_the_same_guard_in_place`.
+- A step's name lists the written arguments after the branch tags, in a run as in the search:
+  `handle Req  w = 1  m = Req`. An `all` of two `match`es is named after both branches (`both A
+  C`, `both A D`, `both B C`), where `Path::joined` kept only the second's. Test:
+  `an_action_of_two_matches_is_named_after_both_and_a_run_names_a_step_as_the_search_does`.
+- Two identical calls, `go("a b")` twice in one `any`, keep their ids `go  s = "a b"` and `go  s =
+  "a b"#2`, and the chart shows both arrows; a path names the first action that gives a step, so
+  both steps print `go  s = "a b"`. They are one transition, and telling them apart would need the
+  search to keep which action it took on each arrow; not changed.
+- `weakFair(A, vars)` alone, as a property or a part of an `and`, and an `implies` whose left side
+  is a temporal formula but not fairness, are refused saying what each is and what to write
+  (`weakFair(A, vars) implies eventually(P)`; `always(P implies eventually(Q))` or
+  `P.leadsTo(Q)`). A bare fairness formula was not read: TLC checks that every run is fair, which
+  needs the fairness of every run of the model, not a cheap fall-out of the fairness code.
+- Fairness of `buy(b)` in a setup that makes the pick's set empty names `buy` by its short name and
+  says ``Here the step picks `p` from a set that is empty``. Test:
+  `a_refusal_says_what_a_bare_fairness_an_implies_of_a_temporal_formula_and_an_empty_pick_are`.
+- A spec that imports one helpers module both `.*` and `as H` is now built from the typecheck by
+  the finding-2 fix: `pass  small  3 states`, `upTest` as `quint test`, `confirm --tlc` `same`.
+  A compile Quint fails on in another shape is placed at the `.qnt` file as finding 2 says.
+
+Tests of earlier Quint slices changed (none is on `origin/main`): seven that asserted the
+fairness of an action as the action's position, now its stand-alone fair step by name
+(`temporal::tests::fairness_of_a_top_level_action_is_that_action_alone`,
+`::always_eventually_starts_everywhere_and_keeps_both_fairness`,
+`::each_part_of_a_conjunction_is_a_rule_of_its_own`,
+`::a_property_named_after_another_is_read_as_that_one`,
+`::fairness_of_an_action_given_the_argument_the_step_calls_it_with_is_that_action`,
+`actions_tests::a_tuple_of_variables_through_vals_is_fairness_over_every_variable`,
+`fixes_tests::fairness_of_an_action_that_assigns_every_variable_or_of_the_step_is_read`); two that
+built a `FairStep` by literal (`::fairness_over_some_variables_is_fair_to_the_steps_that_change_them`,
+`::fairness_of_an_action_given_a_buyer_counts_its_steps_with_that_buyer_that_change_the_tuple`);
+and `quint_fairness::the_tla_export_writes_the_fairness_of_an_action_given_an_argument_over_the_tuple_written`,
+which pins `Fair_reachDeadline_1_way_1`.
+
+Checks, each with its last line, on the tree merged with the integration head 844238e and the
+pass at c5d2751:
+
+- `cargo fmt --check`: exit 0. `cargo clippy --all-targets --locked -- -D warnings`: no warnings.
+  `just lint-library`: no warnings.
+- `cargo test --locked --no-fail-fast` (after `bun install --frozen-lockfile`): 2189 passed, 0
+  failed.
+- `cargo test -p earnest_break_it --features tlc --test tlc`: 15 passed.
+- `just typescript`: `Tests  192 passed (192)`, `22 passed (22)`, `76 passed (76)`.
+- `just docs`: `[build] Complete!`.
+- `just counts`: every row `met` (largest `+0.43%`, `mixed/shelf`; `grid_1m` `+0.27%`, `+0.21%`).
+- `just benchmark`, with no TLC beside it: every budget `met` (grid_10m 4 workers 0.723 s, 1
+  worker 1.986 s; `wide` 0.35x). A run with four TLC jobs beside it had missed `wide`'s ratio.
+- `just same-answers 844238e`: the three sweeps and `every model file: 392 runs, 0 differences`.
+  `just same-answers origin/main`: `64 differences`, in `tasks/conformance/runs/cart.model.ts`,
+  `cart_broken.model.ts` and `clock.model.ts` only, which `origin/main` cannot read.
+- `tests_kept.py --base origin/main`: `tests kept: 1740 tests, 4987 assertions (base: 1304, 3798)`.
+
+## Fifth Quint pass
+
+An adversarial pass over what #79 changed (fairness of a named action judged by the action
+alone, `FairStep::alone`; specs reaching a module both whole and under a name) and over `earnest
+confirm --quint` (#73), made on commit 8fe5534 of the integration branch with Quint 0.33.1 from
+npm. Its tests are in `tests/break_it/quint_fifth.rs` and its files in `models/quint_fifth/`: each
+`.qnt` beside the JSON Quint wrote for it, to a file, so the tests need no Node. The oracles:
+`quint verify --backend tlc` (Apalache 0.62.4 and the TLC in its jar) for state counts,
+invariants and temporal properties, and `quint test --backend typescript` for runs; `confirm
+--tlc` with the `v1.8.0` release's `tla2tools.jar` at `target/tools/`. Only cases where earnest
+matches neither backend, or contradicts its own docs, are findings.
+
+### Fairness of the step beside fairness of an action lets a run stop where the action could happen
+
+`models/quint_fifth/step_fair/step_fair.qnt`: two buyers, `pay(b) = all { not(paid.get(b)),
+paid' = paid.set(b, true), closed' = closed }`, `close`, `wait` (keeps everything), and the step
+`any { all { not(closed), any { nondet b = BUYERS.oneOf() pay(b), close } }, all { closed, wait }
+}`, so once `close` is taken only `wait` is left. The property `pays` is `(weakFair(step, vars)
+and weakFair(pay(1), vars)) implies eventually(paid.get(1))`; `everyonePays` the same with
+`BUYERS.forall(b => weakFair(pay(b), vars))`. A run that closes before buyer 1 pays stays in the
+closed state, where `pay(1)` alone is possible (`not(paid.get(1))`) forever and never taken: as
+the docs read it ("where `pay` alone could happen and the step never lets it, no run is fair to
+`weakFair(pay, vars)`, and what the fairness implies holds there"), and as TLC reads `WF_vars(pay(1))`,
+it is not fair. `quint verify --backend tlc --temporal pays step_fair.qnt` prints `8 distinct
+states found` and `[ok] No violation found`, and the same for `everyonePays`. Earnest: `broken
+pays` and `broken everyonePays`, the path `close` then `end closed = true, paid = Map(1 -> false,
+2 -> false)` with `nothing changes the state from here, so the run can stay in it forever`.
+Without the step's fairness (`paysWithoutStep = weakFair(pay(1), vars) implies
+eventually(paid.get(1))`) earnest says `holds`, as TLC. `confirm --tlc` and `confirm --quint`
+both say `differs` (`rule pays: the checker says broken, TLC says holds`), so the export is right
+and the search is not. Cause: in `crates/earnest_check/src/eventually.rs`, a rule whose fairness
+includes the whole step over every variable is hunted with `Stops::WhereNothingChangesTheState`,
+and `Hunt::stays` then lets a run stop wherever the step has no arrow out, without asking the
+other parts' `possible`. Before #79 every fair action was possible only where the step had an arrow
+for it, so this was the same; an action alone can now be possible where the step has none.
+`weakFair(step, vars) and weakFair(A, vars)`, with a phase in which the step only waits, is how a
+project writes liveness. The seeded comparison below meets it on its own (seeds 16 and 28). Right
+result: the four properties hold. Test:
+`fairness_of_the_step_beside_fairness_of_an_action_does_not_let_a_run_stop_where_the_action_could_happen`.
+The nested form `weakFair(step, vars).implies(weakFair(pay(1), vars).implies(eventually(…)))`
+and a part of an `and` with both fairnesses were broken in the same way (TLC `[ok]`). Fixed on the
+integration branch at 4b9d3a0 (`Hunt::stays`: under fairness of the step a run stops only where
+the step has no arrow and no fair part is possible); the test passes there and on this branch
+after the merge.
+
+### Legal Quint that earnest still refuses
+
+Beyond the earlier tables and the docs' list. Marked *likely* where a project replacing its
+`quint verify` and `quint test` jobs is likely to write it, *unclear* where the message does not
+say what is wrong or what to write instead.
+
+| Construct | What earnest says |
+|---|---|
+| a run whose own `nondet`s give more than 1,000 choices, `run rareTest = { nondet k = 1.to(1001).oneOf() init.then(setTo(k)).expect(x != 777) }` (*likely*: a witness over a range of ids) | the check is `unreadable`: ``the run's own choices give more than 1000 plans, in the run `rareTest` `` (*unclear*: the docs name no such limit, only ``more than 100000 branches from one start state``, which makes a run `unknown` and its model `unfinished`; "plans" is not a word the docs use, and nothing says what to write). `1.to(1000)` is played: broken with `k = 777`, as `quint test` (`failed after 6031 test(s)` with `1.to(50000)`) |
+| `weakFair(touch, vars)` of an action the step never reaches | ``fairness of something that is not the step or one of its top-level actions``, as the docs say; the action is reached nowhere, so the message is right but reads as if a nested action were refused |
+
+Nothing else a project is likely to write was refused in this pass: every construct of the
+seeded generator below (fairness of guarded actions with and without arguments, a part of a
+picked tuple, `nondet` from the state inside the fair action, `if` and `match` inside it, an
+action calling another, guards of the step as `all`, `if` and `match`, nested) was read.
+
+### Attacked and found correct
+
+- Fairness by the action alone (#79), each against `quint verify --backend tlc`
+  (models not committed unless named): a fair action whose own guard comes before a `nondet`
+  over `m.get(1)` (no fault where the key is missing, as TLC), and before an `if`, a `match` and a
+  `nondet` over `q[0]` (`a5`: 7 states, six properties as TLC); a fair action whose only guard is
+  the step's and which faults alone (`m.get(1)` with no key): earnest `fault` with ``the
+  fairness of the rule `t` is not worked out``, TLC ``Attempted to apply function ... not in the
+  domain`` and `[failure]`; a `nondet` over a set built from an earlier `nondet` of the action
+  (`nondet j = i.to(2).oneOf()`) and an action given its argument through a part of a pick
+  (`a1`: 16 states, four properties as TLC, the lasso of `p1` read by hand: the `pick(0)` arrow
+  that `pick(1)` alone also gives counts as `pick(1)`, as `<<pick(1)>>_vars` does); an arrow of
+  another action that gives what `A` gives on `A`'s variables and something else on the rest,
+  `A` leaving a variable free, `A` keeping one outside `e`, `e` some of the variables (`a2`: 9
+  states, six properties as TLC); the whole step's fairness beside an action's, in a stopping
+  state, in `and`, nested and in parts (the finding; `a3`, `step_fair`, `nest`).
+- After the fix (4b9d3a0, built on this branch after the merge): `models/quint_fifth/stops/`, a
+  stopping state where one fair action is possible alone (`pay`) and another is not (`send`
+  needs `paid`), fairness of the step with no action fairness (broken, as before), a state with no
+  arrow but a stuttering one where the fair action `touch` alone changes nothing (broken: the run
+  may stay), `leadsTo` and a property in three parts under both fairnesses, fairness of the step
+  with an action over some of the variables: 12 states and ten verdicts as TLC; each `why` line
+  read against the end state (`nothing changes the state from here`: only `touch` is left, and
+  `send` needs `paid`); `confirm --tlc` and `confirm --quint` `same`. Test:
+  `a_run_under_fairness_of_the_step_stops_only_where_no_fair_action_could_change_its_variables`
+  (passes).
+- The loops read by hand (seed 7's three, `toggle` twice; `a1`'s `pick` back and forth) are
+  cycles of the step, and each fair action is either not possible alone at some state of them
+  or given by one of their arrows.
+- A spec that imports `types.*`, `types as T`, `helpers as H` (which imports `types.*`) and
+  `deep as D` (which imports `helpers as H` and `types.*`), with a `pure val Max` in `types` read
+  as `Max` and `T::Max`, a `pure def` read as `lift` and `T::lift`, and a setup `import spec(N =
+  3).*`: 12 states (counted by hand: `Low` at each `k`, `High(1..3)` capped by `types::Max`),
+  `inRange` and `lifted` hold, `belowHelpers` broken at `High(3)`, `resets` holds; the runs
+  `upTest`, `twiceTest` hold and `hTest` breaks, as `quint test --main small` (`ok
+  small::spec::upTest`, `ok small::spec::twiceTest`, `1) small::spec::hTest failed`). `quint
+  verify` and `quint compile` stop on it (`Internal error while flattening [QNT404] Name
+  'small::spec::H::up' not found`); `confirm --quint` says `cannot` with that error, `confirm
+  --tlc` `same`. Quint refuses the same name defined in `types` and in `helpers` (`QNT101`).
+- `--rule` of every rule of seeds 1, 3, 4, 7, 8, 16 and 28, fresh and cached: 140 selections,
+  each with the full run's verdict and path.
+- `confirm --quint`: `same` on seeds 3, 5 and 7, `differs` on seed 16 (the finding, ``property
+  t2: the checker says broken, `quint verify` says holds``), as `confirm --tlc`; `cannot` with
+  Quint's error where Quint cannot compile the spec; a check earnest refuses (`strongFair`) is
+  listed `unreadable` and the run exits 1 beside a `same` check. A run with one failing choice in
+  50,000 cannot be compared: earnest refuses runs of more than 1,000 choices (above).
+
+### A seeded random comparison
+
+`models/quint_fifth/random/generate.py SEED` prints a module `GSEED` with `cnt` per buyer, `open`,
+`done`, a list `q` and a phase `Run | Halt`. `buy(b)` assigns only `cnt` (sometimes `q' = q` too,
+a variable outside the fairness), in one of five forms: its own guard, a `nondet k` over
+`1.to(CAP - cnt.get(b))` (empty at the cap), an `if` with an `else` that changes nothing, a
+`match` on the phase, or a guard of its own around a call of `bump(b)`. `toggle` (sometimes
+guarded), `finish` (assigns `done` and the phase), `push` with a `nondet`, `pop`. The step calls
+`buy` through `nondet b`, through a part of a picked tuple `buy(p._1)` and as `buy(1)`, each
+branch in an `all` that gives the other variables, and each branch maybe under a guard of the step
+(`all { g, … }`, `if (g) … else idle`, `match ph { | Run => … | Halt => idle }`), and the whole
+under an outer guard (`all { not(done), any { … } }`, a `match` on the phase, an `if`) or none.
+Two invariants; five temporal properties, each a random `and` of one to three fairnesses
+(`B.forall(b => weakFair(buy(b), cnt))`, `weakFair(buy(1), …)`, of `toggle`, `finish`, `pop`,
+`push`, and of the step over every variable or some), under `eventually`, `always(eventually)`,
+`leadsTo`, and an `and` with an `always`; two runs from `init` through the step, `buy(1)` and
+`toggle`.
+
+Seeds 2 to 208 (207 models of 1 to 252 states, 9 314 in all), each with `quint verify --backend
+tlc` (a run for the count and one for each property, against four Apalache servers on their own
+ports, one TLC per server at a time), `quint test --backend typescript --match 'Test$'`, and
+earnest with `--jobs 1`, `--jobs 4` and then cached (equal JSON every time): 207 state counts, 414
+invariant verdicts, 1 035 temporal verdicts and 414 runs. On the build of 8fe5534 every one was
+Quint's except eight temporal verdicts in seeds 16, 28, 95, 120 (two), 180 and 196, each a
+property with `weakFair(step, ALLV)` beside an action's fairness: the finding. On the build after
+the fix all 1 863 verdicts and runs and 207 counts are Quint's, with `--jobs 1`, `4` and cached
+alike. The whole comparison took about 35 minutes.
+
+Ten are committed: seeds 4, 7, 11, 13, 14, 23, 24, 34, 38 and 44 (24 to 252 states), each `.qnt`
+beside `quint compile --target json --main GSEED --invariant inv0,inv1 --temporal
+t0,t1,t2,t3,t4` and `expected.json`, Quint's answers (100).
+`every_seeded_model_whose_step_guards_its_fair_actions_has_the_answers_of_quint_s_tlc_run_and_quint_test`
+reads them with one job and with four, and passes.
+
+### The project model, guarded
+
+`models/quint_fifth/project/`: the fourth pass's project model with `stepGuarded` added to
+`lock.qnt`: an outer guard `open = grants < NODES.size()`, inside it the picked
+`requestTimes(p._1, p._2)` under `peers.get(p._1).sent < MAX_SENT`, `deliver` under `net.length()
+> 0`, `grant` under `waiting.length() < 2` (stricter than its own guard), `releaseBy(n)` under
+`peers.get(n).holds`, and `settle`; once closed, only `deliver` or an idle step. `fairG` is the
+fairness of `requestTimes(n, 1)` per node, `deliver`, `grant` and `releaseBy(n)` per node; five
+properties, two of them also with `weakFair(stepGuarded, vars)`.
+
+| Check | earnest | `quint verify --backend tlc` |
+|---|---|---|
+| `threeG` | 2243 states; 3 invariants hold; `gRequests`, `gDrains`, `gServed`, `gIdle` hold, `gHolds` broken (3 parts) | 2243; ok ×3; ok, ok, ok, ok; violation |
+| `twoG` | 388 states; 4 invariants hold; the same temporal verdicts | 388; ok ×4; the same |
+
+The same before and after the fix. The lasso of `gHolds` in `twoG` was read by hand: both nodes
+request once, `settle` drops both requests, and in the end state no fair action is possible alone
+(no idle node, no message, an empty queue, nobody holds). `confirm --tlc`: `same` on both (39 s);
+`confirm --quint`: `same` on both (2 min 46 s, 18 jobs, with the seeded comparison running
+beside it); `earnest verify --no-cache`: 2.6 s for both.
+
+### Usability notes
+
+- Both `confirm` options say `same` when earnest's verdict is `unknown` after a fault and Quint's
+  TLC run stops with an error on that property. `models/quint_fifth/unknown_same/sg2.qnt`: `take =
+  all { nondet v = m.get(1).oneOf() … }` is guarded by the step only, so `take` alone faults where
+  the key is missing; earnest prints `fault  the fairness of the rule `t` is not worked out`, the
+  check is `fail`, and `quint verify --backend tlc --temporal t` stops with ``Attempted to apply
+  function: <<>> to argument 1`` and `[failure]`. `confirm --quint` prints `same  sg2  4 states
+  fail  (Quint)`: the property alone is `unknown` on both sides, the two other properties and the
+  count agree. The docs' table says a stopped Quint gives `cannot` and that `same` means the same
+  verdicts; here neither side has one. The check is still `fail`, so nothing is hidden, but a
+  reader of `same` would take TLC to have agreed.
+- A run of more than 1,000 choices is refused at the file, where the docs only speak of runs of
+  more than 100,000 branches being `unknown` (see the table above).
+- `quint verify --backend tlc` against an Apalache server already running on its own port
+  (`apalache-mc server --port=…`, then `--server-endpoint localhost:…`) takes 1 to 2 s a
+  property; four servers side by side worked, one TLC per server at a time.
+
+### Not covered
+
+Windows. Apalache's own checking (`quint verify` without `--backend tlc`). Quint's Rust
+evaluator. The checks file itself (being replaced by marks in the `.qnt` file, #72), past writing
+fixtures with it. Integers past 32 bits, which TLC holds otherwise (listed in the docs). A
+`quint test` sample that misses a failing choice: not reachable within earnest's limit of 1,000
+choices for a run.
+
+## Sixth Quint pass
+
+An adversarial pass over what was merged since the fifth pass: marks read from the `.qnt` file
+(#72), the wording of result lines (#74), `earnest confirm --quint` on marked checks (#73), and
+chart labels, arrows to each rule's premise and `--base` on `.qnt` files (#80), made on commit
+6a70175 of the integration branch with Quint 0.33.1 from npm. Its tests are in
+`tests/break_it/quint_sixth.rs` and its files in `models/quint_sixth/`: each `.qnt` beside the JSON
+Quint wrote for it, to a file (`quint parse --out parse.json --source-map sourcemap.json`, the
+source map's file name made relative; `quint compile --target json --main M` as
+`compile.M.json`), which the tests serve through a fake `quint`, so they need no Node. The oracles
+are those of the fifth pass: `quint verify --backend tlc` (Apalache 0.62.4) and `quint test
+--backend typescript`; the checks file is compared with the build of 6dceb43, the last commit that
+reads it.
+
+What became of the five findings, all on the integration branch after the pass: the first was
+decided as behaviour to keep, and the docs now say that a check judging only properties marked
+`broken` or `reachable` stops once each is found (the checks file stopped for the same property,
+and a model with no end has to pass); its test asserts that. The other four are fixed: the
+leftover-file message writes an expression in the copy's names and lists a line that takes the
+place of the copy's own `init` or `step`; `earnest report` words marked rules as `earnest verify`
+does, with the path under a met mark; and a run marked `broken` that a compiled check can't play
+is one of the runs not played. The sections below describe the build the pass ran on.
+
+Found after the pass, by the orchestrator while making a failing `assert` run follow `quint test`
+(the owner's rule for the Quint integration: follow Quint): **a wrong verdict, a false pass.** In a
+check of runs only, a run that is one false condition, `run plainFalseTest = total([1]) == 2`,
+passed, where `quint test` fails it; in a check that searches states it was already broken. Such a
+run is played from the model's start states, and a check of runs only has none. No pass caught
+it, because every pure false run in the passes' models sat beside a false `assert`, which made
+the whole check unreadable first. Fixed with the `assert` shapes; the model is
+`models/quint_sixth/false_runs/` and the test
+`a_run_that_is_false_or_fails_an_assert_is_broken_in_a_check_of_runs_only`.
+
+### A check whose only marks are `@check reachable` stops early and counts part of the model
+
+`models/quint_sixth/reachable_only/reachable_only.qnt`: `x` counts from 0 to 10 and stays there;
+the one property is `/// @check reachable val two = x == 2`. `quint verify --backend tlc --main
+reachableOnly reachable_only.qnt` prints `11 distinct states found` and `[ok]`. Earnest prints
+`pass  reachableOnly  4 states  0 ms  1 rule, 0 runs  (every expected counterexample was found)`
+and the path to `x = 2`; the JSON has `"states": 4` and that `reason`. `confirm --quint` says
+`same  11 states`, since confirm always searches every state. The docs stop a search early only
+"when every property the check judges is marked `broken` and is an invariant, or a temporal
+property that earnest reads as one", and say "a check whose module sees an `init` and a `step`, by
+those names, searches every reachable state". A reached state is no counterexample, so the
+reason is false as well. A check with one `broken` and one `reachable` mark stops the same way (5
+of 11 states, the same counter with `val three = x == 3` marked `reachable`), and so does `--rule`
+naming a `reachable` mark, which prints the same reason. Cause: `apps/earnest/src/run.rs` gives
+`stop_once_broken` every expected name, `reachable` ones among them. Right result: 11 states and
+no reason, or docs that say a `reachable` mark stops the search and a line that says so. Test, as written in the pass:
+`a_check_whose_only_mark_is_reachable_searches_every_state_as_the_docs_say`. Settled on the
+integration branch at 35e0e79 as behaviour to keep: a state marked `reachable` is looked for as a
+counterexample of its negation, as the old checks file stopped for it under
+`expectCounterexample`, and a model with no end must still pass. The docs now say `broken` or
+`reachable`, and the test is
+`a_check_whose_only_mark_is_reachable_stops_once_the_state_is_reached`. Attacked after the
+decision, on this branch after the merge: a `reachable` mark beside an invariant that holds, beside
+`weakFair(step, x).implies(eventually(x == 10))`, beside a temporal property marked `broken`, and
+beside a never-reached mark (`fail`): each searches all 11 states; a mark first met at the last
+level (`x == 9`) alone: 11 states; `--max-states 5` before the state: `unfinished  … 5 states so
+far` and `unknown  nine`; a `reachable` mark beside a run: stops at 4 states, as documented, since
+runs need no search. `confirm --quint` and `confirm --tlc` search every state: 11, `same`, after the merge.
+
+### The leftover-file message gives lines that `quint parse` refuses for a copied setup
+
+`models/quint_sixth/leftover/`: `Spec` (constant `N`, `init`, `start`, `step`, `stepR`), `Small`
+(`import Spec(N = 2).*` and a `val` of its own) and `Big` (`import Spec(N = 3) as S` with its own
+`init`, `step` and `stepR`), and an `earnest.quint.json` of two entries: `SmallR` (`main` `Small`,
+`init` `start`, the invariant `{ "name": "atMostTwo", "is": "x <= 2" }`) and `BigR` (`main` `Big`,
+`step` `stepR`, the invariant `"S::x <= 3"`). On 6dceb43 the file gives `pass  SmallR  2 states`
+and `pass  BigR  4 states`. The message says, for each, to add a copy of the module:
+
+- for `SmallR`, a copy whose import is `import Spec(N = 2) as V`, with `action init = V::start`,
+  `action step = V::step` and `val atMostTwo = x <= 2`. In the copy `x` is `V::x`: `quint parse`
+  stops with `[QNT404] Name 'x' not found`. Test:
+  `the_leftover_file_message_writes_an_expression_of_a_copied_setup_in_the_copy_s_names`.
+- for `BigR`, a copy of `Big` with `action step = stepR` added. `Big` has `action step = S::step`,
+  so the copy has two: `[QNT101] Conflicting definitions found for name 'step' in module 'BigR'`.
+  Test: `the_leftover_file_message_does_not_add_a_second_step_to_a_copy_that_has_one`.
+
+The docs: "the message lists the lines to add to a copy of the module instead of a module to
+paste". With both lines written by hand (`V::x`, the step replaced) the four checks of a larger
+file of four entries (`models` not committed: two entries of one module, a `runs` list, a run
+not ending in `Test`, expressions with and without `name`, `expectCounterexample` of a temporal
+property in parts and of an expression) give the states and property verdicts of 6dceb43 (9, 9,
+16 and 16 states); the runs differ only as the message says they will.
+
+Both fixed on the integration branch at 35e0e79 (`apps/earnest/src/migrate.rs`: an expression is
+written in the copy's names, and a chosen `init` or `step` the copy declares is written in place of
+its own); both tests pass on this branch after the merge. Attacked after the fix, against 6dceb43
+and `quint verify --backend tlc`: a `match` whose branch binds a name of the spec's (`| Some(x) =>
+x == 5`), a tuple lambda that binds one (`((a, x)) => x < 0`), a field and a record label of that
+name (`r.x`, `{ x: 3 }.x`), a block's own `val x`, a free name inside a lambda (`p._2 < x`), the
+setup's own `val local`, and variant constructors (`None`, `Some(5)`, written `V::None` and
+`V::Some(5)`): each line as written gives `2 distinct states found` and `[ok]` with Quint, and
+`pass  SmallR  2 states` with earnest, as 6dceb43 gives from the checks file. A name both bound and
+free in one expression (`pairs.forall(x => x._1 > 0) and x >= 1`, nested, in a tuple pattern, in
+`map`) is left as `x`, as the integration branch chose, and `quint parse` then stops with
+`[QNT404] Name 'x' not found`: loud, never a line that means something else. No rewrite that
+changes a line's meaning without an error was found.
+
+### The report of a check failed by its marks names no reason and calls the met marks `broken`
+
+`models/quint_sixth/report_marks/report_marks.qnt`: `x` counts from 0 to 3; `belowTwo = x < 2` and
+`belowNine = x < 9` are marked `@check broken`, `atFive = x == 5` and `atOne = x == 1` `@check
+reachable`. `quint verify --backend tlc --invariant belowNine` says `[ok]`, `--invariant
+belowTwo` `[violation]`. `earnest verify` says it all: `fail  reportMarks  4 states`, `broken
+belowTwo  (expected)`, `holds  belowNine  a counterexample was expected`, `never reached  atFive`,
+`reached  atOne` with its path. `earnest report` prints `**fail**`, then only `broken  belowTwo
+"The counter passes two."` and `broken  atOne`, each with a path, and the chart draws the states
+`x = 1` to `x = 3` as broken. A pull request body so says the check failed because two rules broke,
+which are the two marks that were met, and never names `belowNine` or `atFive`, the two that failed
+it. The docs say the path of a met expectation "is in the JSON and in `earnest report`", and of
+the report "the shortest path to each broken rule": the paths are there, but the lines that tell a
+met mark from a broken rule, and the unmet marks, are not. Right result: the report says what
+`earnest verify` says, `(expected)`, `reached`, `holds … a counterexample was expected` and
+`never reached`. Test:
+`the_report_of_a_check_failed_by_its_marks_says_why_and_does_not_call_a_met_mark_broken`. Fixed on the integration branch at 4102d68: the report prints `earnest verify`'s lines for
+marked rules, with the path under a met mark; on this branch after the merge `report` prints
+`broken  belowTwo  (expected)`, `holds  belowNine  a counterexample was expected`, `never
+reached  atFive` and `reached  atOne`.
+
+### A run marked `@check broken` that a compiled check can't play makes the check unreadable
+
+`models/quint_sixth/broken_run_one_name/broken_run_one_name.qnt`: `Spec` has `val small = x < 5`,
+`run badRun = init.then(step).expect(x == 2)` marked `/// @check broken`, and `run fineTest`;
+`/// @check small module One` imports `Spec.badRun`, `Spec.fineTest`, `Spec.init`, `Spec.step`
+and `Spec.small`, one name each, a shape earnest compiles. `quint verify --backend tlc --main One
+--invariant small` says `[ok]`; `quint test --main One` plays `fineTest` (`ok`). With the run
+marked plain `/// @check`, earnest says what the docs say: `unfinished  One  3 states … (runs not
+played: fineTest, badRun: …)` with `small` judged. Marked `@check broken`, it says `unreadable
+broken_run_one_name.qnt  One` and ``broken_run_one_name.qnt:1:1  `badRun`  the module `One` has no
+property `badRun` to judge``: the mark of a run is read as that of a property, at line 1 rather
+than at the mark, and `small` is not judged. The docs: "A marked or named run the compiled module
+does not hold is one of those runs, and the check's properties are still judged." Nothing passes
+that should not, but a project whose setups import names one by one loses every check that sees a
+known-failing run. Naming the run in `One`'s doc, `/// @check broken badRun`, does the same; `/// @check
+badRun` there gives `unfinished`. Right result: `unfinished`, `small` holds, `badRun` and `fineTest` not played.
+Test:
+`a_run_marked_broken_that_a_compiled_check_can_t_play_leaves_it_unfinished_with_its_properties_judged`. Fixed
+on the integration branch at 4102d68: such a run is one of the runs not played. After the merge,
+with the mark on the run and with `/// @check broken badRun` in `One`'s doc: `unfinished  One  3
+states … (runs not played: fineTest, badRun …)`, `small` judged.
+
+### Marks and legal Quint that are refused or ignored
+
+Marked *likely* where a project is likely to write it, *unclear* where the message does not say what
+is wrong or what to write instead.
+
+| Written | What earnest does |
+|---|---|
+| a bad mark (`@check:`, `@checked`, `@check holds`, `@check broken.`, `@check p1 is judged here`, a second mark on a definition) in a file whose module is marked | the file is `unreadable`, and the first problem is ``no module of the Quint file is checked: a module is checked when its doc comment holds the mark `/// @check` …`` at line 1, before the right problem at the mark (*unclear*: the module is marked; the line reads as if it were not). With `@Check`, `/** @check */` or `// @check` instead, the other checks of the file run and only the mark is a problem |
+| `/// @check p1,` at the end of a module's doc, or followed by a blank `///` line (*likely* when a list is edited) | ``the doc comment holds `@check p1,`, which is not a mark the checker knows`` (*unclear*: the docs say the message "says the comma made the list go on") |
+| `/// @check p1, p1` | ``names `p1` under two marks`` (one mark, a name twice) |
+| `/// @check` on a `val` that is not boolean, `pure val K = 3` | judged, and a `fault`: ``the rule `K` uses a value of the wrong kind in this state`` under a start state; the check fails (*unclear*: nothing says the mark is on a non-boolean) |
+| `/// @check P::small` in a module that imports `Spec.*` and `Spec as P` | ``names `P::small`, which the module does not see``; Quint compiles `--invariant P::small` there, and its TLC run then stops with `current state is not a legal state` |
+| a mark through `import Spec.badRun` (one name) | see the finding above for `@check broken`; with `@check` the check is `unfinished`, as the docs say |
+| `/// The value stays small. @check`, `/// - @check`, ``/// `@check` `` | a sentence, as the docs say ("a doc line is a mark only when it starts with …") |
+
+`//// @check` is a mark: `quint parse` hands it over as the doc ` @check`. A blank line between a
+`/// @check` and its `val` keeps the mark, as `quint parse` keeps the doc. A tab or two spaces after
+`///` or after `@check` are read.
+
+### Attacked and found correct
+
+- Marks through imports, each against `quint compile`/`quint test --main` (models not committed):
+  a marked `val` and a `/// @check` run of a spec seen through `import Spec(N = 2).* from`, `as S
+  from`, `as S` with `export S.*`, two instances `P` and `R` (judged as `P::small` and `R::small`,
+  once each), `import Plain.*` and `import Plain as Q` with runs of their own, and a spec beside
+  another imported under a name: the same properties judged and the same `…Test` runs played as
+  `quint test --main`, with the marked run beside them; `export A.*` through a middle module with
+  a mark two levels down (judged in both checks that see it, the runs listed as not played); a
+  marked `val` of a module that no check sees (``no check sees it, so it is never judged``); marks
+  on an `assume`, an `export`, a `pure def` with parameters (each `unreadable` at the mark); a
+  marked `pure val` and `def` with no parameters (judged).
+- Kinds: `@check broken` on a run that passes (`holds  passesTest  a counterexample was
+  expected`, `fail`), on one that fails, on runs not ending in `Test`; a setup's doc that says
+  `broken` or `reachable` for a property the spec marks `@check` (the doc wins, each setup on its
+  own: `One` and `Three` of one spec); `--rule` of each property and run there, cached and fresh;
+  `@check reachable` that is never reached (`never reached`, `fail`), reached at the start;
+  a fault in a `broken`-marked rule (the search goes on to every state and reports the
+  fault); `@check broken` on `always(P)`, on an `always` in two parts (the stop comes once both
+  parts are broken).
+- The leftover-file message, followed by hand where it is right, against 6dceb43: see the finding.
+- Result wording (#74): sentences over several doc lines, quoted text, a blank doc line and
+  indentation (JSON `says` joins the lines), `(part 1 of 2)`, a check of runs with no state field,
+  `fault` beside `unknown`, in text and JSON.
+- `confirm --quint`: `same` on a check whose marks are all `reachable` (reached at the start, later
+  and never: Quint is given each as an invariant, and the verdicts are compared the right way),
+  on broken-marked runs, on setups whose doc overrides the spec's marks; `cannot` on a run of
+  90 000 choices with one failing (`quint test` passes after 10 000 samples, earnest breaks it) and
+  on `export S.*` of an instance (Quint stops, `The constant parameter N is not assigned`).
+- Charts (#80): a group label of `y` and a state label that faults where `x = 1` (`?`, one box per
+  group), the premise note of an implication (``first holds in `0` / `pos` ``: `x = 2, y = 0`,
+  the nearest), of `leadsTo` and of `always(p implies eventually q)` (the start and the reached
+  box are real states at the shortest depth), with `--max-arrows 4` and 50.
+- `--base` on `.qnt` files: a mark from `@check` to `@check broken` and to `@check reachable`
+  (`changed`, `was … now  reachable: x < 3`), a reworded sentence (`reworded` in each check that
+  sees it), a renamed property (`removed` and `added`), a property
+  edited in an imported file (`changed` in the check), a file new since the base
+  (`added`), a file unreadable at the base (`not compared  bad.qnt  unreadable at HEAD`), a mark
+  removed (`removed` in each check).
+- The cache: a mark edited in an imported file, a new mark there, a run's `expect` edited, a
+  module's sentence added: each run checked again and gave the fresh answer.
+
+### A seeded random comparison
+
+The fifth pass's generator, `models/quint_fifth/random/generate.py`, with its output marked in one
+of three ways chosen by the seed: `/// @check` above each invariant and temporal property (63
+seeds), every property named in the module's doc, `/// @check inv0, inv1, t0, …` (82), or each
+property one way or the other (65). Seeds 2 to 211 (210 models, 2 to 252 states, 9 571 in all),
+each with `quint verify --backend tlc` (one run for the count and one for each property, against
+four Apalache servers on their own ports) and `quint test --backend typescript --match 'Test$'`,
+and earnest with `--jobs 1 --no-cache`, `--jobs 4 --no-cache` and then cached: 210 state counts,
+420 invariant verdicts, 1 050 temporal verdicts (a property in parts broken when one part is) and
+420 runs, every one Quint's, and the three earnest runs equal. About 50 minutes.
+
+### The project models, marked
+
+The fifth pass's project model with its unmarked setups marked: `three` (`/// @check mutex,
+holderKnown, bounded, served, drains` and `/// @check broken neverTwoGrants, everyoneIdle`), `two`
+(four names and `/// @check reachable neverTwoGrants`), `witness` (`/// @check broken wrongTest`),
+`threeG` with `gHolds` moved to `/// @check broken V::gHolds`, and `twoG`: 314, 179, 0, 2243 and 388
+states; `confirm --quint` (1 min 34 s) and `confirm --tlc` with the `v1.8.0` jar (1 min 9 s)
+`same` on all five; `--jobs 1`, `--jobs 4` and cached give equal JSON, paths included. The fourth
+pass's project model as committed (four checks, 0 to 2733 states): `same` with both options (2 min
+4 s and 1 min 16 s), and equal JSON with one job, four and cached.
+
+### Usability notes
+
+- `earnest confirm --tlc rc.qnt`, with the model where the jar goes, prints `differs` and
+  ``TLC says unknown (Error: Could not find or load main class tlc2.TLC)`` for every rule: a jar
+  that is not TLC's is a `cannot`, not a difference.
+- `confirm --quint` of a check of runs only prints `0 states`, where `earnest verify` prints no
+  state field for it.
+- In `--base`, a property marked `@check reachable` gets the made-up sentence ``The Quint
+  invariant `helper` holds``, which says the reverse of the mark (the known item about made-up
+  sentences).
+- The chart of a check paints the states of met `broken` and `reachable` marks as broken boxes, so
+  a check that passes can have a red chart.
+
+### Not covered
+
+Windows. Apalache's own checking. Quint's Rust evaluator. `quint test` samples beyond the one
+shape above. `@view` on native models. A `confirm --tlc` sweep of the seeds (done for the
+projects only).
+
+### A `nondet` at the top of a run (issue #86)
+
+`models/quint_sixth/nondet_runs/nondet_runs.qnt` holds 35 runs that start with a `nondet`, each
+recorded from Quint 0.33.1 (`parse.json`, `sourcemap.json` with the file name made relative,
+`compile.nondetRuns.json`). `quint test --backend typescript --main nondetRuns` passes 17 of them
+and fails 18; the tests in `tests/break_it/quint_sixth.rs` from
+`a_run_with_one_nondet_at_its_top_skips_a_value_it_is_false_for` on hold each verdict, shape by
+shape. Quint's rule, read in `runtime/impl/nondet.js` and `builtins.js`: a `nondet` over a set of
+fewer than 100 values tries the next value, cycling from a random start, while the body gives
+`false`, and stops on `true` or on an error. `false` comes from a last step or a lone action that
+can't happen, `A.fail()` where `A` gets through, a false condition, and an empty set. An error
+comes from a `then` whose first part is false and a false round of `reps` (QNT513), an `expect`
+whose action or condition is false and a false `assert` (QNT508).
+
+`models/quint_sixth/nondet_random/generate.py SEED` prints a module `SSEED` with one run of one or
+two `nondet`s, an optional `val`, a first action, up to three `then` steps (`reps`, a helper that
+chains two steps, a guarded step), `expect` and `fail()`; one in five also picks inside a step.
+Seeds 1 to 400, `quint test` against `earnest verify --json`: 400 agree (319 without a pick inside
+a step, 81 with one; 120 hold, 280 broken), none differ.
+
+## Seventh Quint pass
+
+An adversarial pass over the meaning of what earnest reads from a `.qnt` file now that it reads
+the file itself: runs and the retries of a `nondet` at their top, integers past 64 bits with `/`
+and `%`, the assumptions of setups, marks, reports and `confirm --quint`; made on commit 9871a6f
+of the integration branch with Quint 0.33.1 from npm (`quint test --backend typescript`, and
+`quint verify --backend tlc` with the Apalache it fetched). Its tests are in
+`tests/break_it/quint_seventh.rs` and its files in `models/quint_seventh/`. The tests run the
+`earnest` binary on the `.qnt` file; the one about `confirm --quint` serves the recorded `quint
+test` output through a small program in place of `quint`. Each `.qnt` file has its recordings
+under `crates/earnest_quint_syntax/tests/quint/`.
+
+What became of the four findings, all on the integration branch: the step's own `nondet` over 100
+values or more is fixed by #99 (its section follows this one); the lone false `assert` after a
+`nondet` at `171f2d9b` and the range past 64 bits at `1fa66cda`, each attacked again by the pass
+and found correct; `confirm --quint` gives a cause only to the run that reaches it since
+`e782398b`. With #99 in, `pickTest` of the `confirm` model agrees with `quint test`, so its test
+now asserts that the run that divides carries the cause and that no other run is listed. The
+sections below describe the build the pass ran on.
+
+### A step's own `nondet` over 100 values or more passes runs that `quint test` fails
+
+`models/quint_seventh/big_step_pick/big_step_pick.qnt`: `init.then(nondet n = 0.to(199).oneOf()
+all { n == 7, x' = n }).then(step)`, the same with the pick as the last step, the same with the
+pick as the first action, and the same over `0.to(9)`. `quint test --backend typescript` fails the
+first three after one sample each (`Error [QNT513]: Cannot continue in `then` because the
+highlighted expression evaluated to false`, and for the last step `Error [QNT511]: Test
+lastPickTest returned false`) and passes the fourth after 10 000. Earnest says `pass`, all four
+`holds`. Quint retries a `nondet` over fewer than 100 values wherever it stands, in a step as at
+the top of a run (`QUINT_RETRY_NONDET_SMALLER_THAN`); over a larger set a step keeps the value it
+picked, and is false for 199 of the 200 here. Earnest retries only a run's top `nondet` by that
+bound (`Plan.falls` in `crates/earnest_check/src/witness.rs`, built in
+`crates/earnest_quint/src/runs.rs`), and plays a step as possible when any value of its own
+`nondet` gets it through. The docs say "earnest tries every choice … so it finds every failure
+sampling finds", which this contradicts. The same holds inside `reps`
+(`init.then(3.reps(i => nondet n = 0.to(149).oneOf() all { n == i, x' = n }))`) and for a big pick
+nested under a small one. `confirm --quint` says `differs` on each, unless finding 4 hides it.
+Right result: `broken` for the three, `holds` for the fourth. Test:
+`a_step_that_picks_from_100_values_or_more_is_not_retried_so_a_false_pick_breaks_the_run`.
+
+### A false `assert` that is the whole run after a `nondet` passes
+
+Fixed on the integration branch at 171f2d9b, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: the `assert` inside `or { }` on either side, in either
+branch of an `if`, in a `val` used later, under two nested top `nondet`s, in a run that calls the
+run, in a `pure def`, under `not` and `implies`, in `all { }` with no assignment, and behind a
+guard that keeps it from being reached (`and { n >= 4, assert(n >= 4) }`, `if`, `or`, `implies`, a
+step's own guard): 19 runs, each as `quint test` says.
+
+`models/quint_seventh/assert_after_nondet/assert_after_nondet.qnt`: `nondet n = 0.to(4).oneOf()
+assert(n >= 3)`, the same inside `and { assert(n >= 3), n >= 0 }`, after a `val m = n + 1`, and
+inside a first action `all { assert(n >= 3), x' = n }`. `quint test` fails all four within a few
+samples, each with `Error [QNT508]: Assertion failed`. Earnest breaks the fourth and says `holds`
+for the other three. The docs list a false `assert` among the errors that break a run at once.
+Likely cause: in `crates/earnest_quint/src/runs.rs`, `plans`, a run that is a condition is worked
+out with `pure`, and a false value becomes `must_not_finish`, which under a top `nondet` is a
+false combination to skip, not an error; `assert` is read there as a plain condition. The seeded
+generator below met it in 6 of 120 models. Test:
+`a_false_assert_that_is_the_whole_run_after_a_nondet_is_an_error_not_a_skipped_value`.
+
+### A run's own `nondet` over a range past 64 bits is refused as read from the state
+
+Fixed on the integration branch at 1fa66cda, during the pass; the test passes after the merge.
+Attacked after the fix, against `quint test`: a range across `2^63` with a guarded first action
+and `expect` (broken, QNT508), the same with a middle step (broken, QNT513), a range below
+`-(2^63)` with `/` in `expect` (broken), two nested ranges past `2^64` and `2^65` (holds), 150
+values from `2^63` with one false (broken), an empty range past 64 bits (broken, QNT511), `%` of
+the picks, a `map` of the range and `n * n` past `2^124` (holds): 9 runs, each as `quint test`
+says. A range of 2 001 values is refused by earnest's documented limit of 1 000 combinations.
+
+`models/quint_seventh/big_top_range/big_top_range.qnt`: `nondet n = (2 ^ 63 - 1).to(2 ^ 63 +
+1).oneOf() init.expect(x <= n)`, and the same range written as digits. `quint test` passes both
+(`passed 10000 test(s)`). Earnest makes the file `unreadable`: ``a run's own `nondet` over a set
+read from the state: pick inside the step that uses it``. The range reads no state, and the same
+range picked inside a step, or in `init`, is read; a range whose ends fit in 64 bits is read at the
+top of a run too. Cause: `crates/earnest_quint/src/reader.rs`, `picked_from_set`, sends a range
+with an end that is a `Value::Big` to `Picked::Computed`, which `runs.rs` takes for a set read
+from the state. Right result: the runs played, both `holds`, as the docs say the ends of a range
+keep every digit. Test:
+`a_run_s_own_nondet_over_a_range_past_64_bits_is_played_not_called_a_set_read_from_the_state`.
+
+### `confirm --quint` gives the division cause to runs that reach no division
+
+`models/quint_seventh/division_blamed/division_blamed.qnt`: a run `(-7) / 2 == -4`, which `quint
+test` truncates and fails, beside the big step pick of the first finding, which reaches no `/` and
+no `%`. `earnest confirm --quint` prints `cannot` for the check, and under both runs ``Quint can't
+confirm this: the check's runs use `/` or `%`, which `quint test` truncates toward zero …``. The
+docs give that cause to "a run the check plays [that] reaches `/` or `%`" and say "only what the
+check reaches counts". Because the cause is worked out for the check, not for each run
+(`apps/earnest/src/confirm_quint.rs`, the `reasons` handed to every comparison), one dividing run
+turns every other run's real difference into `cannot`, and `confirm` exits as it would for a known
+cause. Right result: `differs` for `pickTest`, `cannot` only for `halfTest`. Test:
+`confirm_names_the_division_cause_on_the_run_that_divides_and_on_no_other`.
+
+### Two seeded random comparisons
+
+`models/quint_seventh/random/generate.py SEED OUT` writes a module `GSEED` of two integer
+variables: an `init` with or without a `nondet`, up to five guarded actions (`/` and `%` with
+negative operands in guards and updates in half the seeds), two marked invariants, two marked
+temporal properties (`weakFair` of an action or the step over `(x, y)`, `(y, x)`, `x` or `y`, with
+`eventually`, `leadsTo` or `always(eventually(…))`), and four runs: a `nondet` (or two) at the top
+over 2 to 150 values from bases 0, −3, 2^62 and an offset near 2^31 or 2^62, then `then`, `reps`,
+`expect`, `fail()`, a guarded last step, in-step picks over 3, 10 or 120 values, a lone `assert`,
+and a pure run dividing a negative number. Each model was checked with `earnest verify --json
+--jobs 1 --no-cache`, `--jobs 4 --no-cache` and cached, with `quint test --backend typescript
+--match 'Test$'`, and, when its numbers fit TLC, with one `quint verify --backend tlc` per
+property. `generate_runs.py` writes runs only, of nested `any`, `if`, in-step picks over 2 to 5
+values, `reps`, `expect` and `fail()`, under a top `nondet` or none, compared with `quint test`.
+`generate.py`, seeds 1 to 120 (44 with an offset past 31 bits, compared with `quint test` only;
+57 with negative division): the three `earnest` runs give equal verdicts and counts on all 120; 301
+property verdicts equal TLC's (3 more were lost to the Apalache port clash below), and the 76
+state counts TLC printed in full equal earnest's (1 780 states). Of 480 runs, 464 agree with
+`quint test`; the 16 others are the second finding (7 runs in 6 models), the first (2) and
+`quint test`'s truncation, which the docs name (7). `generate_runs.py`, seeds 1 to 300: 239 models
+Quint typechecks (the generator leaks a name in the others, and earnest refuses those too), 1 434
+runs, the three `earnest` runs equal, and all but one run as `quint test` says. That one, seed 261,
+is the strict side the docs name: `nondet n = 0.to(4).oneOf() init.then(3.reps(_ => …pick w in
+0.to(2)…)).then(all { x + y != 0, … })` is false where all three picks are 0, so earnest breaks it,
+and `quint test` fails it only when that happens for each of the five values `n` retries, about
+once in 27^5 samples (`passed 10000 test(s)` three times).
+
+### Attacked and found correct
+
+- Integers past 64 bits in runs, each against `quint test`: `-(2^63) / (-1) == 2^63`, `MIN %
+  (-1) == 0`, `(2^64) / 3` and `% 3`, `(2^64 * 2^64) / 2^64`, `(-2) ^ 63`, `3 ^ 40`, a range from
+  `-(2^63)` and one across `2^63 - 1` (`size`), a set and a map key of `2^63` written two ways,
+  and a state search whose step is `x' = x / (-1)` from `-(2^63)` (2 states): 22 runs, all
+  `holds` in both.
+- A top `nondet` and its retries: an empty set alone (broken, QNT511), an empty inner set for one
+  outer value (holds), an empty set in a middle step (broken, QNT513); a small outer `nondet` with
+  an inner one over 200 values, as the run's guard or a step's (holds, as Quint passes it, since
+  the outer one retries), and the reverse order; 99 and 100 values with a false first action
+  (both broken, QNT513).
+- Assumptions: a setup `import Lock(N = 0).* from "./spec"` whose spec assumes `N > 0`, with its
+  own run, a run of the spec and a spec run marked `@check broken`: states searched and runs
+  played as `quint test --main Zero`; a setup's own false `assume`: `unreadable`, as Quint's TLC
+  run stops (`Assumption … is false`); a false `assume` in a helper module imported whole into a
+  checked module: `pass`, as `quint verify --backend tlc --main UsesHelper` gives `[ok]`.
+- Fairness with a variable past `2^63`: a counter from `2^63 - 3` to `2^63 + 2` beside a
+  toggling variable; `weakFair(inc, (x, y))` and `weakFair(inc, x)` give `eventually` (holds),
+  without fairness it breaks, marked `@check broken` (expected); 12 states.
+- `confirm --quint`: `differs` on the step-pick runs and on the lone `assert` runs (when no run
+  of the check divides); `cannot` with TLC's refusal on a property that reaches `%` by `-2`
+  through a `pure def`.
+- Marks: `@check broken` on a pure false run and on a run false for every value (`(expected)`),
+  `@check reachable`, a run a retry rescues marked `@check broken` (`holds  … a counterexample
+  was expected`, as `quint test` passes it), `--rule` of a run and of a property, cached and
+  `--jobs 1`; `earnest report` prints `verify`'s lines for each.
+- TypeScript and Rust division: a TypeScript model refuses `/`, `%`, `| 0`, `Math.floor`,
+  `Math.trunc` and `Math.ceil` with the operator named; a Rust model refuses `div_euclid` and
+  `rem_euclid`, and `i8::MIN / -1` is a fault (``computes a number outside `i8` ``). No model that
+  mixes the rules was found: each language gives one rule, and the ambiguous forms are refused.
+
+### Reading findings
+
+None: every file earnest refused here, Quint refused too (a `nondet` whose set is `2^63 - 1.to(…)`
+without parentheses, `QNT204` in both), except the range of the third finding, which is a
+meaning, not a reading, of the file.
+
+### Usability notes
+
+- `earnest report` prints `start  x = 0` under a pure run marked `@check broken`, where `earnest
+  verify` prints no state: the run has none.
+- `--rule pickTest` of a check that searches states prints `1 states`.
+- A `fail` line keeps the reason `(every expected counterexample was found)` when a run broke the
+  check, which reads as if the marks were the cause.
+- Running `quint verify --backend tlc` in parallel makes the Apalache servers collide on port
+  8822 (`Address already in use`), which `confirm --quint` then reports as `cannot` with `Quint
+  stopped: Error while starting Apalache server`; a second `confirm` beside a sweep is enough to
+  meet it.
+
+### Not tried
+
+Windows; Quint's Rust backend (it could not be fetched); `confirm --tlc` on the generated models;
+`@view` on Quint checks; `--base` beyond the sixth pass's cases; imports over several folders
+beyond one spec file and one setups file, which orchestrator B's reviewer covered.
+
+a step, 81 with one; 120 hold, 280 broken), none differ. With a second argument, `big`, it picks from 100 values or more inside steps too (below).
+
+### A `nondet` over 100 values or more inside a step (issue #99)
+
+Found by the seventh Quint pass: `init.then(nondet n = 0.to(199).oneOf() all { n == 7, x' = n }).then(step)` passed, where `quint test --backend typescript` fails it after one test with QNT513. Quint's evaluator keeps the first value of a set of 100 values or more, so the step is false for 199 of them; earnest took the step as able to happen when any value worked. Now every `nondet` of a step of a run is judged as the evaluator judges it: over fewer than 100 values it is false only where every value is, over 100 or more where one is, nested `nondet`s level by level, and an `any` (which Quint tries in a random order until a branch can happen) or an `if` only where each branch is. A step that can be false so is an error in the middle of a chain and false as the last step or the only action, as #86 set out. The first action of a run is judged the same way, the check's `init` too; the search is not changed.
+
+`models/quint_nondet_step/` holds five modules, 45 runs, each beside its recordings for `crates/earnest_quint_syntax`. Against `quint test --backend typescript` (0.33.1), every verdict is Quint's but one: `big_pick.qnt` (the pass's four runs), `nested.qnt` (small outside big inside and the reverse, siblings in one `all`, `any`, `if`, a big inner pick next to an `any` branch that can't happen, and `tuples(0.to(9), 0.to(19))`), `chains.qnt` (a set held in the state of 150 and of 50 values, `reps`, `fail()` where some value and where no value lets the step happen, a run and a parameterised run that chain steps, `expect`, a big inner pick under a retried top `nondet` as the last step and in the middle), `first_action.qnt` (the check's `init`, a first action written in place of 200, 100 and 99 values, an `any` first action, a step of 100 and of 99 values; the search finds its 5 states and the invariant holds) and `assert_fail.qnt`. The one that differs is `tupleTest`: Quint counts 10 and 20 values, one count for each part, and retries; earnest counts 200 pairs and breaks the run, which is #86's strict choice, said in the docs. The tests are in `tests/break_it/quint_nondet_step.rs`; each runs the `earnest` binary on the `.qnt` file and quotes what `quint test` printed.
+
+Found while building, and fixed with it: **a false pass, older than this change.** `{ nondet n = Set(0, 1, 2, 3).oneOf() all { assert(n < 2), x' = n }.fail() }` passed on 9871a6f6; `quint test` fails it with QNT508. A false `assert` in a run's first action left the run with no start state, which `fail()` took as the action that can't happen. It now breaks the run (`assert_fail.qnt`).
+
+`models/quint_sixth/nondet_random/generate.py SEED big` adds steps that pick from 100, 99, 120 and a number of values read from the state (`x.to(x + 119)`, `0.to(x * 60)`), alone, nested both ways, in an `any` and in an `if`; with `big` left out it prints the modules it printed before, byte for byte. Seeds 1 to 400 with `big`, `quint test` against `earnest verify --json`: 395 agree (115 hold, 280 broken; 275 pick from one of these sets in a step or the first action). Of the other 5, 3 are `unreadable`, not a verdict: a run of one action in parentheses is read as a `nondet` at its top, and its 1,000 combinations are past the cap. 2 depend on sampling, and earnest says `broken`: seed 338, a last step false for 20 of 120 values under six retried top combinations, which `quint test` fails about once in 47,000 tests; seed 159, false for a quarter of 100 values under fifteen. The old seeds 1 to 400 without `big`: 400 agree (120 hold, 280 broken), as before.
+
+## Eighth Quint pass
+
+An adversarial pass over runs, made on commit ac9a8be1 of the integration branch with Quint
+0.33.1 from npm (`quint test --backend typescript`). Its tests are in `tests/break_it/quint_eighth.rs`
+and its files in `models/quint_eighth/`; each `.qnt` file has its recordings under
+`crates/earnest_quint_syntax/tests/quint/`. The tests run the `earnest` binary on the `.qnt` file.
+
+Finding 1 is fixed on the integration branch at dfcb89e6, and its test passes after the merge.
+Attacked after the fix, against `quint test`: the nine shapes of the finding and the seven of a
+check of runs only, again; the empty inner set through an instance (`import Spec(N = 5) as S`), a
+setup that imports a spec whole, and a module whose `init` gives no state imported into a setup;
+a compiled `.json` and the `.qnt` file of ten runs over an `init` that gives no state (`init`,
+`.then(step).fail()`, `.expect`, `2.reps(_ => init)`, `false`, the run's own first action, the
+empty pick over 120 and over 10 values); and nine first actions that can't happen under a top
+`nondet`, from an `init` over an empty filter or written in place, with `then`, `fail()`,
+`expect` and `reps`. Each is as `quint test` says. `gen8.py`, seeds 1 to 400 on the merged build:
+1 496 runs, 1 493 agree, and the other 3 are the cap of 100 000 branches. A run that calls a spec
+run with its own `nondet` is still refused, finding 2.
+
+### The evaluator's rules, as read
+
+From `runtime/impl/nondet.js`, `builtins.js` and `evaluator.js` of the npm package. "False" is a
+result Quint may retry; "an error" stops the sample and fails the test.
+
+| Construct | False when | An error when | What earnest does |
+|---|---|---|---|
+| `nondet v = S.oneOf() B` | `S` is empty; `B` is false for the value picked over 100 values or more (bounds of each part of a tuple or map set), or for every value below | `B` is an error for the value picked (never retried) | as Quint, but for finding 1 |
+| `any { A, B }` | every branch is false, tried in a shuffled order | the first branch tried that is an error | as Quint |
+| `all { … }` | a part is false (the state is restored) | a part is an error | as Quint |
+| `and`, `or` | short-circuit: `or` returns its first part that is not false, error included | as their parts | `or` between actions: Quint's typechecker refuses it; between runs: refused (finding 3) |
+| `if c A else B` | the branch taken is | the branch taken is | as Quint; between runs refused (finding 3) |
+| `match` | the case taken is | no case (QNT505) | as Quint |
+| `A.then(B)` | `B` is false | `A` is false (QNT513), or either is an error | as Quint |
+| `n.reps(i => A)` | never | a round is false, the last one too (QNT513); `0.reps` is `true` and sets nothing | as Quint; a count of 0 is refused, as documented |
+| `A.expect(P)` | never | `A` is false or `P` is false (QNT508) | as Quint |
+| `A.fail()` | `A` is true | `A` is an error | as Quint |
+| `assert(P)` | never | `P` is false (QNT508) | as Quint where earnest reads it |
+
+### 1. An empty inner set under a top `nondet` of 100 values or more passes the run
+
+`models/quint_eighth/empty_inner_set/empty_inner_set.qnt`, a check of runs only:
+`nondet n = 0.to(119).oneOf() nondet m = n.to(n).filter(w => w != 5).oneOf() init.then(x' = m)`,
+and the same pick before one action, before `init` alone, before a condition (`m >= 0`), before a
+`.fail()` run, from `if (n == 5) Set() else Set(n)` and from the empty range `n.to(n - 1 + n %
+2)`. `quint test` fails each within 551 samples with `Error [QNT511]: Test … returned false`: Quint
+keeps the first value of a set of 120, and for `n` = 5 the inner `nondet` picks from an empty set,
+which is false. Over `0.to(9)` Quint retries, and passes (`retriedTest`). Earnest says `pass`, every
+run `holds`. The same happens with a `.expect`, with a small `nondet` between the two, and for a
+spec run played in a setup in another file (`import Spec(N = 5).* from "./spec"`: `quint test
+--main Five` fails it). Add an invariant, so that the check searches states, and earnest breaks the
+same runs (`with `n` = 5: the run is false; … tries no other value of a `nondet` over 100 values or
+more`). A compiled `.json` of the module breaks them too.
+
+Likely cause: in `crates/earnest_quint/src/runs.rs`, `plans`, the branch for a `nondet` over an
+empty set builds its plan with `without_steps`, which keeps `starts: None`. The branch for a
+condition gives `starts` one empty state when the check has no `init` to search
+(`self.init.is_none().then(|| vec![Vec::new()])`). With `starts: None`, `play_course` in
+`crates/earnest_check/src/witness.rs` plays the plan from the search's start states. A check of
+runs only lists none, so the plan never reaches `finish`. It ends with neither `through` nor
+`fell` (seen with a debug print), and `judged` skips it even where the outer `nondet` is not
+retried. Where every value is empty, the run is still broken, by "no value … gets the run through".
+Test: `an_empty_inner_set_under_a_top_nondet_of_100_values_or_more_makes_the_run_false`.
+
+### 2. A run that calls a run with its own top `nondet` is refused
+
+`models/quint_eighth/called_nondet_run/called_nondet_run.qnt`: `run anyStart = nondet n =
+0.to(4).oneOf() init.then(x' = n)`, called as `anyStart.then(all { x == 3, x' = x })`, the same
+with a start whose last step needs `n == 3`, and `init.then(threeStart)`. `quint test` fails the
+first (QNT511) and passes the other two after 10 000 samples: the called run's `nondet` retries
+inside the call while its body is false. Earnest makes the file `unreadable` with ``a chain of
+steps where one step is wanted: `then`, … make a run, not one step``. The message is wrong, since
+these are runs. The docs say a definition that chains steps may be called at the start of a run
+and in the middle. A called run without a `nondet` is played. Likely cause: `called_run` and
+`helper` in `runs.rs` take a body that is a chain, and a body that is a `Let` of a `nondet` falls
+through to the reader of one step. Test:
+`a_run_that_calls_a_run_with_its_own_top_nondet_is_played_not_refused`.
+
+### 3. Runs joined by `or`, `and`, `if` or `any` are refused
+
+`models/quint_eighth/chains_combined/chains_combined.qnt`: `or { init.then(all { x > 5, x' = x
+}).then(step), init.then(step) }`, the same without the last `then`, `and { … }` of two chains,
+`if (1 > 2) init.then(step) else init.then(…)`, and an `if` on a top `nondet`. `quint test`:
+QNT513 for the first, since `or` returns its first part's error; `passed` for the second, since
+`or` tries its second part after a false first; QNT511 for `and` and `if`; QNT513 for the last.
+`any` of two chains gets the same refusal, where `quint test` passes it, or fails it with QNT513
+when a branch's middle step is false. Earnest makes the file `unreadable` with the message of finding 2, and the docs' list of what is
+refused names none of these. Test: `runs_joined_by_or_and_or_if_are_played_not_refused`.
+
+### Generated against an oracle of the rules
+
+`models/quint_eighth/random/gen8.py SEED OUT` writes a module `gSEED` of two variables and four
+runs: up to two top `nondet`s over 1 to 120 values, a first action written in place or `init` (a
+check's `init` with a `nondet` over 3, 4 or 121 values in a third of the seeds), then `then`,
+`reps`, `expect` and a last `fail()`. Its actions nest `nondet`s (ranges over 2 to 150 values,
+from 0, from `x` or from an earlier pick, and filters that can be empty), `any` of two or three
+branches, `if`, and `all` with a guard and, in some, a leading `assert`. Beside the module it
+writes `gSEED.expect`: the verdict of an evaluator that transcribes the table above and keeps the
+set of results some sample can reach. A run is broken when an error or a false result can be
+reached. `drive.sh FROM TO OUT` compares it with `earnest verify --json --no-cache`
+(`EARNEST` names the binary). The 382 modules of seeds 3 to 399, verified as one folder with `--jobs
+1`, `--jobs 4` and then cached (368 checks read from the cache), give the same verdicts.
+
+Seeds 1 to 700: 22 timed out in the oracle and 20 are past the documented 1 000 combinations at
+the top of a run. Of the other 2 448 runs (897 hold, 1 545 broken), 2 442 agree. The other 6 are
+finding 1 (seed 12) and the documented cap of 100 000 branches (5 runs `unknown`). Seeds 1 to 300
+ran with a truncating `%` in the oracle; the 4 runs that then differed agree once it floors, as
+earnest does (the docs name the difference). To check the oracle: seeds 301 to 330, 116 runs,
+against `quint test --max-samples 2000`. All agree but one, seed 328, which `quint test` fails only
+when four retries each pick 1 value of 121 (about 5·10⁻⁹ a sample). Earnest breaks it, the
+documented strict side.
+
+### Attacked and found correct
+
+Each against `quint test --backend typescript`, alone in its module:
+
+- A step's `nondet` whose set reads an earlier one of the same step, both ways round (`0.to(a *
+  150)` and `0.to(150 - a * 150)`): holds.
+- A false `assert` in a step after the step's own `nondet`, in one branch of an `any`, and in one
+  branch of an `if` on a pick: broken (QNT508).
+- `match` on a picked variant, as the last step (broken) and in the middle with a false case
+  (holds, as Quint retries the pick).
+- Picks from `0.to(6).powerset()` (128 values, broken), `0.to(5).powerset()` (64, holds),
+  `tuples(0.to(0), 0.to(149))`, the keys of a map of 120 (broken), and a filter of 200 down to 5
+  (holds).
+- `reps` whose body ignores its index, and a pick inside each round: holds.
+- `any` of two branches that pick from the same 200 values, under one name or two, as the last
+  step, a middle step and the first action: broken.
+- A check's `init` with a `nondet` over 120 values and one false value: `init` alone, `then`,
+  under a small and a big top `nondet`, `init.fail()` and `init.expect(…)`: all broken.
+- A false `assert` and a false condition after a top `nondet` of 5 and of 120 values, `1 > 2`,
+  `assert(1 > 2)` and a `nondet` over `Set()` alone, in a check of runs only: all broken.
+- The empty inner set of finding 1 inside the first action, the last step or a middle step: broken.
+
+### Reading findings
+
+None. Quint refuses `or { x' = 1, x' = 2 }` between actions (its effect checker gives `or` a
+temporal effect), the same variable assigned twice in one `all` (QNT202), a step that leaves a
+variable unassigned and `and { x' = 1, y' = 2 }` (QNT000); earnest refuses each too.
+
+### Usability notes
+
+- The refusal of findings 2 and 3 says ``a chain of steps where one step is wanted … never in
+  `init`, `step` or a property``, about a `run`, and names the run as "the definition".
+- `init.then(0.reps(_ => step))` as a whole run passes in `quint test`, so the reason for refusing a
+  count of 0 ("after which Quint leaves the state unset") holds only where something reads the
+  state afterwards (QNT502).
+- A compiled `.json` of a module whose `step` has no end, with no property, searches until the
+  state limit (`5000000 states so far … (state limit of 5000000)`, 4 s); the `.qnt` file plays its
+  runs and searches nothing.
+
+### Not tried
+
+`earnest confirm --tlc` on the generated models: running a TLC jar fetched into the container was
+refused by this session's permissions. Quint's Rust backend, which could not be fetched; `q::debug`
+and `QUINT_RETRY_NONDET_SMALLER_THAN`, documented as refused and not read; nested `then` inside the first
+part of a `then` beyond what the generator writes; runs in an instance of a module with a
+parameter, beyond the setup of finding 1.
+
+## Quint runs of #101
+
+The models of `models/quint_101/` are the shapes #101 plays: a run that calls a run with a
+`nondet` of its own (first, in the middle, last, nested, under a top `nondet`, over 99 and 100
+values, around `reps`, `expect` and `fail()`), `if`, `and`, `or` and `any` between chains, and
+`reps` of 0 rounds. `tests/break_it/quint_called_runs.rs` compares each run with what `quint
+test --backend typescript` of Quint 0.33.1 printed, and checks that the shapes still refused
+are named as runs. `models/quint_101/compiled/` holds `quint compile --target json` of three of
+them, read by the unit tests of `crates/earnest_quint`.
+
+`models/quint_101/random/gen101.py SEED OUT` writes a module `hSEED` of two runs of those
+shapes and `hSEED.expect`, the verdict of an oracle that transcribes the evaluator with the
+state it carries: a `nondet`, an `any` and an `or` try again from the state the false try left,
+and `any` restores only the next variables. `drive.sh FROM TO OUT` verifies the folder with
+`--jobs 1`, `--jobs 4 --no-cache` and then cached, and prints the runs that differ. Seeds 1 to
+400: 790 runs, 586 played, each the oracle's verdict in all three; the 204 others are in
+modules earnest refuses (most past the 1 000 combinations a run may pick, then `fail()` inside
+a part of an `and`, an `and` whose first part is one action under a top `nondet`, a first action
+that reads a variable, which Quint stops with QNT502, a chain tried again whose first step reads
+the state, and an `and` of two single actions, which `quint test` passes). Five seeds time out in
+the oracle. The oracle agrees with `quint test --max-samples 3000` on the 80 runs of seeds 1 to
+40.

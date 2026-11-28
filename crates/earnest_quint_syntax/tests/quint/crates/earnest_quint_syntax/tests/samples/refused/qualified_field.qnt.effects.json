@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT008] Identifiers in a record cannot be qualified with '::'. Found M::a.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/qualified_field.qnt","start":{"line":1,"col":16,"index":33},"end":{"line":1,"col":16,"index":33}}]}]}

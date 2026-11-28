@@ -82,6 +82,28 @@ pub enum Verdict {
     Unknown,
 }
 
+/// What a [`RuleOutcome`] is the result of.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum RuleKind {
+    /// A rule that must be true in every reachable state.
+    #[default]
+    Always,
+    /// A rule about a state every run reaches.
+    Eventually,
+    /// A witness: a path the model must be able to take, with a condition at its end.
+    Witness,
+}
+
+impl RuleKind {
+    /// Whether this is [`Self::Always`], the kind the JSON output leaves out.
+    #[must_use]
+    pub fn is_always(&self) -> bool {
+        *self == Self::Always
+    }
+}
+
 /// One rule's result.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RuleOutcome {
@@ -91,9 +113,24 @@ pub struct RuleOutcome {
     pub says: String,
     /// What the search learned.
     pub verdict: Verdict,
-    /// A shortest path to a state that breaks the rule. Present exactly when the verdict is
-    /// [`Verdict::Broken`].
+    /// For a rule that must be true in every state, a shortest path to a state that breaks
+    /// it. For a rule about a state every run reaches, a path into the run that never
+    /// reaches it. For a witness, the path played until it broke. Present exactly when the
+    /// verdict is [`Verdict::Broken`].
     pub path: Option<Path>,
+    /// What kind of rule this is. It is serialized for every kind but [`RuleKind::Always`].
+    #[serde(skip_serializing_if = "RuleKind::is_always")]
+    pub kind: RuleKind,
+    /// Why a rule about runs or a witness is broken, as a sentence for the report. `None`
+    /// for a rule that must be true in every state, and for a verdict that is not
+    /// [`Verdict::Broken`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// For a broken rule about runs whose path ends in a loop: the position in the path's
+    /// steps of the first step of the loop. The steps from there on can repeat forever.
+    /// `None` when the run stops after the path's last step, and for every other rule.
+    #[serde(rename = "repeatsFrom", skip_serializing_if = "Option::is_none")]
+    pub repeats_from: Option<usize>,
 }
 
 /// What kind of trouble a [`Finding`] is.

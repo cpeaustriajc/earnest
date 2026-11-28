@@ -96,6 +96,7 @@ pub(crate) const STEPS: &str = "Next";
 pub(crate) const EVERY_VARIABLE: &str = "vars";
 pub(crate) const IN_RANGE: &str = "InRange";
 pub(crate) const STOP: &str = "Stop";
+pub(crate) const SPEC: &str = "Spec";
 
 const NAMES_OF_THE_EXPORT: &[&str] = &[STARTS, STEPS, EVERY_VARIABLE, IN_RANGE, STOP];
 
@@ -154,10 +155,14 @@ impl Names {
     }
 
     pub(crate) fn claim(&mut self, wanted: &str) -> String {
+        self.claim_apart_from(wanted, &[])
+    }
+
+    pub(crate) fn claim_apart_from(&mut self, wanted: &str, others: &[&str]) -> String {
         let plain = spelled(wanted);
         let mut name = plain.clone();
         let mut copy = 2_u64;
-        while self.taken.contains(&name) {
+        while self.taken.contains(&name) || others.contains(&name.as_str()) {
             name = format!("{plain}_{copy}");
             copy = copy.saturating_add(1);
         }
@@ -211,6 +216,21 @@ mod tests {
         assert_eq!(names.claim("count"), "count_2");
         assert_eq!(names.claim("count"), "count_3");
         assert_eq!(names.claim("count_2"), "count_2_2");
+    }
+
+    #[test]
+    fn a_name_kept_apart_from_others_gets_the_first_number_none_of_them_has() {
+        let mut names = Names::of_the_language();
+        assert_eq!(
+            names.claim_apart_from("Jar", &["Jar", "Jar_2"]),
+            "Jar_3",
+            "`Jar` and `Jar_2` are the others"
+        );
+        assert_eq!(
+            names.claim("Jar"),
+            "Jar",
+            "the others are not taken in the module"
+        );
     }
 
     #[test]

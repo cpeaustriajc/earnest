@@ -13,7 +13,7 @@ impl Expr {
 
     pub(crate) fn reads_plainly(&self, slots: &mut Vec<usize>) -> bool {
         match self {
-            Self::Bind { .. } | Self::Sweep { .. } => false,
+            Self::Bind { .. } | Self::Sweep { .. } | Self::Fold { .. } => false,
             Self::Local(slot) => {
                 slots.push(*slot);
                 true
@@ -61,6 +61,16 @@ impl Expr {
                 visit(source);
                 visit(body);
             }
+            Self::Fold {
+                source,
+                start,
+                body,
+                ..
+            } => {
+                visit(source);
+                visit(start);
+                visit(body);
+            }
         }
     }
 }
@@ -99,6 +109,23 @@ impl<'e> Binders<'e> {
             } => {
                 self.add(*slot, Binder::Sweep);
                 self.gather(source);
+                self.sweeping = self.sweeping.saturating_add(1);
+                self.gather(body);
+                self.sweeping = self.sweeping.saturating_sub(1);
+                return;
+            }
+            Expr::Fold {
+                source,
+                start,
+                total,
+                item,
+                body,
+                ..
+            } => {
+                self.add(*total, Binder::Sweep);
+                self.add(*item, Binder::Sweep);
+                self.gather(source);
+                self.gather(start);
                 self.sweeping = self.sweeping.saturating_add(1);
                 self.gather(body);
                 self.sweeping = self.sweeping.saturating_sub(1);

@@ -1,8 +1,9 @@
+use super::again;
 use super::cond::Cond;
 use super::num::{Num, Stop};
 use super::shared::Shared;
 use crate::eval::{
-    Test, applied, changed, each, field_of, fields_of, mapped, named, wrong_or_null,
+    Folding, Test, applied, changed, each, field_of, fields_of, mapped, named, wrong_or_null,
 };
 use crate::{Expr, Fault, Frame, Op, Shelf, Sweep};
 use earnest_value::{Sym, Value};
@@ -80,6 +81,17 @@ pub(super) struct Sweeping {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct Carrying {
+    shelf: Shelf,
+    total: usize,
+    item: usize,
+    unit: u64,
+    source: Val,
+    start: Val,
+    body: Val,
+}
+
+#[derive(Clone, Debug)]
 pub(super) enum Val {
     Const(Value),
     Read(Place),
@@ -95,6 +107,8 @@ pub(super) enum Val {
     SeqOf(Box<[Self]>),
     MapOf(Box<[(Self, Self)]>),
     Sweep(Box<Sweeping>),
+    Fold(Box<Carrying>),
+    AnySize(Box<(Self, Expr)>),
 }
 
 fn all_of(items: &[Expr], shared: &Shared) -> Box<[Val]> {
@@ -155,6 +169,22 @@ impl Val {
                 source: Self::of(source, shared),
                 body: Cond::of(body, shared),
             })),
+            Expr::Fold {
+                shelf,
+                source,
+                start,
+                total,
+                item,
+                body,
+            } => Self::Fold(Box::new(Carrying {
+                shelf: *shelf,
+                total: *total,
+                item: *item,
+                unit: shared.unit(),
+                source: Self::of(source, shared),
+                start: Self::of(start, shared),
+                body: Self::of(body, shared),
+            })),
             Expr::And(..) | Expr::Or(..) => Self::Cond(Cond::of(expr, shared)),
             Expr::Apply(op, arguments) => {
                 if let Some(num) = Num::shaped(expr, shared) {
@@ -207,6 +237,22 @@ impl Val {
                 };
                 test.over(&sweeping.source.eval(frame)?, frame, Cond::eval)
             }
+            Self::Fold(carrying) => {
+                let collection = carrying.source.eval(frame)?;
+                let first = carrying.start.eval(frame)?;
+                let folding = Folding {
+                    shelf: carrying.shelf,
+                    total: carrying.total,
+                    item: carrying.item,
+                    body: &carrying.body,
+                    unit: carrying.unit,
+                };
+                folding.over(&collection, first, frame, Self::eval)
+            }
+            Self::AnySize(within) => match within.0.eval(frame) {
+                Err(fault) => again(fault, frame, |frame| crate::eval(&within.1, frame)),
+                found => found,
+            },
         }
     }
 }

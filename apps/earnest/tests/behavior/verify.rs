@@ -615,7 +615,7 @@ fn readme_a_read_of_a_field_of_null_is_a_fault_with_the_path_to_it() {
 }
 
 #[test]
-fn readme_a_remainder_of_a_negative_number_is_a_fault() {
+fn readme_a_remainder_by_zero_is_a_fault() {
     let run = verify_text(&["meter.model.ts"]);
     run.exits(1);
     let path = path_under(&run.detail("Meter"), &["fault"]);
@@ -636,4 +636,38 @@ fn readme_a_remainder_of_a_negative_number_is_a_fault() {
         3,
         "the states of the meter"
     );
+}
+
+#[test]
+fn the_version_line_names_the_sources_the_build_was_made_from() {
+    let run = Sandbox::empty().earnest(&["--version"]);
+    run.exits(0);
+    let line = run.stdout.trim();
+    let start = format!("earnest {} (", env!("CARGO_PKG_VERSION"));
+    let build = line
+        .strip_prefix(start.as_str())
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("the version, then the build in brackets\n{run}"));
+    let sources = build
+        .rsplit("sources ")
+        .next()
+        .unwrap_or_else(|| panic!("the fingerprint of the sources comes last\n{run}"));
+    assert_eq!(sources.len(), 16, "sixteen hexadecimal digits\n{run}");
+    assert!(
+        sources.chars().all(|digit| digit.is_ascii_hexdigit()),
+        "sixteen hexadecimal digits\n{run}"
+    );
+    if let Some(commit) = build.strip_prefix("commit ") {
+        let hash = commit.split(',').next().unwrap_or_default();
+        assert_eq!(hash.len(), 12, "twelve digits of the commit\n{run}");
+        assert!(
+            hash.chars().all(|digit| digit.is_ascii_hexdigit()),
+            "twelve digits of the commit\n{run}"
+        );
+    } else {
+        assert!(
+            build.starts_with("sources "),
+            "no commit: sources only\n{run}"
+        );
+    }
 }

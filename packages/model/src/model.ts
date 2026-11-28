@@ -1,4 +1,4 @@
-import { type Declaration, type Fields, type StateOf, record } from "./declarations.ts";
+import { type Declaration, type Fields, type StateOf, record, startingAt } from "./declarations.ts";
 import { type Row, frozen, isRecord } from "./values.ts";
 
 /** The inputs of an action that takes none. */
@@ -17,7 +17,9 @@ export type OnlyFields<F extends Fields, Changes> = Changes & {
  * given when it happens, and types the second parameter of `when` and `changes`; leave it out
  * for an action that takes none. `when` says in which states, and for which inputs, the action
  * can happen; leave it out for an action that always can. `changes` gives back only the fields
- * that change, and must not change the state it is given.
+ * that change, and must not change the state it is given. `fair: true` says the action is not
+ * put off forever: a run in which it stays possible and never changes the state breaks no
+ * `m.eventually` rule.
  */
 export interface ActionSpec<
   F extends Fields,
@@ -27,6 +29,7 @@ export interface ActionSpec<
   readonly input?: I;
   readonly when?: (state: StateOf<F>, input: StateOf<I>) => boolean;
   readonly changes: (state: StateOf<F>, input: StateOf<I>) => OnlyFields<F, Changes>;
+  readonly fair?: boolean;
 }
 
 /**
@@ -59,6 +62,75 @@ export interface End<F extends Fields> {
 }
 
 /**
+ * Other values for some fields to start at: `earnest verify` checks the model once more from
+ * them, and `explore` does when it is given the setup. The name of its export is its id.
+ */
+export interface Setup<F extends Fields> {
+  readonly kind: "setup";
+  readonly says: string;
+  readonly starts: Partial<StateOf<F>>;
+}
+
+/**
+ * What `m.eventually` is given. `reaches` is the condition every run must come to. `after` says
+ * where the rule starts: in every reachable state where it is true. Without `after` the rule
+ * starts in every start state.
+ */
+export interface EventuallySpec<F extends Fields> {
+  readonly after?: (state: StateOf<F>) => boolean;
+  readonly reaches: (state: StateOf<F>) => boolean;
+}
+
+/** A rule about whole runs: a state every run reaches. The name of its export is its id. */
+export interface Eventually<F extends Fields> {
+  readonly kind: "eventually";
+  readonly says: string;
+  readonly after: ((state: StateOf<F>) => boolean) | undefined;
+  readonly reaches: (state: StateOf<F>) => boolean;
+}
+
+/**
+ * One step of a witness: an action with the value of each of its inputs. Make one with
+ * `m.step(action, { name: value })`; an action without inputs is a step as it is.
+ */
+export interface Step<F extends Fields> {
+  readonly kind: "step";
+  readonly action: ActionOf<F>;
+  readonly input: Row;
+}
+
+/** An action of a model with the fields `F`, whatever its inputs are. */
+export interface ActionOf<F extends Fields> {
+  readonly kind: "action";
+  readonly sentence: string;
+  readonly when: (state: StateOf<F>, input: never) => boolean;
+  readonly changes: (state: StateOf<F>, input: never) => Partial<StateOf<F>>;
+}
+
+/**
+ * What `m.witness` is given: the actions to take in order, and the condition that must be true
+ * after the last one. With `setup`, the path is played from that setup's start states and the
+ * witness is reported with that setup; without it, from the model's own start states.
+ */
+export interface WitnessSpec<F extends Fields> {
+  readonly setup?: Setup<F>;
+  readonly steps: readonly (Action<F> | Step<F>)[];
+  readonly expect: (state: StateOf<F>) => boolean;
+}
+
+/**
+ * A path the model must be able to take from every start state, with a condition on the state
+ * it ends in. The name of its export is its id.
+ */
+export interface Witness<F extends Fields> {
+  readonly kind: "witness";
+  readonly says: string;
+  readonly setup: Setup<F> | undefined;
+  readonly steps: readonly Step<F>[];
+  readonly expect: (state: StateOf<F>) => boolean;
+}
+
+/**
  * What `m.view` is given, all of it optional: the chart's title, the label of a state, the
  * group a state is drawn in, arrow labels by action id (the default is the action's sentence)
  * and colors.
@@ -84,6 +156,7 @@ export interface View<F extends Fields> extends ViewSpec<F> {
 export interface ActionRunner {
   readonly part: object;
   readonly sentence: string;
+  readonly fair?: boolean;
   readonly inputs: readonly (readonly [string, Declaration<unknown, never>])[];
   when(state: Row, input: Row): boolean;
   changes(state: Row, input: Row): Row;
@@ -103,11 +176,45 @@ export interface EndRunner {
   when(state: Row): boolean;
 }
 
+/**
+ * A rule about runs as a search judges it. `after` is `null` for a rule that starts in every
+ * start state. Both throw when the state is outside what was declared.
+ */
+export interface EventuallyRunner {
+  readonly part: object;
+  readonly says: string;
+  readonly after: ((state: Row) => boolean) | null;
+  reaches(state: Row): boolean;
+}
+
+/**
+ * A witness as a search plays it: each step is an action of the same `Runners` with its input.
+ * `setup` is the `part` of the setup it is played in, when it names one. `expect` throws when
+ * the state is outside what was declared.
+ */
+export interface WitnessRunner {
+  readonly part: object;
+  readonly says: string;
+  readonly setup?: object;
+  readonly steps: readonly { readonly action: ActionRunner; readonly input: Row }[];
+  expect(state: Row): boolean;
+}
+
+/** A setup as a search starts in it: `starts` holds the fields that start elsewhere. */
+export interface SetupRunner {
+  readonly part: object;
+  readonly says: string;
+  readonly starts: Row;
+}
+
 /** Everything declared on a model so far, each list in declaration order. */
 export interface Runners {
   readonly actions: readonly ActionRunner[];
   readonly rules: readonly RuleRunner[];
   readonly ends: readonly EndRunner[];
+  readonly eventually?: readonly EventuallyRunner[];
+  readonly witnesses?: readonly WitnessRunner[];
+  readonly setups?: readonly SetupRunner[];
 }
 
 /**
@@ -124,6 +231,9 @@ interface Parts<F extends Fields> {
   readonly actions: ActionRunner[];
   readonly rules: RuleRunner[];
   readonly ends: EndRunner[];
+  readonly eventually: EventuallyRunner[];
+  readonly witnesses: WitnessRunner[];
+  readonly setups: SetupRunner[];
   readonly views: View<F>[];
 }
 
@@ -138,7 +248,15 @@ export class Model<F extends Fields> {
   readonly name: string;
   readonly fields: F;
   readonly #state: Declaration<StateOf<F>>;
-  readonly #parts: Parts<F> = { actions: [], rules: [], ends: [], views: [] };
+  readonly #parts: Parts<F> = {
+    actions: [],
+    rules: [],
+    ends: [],
+    eventually: [],
+    witnesses: [],
+    setups: [],
+    views: [],
+  };
 
   static {
     partsOf = (model) => model.#parts;
@@ -180,12 +298,19 @@ export class Model<F extends Fields> {
   }
 
   /**
-   * The actions, rules and ends declared so far, in a form a search can run without knowing
+   * The actions, rules, ends, rules about runs, witnesses and setups declared so far, in a form a search can run without knowing
    * the model's types. `explore` and `replay` are built on this.
    */
   runners(): Runners {
-    const { actions, rules, ends } = this.#parts;
-    return { actions: [...actions], rules: [...rules], ends: [...ends] };
+    const { actions, rules, ends, eventually, witnesses, setups } = this.#parts;
+    return {
+      actions: [...actions],
+      rules: [...rules],
+      ends: [...ends],
+      eventually: [...eventually],
+      witnesses: [...witnesses],
+      setups: [...setups],
+    };
   }
 }
 
@@ -252,6 +377,7 @@ export const action = <
   partsOf(model).actions.push({
     part: declaredAction,
     sentence,
+    fair: spec.fair ?? false,
     inputs: spec.input === undefined ? [] : Object.entries(spec.input),
     when: (state, input) => declaredAction.when(known(model, state), knownInput(input)),
     changes: (state, input) =>
@@ -301,6 +427,142 @@ export const end = <F extends Fields>(
     when: (state) => declaredEnd.when(known(model, state)),
   });
   return declaredEnd;
+};
+
+/**
+ * Declares a rule about whole runs of `model`: every run comes to a state where `reaches` is
+ * true. With `after`, the rule starts in every reachable state where `after` is true, and the
+ * state `reaches` wants may be that state or any later one; without it, the rule starts in every
+ * start state. A run never stops while an action can still change the state, and never puts off
+ * forever an action declared with `fair: true` that stays possible. `sentence` says the rule in
+ * the reviewer's words. Export the result from the model file: the name of the export is the
+ * rule's id.
+ */
+export const eventually = <F extends Fields>(
+  model: Model<F>,
+  sentence: string,
+  spec: EventuallySpec<F>,
+): Eventually<F> => {
+  const declaredRule: Eventually<F> = Object.freeze({
+    kind: "eventually",
+    says: sentence,
+    after: spec.after,
+    reaches: spec.reaches,
+  });
+  const { after } = declaredRule;
+  partsOf(model).eventually.push({
+    part: declaredRule,
+    says: sentence,
+    after: after === undefined ? null : (state) => after(known(model, state)),
+    reaches: (state) => declaredRule.reaches(known(model, state)),
+  });
+  return declaredRule;
+};
+
+/**
+ * Declares a setup of `model`: the model checked once more, with the fields in `starts` starting
+ * at the values given and every other field starting where the model declares. A field no action
+ * changes works as a parameter of the model this way. `sentence` says what the setup stands for.
+ * Export the result from the model file: the name of the export is the setup's id. Throws when
+ * `starts` is empty, names something that is not a field, or gives a field a value it does not
+ * declare.
+ */
+export const setup = <F extends Fields, const Starts extends Partial<StateOf<F>>>(
+  model: Model<F>,
+  sentence: string,
+  starts: OnlyFields<F, Starts>,
+): Setup<F> => {
+  const names = Object.keys(starts);
+  if (names.length === 0) {
+    throw new Error(`${model.name}: the setup "${sentence}" starts no field at another value`);
+  }
+  const adopted: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(starts)) {
+    const declared: Declaration<unknown, never> | undefined = Object.hasOwn(model.fields, name)
+      ? model.fields[name]
+      : undefined;
+    if (declared === undefined) {
+      throw new Error(
+        `${model.name}: the setup "${sentence}" starts \`${name}\`, which is not a field of the model`,
+      );
+    }
+    try {
+      adopted[name] = startingAt(declared, value);
+    } catch (error) {
+      const why = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${model.name}: the setup "${sentence}" starts \`${name}\` at a value the field does not declare: ${why}`,
+        { cause: error },
+      );
+    }
+  }
+  const declaredSetup: Setup<F> = Object.freeze({ kind: "setup", says: sentence, starts });
+  partsOf(model).setups.push({ part: declaredSetup, says: sentence, starts: frozen(adopted) });
+  return declaredSetup;
+};
+
+/**
+ * Makes a step of a witness from an action that takes inputs: `m.step(press, { by: "mouse" })`.
+ * `input` gives every input of the action a value it declares.
+ */
+export const step = <F extends Fields, I extends Fields>(
+  taken: Action<F, I>,
+  input: StateOf<I>,
+): Step<F> => Object.freeze({ kind: "step", action: taken, input: frozen({ ...input }) });
+
+/**
+ * Declares a witness of `model`: a path it must be able to take. From every start state, each
+ * step in `steps` must be able to happen in turn, and `expect` must be true in the state after
+ * the last one. `sentence` says it in the reviewer's words. Export the result from the model
+ * file: the name of the export is the witness's id. `earnest verify` and `explore` play it and
+ * report it with the rules. Throws when a step is not an action declared on `model` before the
+ * witness, or gives an input the action does not declare.
+ */
+export const witness = <F extends Fields>(
+  model: Model<F>,
+  sentence: string,
+  spec: WitnessSpec<F>,
+): Witness<F> => {
+  const { actions, witnesses, setups } = partsOf(model);
+  if (spec.setup !== undefined && !setups.some((declared) => declared.part === spec.setup)) {
+    throw new Error(
+      `${model.name}: the setup of "${sentence}" is not one declared on this model before the witness`,
+    );
+  }
+  const played = spec.steps.map((written, position) => {
+    const taken: Step<F> =
+      written.kind === "step"
+        ? written
+        : Object.freeze({ kind: "step", action: written, input: frozen({}) });
+    const runner = actions.find((declared) => declared.part === taken.action);
+    const number = position + 1;
+    if (runner === undefined) {
+      throw new Error(
+        `${model.name}: step ${number} of "${sentence}" is not an action declared on this model before the witness`,
+      );
+    }
+    if (!record(Object.fromEntries(runner.inputs)).has(taken.input)) {
+      throw new Error(
+        `${model.name}: step ${number} of "${sentence}" gives "${runner.sentence}" an input it does not declare`,
+      );
+    }
+    return { taken, runner };
+  });
+  const declaredWitness: Witness<F> = Object.freeze({
+    kind: "witness",
+    says: sentence,
+    setup: spec.setup,
+    steps: Object.freeze(played.map(({ taken }) => taken)),
+    expect: spec.expect,
+  });
+  witnesses.push({
+    part: declaredWitness,
+    says: sentence,
+    ...(spec.setup === undefined ? {} : { setup: spec.setup }),
+    steps: played.map(({ taken, runner }) => ({ action: runner, input: taken.input })),
+    expect: (state) => declaredWitness.expect(known(model, state)),
+  });
+  return declaredWitness;
 };
 
 /**

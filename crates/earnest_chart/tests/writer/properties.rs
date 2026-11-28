@@ -49,6 +49,7 @@ fn node() -> impl Strategy<Value = Node> {
             },
             outside: Vec::new(),
             states,
+            premises: Vec::new(),
         })
 }
 
@@ -84,6 +85,7 @@ fn graphs() -> impl Strategy<Value = Graph> {
                     .into_iter()
                     .map(|(from, to, labels)| Edge { from, to, labels })
                     .collect(),
+                premises: Vec::new(),
             }
         })
 }
@@ -264,6 +266,7 @@ proptest! {
             model: &name,
             id: &value,
             change: ChangeKind::Tightened,
+            part: earnest_chart::ChangedPart::Rule,
             was: side,
             now: side,
         }];

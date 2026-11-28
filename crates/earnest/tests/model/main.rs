@@ -8,6 +8,7 @@ mod explore;
 mod listed;
 mod parts;
 mod replays;
+mod runs;
 mod views;
 mod walk;
 

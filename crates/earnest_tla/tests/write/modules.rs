@@ -23,6 +23,8 @@ fn counter() -> Sketch {
 fn a_counter_from_zero_to_three_is_this_module_and_this_configuration() {
     let expected = Files {
         name: "Counter".to_owned(),
+        eventually: Vec::new(),
+        specification: None,
         module: "\
 ---- MODULE Counter ----
 EXTENDS Integers, Sequences, FiniteSets, TLC
@@ -398,6 +400,8 @@ fn a_model_without_fields_rules_or_ends_still_has_one_state_to_stand_in() {
     sketch.action("wait", yes(), &[]);
     let expected = Files {
         name: "Empty".to_owned(),
+        eventually: Vec::new(),
+        specification: None,
         module: "\
 ---- MODULE Empty ----
 EXTENDS Integers, Sequences, FiniteSets, TLC

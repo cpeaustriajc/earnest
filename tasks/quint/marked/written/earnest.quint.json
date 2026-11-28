@@ -1,0 +1,3 @@
+{ "checks": [
+  { "file": "counter.qnt", "main": "counter", "invariants": ["small", { "name": "nonNegative", "is": "n >= 0" }, "n != 7"], "expectCounterexample": ["n < 3"] }
+] }

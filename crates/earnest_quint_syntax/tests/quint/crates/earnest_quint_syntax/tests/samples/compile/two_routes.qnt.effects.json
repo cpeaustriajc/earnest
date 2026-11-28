@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT202] Multiple updates of variable x","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/compile/two_routes.qnt","start":{"line":2,"col":2,"index":143},"end":{"line":2,"col":11,"index":152}}]}]}

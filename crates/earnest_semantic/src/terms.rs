@@ -700,13 +700,17 @@ impl Lowerer<'_> {
             Binary::Add => Op::Math(Math::Add),
             Binary::Subtract => Op::Math(Math::Subtract),
             Binary::Multiply => Op::Math(Math::Multiply),
-            Binary::Remainder => Op::Math(Math::Remainder),
-            Binary::Divide => Op::Math(Math::Divide),
+            Binary::Remainder => Op::Math(Math::TruncatedRemainder(None)),
+            Binary::Divide => Op::Math(Math::TruncatedDivide),
             _ => return Err(self.unknown_syntax(place, "an operator")),
         };
         let first = self.term(left, scope)?;
         let second = self.term(right, scope)?;
         let (lower, upper, ty) = self.numbers((left, first), (right, second), place, None)?;
+        let op = match op {
+            Op::Math(Math::TruncatedRemainder(_)) => Op::Math(Math::TruncatedRemainder(ty)),
+            other => other,
+        };
         Ok(Typed::new(
             in_type(apply(op, vec![lower, upper]), ty, self.number_kind()),
             Type::Int(ty),

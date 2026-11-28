@@ -1,19 +1,27 @@
-use earnest_ir::Field;
+use earnest_ir::{Field, Model};
 use earnest_value::Value;
 
-pub(super) struct Starts<'a> {
+pub(crate) struct Starts<'a> {
     fields: &'a [Field],
     digits: Vec<usize>,
     done: bool,
+    listed: Option<std::slice::Iter<'a, Vec<Value>>>,
 }
 
 impl<'a> Starts<'a> {
-    pub(super) fn new(fields: &'a [Field]) -> Self {
+    pub(crate) fn new(fields: &'a [Field]) -> Self {
         Self {
             fields,
             digits: vec![0; fields.len()],
             done: false,
+            listed: None,
         }
+    }
+
+    pub(crate) fn of(model: &'a Model) -> Self {
+        let mut starts = Self::new(&model.fields);
+        starts.listed = model.runs.starts.as_ref().map(|listed| listed.iter());
+        starts
     }
 
     fn advance(&mut self) {
@@ -33,6 +41,9 @@ impl Iterator for Starts<'_> {
     type Item = Vec<Value>;
 
     fn next(&mut self) -> Option<Vec<Value>> {
+        if let Some(listed) = &mut self.listed {
+            return listed.next().cloned();
+        }
         if self.done {
             return None;
         }
@@ -85,6 +96,34 @@ mod tests {
             .map(|pair| numbers(pair))
             .collect();
         assert_eq!(listed(&fields), expected);
+    }
+
+    #[test]
+    fn listed_start_states_are_given_in_their_order_instead_of_the_combinations() {
+        let mut symbols = Symbols::default();
+        let model = earnest_ir::Model {
+            name: "listed".to_owned(),
+            file: "listed.json".to_owned(),
+            line: 1,
+            fields: vec![
+                field(&mut symbols, "a", &[0, 1]),
+                field(&mut symbols, "b", &[5, 6]),
+            ],
+            symbols,
+            actions: Vec::new(),
+            rules: Vec::new(),
+            ends: Vec::new(),
+            view: earnest_ir::View::default(),
+            runs: earnest_ir::Runs {
+                starts: Some(vec![numbers(&[1, 6]), numbers(&[0, 5])]),
+                ..earnest_ir::Runs::default()
+            },
+        };
+        assert_eq!(
+            Starts::of(&model).collect::<Vec<_>>(),
+            vec![numbers(&[1, 6]), numbers(&[0, 5])],
+            "a model that lists its start states starts from those alone, in the listed order"
+        );
     }
 
     #[test]

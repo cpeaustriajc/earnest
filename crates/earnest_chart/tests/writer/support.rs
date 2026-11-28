@@ -99,6 +99,9 @@ pub(crate) fn rule(id: &str, says: &str, path: Option<Path>) -> RuleOutcome {
             Verdict::Holds
         },
         path,
+        kind: earnest_check::RuleKind::Always,
+        reason: None,
+        repeats_from: None,
     }
 }
 
@@ -173,6 +176,7 @@ pub(crate) struct Read {
     pub(crate) classes: Vec<(String, Vec<String>)>,
     pub(crate) styles: Vec<(String, String)>,
     pub(crate) note: Option<String>,
+    pub(crate) premises: Option<String>,
 }
 
 impl Read {
@@ -329,7 +333,14 @@ pub(crate) fn read(chart: &str) -> Read {
     let after: Vec<&str> = lines.collect();
     match after.as_slice() {
         [] => {}
+        ["", premises] if !premises.starts_with("Not shown: ") => {
+            read.premises = Some((*premises).to_owned());
+        }
         ["", note] => read.note = Some((*note).to_owned()),
+        ["", note, "", premises] if note.starts_with("Not shown: ") => {
+            read.note = Some((*note).to_owned());
+            read.premises = Some((*premises).to_owned());
+        }
         _ => panic!("more than a note after the block: {after:?}"),
     }
     for (from, to, _) in &read.arrows {

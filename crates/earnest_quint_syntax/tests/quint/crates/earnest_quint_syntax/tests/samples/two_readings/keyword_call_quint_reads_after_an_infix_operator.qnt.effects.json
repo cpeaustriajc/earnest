@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT008] Reserved keyword 'and' cannot be used as an identifier.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/two_readings/keyword_call_quint_reads_after_an_infix_operator.qnt","start":{"line":0,"col":117,"index":117},"end":{"line":0,"col":117,"index":117}}]}]}

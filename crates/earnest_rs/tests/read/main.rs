@@ -10,6 +10,7 @@ mod listed;
 mod names;
 #[path = "models/party.rs"]
 mod party;
+mod runs;
 #[path = "models/shelf.rs"]
 mod shelf;
 #[path = "models/ticket.rs"]

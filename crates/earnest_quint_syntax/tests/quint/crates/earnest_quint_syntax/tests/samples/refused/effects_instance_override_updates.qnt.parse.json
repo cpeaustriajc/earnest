@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[],"order":[[2,4,10],[13,18]],"depth":{"2":0,"4":0,"13":0},"table":{"5":{"$":2,"+":[["depth",0]]},"7":{"$":4,"+":[["depth",0]]},"10":{"$":10,"+":[["depth",0]]},"15":{"$":13,"+":[["depth",0]]},"17":{"$":2,"+":[["depth",0],["importedFrom",{"$":18}],["hidden",true],["namespaces",["I","effects_instance_override_updates"]]]}}}
