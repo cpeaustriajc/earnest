@@ -11,6 +11,7 @@ mod items;
 mod library;
 mod matching;
 mod reader;
+mod runs;
 mod shapes;
 mod terms;
 mod ty;
@@ -38,6 +39,15 @@ pub use library::{declares_a_model, uses_library};
 /// model of its type: its `title`, `step` labels and `colors`, and the labels of its `#[state]`
 /// and `#[group]` methods, read from a `format!` or a `.to_string()` or `.to_owned()`. A number
 /// or a `&'static str` marked `#[one_of(a, b)]` is a choice of the listed values.
+///
+/// `#[action("...", fair)]` sets the action's `fair`. A method marked `#[eventually("...")]` is
+/// a rule about runs whose body is what every run reaches, and `after = name` starts it where
+/// the helper method `name` is true. A method marked `#[witness("...")]` is a witness: its body
+/// is a condition on `self`, or `let name = self.a()?.b(1)?;` then a condition on `name`, whose
+/// actions are the steps, and `setup = name` plays it from a setup. It returns `Option<bool>`
+/// and writes `Some(condition)` when a step is followed by `?`, and `bool` otherwise. A helper
+/// method called on `name` is read as one called on `self`. A method marked
+/// `#[setup("...")]` whose body is `Self { field: constant, ..self.clone() }` is a setup.
 ///
 /// The value inside an `Option` is read with `if let Some(x) = value { .. } else { .. }`,
 /// `value.unwrap_or(default)`, `value.map_or(default, |x| ..)`, `let x = value?;` and `let Some(x)

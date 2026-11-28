@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[],"order":[[15,24]],"depth":{},"table":{"5":{"$":3,"+":[["kind","param"],["depth",1]]},"9":{"$":7,"+":[["kind","param"],["depth",2]]},"10":{"$":8,"+":[["kind","param"],["depth",2]]},"15":{"$":15,"+":[["depth",0]]},"19":{"$":15,"-":["typeAnnotation"],"+":[["depth",0]]},"24":{"$":24,"+":[["depth",0]]}}}

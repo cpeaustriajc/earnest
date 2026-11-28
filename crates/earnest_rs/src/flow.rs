@@ -68,6 +68,30 @@ impl Reader<'_> {
         }
     }
 
+    pub(crate) fn walk_condition(&mut self, state: &str, value: &Expr) {
+        let model = self.model_name.clone().map_or(Ty::Unknown, Ty::Record);
+        let given = if state == "self" {
+            Ty::Ref(Box::new(model))
+        } else {
+            model
+        };
+        let mut walk = Walk {
+            reader: self,
+            vars: Vec::new(),
+            moved: BTreeSet::new(),
+            next: 0,
+            returns: Ty::Bool,
+        };
+        walk.bind(state, given);
+        let found = walk.expr(value, How::Move);
+        walk.expect(
+            value.span(),
+            &found,
+            &Ty::Bool,
+            "the condition of the witness",
+        );
+    }
+
     pub(crate) fn walk_constant(&mut self, declared: &Type, value: &Expr, what: &'static str) {
         let returns = self.ty_of(declared);
         let mut walk = Walk {

@@ -170,6 +170,7 @@ impl Reads {
                     .max(slot.checked_add(1)?);
                 reads.sweeps = reads.sweeps + swept.sweeps + inside.sweeps + 1;
             }
+            Expr::Fold { .. } => return None,
             _ => {
                 let mut fine = true;
                 expr.each_part(&mut |part| {
@@ -942,6 +943,21 @@ fn given(expr: &Expr, inputs: &[(usize, Value)]) -> Expr {
             shelf: *shelf,
             slot: *slot,
             source: boxed(source),
+            body: boxed(body),
+        },
+        Expr::Fold {
+            shelf,
+            source,
+            start,
+            total,
+            item,
+            body,
+        } => Expr::Fold {
+            shelf: *shelf,
+            source: boxed(source),
+            start: boxed(start),
+            total: *total,
+            item: *item,
             body: boxed(body),
         },
     }

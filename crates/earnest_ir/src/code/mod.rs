@@ -72,6 +72,38 @@ impl Code {
         Self { expr, value, test }
     }
 
+    /// The same code with whole numbers of any size, as a Quint model's integers are:
+    /// arithmetic that leaves 64 bits gives a [`Value::Big`] where it gives [`Fault::Overflow`].
+    /// The code runs its 64-bit forms first, and only an evaluation that leaves 64 bits starts
+    /// again on the general path.
+    #[must_use]
+    pub fn of_any_size(self) -> Self {
+        if self.is_of_any_size() {
+            return self;
+        }
+        let Self { expr, value, test } = self;
+        Self {
+            value: Val::AnySize(Box::new((value, expr.clone()))),
+            test: Cond::AnySize(Box::new((test, expr.clone()))),
+            expr,
+        }
+    }
+
+    /// A code for `expr`, a part of this code's expression, with the numbers this code has.
+    #[must_use]
+    pub fn part(&self, expr: Expr) -> Self {
+        let part = Self::new(expr);
+        if self.is_of_any_size() {
+            part.of_any_size()
+        } else {
+            part
+        }
+    }
+
+    fn is_of_any_size(&self) -> bool {
+        matches!(self.test, Cond::AnySize(_))
+    }
+
     /// The expression as it was given, for printing it or translating it.
     #[must_use]
     pub fn expr(&self) -> &Expr {
@@ -201,5 +233,19 @@ impl Eq for Code {}
 impl fmt::Debug for Code {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.expr.fmt(formatter)
+    }
+}
+
+#[cold]
+#[inline(never)]
+pub(super) fn again<T>(
+    fault: Fault,
+    frame: &mut Frame<'_>,
+    general: impl FnOnce(&mut Frame<'_>) -> Result<T, Fault>,
+) -> Result<T, Fault> {
+    if crate::eval::retried(fault) {
+        frame.of_any_size(general)
+    } else {
+        Err(fault)
     }
 }

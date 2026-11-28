@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify int and list\nTrying to unify int and List[_t1]\nTrying to unify (bool, _t3, _t3) => _t3 and (bool, int, List[_t1]) => _t4\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/ambiguous/header_then_unit.qnt","start":{"line":3,"col":47,"index":189},"end":{"line":3,"col":62,"index":204}}]}]}

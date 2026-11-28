@@ -1,6 +1,6 @@
 ---
 title: Rust models
-description: Write Earnest models as Rust structs, handle Option and match, follow move and type rules, replay paths in tests, and keep models lint-clean.
+description: Write Earnest models as Rust structs, state what whole runs do, handle Option and match, follow move and type rules, replay paths in tests, and keep models lint-clean.
 ---
 
 A Rust model is a struct that derives `Model`, paired with an `impl` block marked `#[model]`. `earnest verify` reads the source tokens directly without running `cargo build`, while the `earnest` crate lets your tests compile and step through the exact same model.
@@ -114,9 +114,90 @@ An enum field without `#[initial]` starts at every variant. `#[one_of]` is for i
   - Do not name any function, constant, struct, enum, or local value `forall`, `exists`, `Some`, `None`, `Set`, `Seq`, or `Map`, or shadow a called helper function.
   - Import library items under their own names (`as` renames are refused except `as _`).
   - Re-exporting the library (`pub use earnest::...`, `pub(crate) use ...`, `r#earnest`) is refused.
-  - `use` inside a function body, `macro_rules!`, `type` aliases, and path-qualified `#[action]`/`#[rule]`/`#[end]` attributes are refused.
+  - `use` inside a function body, `macro_rules!`, `type` aliases, and path-qualified `#[action]`/`#[rule]`/`#[end]`/`#[eventually]`/`#[witness]`/`#[setup]` attributes are refused.
   - Duplicate items in a namespace, duplicate methods, fields, variants, or parameters are refused (matching `rustc`). `let` may shadow earlier locals.
   - No part of a model may sit under `#[cfg]` or `#[cfg_attr]`. Only non-model items (such as a `#[cfg(test)]` module, helper test function, or plain `impl`) may carry `#[cfg(test)]`, and they are skipped.
+
+## Rules about runs, witnesses, and setups
+
+Four more forms say what whole runs of the model do. They are the Rust forms of `fair: true`, `m.eventually`, `m.witness` with `m.step`, and `m.setup`, and `earnest verify` reports them the same way, with the same verdicts, paths, reasons, and JSON (`kind`, `reason`, `repeatsFrom`, `setup`).
+
+```rust title="src/gate.rs"
+#[model]
+impl Gate {
+    #[action("the visitor pays", fair)]
+    fn pay(&self) -> Option<Self> {
+        require!(!self.paid && self.door == Door::Locked);
+        Some(Self { paid: true, ..self.clone() })
+    }
+
+    #[action("the visitor pushes")]
+    fn push(&self) -> Option<Self> {
+        require!(self.paid && self.door == Door::Locked);
+        Some(Self { door: Door::Open, ..self.clone() })
+    }
+
+    #[end("The gate is open")]
+    fn open(&self) -> bool {
+        self.door == Door::Open
+    }
+
+    fn paid_up(&self) -> bool {
+        self.paid
+    }
+
+    #[eventually("Once the visitor pays, the gate opens", after = paid_up)]
+    fn opens(&self) -> bool {
+        self.door == Door::Open
+    }
+
+    #[witness("Pay, then push: the gate opens")]
+    fn pay_then_push(&self) -> Option<bool> {
+        let after = self.pay()?.push()?;
+        Some(after.door == Door::Open)
+    }
+
+    #[setup("The gate starts paid")]
+    fn prepaid(&self) -> Self {
+        Self { paid: true, ..self.clone() }
+    }
+
+    #[witness("A paid gate opens on a push", setup = prepaid)]
+    fn push_when_paid(&self) -> Option<bool> {
+        let after = self.push()?;
+        Some(after.door == Door::Open)
+    }
+}
+```
+
+| Form | Meaning |
+|---|---|
+| `#[action("...", fair)]` | A run never puts the action off forever while it stays possible |
+| `#[eventually("...")]` on `fn(&self) -> bool` | Every run from every start state comes to a state where the method is true |
+| `#[eventually("...", after = name)]` | The same, from every reachable state where the helper method `name` is true |
+| `#[witness("...")]` on `fn(&self) -> Option<bool>`, or `fn(&self) -> bool` when no step can fail | From every start state, each step can happen in turn and the condition is true after the last |
+| `#[witness("...", setup = name)]` | The same, played from the start states of the setup `name` |
+| `#[setup("...")]` on `fn(&self) -> Self` | The model is checked once more with the fields written starting there, as `Model (name)` |
+
+Ids are the method names. A run never stops while an action can still change the state.
+
+- **`after`:** names a helper method of the same block that takes only `&self` and returns `bool`. A name that is no method (`E0599`), an action, a rule, an end, another rule about runs, a witness, a setup, or a helper with parameters or another result is refused.
+- **Witness body:** either a condition on `self`, or `let name = chain;` followed by a condition on `name`. The chain starts at `self` and calls the model's actions in order: write `?` after an action that returns `Option<Self>` and nothing after one that returns `Self`. An action with inputs takes constant values in parameter order: `self.drift(1)?`. The condition reads only the bound state: it may call a helper method on `name` as on `self` (`after.is_open()`), and a condition after a chain that reads `self` is refused.
+- **Witness result:** with a `?` in the chain, the method returns `Option<bool>` and the condition is written `Some(condition)`. Without one (no steps, or only actions that return `Self`), it returns `bool` and the condition is written alone:
+
+  ```rust
+  #[witness("The water starts cold")]
+  fn starts_cold(&self) -> bool {
+      self.phase == Phase::Cold
+  }
+  ```
+
+  `Option<bool>` without a `?` is refused, as `clippy::unnecessary_wraps` flags it. Also refused: a `?` in a witness that returns `bool` (`E0277`), a missing `?` (`E0599`), a `?` after an action that returns `Self` (`E0277`), a wrong number of inputs (`E0061`), a condition that is not a `bool` (`E0308`), and any other body.
+- **Playing it in a test:** called on a start state (of its setup, when it names one), the method gives `Some(true)` (or `true`) exactly where `earnest verify` says the witness holds, and `None` where a step can't happen. The one difference: a step that takes a field outside its declared values breaks the witness for the checker, where the method can still give `Some(true)`.
+- **Setup body:** exactly `Self { field: value, ..self.clone() }` with at least one field, where every value is written out (such as `2`, `-3`, `(2 + 3) * 2`, `Phase::Cold` or `Some(1)`) or names a constant of the file. A value that reads `self`, a division by zero, `<<`, an associated constant such as `u8::MAX`, a missing `..self.clone()`, or a statement before the struct is refused. A value outside the field's declared values is refused when the model is checked.
+- **Options:** each attribute takes only its own option, once. `#[rule("...", fair)]` and `#[witness("...", after = name)]` are refused by the reader and by `#[model]`.
+
+`#[model]` removes the attributes and leaves each method callable as written. It also implements `state.eventually()`, `state.witnesses()`, and `state.setups()` from `earnest::model::Behavior`, which give `Eventually`, `Witnessed`, and `Setup` values, so a test can read every method's result in one state. Those calls make `rustc` refuse an `after` or a `setup` that names no method, and keep the methods from being dead code. `Witnessed::played` is an `Option<bool>` for every witness: `Some` of the result for one that returns `bool`.
 
 ## Statechart views (`#[view]`)
 
@@ -168,7 +249,7 @@ Where reading a Rust file statically could diverge from compiling and running it
 - Every integer keeps its Rust type (`u8`, `i32`, `usize`, etc.). Any arithmetic result outside that type's range is a `fault` in that state (for example, `self.n - 1` when `n: u8` is `0`, `self.items.size() - 1` on an empty list, or signed/unsigned overflow).
 - Types propagate from fields, inputs, constants, helper signatures, `let` annotations, or numeric suffixes (`1_u8`). Unconstrained integer literals default to `i32`; a `let` with an otherwise untyped integer must state its type (`let most: u8 = 3;`). Different integer types cannot mix.
 - `#[range(lo, hi)]` must lie inside its integer type. `u64`, `usize`, and 128-bit integers are exact up to `i64::MAX` (`"computes a number too large to hold"` past that). Negated literals such as `-128` (`i8`) and `-9223372036854775808` (`i64`) are read as single literals everywhere.
-- `%` and `/` follow Rust semantics (fault on negative inputs or zero divisor).
+- `/` and `%` are Rust's: `/` drops the fraction (`-7 / 2 == -3`, `-7 / -2 == 3`) and `%` has the sign of the left side (`-7 % 2 == -1`, `7 % -2 == 1`). A zero divisor is a `fault` (`"takes a division or a remainder by zero"`), where Rust panics, and so is the type's smallest number over `-1` (`-128_i8 / -1` and `-128_i8 % -1`, `"computes a number outside `i8`"`), where Rust panics on overflow. A Quint model floors instead; see [Division and remainder](/reference/quint/#division-and-remainder).
 - `n.is_multiple_of(d)` is supported on unsigned integer types (`n % d == 0`, with `n.is_multiple_of(0)` equal to `n == 0`), matching `clippy::manual_is_multiple_of`. It is refused on signed types (`E0599`), untyped literals (`E0689`), and `Option`.
 
 ### `let` scoping and `Option<Option<T>>`
@@ -251,7 +332,7 @@ fn advance(&self) -> Self {
 
 ## Helpers and integer conversions
 
-Methods inside `#[model]` without `#[action]`, `#[rule]`, or `#[end]` are helpers (`self.name(..)`). Free functions in the file are also helpers (`name(..)`). Helper parameters do not take `#[range]`.
+Methods inside `#[model]` without `#[action]`, `#[rule]`, `#[end]`, `#[eventually]`, `#[witness]`, or `#[setup]` are helpers (`self.name(..)`). Free functions in the file are also helpers (`name(..)`). Helper parameters do not take `#[range]`.
 
 ```rust
 fn with_stage(&self, stage: Stage) -> Self {
@@ -296,6 +377,7 @@ assert!(!states[2].bills());
 ```
 
 - `Turnstile::starts()` returns every start state. `state.steps()` enumerates every enabled step.
+- To replay a path of a setup's result, start from the setup applied to a start state: `Shop::starts().remove(0).full()` for `#[setup("...")] fn full`, or the `state` of the entry with that `id` in `state.setups()`.
 - `Move::new(action).with(input, value)` accepts values formatted as in text or JSON output: bare or quoted enum variants and strings (`Bill` or `"Bill"`), numbers (`3`), booleans (`true`), `null` for `None`, and `{row: 1, lit: true}` for records (fields in any order). Every input of the action must be supplied.
 - `Step::input` is formatted via `earnest::model::Report` (implemented by `#[derive(Domain)]` and built-ins). Compare resulting states with `assert_eq!` or rule methods (`state.stays_locked()`).
 - If a step cannot execute, `replay` returns a `Mismatch` naming the step index and the enabled steps at that state.
@@ -373,7 +455,7 @@ The Rust reader accepts the idioms that `cargo clippy -- -D warnings` and pedant
 
 - Avoid `fn_params_excessive_bools` and `struct_excessive_bools` with two-variant enums (`enum Toggle { On, Off }`) or `Domain` structs.
 - Avoid `too_many_arguments` by passing a `#[derive(Domain)]` record (`fn order(&self, line: &Line)`).
-- Return `Self` instead of `Option<Self>` for unguarded actions (`unnecessary_wraps`).
+- Return `Self` instead of `Option<Self>` for unguarded actions (`unnecessary_wraps`). Likewise a witness returns `bool` when no step of it is followed by `?`.
 - Use `u8::from(flag)` and `u16::from(x)` (`bool_to_int_with_if`, `cast_lossless`).
 - Use `let x = value?;` instead of `let Some(x) = value else { return None; };` (`question_mark`).
 - Combine identical `match` arms with `A | B` and name single remaining variants instead of `_` (`match_same_arms`, `match_wildcard_for_single_variants`, `unnested_or_patterns`).

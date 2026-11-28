@@ -3,7 +3,7 @@ title: CLI and model discovery
 description: Run earnest subcommands, pass flags, interpret exit codes, and control which files count as models.
 ---
 
-`earnest` checks models in one process with no network, no Java, and no setup. It writes only to `.earnest/` in the directory where it runs.
+`earnest` checks models in one process with no network and no setup. No Java and no Node: earnest reads `.qnt` files itself ([Quint models](/reference/quint/)), and only `earnest confirm --quint` starts the project's `quint`. It writes only to `.earnest/` in the directory where it runs.
 
 ## Commands
 
@@ -18,6 +18,7 @@ earnest report --base origin/main    # Markdown for a PR body
 earnest tla src/cart.model.ts --out build/tla
 earnest confirm --tlc tla2tools.jar
 earnest confirm --tla-rs ~/.cargo/bin/tla-rs
+earnest confirm --quint specs/
 ```
 
 | Command | What it does |
@@ -25,26 +26,27 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 | `verify` | Check every matched model and print results as text or JSON |
 | `chart` | Print each model as a Mermaid `stateDiagram-v2` statechart |
 | `report` | Print Markdown for a pull request body: results, charts, paths, and optional rule changes |
-| `tla` | Write `<Model>.tla` and `<Model>.cfg` for each model into `--out` |
-| `confirm` | Export each model to TLA+, run TLC or `tla-rs`, and compare state counts and verdicts with `earnest` |
+| `tla` | Write `<Model>.tla` and `<Model>.cfg` for each model, and `<Model>_<setup>.tla` and `.cfg` for each of its setups, into `--out` |
+| `confirm` | Export each model to TLA+ and run TLC or `tla-rs`, or run Quint's own `quint verify` and `quint test` on each Quint check, and compare state counts and verdicts with `earnest` |
 
 ## Flags
 
 | Flag | Default | Commands | Meaning |
 |---|---|---|---|
 | `PATH...` | current directory | all | Files or folders to search for models |
-| `--model <name>` | all | all | Check only the model with this name |
-| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule (requires `--model` when two models share the id) |
+| `--model <name>` | all | all | Check only the model with this name, and each of its setups ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)). A Quint check's name is its `name`, or its `main` ([Quint](/reference/quint/#the-checks-file)) |
+| `--rule <id>` | all | `verify`, `chart`, `report` | Check only this rule, rule about runs, or witness, in each result that lists it (requires `--model` when two models share the id; the setups of one model do not count as other models) |
 | `--json` | off | `verify` | Print results as JSON instead of text |
 | `--max-states <n>` | `5000000` | `verify`, `chart`, `report`, `confirm` | Stop a model after this many distinct states; every counted state has its rules judged |
 | `--time-limit <seconds>` | none | `verify`, `chart`, `report`, `confirm` | Stop a model after this long, including inside a single state if an action or rule runs too long |
 | `--jobs <n>` | all cores | `verify`, `chart`, `report`, `confirm` | Total worker threads for the run |
 | `--no-cache` | off | `verify` | Recheck every matched model even when unchanged; cached results for unchecked models stay stored |
 | `--max-arrows <n>` | `20` | `chart`, `report` | Maximum arrows drawn per chart (at least `1`) |
-| `--base <git ref>` | none | `verify`, `report` | Compare each model's rules with the same file at this commit |
-| `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` are written |
-| `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc` or `--tla-rs` is required) |
+| `--base <git ref>` | none | `verify`, `report` | Compare each model's rules, and each Quint check's properties and runs, with the same file at this commit ([rule changes](/reference/output/#rule-changes---base)) |
+| `--out <folder>` | required | `tla` | Directory where `<Model>.tla` and `<Model>.cfg` (and `<Model>_<setup>.tla` and `.cfg` per setup) are written |
+| `--tlc <jar>` | none | `confirm` | Path to `tla2tools.jar` (requires Java; at least one of `--tlc`, `--tla-rs` or `--quint` is required) |
 | `--tla-rs <path>` | none | `confirm` | Path to the `tla-rs` binary (needs no Java) |
+| `--quint` | off | `confirm` | Run `quint verify --backend tlc` (requires Java) and `quint test` on each [Quint check](/reference/quint/#confirming-a-check-with-quint) |
 
 ## Worker threads and determinism
 
@@ -56,6 +58,19 @@ earnest confirm --tla-rs ~/.cargo/bin/tla-rs
 
 Results, model order, and the shortest path to each broken rule are identical for every `--jobs` value and across runs.
 
+## Which build is this
+
+`earnest --version` prints the version and, in brackets, what the build was made from:
+
+```
+earnest 0.1.0 (commit 7f18149ef9f2, sources bdd65622a1d78d92)
+```
+
+- `commit` is the first twelve digits of the commit, when the build was made in a git checkout (`cargo install --git` and `cargo install --path` both are). A build made from an archive of the sources has no `commit`.
+- `sources` is a fingerprint of the checker's own source files. Two builds with the same `sources` give the same results, and a build made from a checkout with uncommitted edits has another `sources` than its commit's.
+
+To pin a build in a hook or in CI, compare this line.
+
 ## Caching
 
 `earnest verify` caches per-model results in `.earnest/`. An unchanged model served from cache ends its result line with `(cached)`.
@@ -63,6 +78,7 @@ Results, model order, and the shortest path to each broken rule are identical fo
 - A cached result is reused only by a build compiled from the same sources as the build that wrote it.
 - Results stopped by `--max-states` are cached. Results stopped by `--time-limit` are not.
 - Running on a subset of models, with or without `--no-cache`, leaves cached results for other models untouched.
+- Each [setup](/reference/typescript/#setups) of a model is cached as a result of its own.
 
 ## Exit codes
 
@@ -81,6 +97,8 @@ More precisely, a file is treated as a model file (and is either read or reporte
 1. It is named directly on the command line, whatever its name or imports.
 2. Its name ends in `.model.ts`, `.model.mts`, or `.model.tsx`, whatever it imports.
 3. It is a `.ts`, `.mts`, or `.tsx` file that imports `@earnestjs/model` by the plain specifier, or a `.rs` file that names the `earnest` crate and declares a model, and it is not a test file.
+
+A Quint module is checked when its doc comment holds a `/// @check` mark: a folder search parses each `.qnt` file it finds and checks its marked modules, and so does a `.qnt` file named on the command line. A folder that still holds an `earnest.quint.json` is `unreadable` at that file, with the marks to write. See [Quint models](/reference/quint/).
 
 Folders named `node_modules`, `target`, `dist`, `build`, and any folder starting with `.` are skipped when walking directories. Models are checked and printed in file-path order, then declaration order within each file.
 
@@ -128,7 +146,7 @@ Rules for test files:
 - An unreadable test file (such as a broken symlink under `tests/`) is skipped and listed in `skipped`, not reported as `unreadable`, because the checker cannot tell whether it uses the library.
 - If `--model` or `--rule` asks for a model that exists only in a skipped test file, every command prints the `skipped` line, names the file, explains how to include it, and exits `2`. Any skipped no-model Rust files are also printed and named in the error.
 - A `#[cfg(test)]` module inside a Rust model file is ignored.
-- `--base` applies the same discovery and test-file conventions to files in the base commit.
+- `--base` applies the same discovery and test-file conventions to files in the base commit. A `.qnt` file is read at the base only when it, or a file it imports, differs from the working tree; no `quint` is started. A file that can't be read at the base, or that is unreadable now, is listed as `not compared` under `rule changes since <base>`, and in `notCompared` in JSON; a file unreadable now does not list its base rules as `removed`.
 
 ### Command-line paths, deduplication, and unreadable files
 

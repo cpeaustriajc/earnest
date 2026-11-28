@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] Using an action as an argument of `not` is only allowed in temporal definitions, but it is used in action `a`.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_action_in_not.qnt","start":{"line":2,"col":13,"index":57},"end":{"line":2,"col":23,"index":67}}]}]}

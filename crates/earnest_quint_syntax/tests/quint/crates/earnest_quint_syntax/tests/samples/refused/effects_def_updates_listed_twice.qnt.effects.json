@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] def operators may only read state variables, but operator `f` updates variables 'x', 'y', 'x', 'y'. Use action instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_def_updates_listed_twice.qnt","start":{"line":3,"col":6,"index":74},"end":{"line":3,"col":6,"index":74}}]}]}

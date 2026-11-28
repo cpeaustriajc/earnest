@@ -1,4 +1,4 @@
-use earnest_check::{Graph, Node, Outline};
+use earnest_check::{Graph, Node, Outline, Premise};
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Look {
@@ -22,6 +22,8 @@ pub(crate) trait Plot {
     fn arrows(&self) -> usize;
     fn ends(&self, at: usize) -> (usize, usize);
     fn arrow_labels(&self, at: usize) -> impl Iterator<Item = &str>;
+    fn premises(&self) -> &[Premise];
+    fn holding(&self, premise: usize) -> impl Iterator<Item = usize>;
 }
 
 impl Plot for Graph {
@@ -70,6 +72,18 @@ impl Plot for Graph {
     fn arrow_labels(&self, at: usize) -> impl Iterator<Item = &str> {
         self.edges[at].labels.iter().map(String::as_str)
     }
+
+    fn premises(&self) -> &[Premise] {
+        &self.premises
+    }
+
+    fn holding(&self, premise: usize) -> impl Iterator<Item = usize> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter(move |(_, node)| node.premises.binary_search(&premise).is_ok())
+            .map(|(at, _)| at)
+    }
 }
 
 impl Plot for Outline {
@@ -115,5 +129,13 @@ impl Plot for Outline {
 
     fn arrow_labels(&self, at: usize) -> impl Iterator<Item = &str> {
         self.arrow_labels(at)
+    }
+
+    fn premises(&self) -> &[Premise] {
+        self.premises()
+    }
+
+    fn holding(&self, premise: usize) -> impl Iterator<Item = usize> {
+        self.holding(premise)
     }
 }

@@ -1,14 +1,27 @@
 use crate::discovery::{Found, Language, Text};
+use crate::quint::{QuintCheck, READER};
+use crate::workers::stack_of_this_worker;
 use earnest_ast::{Draft, Reading};
-use earnest_diagnostics::Problem;
+use earnest_diagnostics::{Place, Problem};
 use earnest_ir::Model;
+use earnest_quint_syntax::on_large_stack;
 use earnest_semantic::lower;
 use syn::{Attribute, ImplItem, Item, Type};
 
+const REPORTED_BY_ID: [&str; 3] = ["rule", "eventually", "witness"];
+const QUINT_EXTENSION: &str = "qnt";
+
 #[derive(Debug)]
 pub(crate) struct Readable {
-    pub(crate) draft: Draft,
+    pub(crate) draft: Option<Draft>,
     pub(crate) model: Model,
+    pub(crate) position: usize,
+    pub(crate) expected: Vec<String>,
+    pub(crate) reachable: Vec<String>,
+    pub(crate) counted: bool,
+    pub(crate) runs_not_played: Vec<String>,
+    pub(crate) not_built: Option<String>,
+    pub(crate) quint: Option<QuintCheck>,
 }
 
 #[derive(Debug)]
@@ -44,6 +57,16 @@ impl ModelFile {
             Content::Models(_) => &[],
             Content::Unreadable(problems) => problems,
         }
+    }
+
+    pub(crate) fn quint_check(&self) -> Option<&str> {
+        let is_quint = std::path::Path::new(&self.path)
+            .extension()
+            .is_some_and(|extension| extension == QUINT_EXTENSION);
+        self.declared
+            .first()
+            .filter(|_| is_quint)
+            .map(|check| check.name.as_str())
     }
 
     pub(crate) fn declares_unread(&self, model: Option<&str>, rule: Option<&str>) -> bool {
@@ -91,29 +114,31 @@ fn declared_in_rust(items: &[Item], declared: &mut Vec<Declared>) {
             _ => {}
         }
     }
-    for item in items {
-        let Item::Impl(block) = item else {
-            continue;
-        };
-        let Type::Path(owner) = &*block.self_ty else {
-            continue;
-        };
-        let Some(name) = owner.path.get_ident().map(ToString::to_string) else {
-            continue;
-        };
-        for rule in block.items.iter().filter_map(|member| match member {
-            ImplItem::Fn(function)
-                if function
-                    .attrs
-                    .iter()
-                    .any(|attribute| attribute.path().is_ident("rule")) =>
-            {
-                Some(function.sig.ident.to_string())
-            }
-            _ => None,
-        }) {
-            if let Some(found) = declared.iter_mut().find(|each| each.name == name) {
-                found.rules.push(rule);
+    for role in REPORTED_BY_ID {
+        for item in items {
+            let Item::Impl(block) = item else {
+                continue;
+            };
+            let Type::Path(owner) = &*block.self_ty else {
+                continue;
+            };
+            let Some(name) = owner.path.get_ident().map(ToString::to_string) else {
+                continue;
+            };
+            for rule in block.items.iter().filter_map(|member| match member {
+                ImplItem::Fn(function)
+                    if function
+                        .attrs
+                        .iter()
+                        .any(|attribute| attribute.path().is_ident(role)) =>
+                {
+                    Some(function.sig.ident.to_string())
+                }
+                _ => None,
+            }) {
+                if let Some(found) = declared.iter_mut().find(|each| each.name == name) {
+                    found.rules.push(rule);
+                }
             }
         }
     }
@@ -132,7 +157,7 @@ fn declared_by(language: Language, source: &str, reading: &Reading) -> Vec<Decla
         .iter()
         .map(|draft| Declared {
             name: draft.name.clone(),
-            rules: draft.rules.iter().map(|rule| rule.id.clone()).collect(),
+            rules: draft.rule_ids().map(str::to_owned).collect(),
         })
         .collect()
 }
@@ -141,6 +166,7 @@ pub(crate) fn read(language: Language, path: &str, source: &str) -> Reading {
     match language {
         Language::TypeScript => earnest_ts::read(path, source),
         Language::Rust => earnest_rs::read(path, source),
+        Language::Quint => Reading::default(),
     }
 }
 
@@ -150,9 +176,35 @@ fn understand(reading: Reading) -> Content {
     }
     let mut models = Vec::with_capacity(reading.drafts.len());
     let mut problems = Vec::new();
-    for draft in reading.drafts {
+    for (position, draft) in reading.drafts.into_iter().enumerate() {
         match lower(&draft) {
-            Ok(model) => models.push(Readable { draft, model }),
+            Ok(model) => {
+                let in_setups: Vec<Model> = (0..model.runs.setups.len())
+                    .filter_map(|position| model.in_setup(position))
+                    .collect();
+                models.push(Readable {
+                    draft: Some(draft.clone()),
+                    model,
+                    position,
+                    expected: Vec::new(),
+                    reachable: Vec::new(),
+                    counted: false,
+                    runs_not_played: Vec::new(),
+                    not_built: None,
+                    quint: None,
+                });
+                models.extend(in_setups.into_iter().map(|model| Readable {
+                    draft: Some(draft.clone()),
+                    model,
+                    position,
+                    expected: Vec::new(),
+                    reachable: Vec::new(),
+                    counted: false,
+                    runs_not_played: Vec::new(),
+                    not_built: None,
+                    quint: None,
+                }));
+            }
             Err(found) => problems.extend(found),
         }
     }
@@ -164,8 +216,52 @@ fn understand(reading: Reading) -> Content {
     }
 }
 
+fn quint(path: String, source: String) -> ModelFile {
+    let read = on_large_stack(stack_of_this_worker().unwrap_or(0), || {
+        earnest_quint::read(&path, &source)
+    })
+    .unwrap_or_else(|refused| {
+        Err(vec![Problem::new(
+            &path,
+            Place { line: 1, column: 1 },
+            READER,
+            &refused.message,
+        )])
+    });
+    let (declared, content) = match read {
+        Ok(model) => (
+            vec![Declared {
+                name: model.name.clone(),
+                rules: model.rule_ids().map(str::to_owned).collect(),
+            }],
+            Content::Models(vec![Readable {
+                draft: None,
+                model,
+                position: 0,
+                expected: Vec::new(),
+                reachable: Vec::new(),
+                counted: false,
+                runs_not_played: Vec::new(),
+                not_built: None,
+                quint: None,
+            }]),
+        ),
+        Err(problems) => (Vec::new(), Content::Unreadable(problems)),
+    };
+    ModelFile {
+        path,
+        source,
+        declared,
+        content,
+    }
+}
+
 pub(crate) fn load(found: Found) -> ModelFile {
     match found.text {
+        Text::Model {
+            language: Language::Quint,
+            source,
+        } => quint(found.path, source),
         Text::Model { language, source } => {
             let reading = read(language, &found.path, &source);
             let declared = declared_by(language, &source, &reading);
@@ -330,6 +426,65 @@ impl Lamp {
             !file.declares_unread(Some("Lamp"), Some("flip")),
             "an action"
         );
+    }
+
+    #[test]
+    fn an_unreadable_rust_file_declares_its_rules_about_runs_and_witnesses_after_its_rules() {
+        let source = "\
+use earnest::model::{Model, model};
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Model)]
+pub struct Lamp {
+    #[initial(false)]
+    lit: bool,
+}
+
+#[model]
+impl Lamp {
+    #[action(\"someone flips the switch\", fair)]
+    fn flip(&self) -> Option<Self> {
+        loop {}
+    }
+
+    #[witness(\"One flip lights the lamp\")]
+    fn lights(&self) -> Option<bool> {
+        let after = self.flip()?;
+        Some(after.lit)
+    }
+
+    #[eventually(\"Every run lights the lamp\")]
+    fn lit_at_last(&self) -> bool {
+        self.lit
+    }
+
+    #[setup(\"The lamp starts lit\")]
+    fn on(&self) -> Self {
+        Self { lit: true }
+    }
+
+    #[rule(\"The lamp is never lit\")]
+    fn dark(&self) -> bool {
+        !self.lit
+    }
+}
+";
+        let file = loaded("lamp.rs", Language::Rust, source);
+        assert!(!file.problems().is_empty(), "the file is unreadable");
+        assert_eq!(
+            file.declared,
+            [Declared {
+                name: "Lamp".to_owned(),
+                rules: vec![
+                    "dark".to_owned(),
+                    "lit_at_last".to_owned(),
+                    "lights".to_owned()
+                ]
+            }],
+            "the rule, then the rule about runs, then the witness, as a readable file lists them"
+        );
+        assert!(file.declares_unread(Some("Lamp"), Some("lights")));
+        assert!(file.declares_unread(None, Some("lit_at_last")));
+        assert!(!file.declares_unread(None, Some("on")), "a setup");
     }
 
     #[test]

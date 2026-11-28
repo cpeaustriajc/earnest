@@ -1,0 +1,1 @@
+{"stage":"parsing","warnings":[],"errors":[{"explanation":"[QNT404] Type alias 'List' not found","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/review/list_applied_to_two.qnt","start":{"line":1,"col":17,"index":33},"end":{"line":1,"col":26,"index":42}}]}],"order":[[5]],"depth":{"5":0},"table":{}}

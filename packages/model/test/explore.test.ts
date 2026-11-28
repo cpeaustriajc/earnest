@@ -498,7 +498,7 @@ test("a remainder by zero is a fault", () => {
   expect(found.status).toBe("fail");
   expect(kinds(found)).toStrictEqual(["fault"]);
   expect(only(found).message).toBe(
-    "the change of the action `share` takes a remainder with a negative number or a divisor below 1 in this state",
+    "the change of the action `share` takes a division or a remainder by zero in this state",
   );
 });
 
@@ -695,45 +695,33 @@ test("m.rem is the remainder for whole numbers that are not negative", () => {
   expect([m.rem(7, 3), m.rem(0, 5), m.rem(6, 3), m.rem(2, 9)]).toStrictEqual([1, 0, 0, 2]);
 });
 
-test("m.rem of a negative number, or by a divisor below 1, throws the remainder fault", () => {
-  for (const [a, b] of [
-    [-1, 3],
-    [5, 0],
-    [5, -2],
-    [-4, -2],
-  ] as const) {
-    expect(() => m.rem(a, b)).toThrow(/negative number or a divisor below 1/);
-  }
+test("m.rem of a negative number, or by a divisor below 1, has the sign of a, and by zero throws the remainder fault", () => {
+  expect([m.rem(-1, 3), m.rem(5, -2), m.rem(-4, -2)]).toStrictEqual([-1, 1, 0]);
+  expect(() => m.rem(5, 0)).toThrow(/by zero/);
 });
 
-const FAULT = "takes a remainder with a negative number or a divisor below 1 in this state";
+const FAULT = "takes a division or a remainder by zero in this state";
 
-test("a rule that takes the remainder of a negative number is unknown in explore", () => {
+test("a rule that takes the remainder of a negative number holds in explore", () => {
   const Rem = m.model("Rem", { n: m.int(0, 2).initial(0) });
   const below = m.rule(Rem, "Below", (s) => m.rem(s.n - 1, 3) !== 99);
   const always = m.end(Rem, "Always", () => true);
   const found = explore(Rem, { exports: { below, always } });
-  expect(found.rules.map((rule) => rule.verdict)).toStrictEqual(["unknown"]);
-  expect(found.findings.map((finding) => finding.message)).toStrictEqual([
-    `the rule \`below\` ${FAULT}`,
-  ]);
+  expect(found.rules.map((rule) => rule.verdict)).toStrictEqual(["holds"]);
+  expect(found.findings.map((finding) => finding.message)).toStrictEqual([]);
 });
 
-test("m.rem faults in a when, an end and a change, as the checker does", () => {
+test("m.rem of a negative number has a value in a when and an end, and by zero faults in a change, as the checker does", () => {
   const Rem = m.model("Rem", { n: m.int(0, 2).initial(0) });
   const inWhen = m.action(Rem, "when", {
     when: (s) => m.rem(s.n - 1, 3) === 0,
     changes: () => ({}),
   });
   const messages = (found: Exploration) => found.findings.map((finding) => finding.message);
-  expect(messages(explore(Rem, { exports: { inWhen } }))).toStrictEqual([
-    `the condition of the action \`inWhen\` ${FAULT}`,
-  ]);
+  expect(messages(explore(Rem, { exports: { inWhen } }))).toStrictEqual([STUCK]);
   const Ended = m.model("Ended", { n: m.int(0, 1).initial(0) });
   const over = m.end(Ended, "Over", (s) => m.rem(s.n - 1, 2) === 0);
-  expect(messages(explore(Ended, { exports: { over } }))).toStrictEqual([
-    `the end \`over\` ${FAULT}`,
-  ]);
+  expect(messages(explore(Ended, { exports: { over } }))).toStrictEqual([STUCK]);
   const Then = m.model("Then", { n: m.int(0, 2).initial(0), d: m.int(0, 1).initial(0) });
   const share = m.action(Then, "share", { changes: (s) => ({ n: m.rem(s.n, s.d) }) });
   expect(messages(explore(Then, { exports: { share } }))).toStrictEqual([

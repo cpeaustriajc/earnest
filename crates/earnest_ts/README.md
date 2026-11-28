@@ -3,8 +3,8 @@
 The TypeScript reader: model file to tree.
 
 `read(file, source)` parses one TypeScript model file and gives a `Reading` from `earnest_ast`: a
-`Draft` for each `m.model(...)` in the file, in file order, with the actions, rules, ends and view
-declared on it, and a `Problem` for each construct `apps/docs/src/content/docs/reference/typescript.md` does not allow in a model
+`Draft` for each `m.model(...)` in the file, in file order, with the actions, rules, ends, view,
+witnesses, rules about runs and setups declared on it, and a `Problem` for each construct `apps/docs/src/content/docs/reference/typescript.md` does not allow in a model
 file. It checks what the file is written with, not what it means: a name the file does not define
 and a value of the wrong kind are found by `earnest_semantic`.
 
@@ -26,10 +26,23 @@ a JavaScript number holds, and a `const` of a block that is read before its decl
 as JavaScript does not give it the constant of the same name outside. A file that nests more than
 1000 levels deep is refused before the parser runs.
 
-A rule, an action and an end must be bound to an exported constant, because the id is the name it
+A rule, an action, an end, a witness, a rule about runs and a setup must be bound to an exported constant, because the id is the name it
 is exported under; the reader refuses one bound to a constant that is not exported. It also refuses what
 JavaScript refuses or what erases an export: a name exported twice in any spelling, and a
 `type` modifier on an exported part; and an export of the library or of any name imported from
 it. A type assertion (`as`, `satisfies`, `<Type>value`) in a term is refused except `as const`. A name is
 declared once in its scope, as JavaScript requires, and `m.some(value)` is read as the value
 inside an optional while a postfix `!` is refused.
+
+A witness's steps are a list written out in the call. Each is the name of an action of the same
+model declared above the witness, or `m.step(action, { input: value })`; anything else is refused
+where it is written. The reader keeps the inputs in the order written: whether each names an input
+of the action, and whether its value is one the input declares, is for `earnest_semantic`.
+
+A rule about runs (`m.eventually`) has a `reaches` and may have an `after`, each a function of
+the state; the reader keeps each with its source text. An action's `fair` is `true` or `false`
+written out, and anything else is refused. A setup (`m.setup`) is its model, its sentence and an
+object of at least one field with a value; the reader keeps each field with where it is written
+and its value, and whether the field is one of the model's, given once, with a value it declares,
+is for `earnest_semantic`. A witness's `setup` is the name of a setup of the same model declared
+above the witness, or it is refused.

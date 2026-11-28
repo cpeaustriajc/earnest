@@ -1,12 +1,16 @@
+use crate::marks::{Kind, not_a_boolean};
+use crate::reading::Readable;
 use crate::workers::run_each;
-use earnest_chart::{chart_outline, chart_with_limit, detail_lines};
-use earnest_check::{Limits, Outcome, explore};
-use earnest_ir::Model;
+use earnest_chart::{chart_outline, chart_with_limit, detail_lines_in, one_line, path_lines_in};
+use earnest_check::{EVERY_EXPECTED_FOUND, Limits, Outcome, Status as Judged, Verdict, explore};
+use earnest_ir::{Fault, Model};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::num::NonZeroUsize;
 use std::thread::available_parallelism;
 use std::time::{Duration, Instant};
+
+const NESTED: &str = "  ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Bounds {
@@ -50,8 +54,156 @@ pub(crate) struct Ran {
     pub(crate) chart: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Stops {
+    Early,
+    AtTheEnd,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Expecting<'a> {
+    pub(crate) search: Search<'a>,
+    pub(crate) expected: &'a [String],
+    pub(crate) reachable: &'a [String],
+    pub(crate) stops: Stops,
+}
+
+#[cfg(test)]
 pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Graphs) -> Vec<Ran> {
-    run_each(searches, bounds.jobs, |search, helpers| {
+    let expecting: Vec<Expecting<'_>> = searches
+        .iter()
+        .map(|search| Expecting {
+            search: *search,
+            expected: &[],
+            reachable: &[],
+            stops: Stops::AtTheEnd,
+        })
+        .collect();
+    explore_expecting(&expecting, bounds, graphs)
+}
+
+pub(crate) fn whole_of(id: &str) -> &str {
+    match id.rsplit_once('#') {
+        Some((before, number))
+            if !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            before
+        }
+        _ => id,
+    }
+}
+
+fn base_id(rule: &earnest_check::RuleOutcome) -> &str {
+    whole_of(&rule.id)
+}
+
+fn is_expected(expected: &[String], rule: &earnest_check::RuleOutcome) -> bool {
+    expected.iter().any(|name| name == base_id(rule))
+}
+
+fn stop_once_broken(search: &Search<'_>, expected: &[String]) -> Vec<String> {
+    let wanted = |id: &str| search.only_rule.is_none_or(|only| only == id);
+    let model = search.model;
+    let eventually_wanted = model
+        .runs
+        .eventually
+        .iter()
+        .any(|rule| wanted(&rule.id) || wanted(whole_of(&rule.id)));
+    let always: Vec<String> = model
+        .rules
+        .iter()
+        .filter(|rule| wanted(&rule.id))
+        .map(|rule| rule.id.clone())
+        .collect();
+    if eventually_wanted
+        || always.is_empty()
+        || !always
+            .iter()
+            .all(|id| expected.iter().any(|name| name == whole_of(id)))
+    {
+        return Vec::new();
+    }
+    always
+}
+
+fn only_a_run(search: &Search<'_>) -> Option<Model> {
+    let only = search.only_rule?;
+    let model = search.model;
+    let named = |id: &str| id == only || whole_of(id) == only;
+    let searched = model.rules.iter().any(|rule| named(&rule.id))
+        || model.runs.eventually.iter().any(|rule| named(&rule.id))
+        || model
+            .runs
+            .witnesses
+            .iter()
+            .any(|witness| named(&witness.id));
+    let played = model.runs.scripts.iter().any(|script| script.id == only);
+    if searched || !played || model.runs.starts.is_none() {
+        return None;
+    }
+    let mut played = model.clone();
+    played.actions.clear();
+    Some(played)
+}
+
+fn group_verdict(expected: &str, outcome: &Outcome) -> Option<Verdict> {
+    let parts: Vec<Verdict> = outcome
+        .rules
+        .iter()
+        .filter(|rule| base_id(rule) == expected)
+        .map(|rule| rule.verdict)
+        .collect();
+    if parts.is_empty() {
+        None
+    } else if parts.contains(&Verdict::Broken) {
+        Some(Verdict::Broken)
+    } else if parts.iter().all(|verdict| *verdict == Verdict::Holds) {
+        Some(Verdict::Holds)
+    } else {
+        Some(Verdict::Unknown)
+    }
+}
+
+fn judge(outcome: &mut Outcome, expected: &[String]) {
+    if expected.is_empty() {
+        return;
+    }
+    let groups: Vec<Verdict> = expected
+        .iter()
+        .filter_map(|name| group_verdict(name, outcome))
+        .collect();
+    let ordinary = outcome
+        .rules
+        .iter()
+        .filter(|rule| !is_expected(expected, rule));
+    let mut ordinary_broken = false;
+    let mut ordinary_unknown = false;
+    for rule in ordinary {
+        ordinary_broken |= rule.verdict == Verdict::Broken;
+        ordinary_unknown |= rule.verdict == Verdict::Unknown;
+    }
+    let stopped_early = outcome.reason.as_deref() == Some(EVERY_EXPECTED_FOUND);
+    let failed =
+        !outcome.findings.is_empty() || ordinary_broken || groups.contains(&Verdict::Holds);
+    let unanswered = ordinary_unknown
+        || groups.contains(&Verdict::Unknown)
+        || (outcome.reason.is_some() && !stopped_early);
+    outcome.status = if failed {
+        Judged::Fail
+    } else if unanswered {
+        Judged::Unfinished
+    } else {
+        Judged::Pass
+    };
+}
+
+pub(crate) fn explore_expecting(
+    searches: &[Expecting<'_>],
+    bounds: Bounds,
+    graphs: Graphs,
+) -> Vec<Ran> {
+    run_each(searches, bounds.jobs, |expecting, helpers| {
+        let search = &expecting.search;
         let limits = Limits {
             max_states: bounds.max_states,
             time_limit: bounds.time_limit,
@@ -60,10 +212,20 @@ pub(crate) fn explore_each(searches: &[Search<'_>], bounds: Bounds, graphs: Grap
             keep_graph: graphs != Graphs::Dropped,
             outline: graphs != Graphs::Dropped,
             only_rule: search.only_rule.map(str::to_owned),
+            stop_once_broken: if expecting.stops == Stops::Early {
+                stop_once_broken(search, expecting.expected)
+            } else {
+                Vec::new()
+            },
         };
         let began = Instant::now();
-        let mut outcome = explore(search.model, &limits);
+        let mut outcome = match only_a_run(search) {
+            Some(played) => explore(&played, &limits),
+            None => explore(search.model, &limits),
+        };
         let elapsed = began.elapsed();
+        judge(&mut outcome, expecting.expected);
+        name_the_mark_of_a_rule_that_is_not_a_boolean(&mut outcome, expecting);
         let chart = match graphs {
             Graphs::Charted { max_arrows } => outcome
                 .outline
@@ -137,6 +299,16 @@ pub(crate) struct RuleResult {
     pub(crate) says: String,
     pub(crate) verdict: String,
     pub(crate) path: Option<PathTaken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reason: Option<String>,
+    #[serde(
+        default,
+        rename = "repeatsFrom",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) repeats_from: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,8 +328,16 @@ struct Searched {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SetupName {
+    pub(crate) id: String,
+    pub(crate) says: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ModelResult {
     pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) setup: Option<SetupName>,
     pub(crate) file: String,
     pub(crate) line: u32,
     pub(crate) status: Status,
@@ -167,19 +347,78 @@ pub(crate) struct ModelResult {
     pub(crate) reason: Option<String>,
     pub(crate) rules: Vec<RuleResult>,
     pub(crate) findings: Vec<FindingResult>,
+    #[serde(
+        rename = "runsNotPlayed",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub(crate) runs_not_played: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Checked {
     pub(crate) result: ModelResult,
     pub(crate) detail: Vec<String>,
+    #[serde(default)]
+    pub(crate) position: usize,
+}
+
+impl ModelResult {
+    pub(crate) fn run_name(&self) -> String {
+        match &self.setup {
+            Some(setup) => format!("{} ({})", self.name, setup.id),
+            None => self.name.clone(),
+        }
+    }
+}
+
+impl Checked {
+    pub(crate) fn is_of(&self, readable: &Readable) -> bool {
+        let model = &readable.model;
+        let setup = self.result.setup.as_ref().map(|setup| setup.id.as_str());
+        self.position == readable.position
+            && self.result.name == model.name
+            && self.result.line == model.line
+            && setup == model.setup().map(|setup| setup.id.as_str())
+    }
+
+    pub(crate) fn is_the_run_of(&self, other: &Self) -> bool {
+        let id = |checked: &Self| checked.result.setup.as_ref().map(|setup| setup.id.clone());
+        self.position == other.position
+            && self.result.name == other.result.name
+            && self.result.line == other.result.line
+            && id(self) == id(other)
+    }
 }
 
 pub(crate) fn milliseconds(elapsed: Duration) -> u64 {
     u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
 }
 
-pub(crate) fn checked(model: &Model, ran: &Ran) -> Result<Checked, String> {
+fn name_the_mark_of_a_rule_that_is_not_a_boolean(outcome: &mut Outcome, expecting: &Expecting<'_>) {
+    let does_not = format!(" {} in this state", Fault::NotBoolean.describe());
+    for finding in &mut outcome.findings {
+        let Some(name) = finding
+            .message
+            .strip_prefix("the rule `")
+            .and_then(|rest| rest.strip_suffix(does_not.as_str()))
+            .and_then(|rest| rest.strip_suffix('`'))
+        else {
+            continue;
+        };
+        let kind = if expecting.reachable.iter().any(|each| each == name) {
+            Kind::Reachable
+        } else if expecting.expected.iter().any(|each| each == name) {
+            Kind::Broken
+        } else {
+            Kind::Holds
+        };
+        finding.message = not_a_boolean(name, kind);
+    }
+}
+
+pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String> {
+    let model = &readable.model;
     let searched: Searched = serde_json::to_value(&ran.outcome)
         .and_then(serde_json::from_value)
         .map_err(|error| {
@@ -191,16 +430,172 @@ pub(crate) fn checked(model: &Model, ran: &Ran) -> Result<Checked, String> {
     Ok(Checked {
         result: ModelResult {
             name: model.name.clone(),
+            setup: model.setup().map(|setup| SetupName {
+                id: setup.id.clone(),
+                says: setup.says.clone(),
+            }),
             file: model.file.clone(),
             line: model.line,
-            status: searched.status,
+            status: if searched.status == Status::Pass && !readable.runs_not_played.is_empty() {
+                Status::Unfinished
+            } else {
+                searched.status
+            },
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched.reason,
+            reason: searched
+                .reason
+                .filter(|reason| {
+                    readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND
+                })
+                .or_else(|| {
+                    (!readable.runs_not_played.is_empty()).then(|| {
+                        let reason = not_played_reason(&readable.runs_not_played);
+                        match &readable.not_built {
+                            Some(cause) => format!("{reason}: {cause}"),
+                            None => reason,
+                        }
+                    })
+                }),
             rules: searched.rules,
             findings: searched.findings,
+            runs_not_played: readable.runs_not_played.clone(),
         },
-        detail: detail_lines(&ran.outcome),
+        detail: detail_of(
+            &ran.outcome,
+            (&readable.expected, &readable.reachable),
+            model,
+            ExpectedPaths::LeftOut,
+        ),
+        position: readable.position,
     })
+}
+
+pub(crate) fn is_expected_result(expected: &[String], rule: &RuleResult) -> bool {
+    expected.iter().any(|name| name == whole_of(&rule.id))
+}
+
+fn with_its_path(head: String, name: &str, outcome: &Outcome, model: &Model) -> Vec<String> {
+    let mut lines = vec![head];
+    let path = outcome
+        .rules
+        .iter()
+        .filter(|rule| base_id(rule) == name)
+        .find_map(|rule| rule.path.as_ref());
+    if let Some(path) = path {
+        lines.extend(
+            path_lines_in(path, model.symbols.notation())
+                .into_iter()
+                .map(|line| format!("{NESTED}{line}")),
+        );
+    }
+    lines
+}
+
+/// Whether the path to a counterexample that was expected is printed under its line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExpectedPaths {
+    LeftOut,
+    Printed,
+}
+
+pub(crate) fn detail_of(
+    outcome: &Outcome,
+    (expected, reachable): (&[String], &[String]),
+    model: &Model,
+    paths: ExpectedPaths,
+) -> Vec<String> {
+    let notation = model.symbols.notation();
+    if expected.is_empty() {
+        return detail_lines_in(outcome, notation);
+    }
+    let mut lines: Vec<String> = Vec::new();
+    for name in expected {
+        let is_reachable = reachable.contains(name);
+        match group_verdict(name, outcome) {
+            Some(Verdict::Broken) if is_reachable => {
+                let head = format!("reached  {}", one_line(name));
+                lines.extend(with_its_path(head, name, outcome, model));
+            }
+            Some(Verdict::Broken) => {
+                let head = format!("broken  {}  (expected)", one_line(name));
+                if paths == ExpectedPaths::Printed {
+                    lines.extend(with_its_path(head, name, outcome, model));
+                } else {
+                    lines.push(head);
+                }
+            }
+            Some(Verdict::Holds) if is_reachable => {
+                lines.push(format!("never reached  {}", one_line(name)));
+            }
+            Some(Verdict::Holds) => lines.push(format!(
+                "holds  {}  a counterexample was expected",
+                one_line(name)
+            )),
+            Some(Verdict::Unknown) => lines.push(format!("unknown  {}", one_line(name))),
+            _ => {}
+        }
+    }
+    let mut rest = outcome.clone();
+    for rule in &mut rest.rules {
+        if is_expected(expected, rule) {
+            rule.path = None;
+        }
+    }
+    lines.extend(detail_lines_in(&rest, notation));
+    lines
+}
+
+pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
+    !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
+}
+
+pub(crate) fn not_played_reason(runs: &[String]) -> String {
+    format!("runs not played: {}", runs.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bounds, Graphs, Search, checked, explore_each};
+    use crate::discovery::{Found, Language};
+    use crate::reading::load;
+
+    const TWINS: &str = "import { m } from \"@earnestjs/model\";\n\
+        export const A = m.model(\"Jar\", { n: m.int(0, 2).initial(0) }); \
+        export const B = m.model(\"Jar\", { k: m.int(0, 1).initial(0) });\n";
+
+    #[test]
+    fn a_result_is_of_its_own_model_when_two_of_one_name_share_a_line() {
+        let file = load(Found::model("twins.model.ts", Language::TypeScript, TWINS));
+        let [first, second] = file.models() else {
+            panic!("the file has two models: {:?}", file.problems());
+        };
+        let searches = [first, second].map(|readable| Search {
+            model: &readable.model,
+            only_rule: None,
+        });
+        let bounds = Bounds::new(1_000, None, None);
+        let ran = explore_each(&searches, bounds, Graphs::Dropped);
+        let results: Vec<_> = [first, second]
+            .iter()
+            .zip(&ran)
+            .map(|(readable, ran)| checked(readable, ran).expect("a result can be reported"))
+            .collect();
+        let [of_first, of_second] = results.as_slice() else {
+            panic!("one result per model");
+        };
+        assert!(
+            of_first.is_of(first) && !of_first.is_of(second),
+            "the first result is of the first model only"
+        );
+        assert!(
+            of_second.is_of(second) && !of_second.is_of(first),
+            "the second result is of the second model only"
+        );
+        assert!(
+            !of_first.is_the_run_of(of_second),
+            "a fresh result of one never replaces the cached result of the other"
+        );
+    }
 }

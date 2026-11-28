@@ -159,6 +159,15 @@ export class Declaration<T, In = T> {
   }
 }
 
+/**
+ * The value a field declared as `declared` starts at when it is given `value` as `.initial`
+ * would be. Throws when `value` is not a value of the declaration.
+ */
+export const startingAt = (declared: Declaration<unknown, never>, value: unknown): unknown => {
+  const given: Declaration<unknown, unknown> = declared;
+  return given.initial(value).starts()[0];
+};
+
 /** The fields of a model or a record, or the inputs of an action: a declaration for each name. */
 export type Fields = Readonly<Record<string, Declaration<unknown, never>>>;
 

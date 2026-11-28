@@ -1,0 +1,18 @@
+[package]
+name = "earnest_quint_syntax"
+version.workspace = true
+edition.workspace = true
+description = "Internal part of earnest: a Quint file read into the modules and source map `quint parse` writes"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+earnest_threads.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+earnest_check.workspace = true
+earnest_quint.workspace = true

@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT404] Name 'missing' not found","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_not_found.qnt","start":{"line":2,"col":14,"index":44},"end":{"line":2,"col":20,"index":50}}]}]}

@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT406] Instantiation error: 'D' not found in 'Lib'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_override_not_found.qnt","start":{"line":5,"col":2,"index":59},"end":{"line":5,"col":30,"index":87}}]}]}

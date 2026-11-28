@@ -178,5 +178,6 @@ pub(crate) fn random_model(dice: &mut Dice) -> Model {
         rules,
         ends,
         view,
+        runs: earnest_ir::Runs::default(),
     }
 }

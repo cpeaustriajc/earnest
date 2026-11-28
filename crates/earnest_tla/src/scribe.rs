@@ -2,7 +2,7 @@ use crate::helper::Helper;
 use crate::kind::Kind;
 use crate::names::Names;
 use earnest_ir::{Expr, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep};
-use earnest_value::{Domain, IntType, Sym, Symbols, Value};
+use earnest_value::{Domain, IntType, Notation, Sym, Symbols, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const NULL: &str = "<<>>";
@@ -145,6 +145,8 @@ pub(crate) struct Scribe<'a> {
     variables: Vec<Variable>,
     labels: BTreeMap<Sym, String>,
     label_names: Names,
+    in_tlc_order: bool,
+    tuple_items: Vec<Sym>,
 }
 
 impl<'a> Scribe<'a> {
@@ -154,11 +156,18 @@ impl<'a> Scribe<'a> {
             variables,
             labels: BTreeMap::new(),
             label_names: labels,
+            in_tlc_order: false,
+            tuple_items: Vec::new(),
         }
     }
 
     pub(crate) fn variables(&self) -> &[Variable] {
         &self.variables
+    }
+
+    pub(crate) fn label_written(&self, text: &str) -> Option<String> {
+        let name = self.symbols.find(text)?;
+        self.labels.get(&name).cloned()
     }
 
     fn label(&mut self, name: Sym) -> String {
@@ -182,6 +191,10 @@ impl<'a> Scribe<'a> {
             Value::Bool(true) => "TRUE".to_owned(),
             Value::Bool(false) => "FALSE".to_owned(),
             Value::Int(found) => number(*found),
+            Value::Big(big) if big.number().sign() == earnest_value::Sign::Minus => {
+                format!("({})", big.number())
+            }
+            Value::Big(big) => big.number().to_string(),
             Value::Str(text) => quoted(self.symbols.name(*text)),
             Value::Record(fields) => {
                 let all: Vec<(String, String)> = fields
@@ -249,6 +262,7 @@ impl<'a> Scribe<'a> {
                     "((Len({subject}) <= {max}) /\\ (\\A {each} \\in DOMAIN {subject} : {fits}))"
                 )
             }
+            Domain::Any => "TRUE".to_owned(),
             _ => unknown("a declaration of a kind added after it was written").text,
         }
     }
@@ -359,6 +373,14 @@ impl<'a> Scribe<'a> {
                 source,
                 body,
             } => self.sweep((*sweep, *shelf), *slot, source, body, scope),
+            Expr::Fold {
+                shelf,
+                source,
+                start,
+                total,
+                item,
+                body,
+            } => self.fold((*shelf, source), start, (*total, *item), body, scope),
             _ => unknown("an expression of a kind added after it was written"),
         }
     }
@@ -405,7 +427,11 @@ impl<'a> Scribe<'a> {
             Kind::Record(fields) => Some(fields.clone()),
             _ => None,
         };
-        let kind = on.kind.join(&Kind::Record(kinds_of(&replaced)));
+        let kind = if on.kind == Kind::Unknown {
+            Kind::Unknown
+        } else {
+            on.kind.join(&Kind::Record(kinds_of(&replaced)))
+        };
         let needed: Vec<Option<String>> = std::iter::once(on.sound.clone())
             .chain(replaced.iter().map(|(_, each)| each.sound.clone()))
             .collect();
@@ -531,9 +557,93 @@ impl<'a> Scribe<'a> {
         done.needing([over.sound, each])
     }
 
+    fn fold(
+        &mut self,
+        (declared, source): (Shelf, &Expr),
+        start: &Expr,
+        (total, item): (usize, usize),
+        body: &Expr,
+        scope: &mut Scope,
+    ) -> Written {
+        let (declared, source, in_tlc_order, tuple_items) = match source {
+            Expr::Apply(Op::InTlcOrder, inner) if declared == Shelf::Seq => {
+                match inner.as_slice() {
+                    [set] => (Shelf::Set, set, true, Vec::new()),
+                    [set, Expr::Const(Value::Seq(items))] => (
+                        Shelf::Set,
+                        set,
+                        true,
+                        items
+                            .iter()
+                            .filter_map(|item| match item {
+                                Value::Str(name) => Some(*name),
+                                _ => None,
+                            })
+                            .collect(),
+                    ),
+                    _ => (declared, source, false, Vec::new()),
+                }
+            }
+            _ => (declared, source, false, Vec::new()),
+        };
+        let over = self.expr(source, scope);
+        let first = self.expr(start, scope);
+        let operator = scope.claim("Fold");
+        let rest = scope.claim("rest");
+        let so_far = scope.bind(total, "total", first.kind.clone());
+        let each = scope.bind(item, "item", over.kind.item());
+        let step = self.expr(body, scope);
+        scope.release();
+        scope.release();
+        let kind = match (&over.kind, declared) {
+            (Kind::Unknown, Shelf::Seq) => Kind::seq(Kind::Unknown),
+            (Kind::Unknown, _) => Kind::set(Kind::Unknown),
+            (known, _) => known.clone(),
+        };
+        let (empty, taken, left) = match &kind {
+            Kind::Seq(_) => (
+                NULL.to_owned(),
+                format!("Head({rest})"),
+                format!("Tail({rest})"),
+            ),
+            Kind::Set(inner) => {
+                let other = scope.claim("other");
+                let pick = scope.claim("pick");
+                self.in_tlc_order = in_tlc_order;
+                self.tuple_items = tuple_items;
+                let before = self.before(inner, &pick, &other, scope);
+                self.in_tlc_order = false;
+                self.tuple_items = Vec::new();
+                let least = before.map_or_else(
+                    || "TRUE".to_owned(),
+                    |before| format!("\\A {other} \\in ({rest} \\ {{{pick}}}) : {before}"),
+                );
+                (
+                    "{}".to_owned(),
+                    format!("CHOOSE {pick} \\in {rest} : {least}"),
+                    format!("({rest} \\ {{{each}}})"),
+                )
+            }
+            _ => return unknown("a fold over a collection whose kind it does not know"),
+        };
+        let text = format!(
+            "(LET RECURSIVE {operator}(_, _) {operator}({so_far}, {rest}) == IF {rest} = {empty} \
+             THEN {so_far} ELSE LET {each} == {taken} IN {operator}({}, {left}) IN \
+             {operator}({}, {}))",
+            step.text, first.text, over.text
+        );
+        Written::new(text, first.kind.join(&step.kind)).needing([over.sound, first.sound])
+    }
+
     fn apply(&mut self, op: Op, arguments: &[Expr], scope: &mut Scope) -> Written {
         let given = self.each(arguments, scope);
         let mut needed = needs_of(&given);
+        if matches!(self.symbols.notation(), Notation::Quint(_))
+            && let Some((written, divisor)) = floored(op, &given)
+        {
+            needed.push(Some(format!("({divisor} # 0)")));
+            return written.needing(needed);
+        }
         needed.push(has_a_value(op, &given));
         applied(op, &given).needing(needed)
     }
@@ -562,6 +672,25 @@ impl<'a> Scribe<'a> {
                 )
             }
             Kind::Record(fields) => self.before_fields(fields, left, right, scope)?,
+            Kind::Seq(item) if self.in_tlc_order => {
+                let items = self.before_seqs(item, left, right, scope)?;
+                format!(
+                    "((Len({left}) < Len({right})) \\/ ((Len({left}) = Len({right})) /\\ {items}))"
+                )
+            }
+            Kind::Set(item) if self.in_tlc_order => {
+                let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
+                    scribe.before(item, first, second, scope)
+                };
+                let items = self.before_sets(&member, left, right, scope)?;
+                format!(
+                    "((Cardinality({left}) < Cardinality({right})) \\/ \
+                     ((Cardinality({left}) = Cardinality({right})) /\\ {items}))"
+                )
+            }
+            Kind::Map(key, value) if self.in_tlc_order => {
+                self.before_maps_in_tlc_order((key, value), left, right, scope)?
+            }
             Kind::Seq(item) => self.before_seqs(item, left, right, scope)?,
             Kind::Set(item) => {
                 let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
@@ -607,6 +736,16 @@ impl<'a> Scribe<'a> {
     ) -> Option<String> {
         let mut named: Vec<&(Sym, Kind)> = fields.iter().collect();
         named.sort_by(|first, second| self.symbols.name(first.0).cmp(self.symbols.name(second.0)));
+        let positions: Option<Vec<usize>> = named
+            .iter()
+            .map(|(name, _)| self.tuple_items.iter().position(|item| item == name))
+            .collect();
+        if let Some(positions) = positions {
+            let mut by_position: Vec<(usize, &(Sym, Kind))> =
+                positions.into_iter().zip(named).collect();
+            by_position.sort_by_key(|(position, _)| *position);
+            named = by_position.into_iter().map(|(_, field)| field).collect();
+        }
         let mut text = "FALSE".to_owned();
         for (name, kind) in named.into_iter().rev() {
             let label = self.label(*name);
@@ -637,6 +776,35 @@ impl<'a> Scribe<'a> {
              (\\A {lead} \\in 1..({at} - 1) : {left}[{lead}] = {right}[{lead}]) /\\ {here})) \\/ \
              ((Len({left}) < Len({right})) /\\ \
              (\\A {lead} \\in 1..Len({left}) : {left}[{lead}] = {right}[{lead}])))"
+        ))
+    }
+
+    fn before_maps_in_tlc_order(
+        &mut self,
+        (key, value): (&Kind, &Kind),
+        left: &str,
+        right: &str,
+        scope: &mut Scope,
+    ) -> Option<String> {
+        let member = |scribe: &mut Self, first: &str, second: &str, scope: &mut Scope| {
+            scribe.before(key, first, second, scope)
+        };
+        let (left_keys, right_keys) = (format!("(DOMAIN {left})"), format!("(DOMAIN {right})"));
+        let keys = self.before_sets(&member, &left_keys, &right_keys, scope)?;
+        let [at, lead] = [scope.claim("at"), scope.claim("lead")];
+        let earlier = self.before(key, &lead, &at, scope)?;
+        let values = self.before(
+            value,
+            &format!("{left}[{at}]"),
+            &format!("{right}[{at}]"),
+            scope,
+        )?;
+        Some(format!(
+            "((Cardinality({left_keys}) < Cardinality({right_keys})) \\/ \
+             ((Cardinality({left_keys}) = Cardinality({right_keys})) /\\ \
+             ((({left_keys} # {right_keys}) /\\ {keys}) \\/ (({left_keys} = {right_keys}) /\\ \
+             (\\E {at} \\in {left_keys} : (({left}[{at}] # {right}[{at}]) /\\ {values} /\\ \
+             (\\A {lead} \\in {left_keys} : ({earlier} => ({left}[{lead}] = {right}[{lead}])))))))))"
         ))
     }
 
@@ -715,6 +883,7 @@ fn alone(op: Op, on: &Written) -> Option<Written> {
         ),
         Op::Unwrap => Written::new(format!("{text}[1]"), on.kind.present()),
         Op::Fit(_) | Op::Safe => Written::new(text.clone(), Kind::Int),
+        Op::Assert => Written::truth("TRUE".to_owned()),
         Op::Set(SetOp::Size) => Written::new(format!("Cardinality({text})"), Kind::Int),
         Op::Map(MapOp::Size) => Written::new(format!("Cardinality(DOMAIN {text})"), Kind::Int),
         Op::Map(MapOp::Keys) => Written::new(format!("(DOMAIN {text})"), Kind::set(on.kind.key())),
@@ -733,6 +902,8 @@ fn alone(op: Op, on: &Written) -> Option<Written> {
         ),
         Op::Seq(SeqOp::Shift) => call(Helper::SeqShift, &[text], on.kind.clone()),
         Op::Seq(SeqOp::Pop) => call(Helper::SeqPop, &[text], on.kind.clone()),
+        Op::Seq(SeqOp::Head) => call(Helper::SeqHead, &[text], on.kind.item()),
+        Op::Seq(SeqOp::Tail) => call(Helper::SeqTail, &[text], on.kind.clone()),
         _ => return None,
     })
 }
@@ -763,13 +934,22 @@ fn pair(op: Op, first: &Written, second: &Written, third: Option<&Written>) -> W
                 Math::Divide => {
                     return call(Helper::Division, &[left, right], Kind::Int);
                 }
+                Math::TruncatedRemainder(_) => {
+                    return call(Helper::TruncatedRemainder, &[left, right], Kind::Int);
+                }
+                Math::TruncatedDivide => {
+                    return call(Helper::TruncatedDivision, &[left, right], Kind::Int);
+                }
                 _ => return unknown("arithmetic added after it was written"),
             };
             Written::new(format!("({left} {sign} {right})"), Kind::Int)
         }
         Op::Set(set_op) => on_set(set_op, first, second),
         Op::Map(map_op) => on_map(map_op, first, second, third),
-        Op::Seq(seq_op) => on_seq(seq_op, first, second),
+        Op::Seq(seq_op) => on_seq(seq_op, first, second, third),
+        Op::Power => call(Helper::Power, &[left, right], Kind::Int),
+        Op::Interval => Written::new(format!("({left}..{right})"), Kind::set(Kind::Int)),
+        Op::Ascending => call(Helper::Ascending, &[left, right], Kind::seq(Kind::Int)),
         _ => unknown("an operation added after it was written"),
     }
 }
@@ -812,11 +992,38 @@ fn on_map(op: MapOp, first: &Written, second: &Written, third: Option<&Written>)
             )
         }
         (MapOp::Set, None) => unknown("a map set without a value"),
+        (MapOp::Once, Some(value)) => {
+            let set = Kind::map(second.kind.clone(), value.kind.clone());
+            let written = call(
+                Helper::MapSet,
+                &[map, key, &value.text],
+                first.kind.join(&set),
+            );
+            let twice = quoted("setToMap given two pairs with one key");
+            Written::new(
+                format!(
+                    "(IF ({key} \\in DOMAIN {map}) /\\ ({map}[{key}] # {}) THEN {}({twice}) ELSE \
+                     {})",
+                    value.text,
+                    Helper::Fault.name(),
+                    written.text
+                ),
+                written.kind,
+            )
+        }
+        (MapOp::MustGet, _) => call(Helper::MapMustGet, &[map, key], first.kind.value()),
+        (MapOp::Replace, Some(value)) => call(
+            Helper::MapReplace,
+            &[map, key, &value.text],
+            first
+                .kind
+                .join(&Kind::map(second.kind.clone(), value.kind.clone())),
+        ),
         _ => unknown("a map primitive added after it was written"),
     }
 }
 
-fn on_seq(op: SeqOp, first: &Written, second: &Written) -> Written {
+fn on_seq(op: SeqOp, first: &Written, second: &Written, third: Option<&Written>) -> Written {
     let (seq, other) = (&first.text, &second.text);
     match op {
         SeqOp::Get => found(
@@ -830,18 +1037,68 @@ fn on_seq(op: SeqOp, first: &Written, second: &Written) -> Written {
             first.kind.join(&Kind::seq(second.kind.clone())),
         ),
         SeqOp::Includes => call(Helper::SeqIncludes, &[seq, other], Kind::Bool),
+        SeqOp::Nth => call(Helper::SeqNth, &[seq, other], first.kind.item()),
+        SeqOp::Concat => Written::new(
+            format!("({seq} \\o {other})"),
+            first.kind.join(&second.kind),
+        ),
+        SeqOp::Slice | SeqOp::ReplaceAt => match third {
+            Some(last) if op == SeqOp::Slice => call(
+                Helper::SeqSlice,
+                &[seq, other, &last.text],
+                first.kind.clone(),
+            ),
+            Some(last) => call(
+                Helper::SeqReplaceAt,
+                &[seq, other, &last.text],
+                first.kind.join(&Kind::seq(last.kind.clone())),
+            ),
+            None => unknown("a sequence primitive without its third argument"),
+        },
         _ => unknown("a sequence primitive added after it was written"),
     }
+}
+
+fn floored(op: Op, given: &[Written]) -> Option<(Written, String)> {
+    let helper = match op {
+        Op::Math(Math::Divide) => Helper::FlooredDivision,
+        Op::Math(Math::Remainder) => Helper::FlooredRemainder,
+        _ => return None,
+    };
+    let [left, right, ..] = given else {
+        return None;
+    };
+    Some((
+        call(helper, &[&left.text, &right.text], Kind::Int),
+        right.text.clone(),
+    ))
 }
 
 fn has_a_value(op: Op, given: &[Written]) -> Option<String> {
     match (op, given) {
         (Op::Unwrap, [on, ..]) => Some(format!("({} # {NULL})", on.text)),
         (Op::Fit(ty), [on, ..]) => inside(ty, &on.text),
+        (Op::Assert, [on, ..]) => Some(on.text.clone()),
         (Op::Math(Math::Remainder | Math::Divide), [left, right, ..]) => Some(format!(
             "(({} >= 0) {AND} ({} >= 1))",
             left.text, right.text
         )),
+        (Op::Math(Math::TruncatedDivide), [_, right, ..]) => Some(format!("({} # 0)", right.text)),
+        (Op::Math(Math::TruncatedRemainder(ty)), [left, right, ..]) => {
+            let lowest = ty
+                .map(IntType::lowest)
+                .filter(|lowest| *lowest < 0 && *lowest > i64::from(i32::MIN));
+            Some(match lowest {
+                Some(lowest) => format!(
+                    "(({right} # 0) {AND} (({left} # {}) \\/ ({right} # {})))",
+                    number(lowest),
+                    number(-1),
+                    left = left.text,
+                    right = right.text
+                ),
+                None => format!("({} # 0)", right.text),
+            })
+        }
         _ => None,
     }
 }

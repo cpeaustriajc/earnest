@@ -10,13 +10,22 @@ import {
   trailTo,
 } from "./breadth.ts";
 import { type Declaration, rowsOf } from "./declarations.ts";
-import type { ActionRunner, AnyModel, RuleRunner, Runners } from "./model.ts";
+import type {
+  ActionRunner,
+  AnyModel,
+  EventuallyRunner,
+  RuleRunner,
+  Runners,
+  WitnessRunner,
+} from "./model.ts";
+import { type Edge, type Lasso, hunter } from "./runs.ts";
 import {
   type Json,
   NullFault,
   DivisionFault,
   RemainderFault,
   type Row,
+  frozen,
   isJsonList,
   keyOf,
   toJson,
@@ -53,12 +62,23 @@ export interface Path {
   readonly steps: readonly Step[];
 }
 
-/** One rule's result. `path` is the shortest path to a state that breaks it, or `null`. */
+/**
+ * One rule's result. `path` is the shortest path to a state that breaks it, or `null`. A rule
+ * has no `kind`, `reason` or `repeatsFrom`. A rule about runs is listed after the rules with the
+ * `kind` `"eventually"`: its `path` leads into a run that never reaches the state it wants,
+ * `reason` says how the run goes on, and `repeatsFrom` is the position in `path.steps` of the
+ * first step of the loop that can repeat forever, left out when the run stays in the last state.
+ * A witness is listed last with the `kind` `"witness"`: its `path` is what was played until it
+ * broke, and `reason` says why it broke.
+ */
 export interface RuleResult {
   readonly id: string;
   readonly says: string;
   readonly verdict: Verdict;
   readonly path: Path | null;
+  readonly kind?: "eventually" | "witness";
+  readonly reason?: string;
+  readonly repeatsFrom?: number;
 }
 
 /**
@@ -96,10 +116,15 @@ export type Exports = Readonly<Record<string, unknown>>;
  * `maxStates` stops the search before it holds more distinct states than this; the default is
  * 5,000,000. `exports` is the model file's exports, which give each action, rule and end its
  * id: the name it is exported under. One that is not among them has its sentence as its id.
+ * `setup` is a setup declared on the model with `m.setup`: the search then starts from the
+ * setup's start states and plays the witnesses that name it, as `earnest verify` does on the
+ * setup's own result line. Without it the search starts where the model declares and plays the
+ * witnesses that name no setup.
  */
 export interface ExploreOptions {
   readonly maxStates?: number;
   readonly exports?: Exports;
+  readonly setup?: object;
 }
 
 /**
@@ -118,8 +143,7 @@ export const namer = (exports: Exports = {}): ((part: object, fallback: string) 
 
 const NULL_READ = "reads a value that is null";
 const OVERFLOW = "computes a number too large to hold";
-const REMAINDER = "takes a remainder with a negative number or a divisor below 1";
-const DIVISION = "takes a division with a negative number or a divisor below 1";
+const BY_ZERO = "takes a division or a remainder by zero";
 const WRONG_KIND = "uses a value of the wrong kind";
 
 /** What `attempt` gives: the result, or the sentence part saying why there is none. */
@@ -135,11 +159,8 @@ export const attempt = <T>(run: () => T): Attempt<T> => {
   try {
     return { fault: null, value: run() };
   } catch (thrown) {
-    if (thrown instanceof RemainderFault) {
-      return { fault: REMAINDER, value: null };
-    }
-    if (thrown instanceof DivisionFault) {
-      return { fault: DIVISION, value: null };
+    if (thrown instanceof RemainderFault || thrown instanceof DivisionFault) {
+      return { fault: BY_ZERO, value: null };
     }
     if (thrown instanceof NullFault) {
       return { fault: NULL_READ, value: null };
@@ -154,7 +175,7 @@ export const attempt = <T>(run: () => T): Attempt<T> => {
 const numberFault = (json: Json): string | null => {
   if (typeof json === "number") {
     if (Number.isNaN(json)) {
-      return REMAINDER;
+      return BY_ZERO;
     }
     return Math.abs(json) > Number.MAX_SAFE_INTEGER ? OVERFLOW : null;
   }
@@ -202,6 +223,22 @@ interface Expanded {
 
 type FieldList = readonly (readonly [string, Declaration<unknown, never>])[];
 
+type Played =
+  | { readonly broken: false }
+  | { readonly broken: true; readonly path: Path; readonly reason: string };
+
+interface Seen {
+  readonly from: Visited;
+  readonly taken: Taken;
+  readonly next: string;
+}
+
+interface Kept extends Edge {
+  readonly taken: Taken;
+}
+
+const STAYS = "nothing changes the state from here, so the run can stay in it forever";
+
 class Search implements Visitor<Row, Taken> {
   readonly #fields: FieldList;
   readonly #parts: Runners;
@@ -213,17 +250,36 @@ class Search implements Visitor<Row, Taken> {
   #outside: { readonly at: Visited; readonly field: string } | null = null;
   #trouble: { readonly at: Visited; readonly message: string } | null = null;
   #isCutShort = false;
+  readonly #starts: readonly Row[];
+  readonly #maxStates: number;
+  readonly #seenMoves: Seen[] = [];
+  readonly #keepsMoves: boolean;
 
-  constructor(fields: FieldList, parts: Runners, options: ExploreOptions) {
+  constructor(fields: FieldList, parts: Runners, options: ExploreOptions, starts: readonly Row[]) {
     this.#fields = fields;
-    this.#parts = parts;
+    this.#parts = {
+      ...parts,
+      witnesses: (parts.witnesses ?? []).filter((witness) => witness.setup === options.setup),
+    };
     this.#inputs = new Map(parts.actions.map((action) => [action, inputsOf(action)]));
     this.#name = namer(options.exports);
+    this.#starts = starts;
+    this.#maxStates = stateLimit(options.maxStates);
+    this.#keepsMoves = (parts.eventually ?? []).length > 0;
+  }
+
+  key(row: Row): string {
+    return this.#fields.map(([name]) => keyOf(row[name])).join(";");
   }
 
   expand(at: Visited): readonly SearchMove<Row, Taken>[] {
     const expanded = this.#expand(at.state);
     this.#record(at, expanded);
+    if (this.#keepsMoves) {
+      for (const { move, next } of expanded.successors) {
+        this.#seenMoves.push({ from: at, taken: move, next: this.key(next) });
+      }
+    }
     return expanded.successors;
   }
 
@@ -362,6 +418,169 @@ class Search implements Visitor<Row, Taken> {
     };
   }
 
+  #kept(visits: readonly Visited[]): Kept[] {
+    const byKey = new Map(visits.map((visit, index) => [this.key(visit.state), index]));
+    const byVisit = new Map(visits.map((visit, index) => [visit, index]));
+    const positions = new Map(this.#parts.actions.map((action, position) => [action, position]));
+    const kept = new Map<string, Kept>();
+    for (const { from: visit, taken, next } of this.#seenMoves) {
+      const from = byVisit.get(visit);
+      const to = byKey.get(next);
+      const action = positions.get(taken.action);
+      if (from === undefined || to === undefined || action === undefined || from === to) {
+        continue;
+      }
+      const edge = `${from},${to},${action}`;
+      if (!kept.has(edge)) {
+        kept.set(edge, { from, to, action, taken });
+      }
+    }
+    return [...kept.values()].sort(
+      (one, other) => one.from - other.from || one.to - other.to || one.action - other.action,
+    );
+  }
+
+  #lassoPath(lasso: Lasso, visits: readonly Visited[], edges: readonly Kept[]): Path {
+    const rowOf = (state: number | undefined): Row =>
+      state === undefined ? {} : (visits[state]?.state ?? {});
+    const steps: Step[] = [];
+    for (const [position, to] of lasso.states.entries()) {
+      const from = lasso.states[position - 1];
+      const only = lasso.actions[position] ?? null;
+      const edge = edges.find(
+        (kept) => kept.from === from && kept.to === to && (only === null || kept.action === only),
+      );
+      if (from !== undefined && edge !== undefined) {
+        steps.push(this.#step(edge.taken, rowOf(from), rowOf(to)));
+      }
+    }
+    return { start: this.#named(rowOf(lasso.states[0])), steps };
+  }
+
+  #eventually({ visits, reason }: Reach<Row, Taken>): RuleResult[] {
+    const rules = this.#parts.eventually ?? [];
+    const unknown = (rule: EventuallyRunner): RuleResult => ({
+      id: this.#name(rule.part, rule.says),
+      says: rule.says,
+      verdict: "unknown",
+      path: null,
+      kind: "eventually",
+    });
+    if (rules.length === 0 || reason !== null || this.#isCutShort) {
+      return rules.map(unknown);
+    }
+    const edges = this.#kept(visits);
+    const byVisit = new Map(visits.map((visit, index) => [visit, index]));
+    const parents = visits.map((visit) =>
+      visit.parent === null ? null : (byVisit.get(visit.parent.from) ?? null),
+    );
+    const depth: number[] = [];
+    for (const parent of parents) {
+      depth.push(parent === null ? 0 : (depth[parent] ?? 0) + 1);
+    }
+    const fair = this.#parts.actions.flatMap((action, position) =>
+      action.fair === true ? [position] : [],
+    );
+    const hunt = hunter({ states: visits.length, edges, fair, parents, depth });
+    return rules.map((rule): RuleResult => {
+      const startsHere: boolean[] = [];
+      const reached: boolean[] = [];
+      for (const visit of visits) {
+        const { after } = rule;
+        const starts = after === null ? null : attempt(() => after(visit.state));
+        const reaches = attempt(() => rule.reaches(visit.state));
+        const fault = starts?.fault ?? reaches.fault;
+        if (fault !== null) {
+          const id = this.#name(rule.part, rule.says);
+          this.#trouble ??= { at: visit, message: `the rule \`${id}\` ${fault} in this state` };
+          return unknown(rule);
+        }
+        startsHere.push(starts === null ? visit.parent === null : starts.value === true);
+        reached.push(reaches.value === true);
+      }
+      const lasso = hunt(startsHere, reached);
+      if (lasso === null) {
+        return { ...unknown(rule), verdict: "holds" };
+      }
+      if (lasso === "lost") {
+        return unknown(rule);
+      }
+      const broken: RuleResult = {
+        ...unknown(rule),
+        verdict: "broken",
+        path: this.#lassoPath(lasso, visits, edges),
+      };
+      return lasso.repeatsFrom === null
+        ? { ...broken, reason: STAYS }
+        : {
+            ...broken,
+            reason: `steps ${lasso.repeatsFrom + 1} to ${lasso.states.length - 1} can repeat forever`,
+            repeatsFrom: lasso.repeatsFrom,
+          };
+    });
+  }
+
+  #play(witness: WitnessRunner, start: Row): Played {
+    let state = start;
+    const steps: Step[] = [];
+    const broken = (reason: string): Played => ({
+      broken: true,
+      path: { start: this.#named(start), steps },
+      reason,
+    });
+    for (const [position, { action, input }] of witness.steps.entries()) {
+      const number = position + 1;
+      const id = this.#name(action.part, action.sentence);
+      const before = state;
+      const can = attempt(() => action.when(before, input));
+      if (can.fault !== null) {
+        return broken(`step ${number}: the condition of the action \`${id}\` ${can.fault} here`);
+      }
+      if (!can.value) {
+        return broken(`step ${number}, \`${id}\`, can't happen here`);
+      }
+      const next = nextState(action, before, input);
+      if (next.fault !== null) {
+        return broken(`step ${number}: the change of the action \`${id}\` ${next.fault} here`);
+      }
+      const after = next.value;
+      steps.push(this.#step({ action, input }, before, after));
+      state = after;
+      const outside = this.#fields.find(([name, declared]) => !declared.has(after[name]));
+      if (outside !== undefined) {
+        return broken(
+          `step ${number}, \`${id}\`, takes the field \`${outside[0]}\` out of the values it declares`,
+        );
+      }
+    }
+    const last = state;
+    const expected = attempt(() => witness.expect(last));
+    if (expected.fault !== null) {
+      return broken(`what the witness expects ${expected.fault} here`);
+    }
+    return expected.value ? { broken: false } : broken("what the witness expects is false here");
+  }
+
+  #witness(witness: WitnessRunner): RuleResult {
+    const result = { id: this.#name(witness.part, witness.says), says: witness.says };
+    for (const [position, start] of this.#starts.entries()) {
+      if (position >= this.#maxStates) {
+        return { ...result, verdict: "unknown", path: null, kind: "witness" };
+      }
+      const played = this.#play(witness, start);
+      if (played.broken) {
+        return {
+          ...result,
+          verdict: "broken",
+          path: played.path,
+          kind: "witness",
+          reason: played.reason,
+        };
+      }
+    }
+    return { ...result, verdict: "holds", path: null, kind: "witness" };
+  }
+
   #findings(): Finding[] {
     const findings: Finding[] = [];
     if (this.#stuck !== null) {
@@ -388,8 +607,9 @@ class Search implements Visitor<Row, Taken> {
     return findings;
   }
 
-  outcome({ visits, reason }: Reach<Row, Taken>): Exploration {
-    const rules = this.#parts.rules.map((rule): RuleResult => {
+  outcome(reach: Reach<Row, Taken>): Exploration {
+    const { visits, reason } = reach;
+    const always = this.#parts.rules.map((rule): RuleResult => {
       const first = this.#firstBroken.get(rule);
       const isJudged = reason === null && !this.#isCutShort && !this.#unjudged.has(rule);
       const unbroken = isJudged ? "holds" : "unknown";
@@ -400,6 +620,9 @@ class Search implements Visitor<Row, Taken> {
         path: first === undefined ? null : this.#pathTo(first),
       };
     });
+    const eventually = this.#eventually(reach);
+    const witnesses = (this.#parts.witnesses ?? []).map((witness) => this.#witness(witness));
+    const rules = [...always, ...eventually, ...witnesses];
     const findings = this.#findings();
     const hasFailed = findings.length > 0 || rules.some((rule) => rule.verdict === "broken");
     const unfailed = reason === null ? "pass" : "unfinished";
@@ -414,6 +637,33 @@ class Search implements Visitor<Row, Taken> {
 }
 
 /**
+ * Gives the start states of `model`, or of `setup`, a setup declared on it with `m.setup`: each
+ * start state of the model with the setup's fields put in, once each, in the model's order.
+ * `asker` names the function in the error thrown for a setup of another model.
+ */
+export const startsOf = (model: AnyModel, setup: object | undefined, asker: string): Row[] => {
+  if (setup === undefined) {
+    return [...model.starts()];
+  }
+  const fields = Object.keys(model.fields);
+  const key = (row: Row): string => fields.map((name) => keyOf(row[name])).join(";");
+  const chosen = (model.runners().setups ?? []).find((each) => each.part === setup);
+  if (chosen === undefined) {
+    throw new Error(`${model.name}: the setup given to ${asker} is not one declared on this model`);
+  }
+  const seen = new Set<string>();
+  return model
+    .starts()
+    .map((start): Row => frozen({ ...start, ...chosen.starts }))
+    .filter((start) => {
+      const found = key(start);
+      const isNew = !seen.has(found);
+      seen.add(found);
+      return isNew;
+    });
+};
+
+/**
  * Searches every state a model can reach, breadth first, and gives the count of distinct
  * states, each rule's verdict with the shortest path to a state that breaks it, and the first
  * stuck, out-of-range and fault findings. An end is asked only in a state where no action can
@@ -424,7 +674,11 @@ class Search implements Visitor<Row, Taken> {
 export const explore = (model: AnyModel, options: ExploreOptions = {}): Exploration => {
   const maxStates = stateLimit(options.maxStates);
   const fields = Object.entries(model.fields);
-  const found = new Search(fields, model.runners(), options);
+  const parts = model.runners();
   const key = (row: Row): string => fields.map(([name]) => keyOf(row[name])).join(";");
-  return found.outcome(breadthFirst(model.starts(), key, maxStates, found));
+  const search = (starts: readonly Row[]): Exploration => {
+    const found = new Search(fields, parts, options, starts);
+    return found.outcome(breadthFirst(starts, key, maxStates, found));
+  };
+  return search(startsOf(model, options.setup, "explore"));
 };

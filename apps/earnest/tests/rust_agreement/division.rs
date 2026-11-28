@@ -107,9 +107,7 @@ fn node_and_the_checker_report_a_division_fault_with_the_same_sentence_and_path(
         .as_str()
         .expect("a fault has a message");
     assert!(
-        message.ends_with(
-            "takes a division with a negative number or a divisor below 1 in this state"
-        ),
+        message.ends_with("takes a division or a remainder by zero in this state"),
         "{message}"
     );
 }

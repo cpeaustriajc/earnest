@@ -62,6 +62,7 @@ fn cart() -> Graph {
             edge(2, 4, &["the add lands"]),
             edge(3, 5, &["the add lands"]),
         ],
+        premises: Vec::new(),
     }
 }
 
