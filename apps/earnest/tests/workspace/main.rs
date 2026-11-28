@@ -139,7 +139,9 @@ const LEFT_OUT_IN_EACH_PACKAGE: [&str; 2] = ["dist", ".package.next.json"];
 const CHARACTERS_WINDOWS_REFUSES: [char; 8] = ['<', '>', ':', '"', '|', '?', '*', '\\'];
 const DEVICES_WINDOWS_RESERVES: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
 const NUMBERED_DEVICES_WINDOWS_RESERVES: [&str; 2] = ["COM", "LPT"];
-const DEVICE_NUMBERS: [char; 12] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '¹', '²', '³'];
+const DEVICE_NUMBERS: [char; 13] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '¹', '²', '³',
+];
 
 fn build_output(relative: &str) -> bool {
     let parts: Vec<&str> = relative.split('/').collect();
@@ -378,6 +380,8 @@ fn the_windows_check_refuses_each_kind_of_name_windows_refuses() {
         "com1",
         "LPT9.json",
         "COM\u{b9}",
+        "COM0",
+        "lpt0.txt",
     ] {
         assert!(
             why_windows_refuses(refused).is_some(),
@@ -388,7 +392,7 @@ fn the_windows_check_refuses_each_kind_of_name_windows_refuses() {
         "Named@S.ok@.json",
         "console.rs",
         "COM10",
-        "LPT0",
+        "LPT10",
         "com",
         "nul_fixture.json",
         ".gitignore",
