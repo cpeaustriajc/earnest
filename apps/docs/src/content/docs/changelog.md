@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: a Quint check with an unreadable property judges the rest
+
+One property, temporal property or run earnest can't read made the whole check `unreadable`, so its other properties and runs were never judged. Each piece earnest can read is now judged, and the check still never passes: it is `unreadable`, or `fail` when a piece that was read is broken, with a `note  not judged: <names>` line and each problem under its result line, and exits `1`. When `init` or the step can't be read, nothing is searched, and the runs that reach nothing refused are still played. The JSON adds `notJudged` to the check. See [A check read in part](/reference/quint/#a-check-read-in-part).
+
 ## November 2026: a Quint check names its `init` and `step` in its mark
 
 A check that started from another action or stepped with another one needed a module of its own that declared `action init = …` and `action step = …` by those names. A module's mark now names them, as Quint's `--init` and `--step` flags do:

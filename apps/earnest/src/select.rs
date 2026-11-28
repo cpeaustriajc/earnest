@@ -8,6 +8,7 @@ pub(crate) struct Target<'a> {
 
 fn has_the_rule(readable: &Readable, id: &str) -> bool {
     readable.model.rule_ids().any(|rule| rule == id)
+        || readable.not_judged.iter().any(|rule| rule == id)
 }
 
 fn has_rule(target: &Target<'_>, id: &str) -> bool {
