@@ -426,11 +426,23 @@ module Top {
 
 Earnest builds `Top` from the file typechecked as Quint. `K` is `M`, read where `Base(K = M)` is written, and `M` is 3, so `K` is 3. What a spec's own instance holds is seen from the check only through `export B.*`, as Quint sees it, and its runs whose name ends in `Test` are played only then, as `quint test --main Top` plays them: `upTest`, `midTest` and `topTest`. A check module that only imports modules that hold instances, as `module All { import Small.* }`, is built the same way, and so are its properties. Through `import … as`, `.*` and `export`, the constants keep their values at every depth.
 
-Earnest differs from Quint 0.33.1 on purpose here, because Quint loses a constant that the instances do set, and a verdict built on a lost constant is not the model's:
+Earnest differs from Quint 0.33.1 on purpose here, because Quint loses a constant that the instances do set, and a verdict built on a lost constant is not the model's. Quint's flattener hands on a spec's uninstantiated definitions through `export P.*` of a named instance, open upstream as [quint-co/quint#1148](https://github.com/quint-co/quint/issues/1148) ("Flattening does not support all export use cases"). Earnest judges every run and property that reaches an instance through `export` with that instance's constants, as the same model written flat (`import Spec(N = 3).*` in the check) is judged by `quint test` and `quint verify`:
 
 - `quint compile`, and so `quint verify`, stops with `Internal error while flattening [QNT404] Name 'Top::Mid::K' not found`. Earnest searches the model, with the verdicts and state counts that `quint verify --backend tlc` gives for the same model written flat, `module Flat { import Base(K = 3).* }`.
 - `quint compile` of a check that imports a module holding an instance, `import Small.*` where `Small` has `import Base(K = 3) as S` and `export S.*`, keeps `const K` with no value, and TLC stops on it. Earnest gives `K` the value 3.
 - `quint test` faults on such a run with `[QNT500]: Uninitialized const K`: `Top::Mid::upTest` above, and every run of a check three instances deep, its own runs included. Earnest plays the run with the value the instances give and reports the verdict that value gives: `upTest` holds. Every other run gets `quint test`'s verdict.
+
+These are the shapes compared, with Quint 0.33.1's answer (`quint test --backend typescript`, `quint verify --backend tlc`) and earnest's. The flat copy gives earnest's answer in every row:
+
+| Shape | Quint 0.33.1 | Earnest |
+|---|---|---|
+| `Top { import Mid(M = 3).* }`, `Mid { import Base(K = M) as B  export B.* }` | `midTest`, `topTest` pass; `Top::Mid::upTest` `QNT500`; compile stops | 3 runs hold |
+| The same with `import Mid(M = 3) as T` | `Top::T::midTest`, `topTest` pass; `upTest` `QNT500` | runs hold, as written |
+| Three deep, `X = 3`, `M = X + 2`, `K = M` | every run `QNT500`; compile stops | 5 states; `small`, `wide` hold, `tiny` broken; 4 runs hold |
+| `Mid` without `export`, own `init = B::init` | `Top::Mid::midTest`, `topTest` pass; `upTest` not played | the same two runs hold; `upTest` not played |
+| `All { import Small.* }`, `Small { import Base(K = 3) as S  export S.* }` | every run `QNT500`; compile keeps `const K` unset, TLC stops | 3 states; `ok`, `small` hold, `low` broken; 3 runs hold |
+| `Inside { import Hidden as H }`, `Hidden { import Base(K = 4).* }` | `H::hiddenTest` passes; 4 states | the same |
+| A spec with `import Lib.twice`, or with `import Counter.*` of a module with variables | compiled as earnest builds it | the same declarations, in Quint's order |
 
 A spec that instantiates one module twice, as `import Base(K = 2) as P` with `import Base(K = 3) as R` inside `Mid`, is not built, because its two instances share their definitions. Its check falls back to the compile, which loses the constants, and is `unreadable`: ``a constant without a value``. Two instances of `Mid` in the check itself, `import Mid(M = 2) as P` with `import Mid(M = 3) as R`, are built, each with its own copy of `Base`.
 
