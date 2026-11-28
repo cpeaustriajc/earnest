@@ -248,12 +248,7 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
         .collect();
     assert_eq!(
         named,
-        [
-            ("`y`", true),
-            ("`reps`", true),
-            ("`fail`", true),
-            ("`assert`", true)
-        ],
+        [("`y`", true), ("`fail`", true), ("`assert`", true)],
         "every run that is refused, each at the top of the file: {problems:?}"
     );
     let says = |feature: &str, why: &str| {
@@ -265,7 +260,6 @@ fn a_run_the_reader_can_not_play_as_quint_does_is_refused_by_name() {
         says("`y`", "starts with `step`, which reads this variable"),
         "{problems:?}"
     );
-    assert!(says("`reps`", "repeats 0 times"), "{problems:?}");
     assert!(
         says("`fail`", "not the run's last operator"),
         "{problems:?}"

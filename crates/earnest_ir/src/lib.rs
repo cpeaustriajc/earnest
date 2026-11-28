@@ -527,6 +527,9 @@ pub enum Falls {
         /// The runs the run calls with a `nondet` of their own, where something comes after
         /// them, so that a called run that is false is an error.
         calls: Vec<Call>,
+        /// For each value of [`Plan::chosen`], whether it numbers a part of an `or`, from 1:
+        /// Quint plays a part only where every part before it is false.
+        ordered: Vec<bool>,
     },
 }
 
@@ -543,6 +546,8 @@ pub struct Call {
     pub last: Option<usize>,
     /// Whether the called run being false makes the whole run false, rather than an error.
     pub ends_the_run: bool,
+    /// Why the called run is false where `last` is [`Plan::steps`]' length, for a message.
+    pub reason: String,
 }
 
 /// A generalised witness: steps that each choose among alternatives, with conditions after

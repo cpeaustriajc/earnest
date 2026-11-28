@@ -21,9 +21,28 @@ const MOST_PLANS: usize = 1000;
 const MOST_ALIASES: usize = 100;
 const UNMAPPED: [&str; 3] = ["q::test", "q::testOnce", "q::debug"];
 const CHAINS: [&str; 4] = ["then", "reps", "expect", "fail"];
+const AFTER_A_FALSE_TRY: (&str, &str) = (
+    "a chain tried again",
+    "a chain of steps that Quint tries again after a false try, whose first step reads the \
+     state: a run called after a step with a `nondet` of its own over fewer than 100 values, a \
+     branch of an `any` or a part of an `and` after the first; Quint plays it again from the \
+     state the false try left, after that try's steps; start it with an action that reads no \
+     variable, such as `init`, or pick inside its steps",
+);
+const AFTER_NO_REPS: &str = "a `reps` of 0 rounds or fewer makes no step, so Quint leaves every \
+     variable unset after it, and what comes next reads one: `quint test` stops the run here \
+     (QNT502, \"not set\")";
+const CHAIN_IN_A_STEP: &str = "a chain of steps where one step is wanted";
+const JOINS: [&str; 3] = ["actionAny", "and", "or"];
 
 type Helper<'a> = (&'a Def, &'a [Param], &'a Quint, &'a [Quint]);
 type FirstStates = (Option<Vec<Vec<Value>>>, Vec<(String, Value)>);
+
+struct Alternative<'a> {
+    body: &'a Quint,
+    held: Option<u64>,
+    value: Value,
+}
 
 #[derive(Clone)]
 struct Step {
@@ -83,10 +102,39 @@ struct Run<'r, 'a> {
     picks: Vec<Pick>,
     nondets: bool,
     retried: Vec<bool>,
+    ordered: Vec<bool>,
     scope: Option<usize>,
     fresh: bool,
+    unset: bool,
     failing: bool,
     called: Option<&'a str>,
+}
+
+fn chain_in<'q>(
+    expr: &'q Quint,
+    holder: Option<&'q Quint>,
+) -> Option<(&'q Quint, Option<&'q Quint>)> {
+    match expr {
+        Quint::App { opcode, .. } if CHAINS.contains(&opcode.as_str()) => Some((expr, holder)),
+        Quint::App { args, .. } => args.iter().find_map(|each| chain_in(each, Some(expr))),
+        Quint::Let { opdef, expr: body } => {
+            chain_in(&opdef.expr, Some(expr)).or_else(|| chain_in(body, Some(expr)))
+        }
+        Quint::Lambda { expr: body, .. } => chain_in(body, holder),
+        Quint::Name { .. } | Quint::Int { .. } | Quint::Bool { .. } | Quint::Str { .. } => None,
+    }
+}
+
+fn unset_read(drawn: &mut [Drawn]) {
+    for each in live(drawn) {
+        each.calls.push(Call {
+            says: "the `reps` of 0 rounds".to_owned(),
+            last: Some(each.steps.len()),
+            ends_the_run: false,
+            reason: AFTER_NO_REPS.to_owned(),
+        });
+        each.dead = Some(Some(each.calls.len().saturating_sub(1)));
+    }
 }
 
 fn live(drawn: &mut [Drawn]) -> impl Iterator<Item = &mut Drawn> {
@@ -152,6 +200,9 @@ impl<'a> Run<'_, 'a> {
             Quint::App { opcode, args, .. } if opcode == "ite" => {
                 args.iter().skip(1).any(|each| self.chains(each, depth))
             }
+            Quint::App { opcode, args, .. } if JOINS.contains(&opcode.as_str()) => {
+                args.iter().any(|each| self.chains(each, depth))
+            }
             Quint::Let { expr, .. } => self.chains(expr, depth),
             _ => depth < MOST_ALIASES && self.helper(expr, depth.saturating_add(1)).is_some(),
         }
@@ -215,6 +266,7 @@ impl<'a> Run<'_, 'a> {
                 retried: self.retried.clone(),
                 within: vec![None; self.retried.len()],
                 calls: Vec::new(),
+                ordered: self.ordered.clone(),
             }
         } else {
             Falls::Breaks
@@ -259,7 +311,9 @@ impl<'a> Run<'_, 'a> {
                     let was = self.reader.hold(opdef.id, Expr::Const(value.clone()));
                     chosen.push((opdef.name.clone(), value));
                     self.retried.push(retried);
+                    self.ordered.push(false);
                     let played = self.plans(expr, chosen);
+                    self.ordered.pop();
                     self.retried.pop();
                     chosen.pop();
                     self.reader.release(opdef.id, was);
@@ -283,6 +337,28 @@ impl<'a> Run<'_, 'a> {
             Quint::App { opcode, args, .. } if opcode == "ite" && !self.reader.is_action(expr) => {
                 let branch = self.branch(expr, args)?;
                 self.plans(branch, chosen)
+            }
+            Quint::App { opcode, args, .. }
+                if opcode == "or" && args.iter().any(|each| self.chains(each, 0)) =>
+            {
+                self.nondets = true;
+                for (part, number) in args.iter().zip(1_i64..) {
+                    chosen.push(("or".to_owned(), Value::Int(number)));
+                    self.retried.push(false);
+                    self.ordered.push(true);
+                    let played = self.plans(part, chosen);
+                    self.ordered.pop();
+                    self.retried.pop();
+                    chosen.pop();
+                    played?;
+                }
+                Ok(())
+            }
+            Quint::App { opcode, args, .. }
+                if JOINS.contains(&opcode.as_str())
+                    && args.iter().any(|each| self.chains(each, 0)) =>
+            {
+                self.plan(expr, chosen)
             }
             Quint::App { opcode, .. }
                 if matches!(opcode.as_str(), "then" | "reps" | "expect" | "fail") =>
@@ -324,25 +400,29 @@ impl<'a> Run<'_, 'a> {
             let mut calls = drawn.calls;
             if dead_run {
                 calls.push(Call {
-                    says: drawn.dead_says,
+                    says: format!("the run `{}`", self.name),
                     last: Some(drawn.steps.len()),
                     ends_the_run: true,
+                    reason: drawn.dead_says,
                 });
             }
             let falls = if self.nondets || !drawn.chosen.is_empty() || !calls.is_empty() {
                 let mut within = vec![None; self.retried.len()];
+                let mut ordered = self.ordered.clone();
+                ordered.resize(self.retried.len().saturating_add(drawn.within.len()), false);
                 within.extend(drawn.within);
                 Falls::Retried {
                     last_step: drawn.ends_false,
                     retried: self.retried.iter().copied().chain(drawn.retried).collect(),
                     within,
                     calls,
+                    ordered,
                 }
             } else {
                 Falls::Breaks
             };
             let starts = match drawn.first {
-                First::NotRead if dead_run => Some(vec![Vec::new()]),
+                First::NotRead => Some(vec![Vec::new()]),
                 _ => drawn.starts,
             };
             self.push(Plan {
@@ -392,12 +472,27 @@ impl<'a> Run<'_, 'a> {
                 self.reader.release(opdef.id, was);
                 return walked;
             }
-            Quint::App { opcode, args, .. }
-                if opcode == "ite" && !self.reader.is_action(expr) =>
-            {
+            Quint::App { opcode, args, .. } if opcode == "ite" && !self.reader.is_action(expr) => {
                 let branch = self.branch(expr, args)?;
                 self.called = called;
                 return self.walk(branch, place, drawn);
+            }
+            Quint::App { opcode, args, .. }
+                if JOINS.contains(&opcode.as_str())
+                    && args.iter().any(|each| self.chains(each, 0)) =>
+            {
+                return match opcode.as_str() {
+                    "actionAny" => self.any_of_chains(expr, args, place, drawn),
+                    "and" => self.and_of_chains(expr, args, place, drawn),
+                    _ => self.refuse_at(
+                        expr,
+                        "`or`",
+                        "an `or` between chains of steps after the run's first step, or in a run \
+                         the run calls: Quint plays the next part only where the one before is \
+                         false, from the state that part left; earnest plays an `or` of chains \
+                         only at the top of a run, under its `nondet`s and `if`s",
+                    ),
+                };
             }
             _ => {}
         }
@@ -413,6 +508,11 @@ impl<'a> Run<'_, 'a> {
             ("expect", [first, condition]) => {
                 self.walk(first, Place::Inside, drawn)?;
                 let holds = self.reader.pure(condition)?;
+                if self.unset && constant(&holds, self.reader.slots)?.is_none() {
+                    self.unset = false;
+                    unset_read(drawn);
+                    return Ok(());
+                }
                 for each in live(drawn) {
                     if let Some(step) = each.steps.last_mut() {
                         step.expect = Some(both(step.expect.take(), holds.clone()));
@@ -462,7 +562,11 @@ impl<'a> Run<'_, 'a> {
 
     fn branch(&mut self, expr: &'a Quint, args: &'a [Quint]) -> Read<&'a Quint> {
         let [condition, then, otherwise] = args else {
-            return self.refuse_at(expr, "`if`", "an `if` without one condition and two branches");
+            return self.refuse_at(
+                expr,
+                "`if`",
+                "an `if` without one condition and two branches",
+            );
         };
         let tested = self.reader.pure(condition)?;
         match constant_of_a_run(&tested, self.reader.slots)? {
@@ -488,7 +592,12 @@ impl<'a> Run<'_, 'a> {
     ) -> Read<()> {
         let feature = format!("`nondet {}`", opdef.name);
         let says = called.map_or_else(
-            || format!("the `nondet {}` written around a chain of steps", opdef.name),
+            || {
+                format!(
+                    "the `nondet {}` written around a chain of steps",
+                    opdef.name
+                )
+            },
             |name| format!("the run `{name}`"),
         );
         if self.failing {
@@ -515,9 +624,116 @@ impl<'a> Run<'_, 'a> {
             );
         };
         let retried = values.len() < RETRIED_BELOW;
-        let fresh = retried && values.len() > 1;
+        let bodies: Vec<Alternative<'a>> = values
+            .into_iter()
+            .map(|value| Alternative {
+                body,
+                held: Some(opdef.id),
+                value,
+            })
+            .collect();
+        self.alternatives((&opdef.name, &says), (bodies, retried), place, drawn)
+    }
+
+    fn any_of_chains(
+        &mut self,
+        expr: &'a Quint,
+        args: &'a [Quint],
+        place: Place,
+        drawn: &mut Vec<Drawn>,
+    ) -> Read<()> {
+        if self.failing {
+            return self.refuse_at(
+                expr,
+                "`any`",
+                "a `fail()` over an `any` between chains of steps: Quint tries its branches until \
+                 one is true, so that `fail()` holds only where every branch is false; write \
+                 `fail()` inside each branch instead",
+            );
+        }
+        let bodies = args
+            .iter()
+            .zip(1_i64..)
+            .map(|(body, number)| Alternative {
+                body,
+                held: None,
+                value: Value::Int(number),
+            })
+            .collect();
+        let says = "the `any` between chains of steps".to_owned();
+        self.alternatives(("any", &says), (bodies, true), place, drawn)
+    }
+
+    fn and_of_chains(
+        &mut self,
+        expr: &'a Quint,
+        args: &'a [Quint],
+        place: Place,
+        drawn: &mut Vec<Drawn>,
+    ) -> Read<()> {
+        let ends_the_run = place == Place::Last;
+        if self.failing || (ends_the_run && self.scope.is_some()) {
+            return self.refuse_at(
+                expr,
+                "`and`",
+                "an `and` between chains of steps under a `fail()`, or as the last part of a run \
+                 the run calls with a `nondet` of its own: earnest plays an `and` of chains at \
+                 the top of a run and before more steps",
+            );
+        }
+        let Some((last, parts)) = args.split_last() else {
+            return Ok(());
+        };
+        for part in parts {
+            let (live, dead): (Vec<Drawn>, Vec<Drawn>) = std::mem::take(drawn)
+                .into_iter()
+                .partition(|each| each.dead.is_none());
+            *drawn = live;
+            let starting = drawn
+                .first()
+                .is_some_and(|each| each.first == First::NotRead);
+            if starting && self.nondets && !self.chains(part, 0) {
+                return self.refuse_at(
+                    part,
+                    "`and`",
+                    "an `and` whose first part is one action, under a `nondet` at the top of the \
+                     run: where that action is false the run is false, which earnest does not \
+                     tell apart from a first action that gives no state; write the action as the \
+                     first step of a chain, as in `init.then(...)`",
+                );
+            }
+            let mut call = None;
+            for each in drawn.iter_mut() {
+                each.calls.push(Call {
+                    says: "the first part of the `and`".to_owned(),
+                    last: None,
+                    ends_the_run,
+                    reason: String::new(),
+                });
+                call = Some(each.calls.len().saturating_sub(1));
+            }
+            let outer = std::mem::replace(&mut self.scope, call);
+            let walked = self.walk(part, Place::Last, drawn);
+            self.scope = outer;
+            walked?;
+            let mut out = dead;
+            self.closed(call, std::mem::take(drawn), &mut out);
+            *drawn = out;
+            self.fresh = true;
+        }
+        self.walk(last, place, drawn)
+    }
+
+    fn alternatives(
+        &mut self,
+        (name, says): (&str, &str),
+        (bodies, retried): (Vec<Alternative<'a>>, bool),
+        place: Place,
+        drawn: &mut Vec<Drawn>,
+    ) -> Read<()> {
+        let fresh = (retried && bodies.len() > 1) || std::mem::take(&mut self.fresh);
         let opens = place == Place::Inside;
-        let mut out = Vec::with_capacity(drawn.len().saturating_mul(values.len().max(1)));
+        let mut out = Vec::with_capacity(drawn.len().saturating_mul(bodies.len().max(1)));
         for mut each in std::mem::take(drawn) {
             if each.dead.is_some() {
                 out.push(each);
@@ -525,33 +741,36 @@ impl<'a> Run<'_, 'a> {
             }
             let scope = if opens {
                 each.calls.push(Call {
-                    says: says.clone(),
+                    says: says.to_owned(),
                     last: None,
                     ends_the_run: false,
+                    reason: String::new(),
                 });
                 Some(each.calls.len().saturating_sub(1))
             } else {
                 self.scope
             };
-            if values.is_empty() {
+            if bodies.is_empty() {
                 each.dead = Some(scope);
-                each.dead_says.clone_from(&says);
+                each.dead_says = format!("{says} picks from an empty set here");
                 self.closed(scope.filter(|_| opens), vec![each], &mut out);
                 continue;
             }
-            for value in &values {
+            for Alternative { body, held, value } in &bodies {
                 let mut one = each.clone();
-                one.chosen.push((opdef.name.clone(), value.clone()));
+                one.chosen.push((name.to_owned(), value.clone()));
                 one.retried.push(retried);
                 one.within.push(scope);
                 let mut walked = vec![one];
-                let was = self.reader.hold(opdef.id, Expr::Const(value.clone()));
+                let was = held.map(|id| (id, self.reader.hold(id, Expr::Const(value.clone()))));
                 let outer = std::mem::replace(&mut self.scope, scope);
                 self.fresh = fresh;
                 let played = self.walk(body, Place::Last, &mut walked);
                 self.fresh = false;
                 self.scope = outer;
-                self.reader.release(opdef.id, was);
+                if let Some((id, was)) = was {
+                    self.reader.release(id, was);
+                }
                 played?;
                 self.closed(scope.filter(|_| opens), walked, &mut out);
             }
@@ -572,6 +791,9 @@ impl<'a> Run<'_, 'a> {
                 };
                 if let Some(found) = each.calls.get_mut(call) {
                     found.last = last;
+                    if last == Some(each.steps.len()) {
+                        found.reason.clone_from(&each.dead_says);
+                    }
                 }
                 each.last_can_fail = false;
             }
@@ -579,12 +801,7 @@ impl<'a> Run<'_, 'a> {
         }
     }
 
-    fn reps(
-        &mut self,
-        count: &'a Quint,
-        repeated: &'a Quint,
-        drawn: &mut Vec<Drawn>,
-    ) -> Read<()> {
+    fn reps(&mut self, count: &'a Quint, repeated: &'a Quint, drawn: &mut Vec<Drawn>) -> Read<()> {
         let Quint::Lambda { params, expr: body } = repeated else {
             return self.refuse("`reps`", "a `reps` whose step is not written as `i => ...`");
         };
@@ -599,11 +816,11 @@ impl<'a> Run<'_, 'a> {
             );
         };
         if times < 1 {
-            return self.refuse(
-                "`reps`",
-                "a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: \
-                 repeat from 1 to 1000 times",
-            );
+            self.unset = true;
+            for each in live(drawn) {
+                each.last_can_fail = false;
+            }
+            return Ok(());
         }
         if usize::try_from(times).map_or(true, |times| times > MOST_STEPS) {
             return self.refuse(
@@ -727,18 +944,28 @@ impl<'a> Run<'_, 'a> {
 
     fn leaf(&mut self, expr: &'a Quint, place: Place, drawn: &mut Vec<Drawn>) -> Read<()> {
         let fresh = std::mem::take(&mut self.fresh);
+        let unset = std::mem::take(&mut self.unset);
         let ends_false = place == Place::Last && self.scope.is_none();
-        let Some(first) = drawn.iter().find(|each| each.dead.is_none()).map(|each| each.first)
+        let Some(first) = drawn
+            .iter()
+            .find(|each| each.dead.is_none())
+            .map(|each| each.first)
         else {
             return Ok(());
         };
         if first == First::NotRead {
             return self.first_leaf(expr, ends_false, drawn);
         }
-        if fresh {
-            self.reads_nothing(expr)?;
+        if unset && !self.reads_nothing(expr)? {
+            unset_read(drawn);
+            return Ok(());
         }
-        let step = self.step(expr)?;
+        if fresh && !self.reads_nothing(expr)? {
+            return self.refuse_at(expr, AFTER_A_FALSE_TRY.0, AFTER_A_FALSE_TRY.1);
+        }
+        let step = self
+            .step(expr)
+            .map_err(|refused| self.chain_inside(expr, refused))?;
         for each in live(drawn) {
             if each.steps.len() >= MOST_STEPS {
                 return self.refuse("a run", &format!("a run of more than {MOST_STEPS} steps"));
@@ -750,21 +977,49 @@ impl<'a> Run<'_, 'a> {
         Ok(())
     }
 
-    fn reads_nothing(&mut self, expr: &'a Quint) -> Read<()> {
+    fn chain_inside(&self, expr: &'a Quint, refused: Refusal) -> Refusal {
+        if !refused.why.starts_with(CHAIN_IN_A_STEP) {
+            return refused;
+        }
+        let Some((chain, holder)) = chain_in(expr, None) else {
+            return refused;
+        };
+        let held = match holder {
+            Some(Quint::App { opcode, .. }) => match opcode.as_str() {
+                "actionAll" => "an `all { ... }`".to_owned(),
+                "actionAny" => "an `any` inside a step".to_owned(),
+                "ite" => "an `if` inside a step".to_owned(),
+                "and" | "or" => format!("an `{opcode}` inside a step"),
+                "matchVariant" => "a `match`".to_owned(),
+                other => format!("the arguments of `{other}`"),
+            },
+            Some(Quint::Let { opdef, .. }) => format!("the step that picks `{}`", opdef.name),
+            _ => "a step".to_owned(),
+        };
+        let name = match chain {
+            Quint::App { opcode, .. } => opcode.as_str(),
+            _ => "then",
+        };
+        let replaced = self.refuse_at::<()>(
+            chain,
+            &format!("`{name}`"),
+            &format!(
+                "a chain of steps (`{name}`) inside {held}, where Quint wants one action: a run \
+                 joins chains with `then`, `reps`, `expect` and `fail`, and with `if`, `and`, \
+                 `or` and `any` written around whole chains"
+            ),
+        );
+        match replaced {
+            Err(found) => found,
+            Ok(()) => refused,
+        }
+    }
+
+    fn reads_nothing(&mut self, expr: &'a Quint) -> Read<bool> {
         self.reader.in_init = true;
         let paths = self.reader.paths(expr);
         self.reader.in_init = false;
-        match paths {
-            Err(refused) if refused.why.starts_with(READ_BEFORE_SET) => self.refuse_at(
-                expr,
-                "a called run",
-                "a run called after a step, with a `nondet` of its own over fewer than 100 \
-                 values, whose first step reads the state: Quint tries the `nondet` again from \
-                 the state its false try left, after that try's steps; start the called run with \
-                 an action that reads no variable, such as `init`, or pick inside its steps",
-            ),
-            _ => Ok(()),
-        }
+        Ok(!matches!(paths, Err(refused) if refused.why.starts_with(READ_BEFORE_SET)))
     }
 
     fn first_leaf(&mut self, expr: &'a Quint, ends_false: bool, drawn: &mut [Drawn]) -> Read<()> {
@@ -792,7 +1047,9 @@ impl<'a> Run<'_, 'a> {
             }
             return Ok(());
         }
-        let (starts, falls) = self.first_states(expr)?;
+        let (starts, falls) = self
+            .first_states(expr)
+            .map_err(|refused| self.chain_inside(expr, refused))?;
         for each in live(drawn) {
             each.first = if starts.is_some() {
                 First::Read
@@ -1017,8 +1274,10 @@ fn script<'a>(
         picks: Vec::new(),
         nondets: false,
         retried: Vec::new(),
+        ordered: Vec::new(),
         scope: None,
         fresh: false,
+        unset: false,
         failing: false,
         called: None,
     };

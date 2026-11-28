@@ -10,6 +10,7 @@ mod fourth_a;
 mod fourth_b;
 mod native_division;
 mod ninth;
+mod quint_called_runs;
 mod quint_division;
 mod quint_eighth;
 mod quint_fifth;

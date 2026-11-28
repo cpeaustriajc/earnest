@@ -163,11 +163,7 @@ fn pairs(all: &[(&str, &str)]) -> Vec<(String, Option<String>)> {
 fn each_piece_of_a_check_gives_its_first_problem_in_the_order_of_the_file() {
     assert_eq!(
         features(PROBLEMS),
-        pairs(&[
-            ("`chooseSome`", "chosen"),
-            ("`reps`", "repsTest"),
-            ("`fail`", "lateFailTest"),
-        ])
+        pairs(&[("`chooseSome`", "chosen"), ("`fail`", "lateFailTest"),])
     );
 }
 
