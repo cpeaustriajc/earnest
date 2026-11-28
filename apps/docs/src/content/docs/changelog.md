@@ -5,6 +5,43 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `earnest report` says `unfinished` for a Quint check with runs not played
+
+A Quint check with runs not played is `unfinished` in `earnest verify`, but `earnest report` gave it the status of its search, often **pass**, and exited `0`. The report now says **unfinished**, with `runs not played: <runs>` as `earnest verify` words it, and exits `1`. The JSON of a check with `@check broken` or `@check reachable` marks now carries `runsNotPlayed` as well. See [`earnest report`](/reference/output/#earnest-report).
+
+## November 2026: Quint instances of instances, and checks that only import
+
+Two shapes of `.qnt` check judged nothing, though `quint test` plays their runs:
+
+- **An instance of a module that has an instance itself**, with a constant passed down (`import Mid(M = 3).*`, where `Mid` has `import Base(K = M) as B` and `export B.*`), was `unreadable` with Quint's flattener error, `Name 'Top::Mid::K' not found`. Earnest now builds it at any depth and plays every run `quint test --main Top` plays.
+- **A check module that only imports modules holding instances** (`import Small.*`) was `unreadable`. It is now built, and its properties are searched.
+
+A spec may also import one name alone (`import Lib.twice`), a module with variables, and export a module it imports (`export Lib.*`); these were compiled, and their runs were not played.
+
+Quint 0.33.1 loses a constant set through the instances in these shapes ([quint-co/quint#1148](https://github.com/quint-co/quint/issues/1148)): `quint test` faults with `QNT500 Uninitialized const K`, and `quint compile` stops or leaves the constant unset. Earnest gives the constant the value the instances give, so `Top::Mid::upTest` holds where `K` is 3, and the search gives the verdicts and state counts TLC gives for the same model written flat. Every other run gets `quint test`'s verdict. See [Instances of instances](/reference/quint/#instances-of-instances).
+
+## November 2026: a Quint check with an unreadable property judges the rest
+
+One property, temporal property or run earnest can't read made the whole check `unreadable`, so its other properties and runs were never judged. Each piece earnest can read is now judged, and the check still never passes: it is `unreadable`, or `fail` when a piece that was read is broken, with a `note  not judged: <names>` line and each problem under its result line, and exits `1`. When `init` or the step can't be read, nothing is searched, and the runs that reach nothing refused are still played. The JSON adds `notJudged` to the check. See [A check read in part](/reference/quint/#a-check-read-in-part).
+
+## November 2026: a Quint check names its `init` and `step` in its mark
+
+A check that started from another action or stepped with another one needed a module of its own that declared `action init = …` and `action step = …` by those names. A module's mark now names them, as Quint's `--init` and `--step` flags do:
+
+```quint
+/// @check init = badInit, step = badStep, guarded
+module Bad {
+  import Door.*
+}
+```
+
+- **The whole check follows the choice:** the search, the runs, the cache, `--base`, `--json` and `earnest confirm --quint`, which passes `--init badInit --step badStep`. Either may be given alone; the other stays the module's own `init` or `step`. Under `import Door as D` the names are `D::badInit` and `D::badStep`.
+- **Mistakes are `unreadable` at the mark:** a name the module does not see, one that is not an `action` with no parameters, `init =` or `step =` given twice or with no name, an expression after the `=`, and `init =` or `step =` on a definition's mark. Each message says what to write.
+- **A left-over `earnest.quint.json`:** for an entry with another `init` or `step`, the message now writes them in the mark, `/// @check init = badInit, step = badStep, guarded`, instead of a module that declares `action init = …` and `action step = …`. An `init` or `step` the entry wrote as an expression is still an `action` line.
+- **What to write is said the new way:** a check that searches and sees no `step`, and a check of runs only that can't be compiled, now say to write `/// @check init = …, step = …`, where they spoke of naming them "in the check".
+
+Checks that name no `init` or `step` are unchanged. See [Another start or step](/reference/quint/#another-start-or-step).
+
 ## November 2026: write an XState machine out as a model file
 
 `modelFileOf` in `@earnestjs/xstate` writes a machine as a `.model.ts` file, so `earnest verify` and TLC confirm what `checkMachine` found. It runs the machine's own transitions on every declared context value and event payload and writes the results as tables, so a guard may call any code. Every context field needs a declaration. `checkMachine` now takes an optional field inside a record as in range when it is missing, as it does at the top level, and `modelFileOf` refuses a machine it can't write with the same result. The [XState page](/integrations/xstate/#example-write-the-machine-out-for-tlc) has the example and what it refuses.
@@ -262,7 +299,7 @@ See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 - **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`, and may bring in what its runs use through any import.
 - **Helpers that chain steps:** a definition such as `action TwoSteps = init.then(step).then(step)` is played in place where a run calls it, with its arguments.
 
-See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
+See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#another-start-or-step).
 
 ## November 2026: Quint `all` over conditions, actions as arguments, and every problem of a check
 

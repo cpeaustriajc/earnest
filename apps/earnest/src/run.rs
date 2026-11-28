@@ -253,6 +253,7 @@ pub(crate) enum Status {
     Pass,
     Fail,
     Unfinished,
+    Unreadable,
 }
 
 impl Status {
@@ -261,6 +262,7 @@ impl Status {
             Self::Pass => "pass",
             Self::Fail => "fail",
             Self::Unfinished => "unfinished",
+            Self::Unreadable => "unreadable",
         }
     }
 }
@@ -353,6 +355,8 @@ pub(crate) struct ModelResult {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub(crate) runs_not_played: Vec<String>,
+    #[serde(rename = "notJudged", default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) not_judged: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -417,6 +421,15 @@ fn name_the_mark_of_a_rule_that_is_not_a_boolean(outcome: &mut Outcome, expectin
     }
 }
 
+fn status_of(searched: Status, readable: &Readable) -> Status {
+    match searched {
+        Status::Fail => Status::Fail,
+        _ if readable.is_read_in_part() => Status::Unreadable,
+        Status::Pass if !readable.runs_not_played.is_empty() => Status::Unfinished,
+        other => other,
+    }
+}
+
 pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String> {
     let model = &readable.model;
     let searched: Searched = serde_json::to_value(&ran.outcome)
@@ -436,31 +449,15 @@ pub(crate) fn checked(readable: &Readable, ran: &Ran) -> Result<Checked, String>
             }),
             file: model.file.clone(),
             line: model.line,
-            status: if searched.status == Status::Pass && !readable.runs_not_played.is_empty() {
-                Status::Unfinished
-            } else {
-                searched.status
-            },
+            status: status_of(searched.status, readable),
             states: searched.states,
             milliseconds: milliseconds(ran.elapsed),
             cached: false,
-            reason: searched
-                .reason
-                .filter(|reason| {
-                    readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND
-                })
-                .or_else(|| {
-                    (!readable.runs_not_played.is_empty()).then(|| {
-                        let reason = not_played_reason(&readable.runs_not_played);
-                        match &readable.not_built {
-                            Some(cause) => format!("{reason}: {cause}"),
-                            None => reason,
-                        }
-                    })
-                }),
+            reason: reason_of(searched.reason, readable),
             rules: searched.rules,
             findings: searched.findings,
             runs_not_played: readable.runs_not_played.clone(),
+            not_judged: readable.not_judged.clone(),
         },
         detail: detail_of(
             &ran.outcome,
@@ -549,6 +546,20 @@ pub(crate) fn detail_of(
 
 pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
     !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
+}
+
+pub(crate) fn reason_of(searched: Option<String>, readable: &Readable) -> Option<String> {
+    searched
+        .filter(|reason| readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND)
+        .or_else(|| {
+            (!readable.runs_not_played.is_empty()).then(|| {
+                let reason = not_played_reason(&readable.runs_not_played);
+                match &readable.not_built {
+                    Some(cause) => format!("{reason}: {cause}"),
+                    None => reason,
+                }
+            })
+        })
 }
 
 pub(crate) fn not_played_reason(runs: &[String]) -> String {
