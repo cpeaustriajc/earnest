@@ -191,6 +191,7 @@ compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	--tempo
 compile	--target	json	--main	dead	--init	init	--step	step	--invariant	ok	tasks/quint/checks/dead/dead.qnt
 compile	--target	json	--main	divisionBlamed	--init	init	--step	step	tasks/break_it/models/quint_seventh/division_blamed/division_blamed.qnt
 compile	--target	json	--main	elseifs_100	--init	init	--step	step	--invariant	holds,broken	tasks/quint/deep/elseifs_100.qnt
+compile	--target	json	--main	emptyInnerSet	--init	init	--step	step	tasks/break_it/models/quint_eighth/empty_inner_set/empty_inner_set.qnt
 compile	--target	json	--main	endless	--init	init	--step	step	--invariant	small	tasks/break_it/models/quint_third/output/output.qnt
 compile	--target	json	--main	falseRuns	--init	init	--step	step	tasks/break_it/models/quint_sixth/false_runs/false_runs.qnt
 compile	--target	json	--main	fault	--init	init	--step	step	--invariant	P::annBelowFive	tasks/quint/imports/printing.qnt
