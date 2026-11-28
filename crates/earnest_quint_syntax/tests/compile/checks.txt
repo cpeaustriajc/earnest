@@ -176,7 +176,9 @@ compile	--target	json	--main	bigStepPick	--init	init	--step	step	tasks/break_it/
 compile	--target	json	--main	bigTopRange	--init	init	--step	step	tasks/break_it/models/quint_seventh/big_top_range/big_top_range.qnt
 compile	--target	json	--main	bignum	--init	init	--step	step	--invariant	sumIsPositive,squareIsWide,powersAreOrdered,quotientIsExact,belowTwoToThe63Plus2	tasks/break_it/models/quint_integers/bignum/bignum.qnt
 compile	--target	json	--main	board	--init	init	--step	step	--invariant	xNeverBehind,xHasTwo	tasks/quint/samples/board.qnt
+compile	--target	json	--main	calledNondetRun	--init	init	--step	step	tasks/break_it/models/quint_eighth/called_nondet_run/called_nondet_run.qnt
 compile	--target	json	--main	chains	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/chains.qnt
+compile	--target	json	--main	chainsCombined	--init	init	--step	step	tasks/break_it/models/quint_eighth/chains_combined/chains_combined.qnt
 compile	--target	json	--main	checked	--init	init	--step	step	--invariant	belowThree,belowThree == belowThree,half == half	tasks/quint/views/checked/checked.qnt
 compile	--target	json	--main	choose	--init	init	--step	step	--invariant	ok	tasks/quint/checks/choose/choose.qnt
 compile	--target	json	--main	counter	--init	init	--step	step	--invariant	inRange	tasks/quint/checks/inrange/counter.qnt
