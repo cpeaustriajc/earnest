@@ -150,7 +150,8 @@ fn the_leftover_file_message_writes_an_expression_of_a_copied_setup_in_the_copy_
     let report = verified("leftover", &[]);
     let message = leftover_message(&report);
     assert!(
-        message.contains("import Spec(N = 2) as V") && message.contains("action init = V::start"),
+        message.contains("import Spec(N = 2) as V")
+            && message.contains("/// @check init = V::start,"),
         "the entry `SmallR` is turned into a copy of `Small` that imports `Spec` as `V`\n{message}"
     );
     assert!(
