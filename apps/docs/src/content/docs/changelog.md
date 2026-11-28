@@ -5,6 +5,17 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint instances of instances, and checks that only import
+
+Two shapes of `.qnt` check judged nothing, though `quint test` plays their runs:
+
+- **An instance of a module that has an instance itself**, with a constant passed down (`import Mid(M = 3).*`, where `Mid` has `import Base(K = M) as B` and `export B.*`), was `unreadable` with Quint's flattener error, `Name 'Top::Mid::K' not found`. Earnest now builds it at any depth and plays every run `quint test --main Top` plays.
+- **A check module that only imports modules holding instances** (`import Small.*`) was `unreadable`. It is now built, and its properties are searched.
+
+A spec may also import one name alone (`import Lib.twice`), a module with variables, and export a module it imports (`export Lib.*`); these were compiled, and their runs were not played.
+
+Quint 0.33.1 loses a constant set through the instances in these shapes: `quint test` faults with `QNT500 Uninitialized const K`, and `quint compile` stops or leaves the constant unset. Earnest gives the constant the value the instances give, so `Top::Mid::upTest` holds where `K` is 3, and the search gives the verdicts and state counts TLC gives for the same model written flat. Every other run gets `quint test`'s verdict. See [Instances of instances](/reference/quint/#instances-of-instances).
+
 ## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
 
 A `.qnt` file was `unreadable` when a run called a run with a `nondet` of its own (`anyStart.then(step)`, `init.then(threeStart)`), or joined chains with `if`, `and`, `or` or `any`. The problem said ``a chain of steps where one step is wanted … never in `init`, `step` or a property`` and named the run "the definition". `quint test` plays these runs, and earnest now does too, with Quint's verdict:

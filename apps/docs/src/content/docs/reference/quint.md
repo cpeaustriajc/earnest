@@ -112,7 +112,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - In the JSON a `reachable` rule keeps its verdict, `broken` when the state was reached, and adds `"expected": "reached"`.
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from the file parsed as Quint, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
-- When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
+- When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on an instance of a module that has an instance itself, with a constant passed down, and earnest builds that check itself instead: see [Instances of instances](#instances-of-instances).
 - `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
 ### What a checks file said
@@ -368,10 +368,12 @@ For such a check, earnest builds from the file typechecked as Quint the module t
 | A module of definitions | `import Lib.*` or `import Lib as L` | `twice`, `L::twice` |
 | Definitions of its own | `val neverLate = time < MaxTime` | `neverLate` |
 | A spec imported whole | `import Light.*`, where `Light` has variables, types (of its own or from a types module in another file), `assume`s and helpers imported under a name (`import Lib as L`) | `color`, `L::inc` |
+| An instance of a spec that has instances | `import Mid(M = 3).*`, where `Mid` has `import Base(K = M) as B` and `export B.*` | `init`, as `Mid` exports it |
+| A module that holds instances | `import Small.*` or `import Small as S`, where `Small` has `import Base(K = 3) as B` and `export B.*` | `init`, `S::init` |
 
-The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
+The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, helpers that import helpers, one name alone (`import Lib.twice`) and modules with variables (`import Counter.*`), which it may export (`export Counter.*`). It may also instantiate other specs, at any depth, as [Instances of instances](#instances-of-instances) says. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
+A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup that imports one name alone itself (`import Limit.L`), and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, one name imported alone into the setup itself (`import Limit.L`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -396,6 +398,41 @@ unreadable  specs/problems.qnt  problems
   specs/problems.qnt:11:7  `reps`  a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: ..., in the run `repsTest`
   specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
 ```
+
+### Instances of instances
+
+A spec may instantiate a module itself, at any depth, with each constant passed down from the check:
+
+```quint title="specs/nested.qnt"
+module Base {
+  const K: int
+  var v: int
+  action init = v' = 0
+  action step = v' = (v + 1) % K
+  run upTest = init.then(step).expect(v == 1)
+}
+module Mid {
+  const M: int
+  import Base(K = M) as B
+  export B.*
+  run midTest = B::init.then(B::step).expect(B::v == 1)
+}
+/// @check
+module Top {
+  import Mid(M = 3).*
+  run topTest = init.then(step).then(step).expect(v == 2)
+}
+```
+
+Earnest builds `Top` from the file typechecked as Quint. `K` is `M`, read where `Base(K = M)` is written, and `M` is 3, so `K` is 3. What a spec's own instance holds is seen from the check only through `export B.*`, as Quint sees it, and its runs whose name ends in `Test` are played only then, as `quint test --main Top` plays them: `upTest`, `midTest` and `topTest`. A check module that only imports modules that hold instances, as `module All { import Small.* }`, is built the same way, and so are its properties. Through `import … as`, `.*` and `export`, the constants keep their values at every depth.
+
+Earnest differs from Quint 0.33.1 on purpose here, because Quint loses a constant that the instances do set, and a verdict built on a lost constant is not the model's:
+
+- `quint compile`, and so `quint verify`, stops with `Internal error while flattening [QNT404] Name 'Top::Mid::K' not found`. Earnest searches the model, with the verdicts and state counts that `quint verify --backend tlc` gives for the same model written flat, `module Flat { import Base(K = 3).* }`.
+- `quint compile` of a check that imports a module holding an instance, `import Small.*` where `Small` has `import Base(K = 3) as S` and `export S.*`, keeps `const K` with no value, and TLC stops on it. Earnest gives `K` the value 3.
+- `quint test` faults on such a run with `[QNT500]: Uninitialized const K`: `Top::Mid::upTest` above, and every run of a check three instances deep, its own runs included. Earnest plays the run with the value the instances give and reports the verdict that value gives: `upTest` holds. Every other run gets `quint test`'s verdict.
+
+A spec that instantiates one module twice, as `import Base(K = 2) as P` with `import Base(K = 3) as R` inside `Mid`, is not built, because its two instances share their definitions. Its check falls back to the compile, which loses the constants, and is `unreadable`: ``a constant without a value``. Two instances of `Mid` in the check itself, `import Mid(M = 2) as P` with `import Mid(M = 3) as R`, are built, each with its own copy of `Base`.
 
 ### How deep a file may nest
 
