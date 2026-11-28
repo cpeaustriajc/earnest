@@ -549,7 +549,7 @@ Each run is played over its own variables: the ones it reaches through its actio
     why    what the run expects after step 1 is false here
 ```
 
-A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`, or is that action alone after a `nondet` at its top, where the value is skipped (see [below](#a-nondet-at-the-top-of-a-run)).
+A first action that can't happen breaks the run with ``the run's first action can't happen: it gives no state to start from``, unless the run is that action alone under `fail()`, or is that action alone after a `nondet` at its top, where the value is skipped (see [below](#a-nondet-at-the-top-of-a-run)). The check's own `init` is such an action when it gives no state, as `all { 1 > 2, x' = 0 }` does. A run that is one condition reads no state, so it is judged the same whatever `init` gives.
 
 Earnest reads these run operators as `quint test` judges them:
 

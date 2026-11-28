@@ -5,6 +5,15 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: a Quint run with no state to start from is false, as in `quint test`
+
+Two shapes of run ended neither passed nor failed, and earnest reported them as `holds` where `quint test` fails them:
+
+- **A `nondet` over an empty set after one over 100 values or more:** `nondet n = 0.to(119).oneOf() nondet m = n.to(n).filter(w => w != 5).oneOf() init` is false for `n` = 5, and `quint test` tries no other value of `n`. In a check of runs only this run held. It is now broken, ``with `n` = 5: the run is false; the run is false here, and `quint test` tries no other value of a `nondet` over 100 values or more``. With `n` picked from fewer than 100 values the run still holds, as in Quint.
+- **A module whose `init` gives no state**, such as `all { 1 > 2, x' = 0 }`: a run that starts with that `init` (`init`, `init.then(step)`, `init.expect(…)`, `init.then(step).fail()`) held, and so did a run that is the constant `false`. They are now broken, the first with ``the run's first action can't happen: it gives no state to start from``. `init.fail()` holds, and a run that is one condition is judged without a state: `nondet n = 0.to(9).oneOf() n != 5` was broken in such a module and now holds.
+
+Runs in a module whose `init` gives a state, the search and native models are unchanged. See [Runs](/reference/quint/#runs).
+
 ## November 2026: `--base` names why a `.qnt` file can't be read at the base
 
 A `.qnt` file that earnest can't read at the base was listed as `not compared  specs/clock.qnt  unreadable at origin/main`, with no place and no message. A PR body made with `earnest report --base` now shows where and why:

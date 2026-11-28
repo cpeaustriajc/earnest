@@ -764,7 +764,7 @@ impl Search<'_> {
             *ends = player.ends;
             started = true;
         }
-        if !started && course.starts.is_some() {
+        if !started {
             let path = Path {
                 start: Vec::new(),
                 steps: Vec::new(),
