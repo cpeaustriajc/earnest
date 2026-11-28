@@ -7,6 +7,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/nightly.yml
+      - .github/scripts/changelog.py
+      - cliff.toml
       - install.sh
       - install.ps1
 
@@ -29,6 +31,7 @@ jobs:
     outputs:
       build: ${{ steps.decide.outputs.build }}
       tag: ${{ steps.tag.outputs.tag }}
+      previous_sha: ${{ steps.decide.outputs.previous_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,13 +59,62 @@ jobs:
           RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
           build=true
-          if [ "$EVENT" = schedule ] &&
-            published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null) &&
-            [ "$published" = "$GITHUB_SHA" ]; then
-            echo "The $RELEASE_TAG release already holds $GITHUB_SHA."
-            build=false
+          previous_sha=""
+          if published=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha 2>/dev/null); then
+            previous_sha="$published"
+            if [ "$EVENT" = schedule ]; then
+              if [ "$published" = "$GITHUB_SHA" ]; then
+                echo "The $RELEASE_TAG release already holds $GITHUB_SHA."
+                build=false
+              else
+                changelog_only=$(gh api "repos/$GITHUB_REPOSITORY/compare/$published...$GITHUB_SHA" \
+                  --jq '.status == "identical" or (.status == "ahead" and .total_commits <= 250 and ((.files // []) | length) > 0 and ((.files // []) | all(.filename == "CHANGELOG.md" and (.previous_filename // "CHANGELOG.md") == "CHANGELOG.md")))')
+                if [ "$changelog_only" = true ]; then
+                  echo "Only CHANGELOG.md changed since $RELEASE_TAG ($published)."
+                  build=false
+                fi
+              fi
+            fi
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "previous_sha=$previous_sha" >> "$GITHUB_OUTPUT"
+
+  changelog:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install git-cliff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/git-cliff-download" "$RUNNER_TEMP/git-cliff-bin"
+          gh release download --repo orhun/git-cliff \
+            --pattern 'git-cliff-*-x86_64-unknown-linux-gnu.tar.gz' \
+            --pattern 'git-cliff-*-x86_64-unknown-linux-gnu.tar.gz.sha512' \
+            --dir "$RUNNER_TEMP/git-cliff-download"
+          (cd "$RUNNER_TEMP/git-cliff-download" && sha512sum --check ./*.sha512)
+          tar -xzf "$RUNNER_TEMP/git-cliff-download"/git-cliff-*-x86_64-unknown-linux-gnu.tar.gz \
+            --strip-components=1 -C "$RUNNER_TEMP/git-cliff-bin" --wildcards '*/git-cliff'
+          echo "$RUNNER_TEMP/git-cliff-bin" >> "$GITHUB_PATH"
+      - name: Validate changelog generation
+        run: |
+          python3 -I .github/scripts/changelog.py \
+            --from 08b6db3954b7b6ca33ca69029cc6525410e13175 \
+            --to HEAD \
+            --notes "$RUNNER_TEMP/changes.md"
+          test -s "$RUNNER_TEMP/changes.md"
+          cp CHANGELOG.md "$RUNNER_TEMP/CHANGELOG.md"
+          python3 -I .github/scripts/changelog.py \
+            --from HEAD \
+            --to HEAD \
+            --prepend \
+            --output "$RUNNER_TEMP/CHANGELOG.md"
+          cmp -s CHANGELOG.md "$RUNNER_TEMP/CHANGELOG.md"
 
   build:
     needs: decide
@@ -165,13 +217,49 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: ${{ runner.temp }}/dist
           merge-multiple: true
       - name: Check the downloaded files
-        working-directory: dist
+        working-directory: ${{ runner.temp }}/dist
         run: sha256sum --check ./*.sha256
+      - name: Install git-cliff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/git-cliff-download" "$RUNNER_TEMP/git-cliff-bin"
+          gh release download --repo orhun/git-cliff \
+            --pattern 'git-cliff-*-x86_64-unknown-linux-gnu.tar.gz' \
+            --pattern 'git-cliff-*-x86_64-unknown-linux-gnu.tar.gz.sha512' \
+            --dir "$RUNNER_TEMP/git-cliff-download"
+          (cd "$RUNNER_TEMP/git-cliff-download" && sha512sum --check ./*.sha512)
+          tar -xzf "$RUNNER_TEMP/git-cliff-download"/git-cliff-*-x86_64-unknown-linux-gnu.tar.gz \
+            --strip-components=1 -C "$RUNNER_TEMP/git-cliff-bin" --wildcards '*/git-cliff'
+          echo "$RUNNER_TEMP/git-cliff-bin" >> "$GITHUB_PATH"
+      - name: Update changelog and generate release notes
+        env:
+          PREVIOUS_SHA: ${{ needs.decide.outputs.previous_sha }}
+          RELEASE_TAG: ${{ needs.decide.outputs.tag }}
+        run: |
+          if [ -n "$PREVIOUS_SHA" ]; then
+            python3 -I .github/scripts/changelog.py \
+              --from "$PREVIOUS_SHA" \
+              --to "$GITHUB_SHA" \
+              --tag "$RELEASE_TAG" \
+              --notes "$RUNNER_TEMP/changes.md" \
+              --prepend
+          else
+            python3 -I .github/scripts/changelog.py \
+              --to "$GITHUB_SHA" \
+              --tag "$RELEASE_TAG" \
+              --notes "$RUNNER_TEMP/changes.md" \
+              --prepend
+          fi
       - name: Write the release notes
         run: |
           {
@@ -189,7 +277,11 @@ jobs:
 
           On Windows, compare `(Get-FileHash earnest-win32-x64-msvc.zip).Hash` in PowerShell with the first word of `earnest-win32-x64-msvc.zip.sha256`; case does not matter.
           NOTES
-          } > notes.md
+            if [ -s "$RUNNER_TEMP/changes.md" ]; then
+              printf '\n## Changes\n\n'
+              sed '1{/^## /d;}; 2{/^$/d;}' "$RUNNER_TEMP/changes.md"
+            fi
+          } > "$RUNNER_TEMP/notes.md"
       - name: Replace the nightly release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -202,12 +294,34 @@ jobs:
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --silent 2>/dev/null; then
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG"
           fi
-          gh release create "$RELEASE_TAG" dist/* \
+          gh release create "$RELEASE_TAG" "$RUNNER_TEMP"/dist/* \
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "$RELEASE_TAG: nightly build of main" \
-            --notes-file notes.md
-
+            --notes-file "$RUNNER_TEMP/notes.md"
+      - name: Push updated changelog
+        run: |
+          if ! git diff --quiet -- CHANGELOG.md || [ -n "$(git ls-files --others --exclude-standard -- CHANGELOG.md)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md
+            git commit -m "chore(changelog): update CHANGELOG.md [skip ci]"
+            pushed=false
+            for attempt in 1 2 3; do
+              if git push origin HEAD:main; then
+                pushed=true
+                break
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                git fetch origin main
+                git rebase origin/main
+              fi
+            done
+            if [ "$pushed" != true ]; then
+              echo "Failed to push CHANGELOG.md after 3 attempts."
+              exit 1
+            fi
+          fi
 
   installed:
     needs: publish

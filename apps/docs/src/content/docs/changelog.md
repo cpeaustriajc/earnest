@@ -42,6 +42,10 @@ module Bad {
 
 Checks that name no `init` or `step` are unchanged. See [Another start or step](/reference/quint/#another-start-or-step).
 
+## November 2026: write an XState machine out as a model file
+
+`modelFileOf` in `@earnestjs/xstate` writes a machine as a `.model.ts` file, so `earnest verify` and TLC confirm what `checkMachine` found. It runs the machine's own transitions on every declared context value and event payload and writes the results as tables, so a guard may call any code. Every context field needs a declaration. `checkMachine` now takes an optional field inside a record as in range when it is missing, as it does at the top level, and `modelFileOf` refuses a machine it can't write with the same result. The [XState page](/integrations/xstate/#example-write-the-machine-out-for-tlc) has the example and what it refuses.
+
 ## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
 
 A `.qnt` file was `unreadable` when a run called a run with a `nondet` of its own (`anyStart.then(step)`, `init.then(threeStart)`), or joined chains with `if`, `and`, `or` or `any`. The problem said ``a chain of steps where one step is wanted … never in `init`, `step` or a property`` and named the run "the definition". `quint test` plays these runs, and earnest now does too, with Quint's verdict:
