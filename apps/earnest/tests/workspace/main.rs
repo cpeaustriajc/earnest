@@ -1,5 +1,6 @@
-//! Checks on the repository's own layout: every workspace member takes the workspace lints, every
-//! crate under `crates/` has a test and a `README.md`, and every path can be checked out on Windows.
+//! Checks on the repository's own layout: every workspace member takes the workspace lints, and
+//! every crate under `crates/` has a test and a `README.md`.
+//! Every path in the repository can also be checked out on Windows.
 
 use std::collections::HashMap;
 use std::env;
