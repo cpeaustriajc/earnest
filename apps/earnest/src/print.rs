@@ -71,6 +71,8 @@ struct Expecting<'a> {
     reason: Option<&'a str>,
     rules: Vec<ExpectedRule<'a>>,
     findings: &'a [FindingResult],
+    #[serde(rename = "runsNotPlayed", skip_serializing_if = "<[_]>::is_empty")]
+    runs_not_played: &'a [String],
     #[serde(rename = "notJudged", skip_serializing_if = "<[_]>::is_empty")]
     not_judged: &'a [String],
 }
@@ -109,6 +111,7 @@ fn shown<'a>(result: &'a ModelResult, (expected, reachable): Marked<'_>) -> Show
             })
             .collect(),
         findings: &result.findings,
+        runs_not_played: &result.runs_not_played,
         not_judged: &result.not_judged,
     })
 }
@@ -436,7 +439,7 @@ pub(crate) fn to_stderr(text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{Since, Summary, Verified, summary_line, write_line};
+    use super::{Since, Summary, Verified, shown, summary_line, write_line};
     use crate::changes::{Difference, Kind, Wording};
     use crate::discovery::{Found, Language};
     use crate::reading::{ModelFile, load};
@@ -514,6 +517,23 @@ mod tests {
                 detail: Vec::new(),
             },
         ]
+    }
+
+    #[test]
+    fn a_result_with_expected_marks_keeps_its_runs_not_played_and_its_names_not_judged() {
+        let result = ModelResult {
+            runs_not_played: vec!["Base::upTest".to_owned()],
+            not_judged: vec!["picked".to_owned()],
+            ..result("A", "src/a.model.ts", Status::Unfinished)
+        };
+        let plain = serde_json::to_value(shown(&result, (&[], &[]))).unwrap_or_default();
+        let marked =
+            serde_json::to_value(shown(&result, (&["fine".to_owned()], &[]))).unwrap_or_default();
+        for key in ["runsNotPlayed", "notJudged"] {
+            assert_eq!(marked[key], plain[key], "{key}: {marked}");
+        }
+        assert_eq!(marked["runsNotPlayed"], json!(["Base::upTest"]), "{marked}");
+        assert_eq!(marked["rules"][0]["expected"], "broken", "{marked}");
     }
 
     #[test]

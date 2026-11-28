@@ -13,12 +13,12 @@ use crate::quint;
 use crate::reading::{ModelFile, load, read};
 use crate::run::{
     Bounds, ExpectedPaths, Expecting, Graphs, Ran, Search, Stops, checked, detail_of,
-    explore_expecting,
+    explore_expecting, reason_of,
 };
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
-    Charted, Detailed, RuleChange, RuleChanges, Section, Unreadable, detail_lines, one_line,
-    report_with_details, rule_changes_section, skipped_section,
+    Answered, Charted, Detailed, RuleChange, RuleChanges, Section, Unreadable, detail_lines,
+    one_line, report_with_details, rule_changes_section, skipped_section,
 };
 use earnest_check::Status;
 use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write, write_apart_from};
@@ -288,14 +288,29 @@ fn with_marked_details(
             Some(lines)
         })
         .collect();
+    let reasons: Vec<Option<String>> = targets
+        .iter()
+        .zip(ran)
+        .map(|(target, ran)| {
+            (!target.readable.runs_not_played.is_empty())
+                .then(|| reason_of(ran.outcome.reason.clone(), target.readable))
+                .flatten()
+        })
+        .collect();
     let detailed: Vec<Detailed<'_>> = sections
         .iter()
         .zip(&details)
-        .zip(targets)
-        .map(|((charted, detail), target)| Detailed {
+        .zip(targets.iter().zip(&reasons))
+        .map(|((charted, detail), (target, reason))| Detailed {
             charted: *charted,
             detail: detail.as_deref(),
-            read_in_part: target.readable.is_read_in_part(),
+            answered: if target.readable.is_read_in_part() {
+                Answered::InPart
+            } else {
+                reason
+                    .as_deref()
+                    .map_or(Answered::All, Answered::RunsNotPlayed)
+            },
         })
         .collect();
     report_with_details(&detailed, unreadable, None)
@@ -394,10 +409,10 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         to_stderr(&compared.warnings(base).join("\n"));
     }
     let unreadable = warn_of_unreadable(&files);
-    let all_read = targets
-        .iter()
-        .all(|target| !target.readable.is_read_in_part());
-    Ok(if all_read && every_model_passed(&ran) {
+    let all_answered = targets.iter().all(|target| {
+        !target.readable.is_read_in_part() && target.readable.runs_not_played.is_empty()
+    });
+    Ok(if all_answered && every_model_passed(&ran) {
         unreadable
     } else {
         Exit::Failed

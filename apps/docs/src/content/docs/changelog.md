@@ -5,6 +5,10 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: `earnest report` says `unfinished` for a Quint check with runs not played
+
+A Quint check with runs not played is `unfinished` in `earnest verify`, but `earnest report` gave it the status of its search, often **pass**, and exited `0`. The report now says **unfinished**, with `runs not played: <runs>` as `earnest verify` words it, and exits `1`. The JSON of a check with `@check broken` or `@check reachable` marks now carries `runsNotPlayed` as well. See [`earnest report`](/reference/output/#earnest-report).
+
 ## November 2026: Quint instances of instances, and checks that only import
 
 Two shapes of `.qnt` check judged nothing, though `quint test` plays their runs:

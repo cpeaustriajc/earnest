@@ -29,10 +29,15 @@ pub struct Unreadable<'a> {
 fn result_line(detailed: &Detailed<'_>) -> String {
     let section = &detailed.charted.section;
     let outcome = section.outcome;
-    let status = if detailed.read_in_part && outcome.status != Status::Fail {
-        UNREADABLE.to_owned()
-    } else {
-        word(&outcome.status)
+    let status = match (detailed.answered, outcome.status) {
+        (_, Status::Fail) | (Answered::All, _) => word(&outcome.status),
+        (Answered::InPart, _) => UNREADABLE.to_owned(),
+        (Answered::RunsNotPlayed(_), Status::Pass) => word(&Status::Unfinished),
+        (Answered::RunsNotPlayed(_), status) => word(&status),
+    };
+    let reason = match detailed.answered {
+        Answered::RunsNotPlayed(reason) => Some(reason),
+        Answered::All | Answered::InPart => outcome.reason.as_deref(),
     };
     let so_far = if outcome.status == Status::Unfinished {
         " so far"
@@ -44,7 +49,7 @@ fn result_line(detailed: &Detailed<'_>) -> String {
         prose(section.name),
         format!("{} states{so_far}", outcome.states),
     ];
-    parts.extend(outcome.reason.as_deref().map(prose));
+    parts.extend(reason.map(prose));
     parts.push(code_span(section.file));
     parts.join(" · ")
 }
@@ -103,10 +108,23 @@ pub struct Detailed<'a> {
     /// The lines of the fenced block, in place of the path to each broken rule and each
     /// finding of the outcome. `None` prints those.
     pub detail: Option<&'a [String]>,
-    /// Whether the model was read only in part, so that some of what it asks was not judged.
-    /// Its result line then says `unreadable`, unless the outcome failed, so the section never
-    /// reads as a pass. Say in `detail` what was left out.
-    pub read_in_part: bool,
+    /// How much of what the model asks its outcome answers. Anything short of
+    /// [`Answered::All`] keeps the section from reading as a pass.
+    pub answered: Answered<'a>,
+}
+
+/// How much of what a model asks its outcome answers, for [`Detailed`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Answered<'a> {
+    /// All of it: the result line says the outcome's status.
+    All,
+    /// All but some runs that were not played. The result line says `unfinished` in place of
+    /// `pass`, and gives this reason in place of the outcome's.
+    RunsNotPlayed(&'a str),
+    /// Only part, as the model was read only in part. The result line says `unreadable`,
+    /// unless the outcome failed. Say in `detail` what was left out.
+    InPart,
 }
 
 fn model(detailed: &Detailed<'_>) -> String {
@@ -187,7 +205,7 @@ pub fn report_with_charts(
         .map(|charted| Detailed {
             charted: *charted,
             detail: None,
-            read_in_part: false,
+            answered: Answered::All,
         })
         .collect();
     report_with_details(&detailed, unreadable, changes)
