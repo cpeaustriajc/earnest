@@ -18,6 +18,7 @@ module Bad {
 
 - **The whole check follows the choice:** the search, the runs, the cache, `--base`, `--json` and `earnest confirm --quint`, which passes `--init badInit --step badStep`. Either may be given alone; the other stays the module's own `init` or `step`. Under `import Door as D` the names are `D::badInit` and `D::badStep`.
 - **Mistakes are `unreadable` at the mark:** a name the module does not see, one that is not an `action` with no parameters, `init =` or `step =` given twice or with no name, an expression after the `=`, and `init =` or `step =` on a definition's mark. Each message says what to write.
+- **A left-over `earnest.quint.json`:** for an entry with another `init` or `step`, the message now writes them in the mark, `/// @check init = badInit, step = badStep, guarded`, instead of a module that declares `action init = …` and `action step = …`. An `init` or `step` the entry wrote as an expression is still an `action` line.
 - **What to write is said the new way:** a check that searches and sees no `step`, and a check of runs only that can't be compiled, now say to write `/// @check init = …, step = …`, where they spoke of naming them "in the check".
 
 Checks that name no `init` or `step` are unchanged. See [Another start or step](/reference/quint/#another-start-or-step).
@@ -275,7 +276,7 @@ See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 - **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`, and may bring in what its runs use through any import.
 - **Helpers that chain steps:** a definition such as `action TwoSteps = init.then(step).then(step)` is played in place where a run calls it, with its arguments.
 
-See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
+See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#another-start-or-step).
 
 ## November 2026: Quint `all` over conditions, actions as arguments, and every problem of a check
 

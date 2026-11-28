@@ -234,3 +234,47 @@ fn each_mistake_in_a_chosen_init_or_step_is_unreadable_at_the_mark_and_says_what
         "nothing is judged: {report}"
     );
 }
+
+const LEFT_OVER: &str = r#"{ "checks": [
+  { "file": "door.qnt", "main": "Door", "init": "badInit", "step": "badStep", "invariants": ["guarded"] },
+  { "file": "door.qnt", "main": "Door", "step": "count' = count", "invariants": ["small"] },
+  { "file": "door.qnt", "main": "Own", "name": "OwnBad", "init": "badInit", "step": "badStep", "invariants": ["extra"] }
+] }"#;
+
+const OWN: &str = "
+module Own {
+  import Door.*
+  val extra = count >= 0
+}
+";
+
+#[test]
+fn a_left_over_entry_with_another_init_or_step_is_told_to_name_them_in_the_mark() {
+    let sandbox = Sandbox::empty();
+    let door = DOOR.split("/// @check init").next().unwrap_or_default();
+    sandbox.write("old/door.qnt", &format!("{door}{OWN}"));
+    sandbox.write("old/earnest.quint.json", LEFT_OVER);
+    let run = sandbox.earnest(&["verify", "--json", "old"]);
+    run.exits(1);
+    let found = problems(&run.json());
+    let [(_, _, message)] = found.as_slice() else {
+        panic!("one problem: {run}");
+    };
+    for written in [
+        "1. `door.qnt`, the check of `Door`: write these lines above `module Door` \
+         (`door.qnt:1`):\n      /// @check init = badInit, step = badStep, guarded\n",
+        "then write this line in the copy in place of its own `action step`:\n      action \
+         step = count' = count\n",
+        "import Door as V\n      and write these lines above `module OwnBad`:\n      /// @check \
+         init = V::badInit, step = V::badStep, extra",
+    ] {
+        assert!(
+            message.contains(written),
+            "a name goes in the mark, and an expression stays an action: {written}\nin\n{message}"
+        );
+    }
+    assert!(
+        !message.contains("action init"),
+        "no `action init` is written for a name\n{message}"
+    );
+}

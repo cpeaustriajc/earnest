@@ -153,7 +153,7 @@ module vaultForever {
 
 ## A checks file left over
 
-Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the marks above the module, with its `file:line`, the names each judges, a `val` for each property the entry wrote as an expression, the module to add for an entry with another `init` or `step` or a `name`, and the runs ending in `Test` that are played from now on although the entry left them out. In the text output the lines to write keep their own lines, so they can be copied:
+Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the marks above the module, with its `file:line`, the names each judges, an `init = …` or `step = …` in the mark for an entry with another `init` or `step` (see [Another start or step](#another-start-or-step)), a `val` for each property the entry wrote as an expression, the module to add for an entry with a `name`, and the runs ending in `Test` that are played from now on although the entry left them out. In the text output the lines to write keep their own lines, so they can be copied:
 
 ```text
 unreadable  old/earnest.quint.json
@@ -161,18 +161,17 @@ unreadable  old/earnest.quint.json
       1. `clock.qnt`, the check of `Small`: write these lines above `module Small` (`clock.qnt:14`):
             /// @check inRange, alwaysInRange
       2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to `clock.qnt`, and mark nothing in `Small` for it:
+            /// @check init = V::init, step = V::step
             /// @check broken V::belowLimit
             module SmallBroken {
               import Clock(Limit = 3) as V
-              action init = V::init
-              action step = V::step
             }
             the runs of the entry can't be kept as they are: a check plays every run it sees whose name ends in `Test`, so `tickTest` is played from now on, which the entry left out
 ```
 
 An entry that wrote a property as an expression, such as `"invariants": [{ "name": "nonNegative", "is": "n >= 0" }]`, is given the `val` to add with its mark: `/// @check nonNegative` above the module and `val nonNegative = n >= 0` inside it. An expression with no `name` gets the name `property`, then `property2`.
 
-A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste. Those lines name what the import gives after the import's name, as `val atMostTwo = V::x <= 2` for the entry's `x <= 2`, and a line that takes the place of the copy's own `init` or `step` is listed as such. A name bound inside the expression, as the `x` of `S.forall(x => x > 0)`, and the label of a `match` branch are left as written.
+A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste. Those lines name what the import gives after the import's name, as `val atMostTwo = V::x <= 2` for the entry's `x <= 2`, and the copy's `init` and `step` are named in its mark, as `/// @check init = V::badInit`. Only an `init` or `step` the entry wrote as an expression, which a mark can't hold, is an `action` line that takes the place of the copy's own, and it is listed as such. A name bound inside the expression, as the `x` of `S.forall(x => x > 0)`, and the label of a `match` branch are left as written.
 
 ## Expected counterexamples
 
