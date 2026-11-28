@@ -385,7 +385,7 @@ fn the_windows_check_refuses_each_kind_of_name_windows_refuses() {
         );
     }
     for kept in [
-        "Named@S__ok@.json",
+        "Named@S.ok@.json",
         "console.rs",
         "COM10",
         "LPT0",

@@ -45,6 +45,9 @@ case "$1" in
     cp "$here/fixtures/typechecked/$set/$name.json" "$out"
     ;;
   compile)
+    main="$(printf '%s' "$main" | sed 's/::/./g')"
+    invariants="$(printf '%s' "$invariants" | sed 's/::/./g')"
+    temporal="$(printf '%s' "$temporal" | sed 's/::/./g')"
     fixture="$here/fixtures/compiled/$set/$main@$invariants@$temporal.json"
     if [ -f "$fixture.stderr" ]; then
       sed "s#@FOLDER@#$folder#g" "$fixture.stderr" >&2
