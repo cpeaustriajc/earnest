@@ -2,6 +2,9 @@ module helper {
   var h: int
   action hinit = h' = 0
 }
+module lib {
+  pure def same(x: int): int = x
+}
 module spec {
   import helper.*
   const N: int
@@ -15,4 +18,6 @@ module spec {
 /// @check
 module setup {
   import spec(N = 3).*
+  import lib.*
+  import lib as L
 }

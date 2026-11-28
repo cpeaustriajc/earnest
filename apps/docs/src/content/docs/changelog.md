@@ -9,6 +9,17 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 A Quint check with runs not played is `unfinished` in `earnest verify`, but `earnest report` gave it the status of its search, often **pass**, and exited `0`. The report now says **unfinished**, with `runs not played: <runs>` as `earnest verify` words it, and exits `1`. The JSON of a check with `@check broken` or `@check reachable` marks now carries `runsNotPlayed` as well. See [`earnest report`](/reference/output/#earnest-report).
 
+## November 2026: Quint instances of instances, and checks that only import
+
+Two shapes of `.qnt` check judged nothing, though `quint test` plays their runs:
+
+- **An instance of a module that has an instance itself**, with a constant passed down (`import Mid(M = 3).*`, where `Mid` has `import Base(K = M) as B` and `export B.*`), was `unreadable` with Quint's flattener error, `Name 'Top::Mid::K' not found`. Earnest now builds it at any depth and plays every run `quint test --main Top` plays.
+- **A check module that only imports modules holding instances** (`import Small.*`) was `unreadable`. It is now built, and its properties are searched.
+
+A spec may also import one name alone (`import Lib.twice`), a module with variables, and export a module it imports (`export Lib.*`); these were compiled, and their runs were not played.
+
+Quint 0.33.1 loses a constant set through the instances in these shapes ([quint-co/quint#1148](https://github.com/quint-co/quint/issues/1148)): `quint test` faults with `QNT500 Uninitialized const K`, and `quint compile` stops or leaves the constant unset. Earnest gives the constant the value the instances give, so `Top::Mid::upTest` holds where `K` is 3, and the search gives the verdicts and state counts TLC gives for the same model written flat. Every other run gets `quint test`'s verdict. See [Instances of instances](/reference/quint/#instances-of-instances).
+
 ## November 2026: a Quint check with an unreadable property judges the rest
 
 One property, temporal property or run earnest can't read made the whole check `unreadable`, so its other properties and runs were never judged. Each piece earnest can read is now judged, and the check still never passes: it is `unreadable`, or `fail` when a piece that was read is broken, with a `note  not judged: <names>` line and each problem under its result line, and exits `1`. When `init` or the step can't be read, nothing is searched, and the runs that reach nothing refused are still played. The JSON adds `notJudged` to the check. See [A check read in part](/reference/quint/#a-check-read-in-part).
