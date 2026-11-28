@@ -85,13 +85,17 @@ fn places(report: &serde_json::Value) -> Vec<(u64, u64, String)> {
         .collect()
 }
 
+fn is_head_of(line: &str, main: &str) -> bool {
+    !line.starts_with(' ') && line.split("  ").filter(|part| !part.is_empty()).nth(1) == Some(main)
+}
+
 fn under(run: &Run, main: &str) -> Vec<String> {
-    let head = format!("unreadable  models/problems.qnt  {main}");
     run.stdout
         .lines()
-        .skip_while(|line| *line != head)
+        .skip_while(|line| !is_head_of(line, main))
         .skip(1)
         .take_while(|line| line.starts_with("  "))
+        .filter(|line| line.contains(".qnt:"))
         .map(|line| {
             line.split("  ")
                 .filter(|part| !part.is_empty())
@@ -104,7 +108,7 @@ fn under(run: &Run, main: &str) -> Vec<String> {
 
 #[test]
 fn two_unread_runs_and_an_unread_invariant_print_three_problems_under_one_unreadable_line() {
-    let run = checked(&["verify", "models/problems.qnt"]);
+    let run = checked(&["verify", "models/problems.qnt", "--max-states", "100"]);
     run.exits(1);
     assert_eq!(
         under(&run, "problems"),
@@ -119,7 +123,7 @@ fn two_unread_runs_and_an_unread_invariant_print_three_problems_under_one_unread
     assert_eq!(
         run.stdout
             .lines()
-            .filter(|line| line.starts_with("unreadable  models/problems.qnt  problems"))
+            .filter(|line| is_head_of(line, "problems"))
             .count(),
         1,
         "{run}"
@@ -133,7 +137,13 @@ fn two_unread_runs_and_an_unread_invariant_print_three_problems_under_one_unread
 
 #[test]
 fn a_run_that_plays_a_refused_action_does_not_repeat_its_problem_and_the_json_carries_them_all() {
-    let run = checked(&["verify", "models/problems.qnt", "--json"]);
+    let run = checked(&[
+        "verify",
+        "models/problems.qnt",
+        "--json",
+        "--max-states",
+        "100",
+    ]);
     run.exits(1);
     let report = run.json();
     let found = places(&report);
@@ -153,7 +163,8 @@ fn a_run_that_plays_a_refused_action_does_not_repeat_its_problem_and_the_json_ca
          asks for fairness of it, then the invariant `listed` and the temporal property \
          `strong`\n{run}"
     );
-    assert_eq!(report["summary"]["unreadable"], 2, "{run}");
+    assert_eq!(report["summary"]["unreadable"], 1, "{run}");
+    assert_eq!(report["summary"]["fail"], 1, "{run}");
     let pick = report["unreadable"][2]["message"]
         .as_str()
         .unwrap_or_default();

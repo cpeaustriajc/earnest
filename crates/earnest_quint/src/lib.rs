@@ -195,6 +195,69 @@ pub fn read_runs(path: &str, source: &str, runs: &Runs) -> Result<Model, Vec<Loc
     )
 }
 
+/// A check read as far as the reader can: the model holds every invariant, temporal property
+/// and run it read, and leaves out each one it refused.
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct ReadInPart {
+    /// The model to search, with only the pieces that were read. When `init` or `step` was
+    /// refused, it searches nothing: it has no fields, no actions and no start states, and it
+    /// plays only the runs that do not reach what was refused.
+    pub model: Model,
+    /// The invariants, temporal properties and runs the model leaves out, shortened as the
+    /// model's rule ids are. When `init` or `step` was refused, every invariant and temporal
+    /// property is here, read or not, since nothing is searched.
+    pub not_judged: Vec<String>,
+    /// Each construct refused, once, as [`read_located`] gives it. Empty when everything was
+    /// read; then `not_judged` is empty too.
+    pub unread: Vec<Located>,
+}
+
+/// Reads the compiled Quint module in `source` as [`read_viewed`] does, but keeps what it can
+/// read when it refuses some of the pieces: an invariant, a temporal property (with the
+/// fairness it names), a run, or `init` and `step`, which together are the search. A refused
+/// piece is left out and named in [`ReadInPart::not_judged`]. Whatever reaches a refused
+/// construct is refused itself, so nothing kept is judged without a part of it.
+///
+/// # Errors
+///
+/// The problems of [`read_viewed`] when what is refused is not one of those pieces: the module
+/// as a whole, an `assume`, a chart label, or a run the marks name that the module lacks.
+pub fn read_viewed_in_part(
+    path: &str,
+    source: &str,
+    runs: &Runs,
+    views: &Views,
+) -> Result<ReadInPart, Vec<Located>> {
+    read_in_part(
+        path,
+        source,
+        runs,
+        (model::Wanted::Search, views),
+        Written::ByFrontEnd,
+    )
+}
+
+/// Reads the compiled Quint module in `source` as [`read_runs`] does, keeping the runs it reads
+/// and leaving out each one it refuses, as [`read_viewed_in_part`] does.
+///
+/// # Errors
+///
+/// The problems of [`read_runs`] when what is refused is not a run.
+pub fn read_runs_in_part(
+    path: &str,
+    source: &str,
+    runs: &Runs,
+) -> Result<ReadInPart, Vec<Located>> {
+    read_in_part(
+        path,
+        source,
+        runs,
+        (model::Wanted::Runs, &Views::default()),
+        Written::ByFrontEnd,
+    )
+}
+
 const TREE_DEPTH: usize = 4_000;
 
 const MOST_NESTED: usize = 2 * TREE_DEPTH + 8;
@@ -252,6 +315,34 @@ fn read_wanted(
     wanted: (model::Wanted, &Views),
     written: Written,
 ) -> Result<Model, Vec<Located>> {
+    let read = read_in_part(path, source, runs, wanted, written)?;
+    if read.unread.is_empty() {
+        Ok(read.model)
+    } else {
+        Err(read.unread)
+    }
+}
+
+fn located(path: &str, refused: Vec<reader::Refusal>) -> Vec<Located> {
+    refused
+        .into_iter()
+        .map(|refusal| {
+            Located::new(
+                Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why),
+                refusal.id,
+                refusal.within.as_deref().filter(|name| !name.is_empty()),
+            )
+        })
+        .collect()
+}
+
+fn read_in_part(
+    path: &str,
+    source: &str,
+    runs: &Runs,
+    wanted: (model::Wanted, &Views),
+    written: Written,
+) -> Result<ReadInPart, Vec<Located>> {
     let exact = json::exact(source);
     if written == Written::ByHand
         && let Some(at) = too_deep(source)
@@ -289,17 +380,12 @@ fn read_wanted(
             None,
         )]
     })?;
-    model::model(path, &compiled, runs, wanted).map_err(|refused| {
-        refused
-            .into_iter()
-            .map(|refusal| {
-                Located::new(
-                    Problem::new(path, TOP_OF_FILE, &refusal.feature, &refusal.why),
-                    refusal.id,
-                    refusal.within.as_deref().filter(|name| !name.is_empty()),
-                )
-            })
-            .collect()
+    let read =
+        model::model(path, &compiled, runs, wanted).map_err(|refused| located(path, refused))?;
+    Ok(ReadInPart {
+        model: read.model,
+        not_judged: read.not_judged,
+        unread: located(path, read.refused),
     })
 }
 

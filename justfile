@@ -46,7 +46,7 @@ test:
 
 tlc:
     cargo build --release --locked -p earnest-cli
-    for model in tasks/conformance/models/*.model.ts tasks/conformance/models/*.rs tasks/conformance/twins/*.model.ts tasks/conformance/twins/*.rs tasks/conformance/agreement/*.model.ts tasks/conformance/agreement/*.rs tasks/models/src/pool.rs tasks/models/src/cache.rs tasks/models/src/outcome.rs; do target/release/earnest confirm --tlc target/tools/tla2tools.jar "$model" || exit 1; done
+    for model in tasks/conformance/models/*.model.ts tasks/conformance/models/*.rs tasks/conformance/twins/*.model.ts tasks/conformance/twins/*.rs tasks/conformance/agreement/*.model.ts tasks/conformance/agreement/*.rs tasks/models/src/pool.rs tasks/models/src/cache.rs tasks/models/src/outcome.rs packages/xstate/test/models/*.model.ts; do target/release/earnest confirm --tlc target/tools/tla2tools.jar "$model" || exit 1; done
     cargo clippy --locked -p earnest_break_it --features tlc --test tlc -- -D warnings
     cargo test --locked -p earnest_break_it --features tlc --test tlc
 
@@ -71,6 +71,9 @@ record-counts:
 
 same-answers commit:
     python3 -I tasks/answers/same.py {{ commit }}
+
+changelog *args:
+    python3 -I .github/scripts/changelog.py {{ args }}
 
 verify:
     cargo verus focus

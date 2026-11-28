@@ -76,6 +76,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 | `/// @check a, b` | a `module` | the module is a check, and it also judges `a` and `b`, which it sees, as if they were marked `/// @check`. Only this check judges them |
 | `/// @check broken a, b` | a `module` | the same, with `a` and `b` expected to break |
 | `/// @check reachable a` | a `module` | the same, with a state expected to make the value `a` true |
+| `/// @check init = a, step = b` | a `module` | the check starts from the action `a` and steps with the action `b`, as `quint verify --init a --step b` does. Either may be given alone; the other is the module's own `init` or `step`. It goes with the names the mark judges, as `/// @check init = badInit, step = badStep, guarded` |
 | `/// @check` | a `val` or `def` of type `bool` with no parameters, or a `temporal` definition | the property must hold, in every check that sees it |
 | `/// @check broken` | the same | the property must have a counterexample. See [Expected counterexamples](#expected-counterexamples) |
 | `/// @check reachable` | a `val` or `def` of type `bool` | a reachable state must make it true. The result prints `reached  atTop` and the path to that state |
@@ -91,7 +92,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A name a module's doc lists twice in one mark, as `/// @check small, small`, is `unreadable`, and the message says the name is listed twice. A name listed after two marks, as `/// @check small` and `/// @check broken small`, is `unreadable` too. A mark on the definition and another word for that name in a check's doc are not two marks: the check's doc wins, and that is how one setup says a property of the spec breaks there.
 - A mark on a `val` that does not give a boolean, such as `pure val K = 3`, is judged and is a `fault`: the message names the definition and its mark and says it does not give a boolean. The check fails.
 - A check plays every run it sees whose name ends in `Test`, as `quint test --main` plays them, and every marked or named run. The runs of a module it imports are played as described in [Runs](#runs).
-- A check whose module sees an `init` and a `step`, by those names, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has no states field: `pass  OnlyRuns  0 ms  0 rules, 4 runs`. Its JSON keeps `"states": 0`.
+- A check whose module sees an `init` and a `step`, by those names or by the names its mark gives them, searches every reachable state. A check with no property to judge plays its runs and searches nothing: a check of runs only, whose line has no states field: `pass  OnlyRuns  0 ms  0 rules, 4 runs`. Its JSON keeps `"states": 0`.
 - A mark may stand on any line of a doc comment, and a definition's doc comment holds one mark.
 - The result line of each `.qnt` model counts its rules and its runs, `5 rules, 2 runs`. A mark lost to a typo, such as `/// @chek`, marks nothing, and the count goes down. The JSON lists each rule and run.
 - Each of these is `unreadable`, at the line of the mark:
@@ -100,31 +101,51 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
   - `@Check` or `@CHECK`, a doc line whose first word is `@check` in another case: the message says the mark is written `@check`;
   - a `//` or `/* */` comment that starts with `@check` on the lines directly above a module, a `val`, a `temporal` definition or a run: a mark is a doc comment, `/// @check`, and a mark is removed by deleting it, not by commenting it out. A `@check` elsewhere in a comment, as in a URL or the middle of a line, is not read;
   - a second mark in one doc comment;
-  - names after a mark on a definition: names go in a module's doc comment;
+  - names after a mark on a definition, or an `init =` or a `step =` there: they go in a module's doc comment;
   - a mark on something no check judges: an `action`, a `var`, a `const`, an `import` or `instance`, a `type`, or a definition with parameters;
   - `@check reachable` on anything but a `val` or `def` value;
   - a name in a module's doc comment that the module does not see;
   - a marked module that leaves a constant unset: mark a module that sets it, as `module Small { import Clock(Limit = 3).* }`;
-  - a marked module with a property to judge and no `init` or `step` by those names: the message shows the `action init = ...` or `action step = ...` to write;
+  - in a module's mark, an `init =` or a `step =` that names something the module does not see, something that is not an `action` with no parameters, or no name at all, one given twice, or one followed by an expression, such as `step = x + 1`: a mark holds names only, so the message says to declare the `action` and name it;
+  - a marked module with a property to judge and no `init` or `step`, by those names or in its mark: the message shows the `/// @check init = ...` or `/// @check step = ...` to write, or the `action init = ...` or `action step = ...`;
   - a marked module with nothing to judge: no property and no run to play;
   - a marked definition or run that no check sees, such as a mark on a spec whose setups are not marked.
 - A `reachable` mark that no reachable state meets prints `never reached  atTop` and fails the check. A search stopped by `--max-states` or `--time-limit` before it is judged prints `unknown  atTop`, and the model is `unfinished`, as for `broken`.
 - In the JSON a `reachable` rule keeps its verdict, `broken` when the state was reached, and adds `"expected": "reached"`.
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from the file parsed as Quint, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
-- When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
-- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
+- When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on an instance of a module that has an instance itself, with a constant passed down, and earnest builds that check itself instead: see [Instances of instances](#instances-of-instances).
+- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A [check read in part](#a-check-read-in-part) is compared as any other check, from its marks. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
-### What a checks file said
+### Another start or step
 
-A check that needs another `init` or `step`, or a second check of one module with other properties, is a module of its own that imports the spec under a name:
+A check that starts from another action or steps with another one names them in its mark, as Quint's `--init` and `--step` flags name them. A guard such as `Bug implies Inv` is a `val` that the mark names:
+
+```quint title="specs/door.qnt"
+module Door {
+  var count: int
+  action init = count' = 0
+  action step = count' = if (count < 3) count + 1 else count
+  action badInit = count' = 5
+  action badStep = count' = if (count < 9) count + 2 else count
+  val small = count <= 3
+  val guarded = (count > 3) implies count <= 9
+}
+
+/// @check init = badInit, step = badStep, guarded
+/// @check broken small
+module Bad {
+  import Door.*
+}
+```
+
+`Bad` searches 3 states, as `quint verify --main Bad --backend tlc --init badInit --step badStep --invariants guarded` does. A second check of one module with other properties is a module of its own that imports the spec under a name, and names what it sees under that name:
 
 ```quint title="specs/vault.qnt"
+/// @check init = V::init, step = V::stepForever
 /// @check broken V::nonNegative
 module vaultForever {
   import vault as V
-  action init = V::init
-  action step = V::stepForever
 }
 ```
 
@@ -132,7 +153,7 @@ module vaultForever {
 
 ## A checks file left over
 
-Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the marks above the module, with its `file:line`, the names each judges, a `val` for each property the entry wrote as an expression, the module to add for an entry with another `init` or `step` or a `name`, and the runs ending in `Test` that are played from now on although the entry left them out. In the text output the lines to write keep their own lines, so they can be copied:
+Earnest no longer reads `earnest.quint.json`. A folder that still holds one is `unreadable` at that file, and nothing in the folder is checked by it; the `.qnt` files are checked by their marks as anywhere else. The message lists, for every entry of the file, what to write: the marks above the module, with its `file:line`, the names each judges, an `init = …` or `step = …` in the mark for an entry with another `init` or `step` (see [Another start or step](#another-start-or-step)), a `val` for each property the entry wrote as an expression, the module to add for an entry with a `name`, and the runs ending in `Test` that are played from now on although the entry left them out. In the text output the lines to write keep their own lines, so they can be copied:
 
 ```text
 unreadable  old/earnest.quint.json
@@ -140,18 +161,17 @@ unreadable  old/earnest.quint.json
       1. `clock.qnt`, the check of `Small`: write these lines above `module Small` (`clock.qnt:14`):
             /// @check inRange, alwaysInRange
       2. `clock.qnt`, the check of `Small` named `SmallBroken`: add this module to `clock.qnt`, and mark nothing in `Small` for it:
+            /// @check init = V::init, step = V::step
             /// @check broken V::belowLimit
             module SmallBroken {
               import Clock(Limit = 3) as V
-              action init = V::init
-              action step = V::step
             }
             the runs of the entry can't be kept as they are: a check plays every run it sees whose name ends in `Test`, so `tickTest` is played from now on, which the entry left out
 ```
 
 An entry that wrote a property as an expression, such as `"invariants": [{ "name": "nonNegative", "is": "n >= 0" }]`, is given the `val` to add with its mark: `/// @check nonNegative` above the module and `val nonNegative = n >= 0` inside it. An expression with no `name` gets the name `property`, then `property2`.
 
-A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste. Those lines name what the import gives after the import's name, as `val atMostTwo = V::x <= 2` for the entry's `x <= 2`, and a line that takes the place of the copy's own `init` or `step` is listed as such. A name bound inside the expression, as the `x` of `S.forall(x => x > 0)`, and the label of a `match` branch are left as written.
+A setup module with definitions of its own and an `import Spec(...).*` can't be imported under a name without a second copy of its state, so for it the message lists the lines to add to a copy of the module instead of a module to paste. Those lines name what the import gives after the import's name, as `val atMostTwo = V::x <= 2` for the entry's `x <= 2`, and the copy's `init` and `step` are named in its mark, as `/// @check init = V::badInit`. Only an `init` or `step` the entry wrote as an expression, which a mark can't hold, is an `action` line that takes the place of the copy's own, and it is listed as such. A name bound inside the expression, as the `x` of `S.forall(x => x > 0)`, and the label of a `match` branch are left as written.
 
 ## Expected counterexamples
 
@@ -368,10 +388,12 @@ For such a check, earnest builds from the file typechecked as Quint the module t
 | A module of definitions | `import Lib.*` or `import Lib as L` | `twice`, `L::twice` |
 | Definitions of its own | `val neverLate = time < MaxTime` | `neverLate` |
 | A spec imported whole | `import Light.*`, where `Light` has variables, types (of its own or from a types module in another file), `assume`s and helpers imported under a name (`import Lib as L`) | `color`, `L::inc` |
+| An instance of a spec that has instances | `import Mid(M = 3).*`, where `Mid` has `import Base(K = M) as B` and `export B.*` | `init`, as `Mid` exports it |
+| A module that holds instances | `import Small.*` or `import Small as S`, where `Small` has `import Base(K = 3) as B` and `export B.*` | `init`, `S::init` |
 
-The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, and helpers that import helpers. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property in the checks file must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
+The spec declares constants, variables, definitions, types and `assume`s, and may import whole modules of definitions and types, from its own file or another, at any depth: a types module (`import types.* from "./types"`, `import Types as T`), helpers with `pure def` and `pure val`, helpers that import helpers, one name alone (`import Lib.twice`) and modules with variables (`import Counter.*`), which it may export (`export Counter.*`). It may also instantiate other specs, at any depth, as [Instances of instances](#instances-of-instances) says. A project laid out as a types module, a spec with constants and a file of setups is checked from one parse and one typecheck of each file, and the spec's runs are played in each setup. A module the spec and the setup both import, or two specs, is copied for each, as `quint compile` copies it. Quint 0.33.1's own `quint compile`, and so `quint verify`, stops with an internal error (`Name 'S::Spec::T::Up' not found`) on a spec that imports under a name; earnest reads it as the same spec written with `.*`, and `quint test` plays its runs as earnest does. `init`, `step`, each invariant and each temporal property must name one definition, in the way the setup module sees it: its own, a whole instance's, or `C::name`.
 
-A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup whose spec imports one name alone (`import Lib.twice`), an instance of a module that has an instance itself, and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the check when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, an instance of a module that has an instance itself, one name imported alone (`import Lib.twice`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
+A spec imported whole with `import Spec.*` is built as `quint compile` writes it: its `assume`s are left out, as `quint compile --main` leaves out those of a module it imports and as Quint's TLC run does not check them, so a false one stops nothing there. A setup that imports one name alone itself (`import Limit.L`), and a setup that imports one module both whole and under a name in the same module, are compiled, and the imported modules' runs, which `quint compile` drops, are not played: a check that sees such a run is `unfinished`, as [Runs](#runs) says. Earnest passes `--init` and `--step` from the module's mark, or `init` and `step`, when the module sees them, and otherwise those of a module it imports (`--init Main::init --step Main::step`), so it compiles once. The search is still skipped. Only when every compile fails is the check `unreadable`, with Quint's error and the names to give. Every other check is compiled, one compile for each, up to `--jobs` at a time, as this command would compile it: That covers a module that is not a setup, one name imported alone into the setup itself (`import Limit.L`), and a name Quint would refuse, so that Quint's own error is reported. A typecheck that fails also falls back to a compile for each check of the file, which reports Quint's error:
 
 ```sh
 quint compile --target json --main Small --init init --step step --invariant inRange --temporal allHeard specs/clock.qnt
@@ -388,14 +410,94 @@ unreadable  specs/clock.qnt  Small
 
 When the reader refuses a construct of a compiled module, the source map from `quint parse` gives its line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
 
-Each piece of a check is read on its own: `init`, each action of the step's `any`, each listed invariant, each listed temporal property and each played run. Each piece that holds a construct earnest refuses gives one problem, the first it reaches, so one `earnest verify` shows every piece to change. A construct reached from two pieces, such as an action that the step and a run both play, is listed once. The problems are in the order of the file, under one `unreadable` line:
+Each piece of a check is read on its own: `init`, each action of the step's `any`, each listed invariant, each listed temporal property and each played run. Each piece that holds a construct earnest refuses gives one problem, the first it reaches, so one `earnest verify` shows every piece to change. A construct reached from two pieces, such as an action that the step and a run both play, is listed once. The pieces earnest reads are still judged, as [A check read in part](#a-check-read-in-part) says.
+
+### A check read in part
+
+A check with a piece earnest can't read judges every other piece and never ends `pass`. A property or run that holds a refused construct, or reaches one through a definition it uses, is left out and is not judged. In this file `chooseSome` is refused on purpose, and `small` is still judged:
+
+```quint title="specs/spec.qnt"
+module Spec {
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 3) x + 1 else 0
+  /// @check
+  val small = x <= 3
+  /// @check
+  val picked = Set(1, 2).chooseSome() <= 2
+}
+
+/// @check
+module S {
+  import Spec.*
+}
+```
+
+`earnest verify specs/spec.qnt` prints the check's result line with `unreadable` as its status, a `note` line that names what was not judged, and each problem, in the order of the file, then exits `1`:
 
 ```text
-unreadable  specs/problems.qnt  problems
-  specs/problems.qnt:9:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `chosen`
-  specs/problems.qnt:11:7  `reps`  a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: ..., in the run `repsTest`
-  specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
+unreadable  S  4 states  0 ms  1 rule, 0 runs
+  note  not judged: picked (each reaches what the checker can't read, listed below, so the check does not pass)
+  specs/spec.qnt:8:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `picked`
+1 model: 0 pass, 0 fail, 0 unfinished, 1 unreadable
 ```
+
+- A property or run that was read and is broken makes the check `fail`, with the same `note` and problem lines under the result line, then the broken rule. A `/// @check broken` property found broken does not: the check is still `unreadable`.
+- A temporal property whose fairness can't be read, such as `strongFair(A, vars)`, is not judged at all. It is never judged without the fairness it names.
+- When `init`, the step or one of the step's actions can't be read, nothing is searched: every invariant and temporal property is in `not judged`, whether or not it was read, and the check has no states. Each run whose first action is not `init` and which reaches nothing refused is still played. A run that starts with `init`, or plays a refused action, is not judged.
+- A whole check is still `unreadable` with nothing judged when the module itself can't be read, a compile fails, an `assume` is false or has no value, a chart label can't be read, or a mark names a run the module lacks.
+- `--rule` with a name that was not judged, or with one that was, prints the same `unreadable` line: a check read in part never passes, whatever is asked.
+- In `--json` the check's `status` is `"unreadable"` (or `"fail"`), its `rules` hold what was judged, `notJudged` lists the rest, and the problems are in the top-level `unreadable` list. See [JSON output](/reference/output/#json-output).
+- `earnest report` writes the check's section with **unreadable** as its result, and the `note` and problem lines at the top of its block, and exits `1`.
+- `earnest confirm --quint` does not compare a check read in part: it says `not compared` and names what was not judged.
+- The [result cache](#the-cache) keeps a check read in part as it keeps any other: a second run prints the same lines, ending `(cached)`.
+
+### Instances of instances
+
+A spec may instantiate a module itself, at any depth, with each constant passed down from the check:
+
+```quint title="specs/nested.qnt"
+module Base {
+  const K: int
+  var v: int
+  action init = v' = 0
+  action step = v' = (v + 1) % K
+  run upTest = init.then(step).expect(v == 1)
+}
+module Mid {
+  const M: int
+  import Base(K = M) as B
+  export B.*
+  run midTest = B::init.then(B::step).expect(B::v == 1)
+}
+/// @check
+module Top {
+  import Mid(M = 3).*
+  run topTest = init.then(step).then(step).expect(v == 2)
+}
+```
+
+Earnest builds `Top` from the file typechecked as Quint. `K` is `M`, read where `Base(K = M)` is written, and `M` is 3, so `K` is 3. What a spec's own instance holds is seen from the check only through `export B.*`, as Quint sees it, and its runs whose name ends in `Test` are played only then, as `quint test --main Top` plays them: `upTest`, `midTest` and `topTest`. A check module that only imports modules that hold instances, as `module All { import Small.* }`, is built the same way, and so are its properties. Through `import … as`, `.*` and `export`, the constants keep their values at every depth.
+
+Earnest differs from Quint 0.33.1 on purpose here, because Quint loses a constant that the instances do set, and a verdict built on a lost constant is not the model's. Quint's flattener hands on a spec's uninstantiated definitions through `export P.*` of a named instance, open upstream as [quint-co/quint#1148](https://github.com/quint-co/quint/issues/1148) ("Flattening does not support all export use cases"). Earnest judges every run and property that reaches an instance through `export` with that instance's constants, as the same model written flat (`import Spec(N = 3).*` in the check) is judged by `quint test` and `quint verify`:
+
+- `quint compile`, and so `quint verify`, stops with `Internal error while flattening [QNT404] Name 'Top::Mid::K' not found`. Earnest searches the model, with the verdicts and state counts that `quint verify --backend tlc` gives for the same model written flat, `module Flat { import Base(K = 3).* }`.
+- `quint compile` of a check that imports a module holding an instance, `import Small.*` where `Small` has `import Base(K = 3) as S` and `export S.*`, keeps `const K` with no value, and TLC stops on it. Earnest gives `K` the value 3.
+- `quint test` faults on such a run with `[QNT500]: Uninitialized const K`: `Top::Mid::upTest` above, and every run of a check three instances deep, its own runs included. Earnest plays the run with the value the instances give and reports the verdict that value gives: `upTest` holds. Every other run gets `quint test`'s verdict.
+
+These are the shapes compared, with Quint 0.33.1's answer (`quint test --backend typescript`, `quint verify --backend tlc`) and earnest's. The flat copy gives earnest's answer in every row:
+
+| Shape | Quint 0.33.1 | Earnest |
+|---|---|---|
+| `Top { import Mid(M = 3).* }`, `Mid { import Base(K = M) as B  export B.* }` | `midTest`, `topTest` pass; `Top::Mid::upTest` `QNT500`; compile stops | 3 runs hold |
+| The same with `import Mid(M = 3) as T` | `Top::T::midTest`, `topTest` pass; `upTest` `QNT500` | runs hold, as written |
+| Three deep, `X = 3`, `M = X + 2`, `K = M` | every run `QNT500`; compile stops | 5 states; `small`, `wide` hold, `tiny` broken; 4 runs hold |
+| `Mid` without `export`, own `init = B::init` | `Top::Mid::midTest`, `topTest` pass; `upTest` not played | the same two runs hold; `upTest` not played |
+| `All { import Small.* }`, `Small { import Base(K = 3) as S  export S.* }` | every run `QNT500`; compile keeps `const K` unset, TLC stops | 3 states; `ok`, `small` hold, `low` broken; 3 runs hold |
+| `Inside { import Hidden as H }`, `Hidden { import Base(K = 4).* }` | `H::hiddenTest` passes; 4 states | the same |
+| A spec with `import Lib.twice`, or with `import Counter.*` of a module with variables | compiled as earnest builds it | the same declarations, in Quint's order |
+
+A spec that instantiates one module twice, as `import Base(K = 2) as P` with `import Base(K = 3) as R` inside `Mid`, is not built, because its two instances share their definitions. Its check falls back to the compile, which loses the constants, and is `unreadable`: ``a constant without a value``. Two instances of `Mid` in the check itself, `import Mid(M = 2) as P` with `import Mid(M = 3) as R`, are built, each with its own copy of `Base`.
 
 ### How deep a file may nest
 
@@ -469,7 +571,7 @@ A property that is an `and` of properties, written `and { … }` or with `and` b
 
 `S.forall(x => body)`, where `S` has a value without the state (a written set, a `pure val`, a constant of the setup), is read as the `and` of `body` for each item of `S`: at the top of a property, of a part of its `and`, or inside its fairness, as in `buyers.forall(b => weakFair(A, vars)).implies(…)`. A set of more than 1,000 items is refused, and so is `S.exists(…)` over fairness, since a run is then fair to an item it does not name. Over an empty set the `and` has no parts: a property that is a `forall` over `Set()` is one rule that holds, under its own name, so `--rule` and `/// @check broken` find it, and fairness that is such a `forall` asks for no fairness.
 
-A condition before `implies`, as in `(x == 0).implies(eventually(x == 3))`, is judged in the start states, as TLC and Apalache judge it: where it holds in every start state the property is what follows `implies`, and where it holds in none the property holds. Where it holds in some start states and not in others the check is `unreadable`, and the problem says to write `always((x == 0) implies eventually(…))` to judge it in every state, or to give `init` the start states the property is about.
+A condition before `implies`, as in `(x == 0).implies(eventually(x == 3))`, is judged in the start states, as TLC and Apalache judge it: where it holds in every start state the property is what follows `implies`, and where it holds in none the property holds. Where it holds in some start states and not in others the property is not read, so the check is `unreadable` with its other pieces judged, and the problem says to write `always((x == 0) implies eventually(…))` to judge it in every state, or to give `init` the start states the property is about.
 
 An action may be given its arguments, as `weakFair(reachDeadline(buyer), (controls, lastBuyer, previousPeer))` inside `buyers.forall(buyer => …)`, where the step reaches it as `nondet buyer = buyers.oneOf()` and then `reachDeadline(buyer)`, or calls it with a value such as `reachDeadline("ann")`. Fairness of an action is about the action's own definition, as TLC reads `WF_vars(reachDeadline(buyer))`: the action is possible in a state where `reachDeadline` alone, given that buyer, has a way through its own conditions and `nondet`s that changes the tuple, whether or not the step around it lets it happen there, and a step of a run counts for the fairness when `reachDeadline` alone, given that buyer, gives that step and it changes the tuple, whichever part of the step took it. A condition the step puts around the call, as in `any { all { open, pay }, toggle }` or `if (open) pay else toggle`, is not part of `pay`: where `pay` alone could happen and the step never lets it, no run is fair to `weakFair(pay, vars)`, and what the fairness implies holds there. Variables `A` does not assign may take any value. `A` may be reached through another action of the step, as in `payG = all { open, nondet b = buyers.oneOf() pay(b) }`, and is read the same way; an action the step never reaches is refused. Each argument must have a value without the state, and the step must pick it from a set that does not change, pass a part of such a pick, or pass it as written, so that its steps can be told apart. A part of a pick is any expression over one `nondet` alone: `nondet p = tuples(BUYERS, ITEMS).oneOf()` then `buy(p._1)`, a record field `buy(r.who)`, or `act(b + 1)`. The TLA+ export writes each such fairness as `WF_<<vars>>(Fair_buy_1)`, where `Fair_buy_1` is `buy` alone given its arguments, with each way through it written out and the variables it does not assign left free. An argument the step never gives the action is refused: TLC holds such a step possible where the step never takes it, which makes the property hold for no reason. `A` may leave variables outside `vars` without their next value, which the rest of the step gives.
 
@@ -636,13 +738,16 @@ A run with no `nondet` at its top is false where `quint test` fails it, so a fal
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
-The `nondet`s written at the top of a run, together with those of the runs it calls and the branches of its `any`s and `or`s of chains, may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the check is `unreadable`, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
+The `nondet`s written at the top of a run, together with those of the runs it calls and the branches of its `any`s and `or`s of chains, may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the run is not read, so the check is `unreadable` with its other pieces judged, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
 
-A run that reads a variable its first action gives no value is `unreadable`, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`).
+A run that reads a variable its first action gives no value is not read, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`). In [`tasks/quint/first/Unset.qnt`](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/first/Unset.qnt) four runs do so and `partialTest` is played:
 
 ```text
-unreadable  specs/Unset.qnt  Unset
-  specs/Unset.qnt:13:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+unreadable  Unset  0 ms  0 rules, 1 run
+  note  not judged: readFirstTest, partialReadTest, partialExpectTest, guardReadsTest (each reaches what the checker can't read, listed below, so the check does not pass)
+  specs/Unset.qnt:12:23  `x`  the run starts with `incX`, which reads this variable before anything gives it a value, ..., in the run `readFirstTest`
+  specs/Unset.qnt:14:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+  ...
 ```
 
 A definition that chains steps may be called at the start of a run, in the middle, inside `reps`, from another such definition, and followed by `expect`, `fail` or `then`. Its arguments must be known before the run starts, such as a constant or the run's own `nondet`. Quint refuses a `def` that chains steps (`Use action instead`), so these are `action`s or `run`s. Used as `init`, `step` or in a property, a chain is refused: it is a run, not one step.

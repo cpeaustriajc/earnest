@@ -15,11 +15,11 @@ irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | ie
 
 Set `EARNEST_INSTALL_DIR` to install in another folder. Run the script again to update to the newest night.
 
-Each night that `main` moves, the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page gets two pre-releases built from that commit:
+Each night that `main` changes more than `CHANGELOG.md`, the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page gets two pre-releases built from that commit:
 
 | Tag | Replaced |
 |---|---|
-| `v0.1.0-nightly` | Every night that `main` moves |
+| `v0.1.0-nightly` | Every night that `main` changes more than `CHANGELOG.md` |
 | `v0.1.0-nightly.YYYYMMDD` (UTC date) | Never |
 
 Dated releases older than 90 days are removed by the nightly workflow. Pin one that is newer than that.
