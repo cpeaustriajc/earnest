@@ -167,7 +167,7 @@ fn a_run_the_reader_can_not_play_makes_the_file_unreadable_and_names_the_run() {
         run.stdout.starts_with("unreadable"),
         "a run is never skipped\n{run}"
     );
-    for id in ["noInitTest", "zeroTest", "failMidTest", "lateAssertTest"] {
+    for id in ["noInitTest", "failMidTest", "lateAssertTest"] {
         assert!(
             run.stdout.contains(&format!("in the run `{id}`")),
             "{id} is named\n{run}"

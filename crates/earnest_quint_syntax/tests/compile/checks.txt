@@ -181,6 +181,7 @@ compile	--target	json	--main	calledNested	--init	init	--step	step	tasks/break_it
 compile	--target	json	--main	calledNondetRun	--init	init	--step	step	tasks/break_it/models/quint_eighth/called_nondet_run/called_nondet_run.qnt
 compile	--target	json	--main	calledPlace	--init	init	--step	step	tasks/break_it/models/quint_101/called_place/called_place.qnt
 compile	--target	json	--main	calledSizes	--init	init	--step	step	tasks/break_it/models/quint_101/called_sizes/called_sizes.qnt
+compile	--target	json	--main	carried	--init	init	--step	step	tasks/break_it/models/quint_101/carried/carried.qnt
 compile	--target	json	--main	chains	--init	init	--step	step	tasks/break_it/models/quint_nondet_step/chains.qnt
 compile	--target	json	--main	chainsCombined	--init	init	--step	step	tasks/break_it/models/quint_eighth/chains_combined/chains_combined.qnt
 compile	--target	json	--main	checked	--init	init	--step	step	--invariant	belowThree,belowThree == belowThree,half == half	tasks/quint/views/checked/checked.qnt

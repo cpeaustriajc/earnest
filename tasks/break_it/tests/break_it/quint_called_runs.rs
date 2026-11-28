@@ -58,8 +58,12 @@ fn called_around_gives_the_verdicts_of_quint_test() {
             ("failOneTest", "holds"),
             ("assertTest", "holds"),
             ("assertFalseTest", "broken"),
+            ("failCallTest", "broken"),
+            ("failNeverTest", "holds"),
+            ("failAnyTest", "holds"),
+            ("failAnyTrueTest", "broken"),
         ],
-        "`ok expectTest passed 10000 test(s)`, `expectFalseTest failed after 1 test(s)` (QNT508), `expectInsideTest failed after 1 test(s)` (QNT508), `ok repsTest passed 10000 test(s)`, `ok repsThenTest passed 10000 test(s)`, `ok failOneTest passed 10000 test(s)`, `ok assertTest passed 10000 test(s)`, `assertFalseTest failed after 1 test(s)` (QNT508)",
+        "`ok expectTest passed 10000 test(s)`, `expectFalseTest failed after 1 test(s)` (QNT508), `expectInsideTest failed after 1 test(s)` (QNT508), `ok repsTest passed 10000 test(s)`, `ok repsThenTest passed 10000 test(s)`, `ok failOneTest passed 10000 test(s)`, `ok assertTest passed 10000 test(s)`, `assertFalseTest failed after 1 test(s)` (QNT508), `failCallTest failed after 1 test(s)` (QNT511), `ok failNeverTest passed 10000 test(s)`, `ok failAnyTest passed 10000 test(s)`, `failAnyTrueTest failed after 1 test(s)` (QNT511)",
     );
 }
 
@@ -213,7 +217,6 @@ fn a_shape_still_refused_is_named_as_a_run_shape() {
             "a chain of steps that Quint tries again after a false try, whose first step reads \
              the state",
         ),
-        ("failCallTest", "a `fail()` over the run `threeStart`"),
         (
             "ifReadsTest",
             "an `if` between chains of steps whose condition is not known before the run starts",
@@ -222,12 +225,27 @@ fn a_shape_still_refused_is_named_as_a_run_shape() {
         assert!(
             text.contains(why),
             "`{shape}` is refused, and the problem names its shape: `quint test` prints `ok \
-             readsTest passed 10000 test(s)`, `failCallTest failed after 1 test(s)` (QNT511) and \
-             `ok ifReadsTest passed 1 test(s)`\n{report}"
+             readsTest passed 10000 test(s)` and `ok ifReadsTest passed 1 test(s)`\n{report}"
         );
     }
     assert!(
         !text.contains("in `init`, `step` or a property") && !text.contains("in the definition"),
         "a refused run is spoken of as a run\n{report}"
+    );
+}
+
+#[test]
+fn a_top_nondet_over_a_chain_whose_first_action_reads_the_state_stays_refused() {
+    let report = verified(
+        "carried.qnt",
+        include_str!("../../models/quint_101/carried/carried.qnt"),
+    );
+    let text = report.to_string();
+    assert!(
+        report.is_unreadable() && text.matches("before anything gives it a value").count() == 2,
+        "`quint test` prints `anyReadsTest failed after 1 test(s)` and `guardReadsTest failed \
+         after 1 test(s)`, each `Error [QNT502]: Variable x not set`: the first try reads `x` \
+         before anything sets it, so Quint never reaches a second try that would read the state \
+         the first left; earnest refuses both runs, naming the variable\n{report}"
     );
 }
