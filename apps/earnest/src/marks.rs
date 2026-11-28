@@ -4,6 +4,8 @@ const MARK: &str = "@check";
 const BROKEN: &str = "broken";
 const REACHABLE: &str = "reachable";
 const UNSPACED: &str = "check";
+const INIT: &str = "init";
+const STEP: &str = "step";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Kind {
@@ -12,10 +14,35 @@ pub(crate) enum Kind {
     Reachable,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Role {
+    Init,
+    Step,
+}
+
+impl Role {
+    pub(crate) const fn word(self) -> &'static str {
+        match self {
+            Self::Init => INIT,
+            Self::Step => STEP,
+        }
+    }
+}
+
+/// An `init = name` or `step = name` of a module's mark: the action the check starts from or
+/// steps with, as Quint's `--init` and `--step` take it. `name` is what follows the `=`, as
+/// written, and may be empty or not a name; the planner refuses those.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Chosen {
+    pub(crate) role: Role,
+    pub(crate) name: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Mark {
     pub(crate) kind: Kind,
     pub(crate) names: Vec<String>,
+    pub(crate) chosen: Vec<Chosen>,
     pub(crate) line: usize,
 }
 
@@ -46,7 +73,22 @@ fn is_a_name(text: &str) -> bool {
         })
 }
 
-fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
+fn chosen_in(item: &str) -> Option<Chosen> {
+    let (role, name) = item.split_once('=')?;
+    let role = match role.trim() {
+        INIT => Role::Init,
+        STEP => Role::Step,
+        _ => return None,
+    };
+    Some(Chosen {
+        role,
+        name: name.trim().to_owned(),
+    })
+}
+
+type Listed = (Kind, Vec<String>, Vec<Chosen>);
+
+fn words_after(rest: &str) -> Option<Listed> {
     let rest = rest.trim();
     let word = |kind: &str| {
         rest.strip_prefix(kind).filter(|after| {
@@ -62,16 +104,20 @@ fn words_after(rest: &str) -> Option<(Kind, Vec<String>)> {
     };
     let listed = listed.trim().strip_prefix(',').unwrap_or(listed).trim();
     if listed.is_empty() {
-        return Some((kind, Vec::new()));
+        return Some((kind, Vec::new(), Vec::new()));
     }
-    let names: Vec<String> = listed
-        .split(',')
-        .map(|each| each.trim().to_owned())
-        .collect();
-    names
-        .iter()
-        .all(|name| is_a_name(name) && name != BROKEN && name != REACHABLE)
-        .then_some((kind, names))
+    let mut names = Vec::new();
+    let mut chosen = Vec::new();
+    for item in listed.split(',').map(str::trim) {
+        if item.contains('=') {
+            chosen.push(chosen_in(item)?);
+        } else if is_a_name(item) && item != BROKEN && item != REACHABLE {
+            names.push(item.to_owned());
+        } else {
+            return None;
+        }
+    }
+    Some((kind, names, chosen))
 }
 
 fn is_unspaced(line: &str) -> bool {
@@ -132,8 +178,13 @@ pub(crate) fn read_doc(doc: &str) -> Doc {
                     _ => break,
                 }
             }
-            if let Some((kind, names)) = words_after(&written).filter(|_| spaced) {
-                read.marks.push(Mark { kind, names, line });
+            if let Some((kind, names, chosen)) = words_after(&written).filter(|_| spaced) {
+                read.marks.push(Mark {
+                    kind,
+                    names,
+                    chosen,
+                    line,
+                });
             } else {
                 let on_its_line = rest.trim_end().strip_suffix(',').unwrap_or(rest);
                 let without_comma = written.strip_suffix(',');
@@ -268,9 +319,77 @@ pub(crate) fn not_seen_named(name: &str, module: &str) -> String {
 
 pub(crate) fn no_init_or_step(module: &str, missing: &str, action: &str, judged: &str) -> String {
     format!(
-        "the check `{module}` judges {judged}, so it searches, and it sees no `{missing}`: write \
-         `action {missing} = {action}` in `{module}`, naming the action to search with, so that \
-         they are judged"
+        "the check `{module}` judges {judged}, so it searches, and it sees no `{missing}`: name \
+         the action to search with in the module's mark, `/// {MARK} {missing} = {action}`, as \
+         Quint's `--{missing}` takes it, or write `action {missing} = {action}` in `{module}`, so \
+         that they are judged"
+    )
+}
+
+fn chosen_as(role: Role, name: &str) -> String {
+    format!("`{} = {name}`", role.word())
+}
+
+pub(crate) fn chosen_unseen(role: Role, name: &str, module: &str) -> String {
+    format!(
+        "the mark of `{module}` chooses {}, and `{module}` does not see `{name}`: name an \
+         `action` of `{module}`, or of a module it imports, as `{module}` writes it, such as \
+         `{} = C::{}` under `import Spec(...) as C`",
+        chosen_as(role, name),
+        role.word(),
+        role.word()
+    )
+}
+
+pub(crate) fn chosen_not_action(role: Role, name: &str, what: &str) -> String {
+    format!(
+        "the mark chooses {}, and `{name}` is {what}: `{} =` names an `action` with no \
+         parameters that the module sees, as Quint's `--{}` takes it",
+        chosen_as(role, name),
+        role.word(),
+        role.word()
+    )
+}
+
+pub(crate) fn chosen_twice(role: Role) -> String {
+    format!(
+        "the doc comment chooses `{} =` twice: a check starts from one `init` and steps with one \
+         `step`, so write `{} = name` once",
+        role.word(),
+        role.word()
+    )
+}
+
+pub(crate) fn chosen_empty(role: Role) -> String {
+    format!(
+        "the mark holds `{} =` with no name after it: write the action the check {} with, as \
+         `/// {MARK} {} = name`, or take `{} =` away to use the module's own `{}`",
+        role.word(),
+        match role {
+            Role::Init => "starts",
+            Role::Step => "steps",
+        },
+        role.word(),
+        role.word(),
+        role.word()
+    )
+}
+
+pub(crate) fn chosen_not_a_name(role: Role, written: &str) -> String {
+    format!(
+        "the mark chooses `{} = {written}`, and `{written}` is not a name: a mark names an \
+         action and holds no expression, so declare `action chosen = {written}` in the module \
+         and write `{} = chosen`",
+        role.word(),
+        role.word()
+    )
+}
+
+pub(crate) fn chosen_off_module(name: &str) -> String {
+    format!(
+        "the mark on `{name}` chooses an `init` or a `step`, which only the mark of a check's \
+         module does: move `init = ...` and `step = ...` to the doc comment of the module, as \
+         `/// {MARK} init = name, step = name` above `module Name {{`"
     )
 }
 
@@ -278,7 +397,9 @@ pub(crate) fn unknown_mark(written: &str) -> String {
     format!(
         "the doc comment holds `{written}`, which is not a mark the checker knows: the \
          marks are `{MARK}` (the property holds), `{MARK} {BROKEN}` (it must have a \
-         counterexample) and `{MARK} {REACHABLE}` (a state where it is true must be reached)"
+         counterexample) and `{MARK} {REACHABLE}` (a state where it is true must be reached), \
+         and a module's mark may choose its start and its step, `{MARK} init = name, step = \
+         name`"
     )
 }
 
@@ -334,14 +455,15 @@ pub(crate) fn how_to_mark() -> String {
         "a module is checked when its doc comment holds the mark `/// {MARK}`: write it on the \
          line above `module Name {{`, and mark each property it judges the same way, on the line \
          above its `val` or `temporal` definition, or name the properties after the module's \
-         mark, `/// {MARK} inRange, alwaysInRange`. A module that sees `init` and `step` \
-         searches; every run it sees whose name ends in `Test` is played"
+         mark, `/// {MARK} inRange, alwaysInRange`. A module that sees `init` and `step`, or \
+         names its own in the mark, `/// {MARK} init = name, step = name`, searches; every run \
+         it sees whose name ends in `Test` is played"
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, Mark, read_doc};
+    use super::{Chosen, Kind, Mark, Role, read_doc};
 
     fn marks(doc: &str) -> (Vec<Mark>, Option<String>, Vec<usize>) {
         let read = read_doc(doc);
@@ -353,6 +475,7 @@ mod tests {
         Mark {
             kind,
             names: names.iter().map(|name| (*name).to_owned()).collect(),
+            chosen: Vec::new(),
             line,
         }
     }
@@ -444,6 +567,45 @@ mod tests {
         );
         let (_, _, wrong) = marks("@check broken small,\nwhich the third step breaks.");
         assert_eq!(wrong, [0], "the comma sends the list on to a sentence");
+    }
+
+    #[test]
+    fn a_module_s_mark_chooses_its_init_and_step_beside_the_names_it_judges() {
+        let chosen = |role, name: &str| Chosen {
+            role,
+            name: name.to_owned(),
+        };
+        let read = read_doc("@check init = badInit, step = C::badStep, guarded");
+        assert_eq!(
+            read.marks,
+            [Mark {
+                chosen: vec![
+                    chosen(Role::Init, "badInit"),
+                    chosen(Role::Step, "C::badStep")
+                ],
+                ..mark(Kind::Holds, &["guarded"], 0)
+            }]
+        );
+        assert_eq!(
+            read_doc("@check broken small,\n  step=go").marks,
+            [Mark {
+                chosen: vec![chosen(Role::Step, "go")],
+                ..mark(Kind::Broken, &["small"], 0)
+            }],
+            "a choice may go on over the next line, with or without spaces"
+        );
+        assert_eq!(
+            read_doc("@check init =, init = a b").marks,
+            [Mark {
+                chosen: vec![chosen(Role::Init, ""), chosen(Role::Init, "a b")],
+                ..mark(Kind::Holds, &[], 0)
+            }],
+            "an empty name, a second `init` and a name that is not one are read, for the planner \
+             to refuse with what to write"
+        );
+        for doc in ["@check foo = bar", "@check = x"] {
+            assert_eq!(marks(doc).2, [0], "{doc}");
+        }
     }
 
     #[test]

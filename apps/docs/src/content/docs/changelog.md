@@ -9,6 +9,24 @@ Earnest ships as a nightly build of `main`. This page lists what changed, newest
 
 One property, temporal property or run earnest can't read made the whole check `unreadable`, so its other properties and runs were never judged. Each piece earnest can read is now judged, and the check still never passes: it is `unreadable`, or `fail` when a piece that was read is broken, with a `note  not judged: <names>` line and each problem under its result line, and exits `1`. When `init` or the step can't be read, nothing is searched, and the runs that reach nothing refused are still played. The JSON adds `notJudged` to the check. See [A check read in part](/reference/quint/#a-check-read-in-part).
 
+## November 2026: a Quint check names its `init` and `step` in its mark
+
+A check that started from another action or stepped with another one needed a module of its own that declared `action init = …` and `action step = …` by those names. A module's mark now names them, as Quint's `--init` and `--step` flags do:
+
+```quint
+/// @check init = badInit, step = badStep, guarded
+module Bad {
+  import Door.*
+}
+```
+
+- **The whole check follows the choice:** the search, the runs, the cache, `--base`, `--json` and `earnest confirm --quint`, which passes `--init badInit --step badStep`. Either may be given alone; the other stays the module's own `init` or `step`. Under `import Door as D` the names are `D::badInit` and `D::badStep`.
+- **Mistakes are `unreadable` at the mark:** a name the module does not see, one that is not an `action` with no parameters, `init =` or `step =` given twice or with no name, an expression after the `=`, and `init =` or `step =` on a definition's mark. Each message says what to write.
+- **A left-over `earnest.quint.json`:** for an entry with another `init` or `step`, the message now writes them in the mark, `/// @check init = badInit, step = badStep, guarded`, instead of a module that declares `action init = …` and `action step = …`. An `init` or `step` the entry wrote as an expression is still an `action` line.
+- **What to write is said the new way:** a check that searches and sees no `step`, and a check of runs only that can't be compiled, now say to write `/// @check init = …, step = …`, where they spoke of naming them "in the check".
+
+Checks that name no `init` or `step` are unchanged. See [Another start or step](/reference/quint/#another-start-or-step).
+
 ## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
 
 A `.qnt` file was `unreadable` when a run called a run with a `nondet` of its own (`anyStart.then(step)`, `init.then(threeStart)`), or joined chains with `if`, `and`, `or` or `any`. The problem said ``a chain of steps where one step is wanted … never in `init`, `step` or a property`` and named the run "the definition". `quint test` plays these runs, and earnest now does too, with Quint's verdict:
@@ -262,7 +280,7 @@ See [Expected counterexamples](/reference/quint/#expected-counterexamples).
 - **Runs only:** a check with `runs` and no `invariants` or `temporal` plays the runs and searches nothing, with `0 states` on its line. The module needs no `init` or `step`, and may bring in what its runs use through any import.
 - **Helpers that chain steps:** a definition such as `action TwoSteps = init.then(step).then(step)` is played in place where a run calls it, with its arguments.
 
-See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#the-checks-file).
+See [Runs](/reference/quint/#runs) and [The checks file](/reference/quint/#another-start-or-step).
 
 ## November 2026: Quint `all` over conditions, actions as arguments, and every problem of a check
 

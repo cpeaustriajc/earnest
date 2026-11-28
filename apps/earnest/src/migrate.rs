@@ -169,10 +169,27 @@ fn written_import(written: (&str, usize, usize)) -> Option<String> {
     Some(line.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
-fn marks_for(holds: &[String], broken: &[String]) -> Vec<String> {
+fn chosen_by_mark(actions: &[(&str, String)]) -> (Vec<String>, Vec<String>) {
+    let mut marked = Vec::new();
+    let mut declared = Vec::new();
+    for (action, seen) in actions {
+        if seen == action {
+            continue;
+        }
+        if is_a_name(seen) {
+            marked.push(format!("{action} = {seen}"));
+        } else {
+            declared.push(format!("action {action} = {seen}"));
+        }
+    }
+    (marked, declared)
+}
+
+fn marks_for(chosen: &[String], holds: &[String], broken: &[String]) -> Vec<String> {
     let mut lines = Vec::new();
-    if !holds.is_empty() {
-        lines.push(format!("/// @check {}", holds.join(", ")));
+    let first: Vec<&str> = chosen.iter().chain(holds).map(String::as_str).collect();
+    if !first.is_empty() {
+        lines.push(format!("/// @check {}", first.join(", ")));
     }
     if !broken.is_empty() {
         lines.push(format!("/// @check broken {}", broken.join(", ")));
@@ -423,14 +440,15 @@ fn copied(to: &Copied<'_>, lines: &[String]) -> String {
         wrapped,
     } = *to;
     let refer = |name: &String| referred(name, &entry.main, copy, places);
-    let actions = [("init", &entry.init), ("step", &entry.step)];
-    let chosen: Vec<(&str, String)> = actions
-        .iter()
-        .filter(|(action, chosen)| refer(chosen) != *action)
-        .map(|(action, chosen)| (*action, format!("action {action} = {}", refer(chosen))))
-        .collect();
-    let (replaced, added): (Vec<_>, Vec<_>) = chosen
+    let actions: Vec<(&str, String)> = [(DEFAULT_INIT, &entry.init), (DEFAULT_STEP, &entry.step)]
         .into_iter()
+        .filter(|(_, chosen)| !is_a_name(chosen))
+        .map(|(action, chosen)| (action, refer(chosen)))
+        .filter(|(action, seen)| seen != action)
+        .collect();
+    let (replaced, added): (Vec<_>, Vec<_>) = actions
+        .into_iter()
+        .map(|(action, seen)| (action, format!("action {action} = {seen}")))
         .partition(|(action, _)| places.declares(&entry.main, action));
     let defines: Vec<String> = added
         .into_iter()
@@ -480,8 +498,9 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
         .unwrap_or_else(|| format!("{}{CHECKED_SUFFIX}", entry.main));
     let Some(places) = places else {
         return format!(
-            "add a module `{wrapped}` to `{}` that imports `{}` under a name and defines `init` \
-             and `step`, marked as below",
+            "add a module `{wrapped}` to `{}` that imports `{}` under a name, marked as below, \
+             with its `init` and `step` named in its mark, as `/// @check init = V::init, step = \
+             V::step`",
             entry.file, entry.main
         );
     };
@@ -491,9 +510,15 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
     notes.extend(note);
     let holds: Vec<String> = entry.holds.iter().chain(&runs).map(refer).collect();
     let broken: Vec<String> = entry.broken.iter().map(refer).collect();
-    let mut lines = marks_for(&holds, &broken);
-    let actions = [("init", &entry.init), ("step", &entry.step)];
+    let actions = [(DEFAULT_INIT, &entry.init), (DEFAULT_STEP, &entry.step)];
     if copy.own {
+        let named: Vec<(&str, String)> = actions
+            .iter()
+            .filter(|(_, chosen)| is_a_name(chosen))
+            .map(|(action, chosen)| (*action, refer(chosen)))
+            .collect();
+        let (chosen, _) = chosen_by_mark(&named);
+        let lines = marks_for(&chosen, &holds, &broken);
         return copied(
             &Copied {
                 entry,
@@ -504,7 +529,6 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
             &lines,
         );
     }
-    lines.push(format!("module {wrapped} {{"));
     let imports = if copy.imports.is_empty() {
         vec![format!("import {} as {ALIAS}", entry.main)]
     } else {
@@ -518,16 +542,18 @@ fn wrapper(entry: &Entry, places: Option<&Places>, notes: &mut Vec<String>) -> S
             refer(name)
         }
     };
-    if bare {
-        let holds: Vec<String> = entry.holds.iter().chain(&runs).map(named).collect();
-        let broken: Vec<String> = entry.broken.iter().map(named).collect();
-        lines = marks_for(&holds, &broken);
-        lines.push(format!("module {wrapped} {{"));
-    }
+    let (chosen, declared) = chosen_by_mark(
+        &actions
+            .iter()
+            .map(|(action, chosen)| (*action, named(chosen)))
+            .collect::<Vec<_>>(),
+    );
+    let holds: Vec<String> = entry.holds.iter().chain(&runs).map(named).collect();
+    let broken: Vec<String> = entry.broken.iter().map(named).collect();
+    let mut lines = marks_for(&chosen, &holds, &broken);
+    lines.push(format!("module {wrapped} {{"));
     lines.extend(imports.iter().map(|line| format!("  {line}")));
-    for (action, chosen) in actions {
-        lines.push(format!("  action {action} = {}", named(chosen)));
-    }
+    lines.extend(declared.iter().map(|line| format!("  {line}")));
     let seen = |name: &str| {
         if !bare {
             refer(&name.to_owned())
@@ -563,15 +589,17 @@ fn in_place(
     let holds: Vec<String> = entry.holds.iter().chain(&runs).cloned().collect();
     let line = module_line(file, &entry.main)
         .map_or_else(String::new, |line| format!(" (`{}:{line}`)", entry.file));
+    let (chosen, declared) = chosen_by_mark(&[
+        (DEFAULT_INIT, entry.init.clone()),
+        (DEFAULT_STEP, entry.step.clone()),
+    ]);
     let mut text = format!(
         "write these lines above `module {}`{line}:\n{}",
         entry.main,
-        block(&marks_for(&holds, &entry.broken))
+        block(&marks_for(&chosen, &holds, &entry.broken))
     );
-    let defines: Vec<String> = [("init", &entry.init), ("step", &entry.step)]
-        .iter()
-        .filter(|(action, chosen)| *chosen != action)
-        .map(|(action, chosen)| format!("action {action} = {chosen}"))
+    let defines: Vec<String> = declared
+        .into_iter()
         .chain(
             entry
                 .written
@@ -599,8 +627,8 @@ fn entry_text(
     let file = folder.join(&entry.file);
     let found = places.get(&real(&file));
     let sees = |name: &str| found.is_some_and(|places| places.sees(&entry.main, name));
-    let clashes = (entry.init != DEFAULT_INIT && sees(DEFAULT_INIT))
-        || (entry.step != DEFAULT_STEP && sees(DEFAULT_STEP));
+    let clashes = (!is_a_name(&entry.init) && sees(DEFAULT_INIT))
+        || (!is_a_name(&entry.step) && sees(DEFAULT_STEP));
     let mut notes = Vec::new();
     let body = if entry.name.is_some() || clashes {
         wrapper(entry, found, &mut notes)
