@@ -32,6 +32,50 @@ impl Refusal {
 
 pub(crate) type Read<T> = Result<T, Refusal>;
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Pieces {
+    pub(crate) search: bool,
+    pub(crate) invariants: Vec<(usize, String)>,
+    pub(crate) temporal: Vec<String>,
+    pub(crate) runs: Vec<String>,
+    pub(crate) whole: bool,
+}
+
+impl Pieces {
+    pub(crate) fn only_some(&self) -> bool {
+        !self.whole
+            && (self.search
+                || !self.invariants.is_empty()
+                || !self.temporal.is_empty()
+                || !self.runs.is_empty())
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        !self.whole && !self.only_some()
+    }
+
+    pub(crate) fn adds_only_runs_to(&self, left: &Self) -> bool {
+        !self.whole
+            && !self.search
+            && self.invariants.is_empty()
+            && self.temporal.is_empty()
+            && !self.runs.is_empty()
+            && self.runs.iter().all(|run| !left.runs.contains(run))
+    }
+
+    pub(crate) fn merge(&mut self, more: Self) {
+        self.search |= more.search;
+        self.whole |= more.whole;
+        self.invariants.extend(more.invariants);
+        self.temporal.extend(more.temporal);
+        self.runs.extend(more.runs);
+    }
+
+    pub(crate) fn has_invariant(&self, position: usize) -> bool {
+        self.invariants.iter().any(|(at, _)| *at == position)
+    }
+}
+
 pub(crate) fn refusal(feature: &str, why: &str) -> Refusal {
     Refusal {
         feature: feature.to_owned(),
@@ -170,6 +214,8 @@ pub(crate) struct Reader<'a> {
     pub(crate) in_init: bool,
     pub(crate) unnamed: Vec<u64>,
     pub(crate) within: String,
+    pub(crate) left: Pieces,
+    pub(crate) unread: Pieces,
     trail: Vec<String>,
     callers: HashMap<u64, (String, Vec<String>)>,
     types: &'a HashMap<String, Scheme>,
@@ -316,6 +362,8 @@ impl<'a> Reader<'a> {
             in_init: false,
             unnamed: Vec::new(),
             within: String::new(),
+            left: Pieces::default(),
+            unread: Pieces::default(),
             trail: Vec::new(),
             callers: HashMap::new(),
             types: &compiled.types,

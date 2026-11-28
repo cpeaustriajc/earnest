@@ -71,6 +71,8 @@ struct Expecting<'a> {
     reason: Option<&'a str>,
     rules: Vec<ExpectedRule<'a>>,
     findings: &'a [FindingResult],
+    #[serde(rename = "notJudged", skip_serializing_if = "<[_]>::is_empty")]
+    not_judged: &'a [String],
 }
 
 #[derive(Debug, Serialize)]
@@ -107,6 +109,7 @@ fn shown<'a>(result: &'a ModelResult, (expected, reachable): Marked<'_>) -> Show
             })
             .collect(),
         findings: &result.findings,
+        not_judged: &result.not_judged,
     })
 }
 
@@ -139,8 +142,9 @@ impl Verified<'_> {
                 .filter(|checked| checked.result.status == status)
                 .count()
         };
+        let read_in_part = with(Status::Unreadable);
         Summary {
-            models: self.checked.len(),
+            models: self.checked.len().saturating_sub(read_in_part),
             pass: with(Status::Pass),
             fail: with(Status::Fail),
             unfinished: with(Status::Unfinished),
@@ -148,7 +152,8 @@ impl Verified<'_> {
                 .files
                 .iter()
                 .filter(|file| !file.problems().is_empty())
-                .count(),
+                .count()
+                .saturating_add(read_in_part),
         }
     }
 
@@ -183,6 +188,14 @@ impl Verified<'_> {
                     counts.as_ref().map(|(text, only)| (text.as_str(), *only)),
                 ));
                 lines.extend(not_played_line(&next.result));
+                let unread = self
+                    .readable_of(next)
+                    .map_or(&[][..], |readable| readable.unread.as_slice());
+                lines.extend(
+                    not_judged_lines(&next.result.not_judged, unread)
+                        .into_iter()
+                        .map(|line| format!("{INDENT}{line}")),
+                );
                 lines.extend(next.detail.iter().map(|line| format!("{INDENT}{line}")));
             }
         }
@@ -215,7 +228,7 @@ impl Verified<'_> {
                 .iter()
                 .map(|checked| shown(&checked.result, self.expected_of(checked)))
                 .collect(),
-            unreadable: self.files.iter().flat_map(ModelFile::problems).collect(),
+            unreadable: self.files.iter().flat_map(problems_of).collect(),
             skipped: self.skipped,
             no_model: self.no_model,
             rule_changes: self.since.map_or(&[], |since| since.changes),
@@ -225,6 +238,12 @@ impl Verified<'_> {
         serde_json::to_string_pretty(&document)
             .map_err(|error| format!("the results can't be written as JSON: {error}"))
     }
+}
+
+fn problems_of(file: &ModelFile) -> impl Iterator<Item = &Problem> {
+    file.problems()
+        .iter()
+        .chain(file.models().iter().flat_map(|readable| &readable.unread))
 }
 
 fn only_runs(model: &Model) -> bool {
@@ -290,9 +309,28 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
     ))
 }
 
-pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
+/// The lines that say what a check read in part left out: a note naming the properties and
+/// runs not judged, then each problem the reader met, as [`problem_lines`] writes them.
+pub(crate) fn not_judged_lines(not_judged: &[String], unread: &[Problem]) -> Vec<String> {
     let mut lines = Vec::new();
-    for problem in file.problems() {
+    if !not_judged.is_empty() {
+        lines.push(format!(
+            "note{INDENT}not judged: {} (each reaches what the checker can't read, listed \
+             below, so the check does not pass)",
+            one_line(&not_judged.join(", "))
+        ));
+    }
+    lines.extend(lines_of(unread));
+    lines
+}
+
+pub(crate) fn problem_lines(file: &ModelFile) -> Vec<String> {
+    lines_of(file.problems())
+}
+
+pub(crate) fn lines_of(problems: &[Problem]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for problem in problems {
         let mut message = problem.message.lines();
         lines.push(format!(
             "{}:{}:{}{INDENT}{}{INDENT}{}",
@@ -440,6 +478,7 @@ mod tests {
             cached: false,
             reason: None,
             runs_not_played: Vec::new(),
+            not_judged: Vec::new(),
             rules: vec![RuleResult {
                 id: "fine".to_owned(),
                 says: "All is fine".to_owned(),

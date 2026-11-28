@@ -82,9 +82,10 @@ unreadable  src/clock.model.ts
   - Every counted state has its rules judged, including frontier states that are not expanded further; no actions are tried from unexpanded frontier states, so they add no `stuck` or action `fault`.
   - If `--time-limit` interrupts evaluation inside a state before its rules finish, that state is not counted, so a model can report `0 states so far`.
   - Input combinations for an action are tried one at a time under both limits and successor states are deduplicated, so an action with a huge input space ends as `unfinished` with bounded memory.
+- **`unreadable` for a check read in part:** a [Quint check](/reference/quint/#a-check-read-in-part) with a property or run earnest can't read judges the rest and prints its result line with `unreadable` as the status, then a `note  not judged: <names>` line, then each problem, and exits `1`. A broken property or run that was read makes it `fail` instead, with the same lines under it. It never prints `pass`.
 - **`unreadable`:** lists each problem as `file:line:column`, the disallowed feature in backticks (for a `.qnt` file, the pass of earnest's reading that refused it, `parsing as Quint` or ``compiling `Small` as Quint``), and an explanation. No model in an unreadable file is checked. For a [Quint check](/reference/quint/), the header names the module after the file, `unreadable  specs/clock.qnt  Small`, so two checks of one file can be told apart.
 - **`skipped`:** printed before the summary line when test files or no-model Rust files were skipped (`skipped  <n> test files that use the library`). Skipped files are not counted in the summary and do not affect the exit code.
-- **Summary line:** counts each model and each unreadable file once in the total, prints `pass`, `fail`, and `unfinished`, and appends `<n> unreadable` only when unreadable files exist.
+- **Summary line:** counts each model and each unreadable file once in the total, prints `pass`, `fail`, and `unfinished`, and appends `<n> unreadable` only when unreadable files or checks read in part exist. A check read in part that is `unreadable` counts there, once.
 
 ### Formatting and escaping
 
@@ -142,7 +143,7 @@ Pass `--json` to `earnest verify` for machine-readable output:
 
 Field meanings:
 
-- `status`: `"pass"`, `"fail"`, or `"unfinished"`.
+- `status`: `"pass"`, `"fail"`, or `"unfinished"`, or `"unreadable"` for a [Quint check read in part](/reference/quint/#a-check-read-in-part) that nothing it read broke.
 - `verdict`:
   - `"broken"` when any counted state breaks the rule.
   - `"holds"` only when exploration completed every reachable state, the rule never faulted, and no out-of-range state or action/end fault cut exploration short.
@@ -157,9 +158,10 @@ Field meanings:
 - `findings[].kind`: `"stuck"`, `"out-of-range"`, or `"fault"`.
 - `skipped`: test files that use the library and were skipped, in path order (`[]` if none).
 - `noModel`: Rust files that use the library and declare no model, in path order (`[]` if none).
-- `summary`: `models` counts models only; `unreadable` counts unreadable files separately. A model with setups counts once for itself and once for each setup.
+- `summary`: `models` counts models only; `unreadable` counts unreadable files separately, and each check read in part whose `status` is `"unreadable"`, which `models` then leaves out. A model with setups counts once for itself and once for each setup.
 - `models[].setup`: present only on the result of a model in a setup ([TypeScript](/reference/typescript/#setups), [Rust](/reference/rust/#rules-about-runs-witnesses-and-setups)), as `{ "id": "behind", "says": "The clock runs 10 behind" }`. Its `name` is the model's own, and it comes after the model's own entry, in declaration order. A witness is listed only in the entry of the setup it names, or of the model when it names none.
 - `models[].runsNotPlayed`: present only on a [Quint check](/reference/quint/#runs) that plays the runs whose name ends in `Test`, whose module was compiled as Quint, when a module it imports has runs whose name ends in `Test`: those runs, named as `quint test` names them (`["S::upTest"]`). Compiling drops them, so they were not played, and `status` is what the played runs and the rules give. The text output says the same on a `note` line under the result line.
+- `models[].notJudged`: present only on a [Quint check read in part](/reference/quint/#a-check-read-in-part): the invariants, temporal properties and runs it did not judge, named as its rule ids are (`["picked"]`). When `init` or `step` can't be read, every invariant and temporal property is there. The problems are in the top-level `unreadable` list, with their places.
 - **Value encoding:** sets and sequences are JSON arrays, maps are arrays of `[key, value]` pairs, and records are JSON objects. In a Quint check a tuple is `{"#tup": [1, 5]}` and a variant `{"tag": "Some", "value": 3}`, as Quint's ITF traces write them.
 - Two runs on the same files produce identical JSON apart from `milliseconds` and `cached`.
 

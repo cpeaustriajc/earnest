@@ -113,7 +113,7 @@ pass        Large  6 states  0 ms  5 rules, 2 runs
 - A `.qnt` file with no marked module, such as a file of helpers, is not a model. Named on the command line, it is `unreadable`, and the problem says how to mark a module.
 - Earnest reads the marks from the file parsed as Quint, so a mark is a `///` doc comment directly above the module or the definition. A `//` comment is not read.
 - When compiling a check's module as Quint fails, the check is `unreadable` with Quint's first error line. Quint 0.33.1 fails this way on a module that imports, with constants, a module that exports an instance of a third one, so earnest judges nothing there.
-- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
+- `earnest verify --base <git ref>` lists the properties and runs each check gained, lost or changed since that commit: a new mark or run is `added`, an edited expression or a mark turned into `@check broken` is `changed`, and a new sentence is `reworded`. A check, or a whole file, that is unreadable now is `not compared  ...  unreadable now`, and its base rules are not listed as `removed`. A [check read in part](#a-check-read-in-part) is compared as any other check, from its marks. A file that can't be read at the base is `not compared  ...  unreadable at <base>: <line>:<column> <message>`. A reformatted file lists nothing. An edit of the model under a rule lists nothing either, though it may change the rule's verdict: a `val` the rule reads, the constant of an instance `import Spec(N = 3)`, `init` and `step`. The rule changes are not a list of what changed the verdicts; the results are. See [Rule changes](/reference/output/#quint-checks).
 
 ### What a checks file said
 
@@ -388,14 +388,47 @@ unreadable  specs/clock.qnt  Small
 
 When the reader refuses a construct of a compiled module, the source map from `quint parse` gives its line. A construct of the module itself is reported at its own place. One flattened in from an imported module, whose ids `quint parse` never gave, is reported at the definition it is in, found by name. When neither is known, the problem is at line 1, column 1.
 
-Each piece of a check is read on its own: `init`, each action of the step's `any`, each listed invariant, each listed temporal property and each played run. Each piece that holds a construct earnest refuses gives one problem, the first it reaches, so one `earnest verify` shows every piece to change. A construct reached from two pieces, such as an action that the step and a run both play, is listed once. The problems are in the order of the file, under one `unreadable` line:
+Each piece of a check is read on its own: `init`, each action of the step's `any`, each listed invariant, each listed temporal property and each played run. Each piece that holds a construct earnest refuses gives one problem, the first it reaches, so one `earnest verify` shows every piece to change. A construct reached from two pieces, such as an action that the step and a run both play, is listed once. The pieces earnest reads are still judged, as [A check read in part](#a-check-read-in-part) says.
+
+### A check read in part
+
+A check with a piece earnest can't read judges every other piece and never ends `pass`. A property or run that holds a refused construct, or reaches one through a definition it uses, is left out and is not judged. In this file `chooseSome` is refused on purpose, and `small` is still judged:
+
+```quint title="specs/spec.qnt"
+module Spec {
+  var x: int
+  action init = x' = 0
+  action step = x' = if (x < 3) x + 1 else 0
+  /// @check
+  val small = x <= 3
+  /// @check
+  val picked = Set(1, 2).chooseSome() <= 2
+}
+
+/// @check
+module S {
+  import Spec.*
+}
+```
+
+`earnest verify specs/spec.qnt` prints the check's result line with `unreadable` as its status, a `note` line that names what was not judged, and each problem, in the order of the file, then exits `1`:
 
 ```text
-unreadable  specs/problems.qnt  problems
-  specs/problems.qnt:9:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `chosen`
-  specs/problems.qnt:11:7  `reps`  a `reps` that repeats 0 times or fewer, after which Quint leaves the state unset: ..., in the run `repsTest`
-  specs/problems.qnt:13:22  `fail`  a `fail()` that is not the run's last operator: ..., in the run `lateFailTest`
+unreadable  S  4 states  0 ms  1 rule, 0 runs
+  note  not judged: picked (each reaches what the checker can't read, listed below, so the check does not pass)
+  specs/spec.qnt:8:16  `chooseSome`  `chooseSome`, whose choice Quint's backends make differently, is not read: ..., in the definition `picked`
+1 model: 0 pass, 0 fail, 0 unfinished, 1 unreadable
 ```
+
+- A property or run that was read and is broken makes the check `fail`, with the same `note` and problem lines under the result line, then the broken rule. A `/// @check broken` property found broken does not: the check is still `unreadable`.
+- A temporal property whose fairness can't be read, such as `strongFair(A, vars)`, is not judged at all. It is never judged without the fairness it names.
+- When `init`, the step or one of the step's actions can't be read, nothing is searched: every invariant and temporal property is in `not judged`, whether or not it was read, and the check has no states. Each run whose first action is not `init` and which reaches nothing refused is still played. A run that starts with `init`, or plays a refused action, is not judged.
+- A whole check is still `unreadable` with nothing judged when the module itself can't be read, a compile fails, an `assume` is false or has no value, a chart label can't be read, or a mark names a run the module lacks.
+- `--rule` with a name that was not judged, or with one that was, prints the same `unreadable` line: a check read in part never passes, whatever is asked.
+- In `--json` the check's `status` is `"unreadable"` (or `"fail"`), its `rules` hold what was judged, `notJudged` lists the rest, and the problems are in the top-level `unreadable` list. See [JSON output](/reference/output/#json-output).
+- `earnest report` writes the check's section with **unreadable** as its result, and the `note` and problem lines at the top of its block, and exits `1`.
+- `earnest confirm --quint` does not compare a check read in part: it says `not compared` and names what was not judged.
+- The [result cache](#the-cache) keeps a check read in part as it keeps any other: a second run prints the same lines, ending `(cached)`.
 
 ### How deep a file may nest
 
@@ -469,7 +502,7 @@ A property that is an `and` of properties, written `and { … }` or with `and` b
 
 `S.forall(x => body)`, where `S` has a value without the state (a written set, a `pure val`, a constant of the setup), is read as the `and` of `body` for each item of `S`: at the top of a property, of a part of its `and`, or inside its fairness, as in `buyers.forall(b => weakFair(A, vars)).implies(…)`. A set of more than 1,000 items is refused, and so is `S.exists(…)` over fairness, since a run is then fair to an item it does not name. Over an empty set the `and` has no parts: a property that is a `forall` over `Set()` is one rule that holds, under its own name, so `--rule` and `/// @check broken` find it, and fairness that is such a `forall` asks for no fairness.
 
-A condition before `implies`, as in `(x == 0).implies(eventually(x == 3))`, is judged in the start states, as TLC and Apalache judge it: where it holds in every start state the property is what follows `implies`, and where it holds in none the property holds. Where it holds in some start states and not in others the check is `unreadable`, and the problem says to write `always((x == 0) implies eventually(…))` to judge it in every state, or to give `init` the start states the property is about.
+A condition before `implies`, as in `(x == 0).implies(eventually(x == 3))`, is judged in the start states, as TLC and Apalache judge it: where it holds in every start state the property is what follows `implies`, and where it holds in none the property holds. Where it holds in some start states and not in others the property is not read, so the check is `unreadable` with its other pieces judged, and the problem says to write `always((x == 0) implies eventually(…))` to judge it in every state, or to give `init` the start states the property is about.
 
 An action may be given its arguments, as `weakFair(reachDeadline(buyer), (controls, lastBuyer, previousPeer))` inside `buyers.forall(buyer => …)`, where the step reaches it as `nondet buyer = buyers.oneOf()` and then `reachDeadline(buyer)`, or calls it with a value such as `reachDeadline("ann")`. Fairness of an action is about the action's own definition, as TLC reads `WF_vars(reachDeadline(buyer))`: the action is possible in a state where `reachDeadline` alone, given that buyer, has a way through its own conditions and `nondet`s that changes the tuple, whether or not the step around it lets it happen there, and a step of a run counts for the fairness when `reachDeadline` alone, given that buyer, gives that step and it changes the tuple, whichever part of the step took it. A condition the step puts around the call, as in `any { all { open, pay }, toggle }` or `if (open) pay else toggle`, is not part of `pay`: where `pay` alone could happen and the step never lets it, no run is fair to `weakFair(pay, vars)`, and what the fairness implies holds there. Variables `A` does not assign may take any value. `A` may be reached through another action of the step, as in `payG = all { open, nondet b = buyers.oneOf() pay(b) }`, and is read the same way; an action the step never reaches is refused. Each argument must have a value without the state, and the step must pick it from a set that does not change, pass a part of such a pick, or pass it as written, so that its steps can be told apart. A part of a pick is any expression over one `nondet` alone: `nondet p = tuples(BUYERS, ITEMS).oneOf()` then `buy(p._1)`, a record field `buy(r.who)`, or `act(b + 1)`. The TLA+ export writes each such fairness as `WF_<<vars>>(Fair_buy_1)`, where `Fair_buy_1` is `buy` alone given its arguments, with each way through it written out and the variables it does not assign left free. An argument the step never gives the action is refused: TLC holds such a step possible where the step never takes it, which makes the property hold for no reason. `A` may leave variables outside `vars` without their next value, which the rest of the step gives.
 
@@ -636,13 +669,16 @@ A run with no `nondet` at its top is false where `quint test` fails it, so a fal
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
-The `nondet`s written at the top of a run, together with those of the runs it calls and the branches of its `any`s and `or`s of chains, may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the check is `unreadable`, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
+The `nondet`s written at the top of a run, together with those of the runs it calls and the branches of its `any`s and `or`s of chains, may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the run is not read, so the check is `unreadable` with its other pieces judged, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
 
-A run that reads a variable its first action gives no value is `unreadable`, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`).
+A run that reads a variable its first action gives no value is not read, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`). In [`tasks/quint/first/Unset.qnt`](https://github.com/cpeaustriajc/earnest/blob/main/tasks/quint/first/Unset.qnt) four runs do so and `partialTest` is played:
 
 ```text
-unreadable  specs/Unset.qnt  Unset
-  specs/Unset.qnt:13:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+unreadable  Unset  0 ms  0 rules, 1 run
+  note  not judged: readFirstTest, partialReadTest, partialExpectTest, guardReadsTest (each reaches what the checker can't read, listed below, so the check does not pass)
+  specs/Unset.qnt:12:23  `x`  the run starts with `incX`, which reads this variable before anything gives it a value, ..., in the run `readFirstTest`
+  specs/Unset.qnt:14:25  `y`  the run reads this variable, and it starts with `setX`, which gives it no value, so Quint stops the run where it is read ("not set"): start the run with an action that assigns it too, in the run `partialReadTest`
+  ...
 ```
 
 A definition that chains steps may be called at the start of a run, in the middle, inside `reps`, from another such definition, and followed by `expect`, `fail` or `then`. Its arguments must be known before the run starts, such as a constant or the run's own `nondet`. Quint refuses a `def` that chains steps (`Use action instead`), so these are `action`s or `run`s. Used as `init`, `step` or in a property, a chain is refused: it is a run, not one step.

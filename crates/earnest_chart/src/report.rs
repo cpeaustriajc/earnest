@@ -26,15 +26,21 @@ pub struct Unreadable<'a> {
     pub problems: &'a [String],
 }
 
-fn result_line(section: &Section<'_>) -> String {
+fn result_line(detailed: &Detailed<'_>) -> String {
+    let section = &detailed.charted.section;
     let outcome = section.outcome;
+    let status = if detailed.read_in_part && outcome.status != Status::Fail {
+        UNREADABLE.to_owned()
+    } else {
+        word(&outcome.status)
+    };
     let so_far = if outcome.status == Status::Unfinished {
         " so far"
     } else {
         ""
     };
     let mut parts = vec![
-        format!("**{}**", word(&outcome.status)),
+        format!("**{status}**"),
         prose(section.name),
         format!("{} states{so_far}", outcome.states),
     ];
@@ -43,8 +49,10 @@ fn result_line(section: &Section<'_>) -> String {
     parts.join(" · ")
 }
 
+const UNREADABLE: &str = "unreadable";
+
 fn unread_lines(file: &Unreadable<'_>) -> Vec<String> {
-    let mut lines = vec![format!("unreadable  {}", one_line(file.file))];
+    let mut lines = vec![format!("{UNREADABLE}  {}", one_line(file.file))];
     lines.extend(
         file.problems
             .iter()
@@ -95,11 +103,15 @@ pub struct Detailed<'a> {
     /// The lines of the fenced block, in place of the path to each broken rule and each
     /// finding of the outcome. `None` prints those.
     pub detail: Option<&'a [String]>,
+    /// Whether the model was read only in part, so that some of what it asks was not judged.
+    /// Its result line then says `unreadable`, unless the outcome failed, so the section never
+    /// reads as a pass. Say in `detail` what was left out.
+    pub read_in_part: bool,
 }
 
 fn model(detailed: &Detailed<'_>) -> String {
     let section = &detailed.charted.section;
-    let mut blocks = vec![format!("## {}", prose(section.name)), result_line(section)];
+    let mut blocks = vec![format!("## {}", prose(section.name)), result_line(detailed)];
     blocks.extend(detailed.charted.chart.map(str::to_owned));
     let detail = detailed
         .detail
@@ -175,6 +187,7 @@ pub fn report_with_charts(
         .map(|charted| Detailed {
             charted: *charted,
             detail: None,
+            read_in_part: false,
         })
         .collect();
     report_with_details(&detailed, unreadable, changes)
