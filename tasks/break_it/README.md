@@ -3569,3 +3569,149 @@ Found by the seventh Quint pass: `init.then(nondet n = 0.to(199).oneOf() all { n
 Found while building, and fixed with it: **a false pass, older than this change.** `{ nondet n = Set(0, 1, 2, 3).oneOf() all { assert(n < 2), x' = n }.fail() }` passed on 9871a6f6; `quint test` fails it with QNT508. A false `assert` in a run's first action left the run with no start state, which `fail()` took as the action that can't happen. It now breaks the run (`assert_fail.qnt`).
 
 `models/quint_sixth/nondet_random/generate.py SEED big` adds steps that pick from 100, 99, 120 and a number of values read from the state (`x.to(x + 119)`, `0.to(x * 60)`), alone, nested both ways, in an `any` and in an `if`; with `big` left out it prints the modules it printed before, byte for byte. Seeds 1 to 400 with `big`, `quint test` against `earnest verify --json`: 395 agree (115 hold, 280 broken; 275 pick from one of these sets in a step or the first action). Of the other 5, 3 are `unreadable`, not a verdict: a run of one action in parentheses is read as a `nondet` at its top, and its 1,000 combinations are past the cap. 2 depend on sampling, and earnest says `broken`: seed 338, a last step false for 20 of 120 values under six retried top combinations, which `quint test` fails about once in 47,000 tests; seed 159, false for a quarter of 100 values under fifteen. The old seeds 1 to 400 without `big`: 400 agree (120 hold, 280 broken), as before.
+
+## Eighth Quint pass
+
+An adversarial pass over runs, made on commit ac9a8be1 of the integration branch with Quint
+0.33.1 from npm (`quint test --backend typescript`). Its tests are in `tests/break_it/quint_eighth.rs`
+and its files in `models/quint_eighth/`; each `.qnt` file has its recordings under
+`crates/earnest_quint_syntax/tests/quint/`. The tests run the `earnest` binary on the `.qnt` file.
+
+### The evaluator's rules, as read
+
+From `runtime/impl/nondet.js`, `builtins.js` and `evaluator.js` of the npm package. "False" is a
+result Quint may retry; "an error" stops the sample and fails the test.
+
+| Construct | False when | An error when | What earnest does |
+|---|---|---|---|
+| `nondet v = S.oneOf() B` | `S` is empty; `B` is false for the value picked over 100 values or more (bounds of each part of a tuple or map set), or for every value below | `B` is an error for the value picked (never retried) | as Quint, but for finding 1 |
+| `any { A, B }` | every branch is false, tried in a shuffled order | the first branch tried that is an error | as Quint |
+| `all { … }` | a part is false (the state is restored) | a part is an error | as Quint |
+| `and`, `or` | short-circuit: `or` returns its first part that is not false, error included | as their parts | `or` between actions: Quint's typechecker refuses it; between runs: refused (finding 3) |
+| `if c A else B` | the branch taken is | the branch taken is | as Quint; between runs refused (finding 3) |
+| `match` | the case taken is | no case (QNT505) | as Quint |
+| `A.then(B)` | `B` is false | `A` is false (QNT513), or either is an error | as Quint |
+| `n.reps(i => A)` | never | a round is false, the last one too (QNT513); `0.reps` is `true` and sets nothing | as Quint; a count of 0 is refused, as documented |
+| `A.expect(P)` | never | `A` is false or `P` is false (QNT508) | as Quint |
+| `A.fail()` | `A` is true | `A` is an error | as Quint |
+| `assert(P)` | never | `P` is false (QNT508) | as Quint where earnest reads it |
+
+### 1. An empty inner set under a top `nondet` of 100 values or more passes the run
+
+`models/quint_eighth/empty_inner_set/empty_inner_set.qnt`, a check of runs only:
+`nondet n = 0.to(119).oneOf() nondet m = n.to(n).filter(w => w != 5).oneOf() init.then(x' = m)`,
+and the same pick before one action, before `init` alone, before a condition (`m >= 0`), before a
+`.fail()` run, from `if (n == 5) Set() else Set(n)` and from the empty range `n.to(n - 1 + n %
+2)`. `quint test` fails each within 551 samples with `Error [QNT511]: Test … returned false`: Quint
+keeps the first value of a set of 120, and for `n` = 5 the inner `nondet` picks from an empty set,
+which is false. Over `0.to(9)` Quint retries, and passes (`retriedTest`). Earnest says `pass`, every
+run `holds`. The same happens with a `.expect`, with a small `nondet` between the two, and for a
+spec run played in a setup in another file (`import Spec(N = 5).* from "./spec"`: `quint test
+--main Five` fails it). Add an invariant, so that the check searches states, and earnest breaks the
+same runs (`with `n` = 5: the run is false; … tries no other value of a `nondet` over 100 values or
+more`). A compiled `.json` of the module breaks them too.
+
+Likely cause: in `crates/earnest_quint/src/runs.rs`, `plans`, the branch for a `nondet` over an
+empty set builds its plan with `without_steps`, which keeps `starts: None`. The branch for a
+condition gives `starts` one empty state when the check has no `init` to search
+(`self.init.is_none().then(|| vec![Vec::new()])`). With `starts: None`, `play_course` in
+`crates/earnest_check/src/witness.rs` plays the plan from the search's start states. A check of
+runs only lists none, so the plan never reaches `finish`. It ends with neither `through` nor
+`fell` (seen with a debug print), and `judged` skips it even where the outer `nondet` is not
+retried. Where every value is empty, the run is still broken, by "no value … gets the run through".
+Test: `an_empty_inner_set_under_a_top_nondet_of_100_values_or_more_makes_the_run_false`.
+
+### 2. A run that calls a run with its own top `nondet` is refused
+
+`models/quint_eighth/called_nondet_run/called_nondet_run.qnt`: `run anyStart = nondet n =
+0.to(4).oneOf() init.then(x' = n)`, called as `anyStart.then(all { x == 3, x' = x })`, the same
+with a start whose last step needs `n == 3`, and `init.then(threeStart)`. `quint test` fails the
+first (QNT511) and passes the other two after 10 000 samples: the called run's `nondet` retries
+inside the call while its body is false. Earnest makes the file `unreadable` with ``a chain of
+steps where one step is wanted: `then`, … make a run, not one step``. The message is wrong, since
+these are runs. The docs say a definition that chains steps may be called at the start of a run
+and in the middle. A called run without a `nondet` is played. Likely cause: `called_run` and
+`helper` in `runs.rs` take a body that is a chain, and a body that is a `Let` of a `nondet` falls
+through to the reader of one step. Test:
+`a_run_that_calls_a_run_with_its_own_top_nondet_is_played_not_refused`.
+
+### 3. Runs joined by `or`, `and`, `if` or `any` are refused
+
+`models/quint_eighth/chains_combined/chains_combined.qnt`: `or { init.then(all { x > 5, x' = x
+}).then(step), init.then(step) }`, the same without the last `then`, `and { … }` of two chains,
+`if (1 > 2) init.then(step) else init.then(…)`, and an `if` on a top `nondet`. `quint test`:
+QNT513 for the first, since `or` returns its first part's error; `passed` for the second, since
+`or` tries its second part after a false first; QNT511 for `and` and `if`; QNT513 for the last.
+`any` of two chains gets the same refusal, where `quint test` passes it, or fails it with QNT513
+when a branch's middle step is false. Earnest makes the file `unreadable` with the message of finding 2, and the docs' list of what is
+refused names none of these. Test: `runs_joined_by_or_and_or_if_are_played_not_refused`.
+
+### Generated against an oracle of the rules
+
+`models/quint_eighth/random/gen8.py SEED OUT` writes a module `gSEED` of two variables and four
+runs: up to two top `nondet`s over 1 to 120 values, a first action written in place or `init` (a
+check's `init` with a `nondet` over 3, 4 or 121 values in a third of the seeds), then `then`,
+`reps`, `expect` and a last `fail()`. Its actions nest `nondet`s (ranges over 2 to 150 values,
+from 0, from `x` or from an earlier pick, and filters that can be empty), `any` of two or three
+branches, `if`, and `all` with a guard and, in some, a leading `assert`. Beside the module it
+writes `gSEED.expect`: the verdict of an evaluator that transcribes the table above and keeps the
+set of results some sample can reach. A run is broken when an error or a false result can be
+reached. `drive.sh FROM TO OUT` compares it with `earnest verify --json --no-cache`
+(`EARNEST` names the binary). The 382 modules of seeds 3 to 399, verified as one folder with `--jobs
+1`, `--jobs 4` and then cached (368 checks read from the cache), give the same verdicts.
+
+Seeds 1 to 700: 22 timed out in the oracle and 20 are past the documented 1 000 combinations at
+the top of a run. Of the other 2 448 runs (897 hold, 1 545 broken), 2 442 agree. The other 6 are
+finding 1 (seed 12) and the documented cap of 100 000 branches (5 runs `unknown`). Seeds 1 to 300
+ran with a truncating `%` in the oracle; the 4 runs that then differed agree once it floors, as
+earnest does (the docs name the difference). To check the oracle: seeds 301 to 330, 116 runs,
+against `quint test --max-samples 2000`. All agree but one, seed 328, which `quint test` fails only
+when four retries each pick 1 value of 121 (about 5·10⁻⁹ a sample). Earnest breaks it, the
+documented strict side.
+
+### Attacked and found correct
+
+Each against `quint test --backend typescript`, alone in its module:
+
+- A step's `nondet` whose set reads an earlier one of the same step, both ways round (`0.to(a *
+  150)` and `0.to(150 - a * 150)`): holds.
+- A false `assert` in a step after the step's own `nondet`, in one branch of an `any`, and in one
+  branch of an `if` on a pick: broken (QNT508).
+- `match` on a picked variant, as the last step (broken) and in the middle with a false case
+  (holds, as Quint retries the pick).
+- Picks from `0.to(6).powerset()` (128 values, broken), `0.to(5).powerset()` (64, holds),
+  `tuples(0.to(0), 0.to(149))`, the keys of a map of 120 (broken), and a filter of 200 down to 5
+  (holds).
+- `reps` whose body ignores its index, and a pick inside each round: holds.
+- `any` of two branches that pick from the same 200 values, under one name or two, as the last
+  step, a middle step and the first action: broken.
+- A check's `init` with a `nondet` over 120 values and one false value: `init` alone, `then`,
+  under a small and a big top `nondet`, `init.fail()` and `init.expect(…)`: all broken.
+- A false `assert` and a false condition after a top `nondet` of 5 and of 120 values, `1 > 2`,
+  `assert(1 > 2)` and a `nondet` over `Set()` alone, in a check of runs only: all broken.
+- The empty inner set of finding 1 inside the first action, the last step or a middle step: broken.
+
+### Reading findings
+
+None. Quint refuses `or { x' = 1, x' = 2 }` between actions (its effect checker gives `or` a
+temporal effect), the same variable assigned twice in one `all` (QNT202), a step that leaves a
+variable unassigned and `and { x' = 1, y' = 2 }` (QNT000); earnest refuses each too.
+
+### Usability notes
+
+- The refusal of findings 2 and 3 says ``a chain of steps where one step is wanted … never in
+  `init`, `step` or a property``, about a `run`, and names the run as "the definition".
+- `init.then(0.reps(_ => step))` as a whole run passes in `quint test`, so the reason for refusing a
+  count of 0 ("after which Quint leaves the state unset") holds only where something reads the
+  state afterwards (QNT502).
+- A compiled `.json` of a module whose `step` has no end, with no property, searches until the
+  state limit (`5000000 states so far … (state limit of 5000000)`, 4 s); the `.qnt` file plays its
+  runs and searches nothing.
+
+### Not tried
+
+`earnest confirm --tlc` on the generated models: running a TLC jar fetched into the container was
+refused by this session's permissions. Quint's Rust backend, which could not be fetched; `q::debug`
+and `QUINT_RETRY_NONDET_SMALLER_THAN`, documented as refused and not read; nested `then` inside the first
+part of a `then` beyond what the generator writes; runs in an instance of a module with a
+parameter, beyond the setup of finding 1.
