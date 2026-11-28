@@ -4,7 +4,9 @@ use crate::json::{Compiled, Declaration, Def, Entry, Expr as Quint, Module};
 use crate::names::Short;
 use crate::notation::notation;
 use crate::reach::variables_reached;
-use crate::reader::{MOST_ACTIONS, Path, Read, Reader, Refusal, all_of, refusal, too_many_actions};
+use crate::reader::{
+    MOST_ACTIONS, Path, Pieces, Read, Reader, Refusal, all_of, refusal, too_many_actions,
+};
 use crate::runs::{Variables, scripts};
 use crate::scan::refused;
 use crate::starts::{Asserts, start_states};
@@ -218,37 +220,62 @@ fn gives_no_boolean(expr: &Quint) -> bool {
     }
 }
 
+fn invariant_name(conjunct: &Quint, position: usize) -> String {
+    match conjunct {
+        Quint::Name { name, .. } => name.clone(),
+        _ => format!("{WRITTEN_INVARIANT} {}", position.saturating_add(1)),
+    }
+}
+
+fn conjuncts_of<'a>(defs: &HashMap<u64, &'a Def>, name: &str) -> &'a [Quint] {
+    match named(defs, name).map(|def| &def.expr) {
+        Some(Quint::App { opcode, args, .. }) if opcode == "and" => args,
+        Some(other) => std::slice::from_ref(other),
+        None => &[],
+    }
+}
+
+fn properties_listed(defs: &HashMap<u64, &Def>) -> Vec<String> {
+    let invariants = conjuncts_of(defs, INVARIANTS)
+        .iter()
+        .enumerate()
+        .map(|(position, conjunct)| invariant_name(conjunct, position));
+    let temporal = conjuncts_of(defs, PROPERTIES)
+        .iter()
+        .filter_map(|conjunct| match conjunct {
+            Quint::Name { name, .. } => Some(name.clone()),
+            _ => None,
+        });
+    invariants.chain(temporal).collect()
+}
+
 fn rules<'a>(
     reader: &mut Reader<'a>,
     defs: &HashMap<u64, &'a Def>,
     refused: &mut Vec<Refusal>,
 ) -> Vec<Rule> {
-    let Some(invariants) = named(defs, INVARIANTS) else {
-        return Vec::new();
-    };
-    let conjuncts: &[Quint] = match &invariants.expr {
-        Quint::App { opcode, args, .. } if opcode == "and" => args,
-        other => std::slice::from_ref(other),
-    };
+    let conjuncts = conjuncts_of(defs, INVARIANTS);
     let mut rules = Vec::with_capacity(conjuncts.len());
     for (position, conjunct) in conjuncts.iter().enumerate() {
+        if reader.left.has_invariant(position) {
+            continue;
+        }
         INVARIANTS.clone_into(&mut reader.within);
-        let name = match conjunct {
-            Quint::Name { name, .. } => name.clone(),
-            other if gives_no_boolean(other) => {
-                kept(
-                    reader.refuse::<()>(
-                        "an invariant",
-                        "an invariant that gives a value that is not a boolean, which Quint's \
-                         TLC runs refuse",
-                    ),
-                    refused,
-                );
-                continue;
-            }
-            _ => format!("{WRITTEN_INVARIANT} {}", position.saturating_add(1)),
-        };
+        let name = invariant_name(conjunct, position);
+        if !matches!(conjunct, Quint::Name { .. }) && gives_no_boolean(conjunct) {
+            kept(
+                reader.refuse::<()>(
+                    "an invariant",
+                    "an invariant that gives a value that is not a boolean, which Quint's \
+                     TLC runs refuse",
+                ),
+                refused,
+            );
+            reader.unread.invariants.push((position, name));
+            continue;
+        }
         let Some(holds) = kept(reader.pure(conjunct), refused) else {
+            reader.unread.invariants.push((position, name));
             continue;
         };
         let slots = reader.slots;
@@ -350,6 +377,7 @@ fn parts<'a>(
 ) -> Result<Parts, Vec<Refusal>> {
     let mut refused = Vec::new();
     let rules = rules(reader, defs, &mut refused);
+    let searched_from = refused.len();
     reader.in_init = true;
     let starting = kept(unfolded(reader, init), &mut refused);
     reader.in_init = false;
@@ -370,6 +398,9 @@ fn parts<'a>(
         .zip(&stepping)
         .filter_map(|(id, path)| kept(action(id, path, names, reader.slots), &mut refused))
         .collect();
+    if refused.len() > searched_from {
+        reader.unread.search = true;
+    }
     let mut parts: HashMap<String, Vec<usize>> = HashMap::new();
     for (position, path) in stepping.iter().enumerate() {
         if let Some(name) = &path.name {
@@ -509,8 +540,8 @@ fn shorten(
     rules: &mut [Rule],
     eventually: &mut [Eventually],
     scripts: &mut [Script],
-    runs: &[&str],
-) {
+    (runs, not_judged): (&[&str], &[String]),
+) -> Vec<String> {
     let played = scripts.iter().flat_map(|script| &script.actions);
     let short_actions = Short::of_ids(actions.iter().chain(played).map(|each| each.id.as_str()));
     for action in actions.iter_mut() {
@@ -525,7 +556,8 @@ fn shorten(
             .map(|each| each.id.as_str())
             .chain(eventually.iter().map(|each| each.id.as_str()))
             .chain(scripts.iter().map(|each| each.id.as_str()))
-            .chain(runs.iter().copied()),
+            .chain(runs.iter().copied())
+            .chain(not_judged.iter().map(String::as_str)),
     );
     for rule in rules {
         short_rules.rename_rule(rule);
@@ -536,6 +568,7 @@ fn shorten(
     for script in scripts {
         short_rules.rename_script(script);
     }
+    not_judged.iter().map(|name| short_rules.id(name)).collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -544,17 +577,91 @@ pub(crate) enum Wanted {
     Runs,
 }
 
+pub(crate) struct ReadInPart {
+    pub(crate) model: Model,
+    pub(crate) not_judged: Vec<String>,
+    pub(crate) refused: Vec<Refusal>,
+}
+
+fn not_judged(compiled: &Compiled, left: &Pieces) -> Vec<String> {
+    let listed = if left.search {
+        main_module(compiled).map_or_else(
+            |_| Vec::new(),
+            |module| properties_listed(&defs_of(&module.declarations)),
+        )
+    } else {
+        left.invariants
+            .iter()
+            .map(|(_, name)| name.clone())
+            .chain(left.temporal.iter().cloned())
+            .collect()
+    };
+    let mut names: Vec<String> = Vec::new();
+    for name in listed.into_iter().chain(left.runs.iter().cloned()) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
 pub(crate) fn model(
     path: &str,
     compiled: &Compiled,
     runs: &Chosen,
     (wanted, views): (Wanted, &Views),
-) -> Result<Model, Vec<Refusal>> {
-    let met = built(path, compiled, Symbols::default(), (runs, wanted, views))?;
+) -> Result<ReadInPart, Vec<Refusal>> {
+    let mut left = Pieces::default();
+    let mut refused: Vec<Refusal> = Vec::new();
+    let met = loop {
+        let mut unread = Pieces::default();
+        let searched = if left.search { Wanted::Runs } else { wanted };
+        let more = match built(
+            path,
+            compiled,
+            Symbols::default(),
+            (runs, searched, views),
+            (&left, &mut unread),
+        ) {
+            Ok((met, _)) => break met,
+            Err(more) => more,
+        };
+        refused.extend(more);
+        let grows = unread.only_some() && (left.is_empty() || unread.adds_only_runs_to(&left));
+        if !grows {
+            return Err(once_each(refused));
+        }
+        left.merge(unread);
+    };
+    let refused = once_each(refused);
+    let wanted = if left.search { Wanted::Runs } else { wanted };
     let symbols = met.symbols.alphabetical().written_in(notation(compiled));
-    let mut read = built(path, compiled, symbols, (runs, wanted, views))?;
+    let mut again = Pieces::default();
+    let (mut read, not_judged) = match built(
+        path,
+        compiled,
+        symbols,
+        (runs, wanted, views),
+        (&left, &mut again),
+    ) {
+        Ok(read) => read,
+        Err(more) => return Err(once_each(refused.into_iter().chain(more).collect())),
+    };
     read.symbols = std::mem::take(&mut read.symbols).written_in(notation(compiled));
-    Ok(read)
+    Ok(ReadInPart {
+        model: read,
+        not_judged,
+        refused,
+    })
+}
+
+fn once_each(mut refused: Vec<Refusal>) -> Vec<Refusal> {
+    let mut seen = HashSet::new();
+    refused.retain(|each| {
+        let within = each.id.is_none().then(|| each.within.clone());
+        seen.insert((each.feature.clone(), each.id, within))
+    });
+    refused
 }
 
 type Layout<'a> = (Vec<(u64, String, Domain)>, Vec<(Variable<'a>, String)>);
@@ -733,7 +840,8 @@ fn built(
     compiled: &Compiled,
     symbols: Symbols,
     (runs, wanted, views): (&Chosen, Wanted, &Views),
-) -> Result<Model, Vec<Refusal>> {
+    (left, unread): (&Pieces, &mut Pieces),
+) -> Result<(Model, Vec<String>), Vec<Refusal>> {
     let module = main_module(compiled)?;
     let defs = defs_of(&module.declarations);
     let (every, variables) = layout(compiled, &defs, &module.declarations, wanted);
@@ -746,6 +854,7 @@ fn built(
         .collect();
     let search = search_of(&defs, (runs, wanted))?;
     let mut reader = Reader::new(compiled, defs.clone(), positions, symbols);
+    left.clone_into(&mut reader.left);
     assumed(&mut reader, &module.declarations).map_err(|refusal| vec![refusal])?;
     let labelled = view_defs(&defs, views)?;
     unheld(
@@ -768,17 +877,22 @@ fn built(
             searched: &searched,
         },
     );
+    let found = both(read, played, &defs);
+    *unread = std::mem::take(&mut reader.unread);
     let (
         (starts, mut actions, mut rules, (mut eventually, fair_steps), picks),
         (mut scripts, script_picks),
-    ) = both(read, played, &defs)?;
+    ) = found?;
     let picks = picks.into_iter().chain(script_picks).collect();
-    shorten(
+    let not_judged = shorten(
         &mut actions,
         &mut rules,
         &mut eventually,
         &mut scripts,
-        &runs_declared(&module.declarations),
+        (
+            &runs_declared(&module.declarations),
+            &not_judged(compiled, left),
+        ),
     );
     let view = labels(&mut reader, labelled)?;
     let mut symbols = std::mem::take(&mut reader.symbols);
@@ -800,28 +914,31 @@ fn built(
             }
         })
         .collect();
-    Ok(Model {
-        name: compiled.main.clone(),
-        file: path.to_owned(),
-        line: DECLARED_ON,
-        symbols,
-        fields,
-        actions,
-        rules,
-        ends: vec![End {
-            id: STOPS_ANYWHERE.to_owned(),
-            says: STOPS_ANYWHERE_SAYS.to_owned(),
-            when: code(Expr::Const(Value::Bool(true))),
-            slots: 0,
-        }],
-        view,
-        runs: Runs {
-            starts: Some(starts),
-            eventually,
-            scripts,
-            picks,
-            fair_steps,
-            ..Runs::default()
+    Ok((
+        Model {
+            name: compiled.main.clone(),
+            file: path.to_owned(),
+            line: DECLARED_ON,
+            symbols,
+            fields,
+            actions,
+            rules,
+            ends: vec![End {
+                id: STOPS_ANYWHERE.to_owned(),
+                says: STOPS_ANYWHERE_SAYS.to_owned(),
+                when: code(Expr::Const(Value::Bool(true))),
+                slots: 0,
+            }],
+            view,
+            runs: Runs {
+                starts: Some(starts),
+                eventually,
+                scripts,
+                picks,
+                fair_steps,
+                ..Runs::default()
+            },
         },
-    })
+        not_judged,
+    ))
 }

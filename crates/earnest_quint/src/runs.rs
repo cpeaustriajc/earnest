@@ -1380,17 +1380,23 @@ pub(crate) fn scripts<'a>(
     (init, runs): (Option<&'a Def>, &Runs),
     variables: &Variables<'_>,
 ) -> Result<(Vec<Script>, Vec<Pick>), Vec<Refusal>> {
-    let played_runs = chosen(declarations, runs)?;
+    let played_runs = chosen(declarations, runs).inspect_err(|_| reader.unread.whole = true)?;
     let mut played = Vec::with_capacity(played_runs.len());
     let mut picked = Vec::new();
     let mut refused = Vec::new();
     for def in played_runs {
+        if reader.left.runs.contains(&def.name) {
+            continue;
+        }
         match script(reader, (def, played.len()), init, variables) {
             Ok((script, picks)) => {
                 played.push(script);
                 picked.extend(picks);
             }
-            Err(refusal) => refused.push(refusal),
+            Err(refusal) => {
+                refused.push(refusal);
+                reader.unread.runs.push(def.name.clone());
+            }
         }
     }
     if refused.is_empty() {

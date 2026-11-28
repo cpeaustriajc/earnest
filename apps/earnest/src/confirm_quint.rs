@@ -676,6 +676,16 @@ pub(crate) fn quint_differences(asked: &Asked<'_>) -> Vec<Difference> {
     let Some(quint) = asked.quint else {
         return vec![cannot("not compared".to_owned(), NOT_QUINT)];
     };
+    if !checked.result.not_judged.is_empty() {
+        return vec![cannot(
+            "not compared".to_owned(),
+            &format!(
+                "the checker can't read part of the check (not judged: {}), so there is no full \
+                 result to compare",
+                checked.result.not_judged.join(", ")
+            ),
+        )];
+    }
     if let Some(reason) = checked
         .result
         .reason

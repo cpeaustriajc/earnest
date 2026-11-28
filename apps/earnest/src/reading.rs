@@ -21,7 +21,15 @@ pub(crate) struct Readable {
     pub(crate) counted: bool,
     pub(crate) runs_not_played: Vec<String>,
     pub(crate) not_built: Option<String>,
+    pub(crate) not_judged: Vec<String>,
+    pub(crate) unread: Vec<Problem>,
     pub(crate) quint: Option<QuintCheck>,
+}
+
+impl Readable {
+    pub(crate) fn is_read_in_part(&self) -> bool {
+        !self.unread.is_empty() || !self.not_judged.is_empty()
+    }
 }
 
 #[derive(Debug)]
@@ -191,6 +199,8 @@ fn understand(reading: Reading) -> Content {
                     counted: false,
                     runs_not_played: Vec::new(),
                     not_built: None,
+                    not_judged: Vec::new(),
+                    unread: Vec::new(),
                     quint: None,
                 });
                 models.extend(in_setups.into_iter().map(|model| Readable {
@@ -202,6 +212,8 @@ fn understand(reading: Reading) -> Content {
                     counted: false,
                     runs_not_played: Vec::new(),
                     not_built: None,
+                    not_judged: Vec::new(),
+                    unread: Vec::new(),
                     quint: None,
                 }));
             }
@@ -243,6 +255,8 @@ fn quint(path: String, source: String) -> ModelFile {
                 counted: false,
                 runs_not_played: Vec::new(),
                 not_built: None,
+                not_judged: Vec::new(),
+                unread: Vec::new(),
                 quint: None,
             }]),
         ),
