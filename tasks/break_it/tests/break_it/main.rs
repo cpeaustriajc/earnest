@@ -11,6 +11,7 @@ mod fourth_b;
 mod native_division;
 mod ninth;
 mod quint_division;
+mod quint_eighth;
 mod quint_fifth;
 mod quint_first;
 mod quint_fourth;
