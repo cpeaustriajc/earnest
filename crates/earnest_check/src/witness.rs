@@ -309,7 +309,7 @@ fn judged(all: &[Combination<'_>], depth: usize) -> Judged {
         }
         found.through |= under.through;
         if let Some(fell) = under.fell {
-            found.fell.get_or_insert(moved(fell));
+            found.fell.get_or_insert_with(|| moved(fell));
         }
         let fell_here = match scope {
             None => under.fell.is_some(),
@@ -1032,6 +1032,10 @@ impl Search<'_> {
             }
             None => {}
         }
+        self.ending(&mut combinations, &judged)
+    }
+
+    fn ending(&self, combinations: &mut [Combination<'_>], judged: &Judged) -> Ended {
         let found = judged.fell.and_then(|(position, record)| {
             let found = combinations.get_mut(position)?;
             let ends = &mut found.ends;
