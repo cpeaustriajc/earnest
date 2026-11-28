@@ -14,7 +14,7 @@ Two shapes of `.qnt` check judged nothing, though `quint test` plays their runs:
 
 A spec may also import one name alone (`import Lib.twice`), a module with variables, and export a module it imports (`export Lib.*`); these were compiled, and their runs were not played.
 
-Quint 0.33.1 loses a constant set through the instances in these shapes: `quint test` faults with `QNT500 Uninitialized const K`, and `quint compile` stops or leaves the constant unset. Earnest gives the constant the value the instances give, so `Top::Mid::upTest` holds where `K` is 3, and the search gives the verdicts and state counts TLC gives for the same model written flat. Every other run gets `quint test`'s verdict. See [Instances of instances](/reference/quint/#instances-of-instances).
+Quint 0.33.1 loses a constant set through the instances in these shapes ([quint-co/quint#1148](https://github.com/quint-co/quint/issues/1148)): `quint test` faults with `QNT500 Uninitialized const K`, and `quint compile` stops or leaves the constant unset. Earnest gives the constant the value the instances give, so `Top::Mid::upTest` holds where `K` is 3, and the search gives the verdicts and state counts TLC gives for the same model written flat. Every other run gets `quint test`'s verdict. See [Instances of instances](/reference/quint/#instances-of-instances).
 
 ## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
 
