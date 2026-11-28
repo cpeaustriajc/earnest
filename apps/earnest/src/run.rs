@@ -548,8 +548,6 @@ pub(crate) fn only_runs_not_played(reason: &str, runs: &[String]) -> bool {
     !runs.is_empty() && reason.starts_with(&not_played_reason(runs))
 }
 
-/// The reason a check's result gives: the search's, unless runs were not played and the search
-/// gave no reason but that every expected path was found, when it names the runs not played.
 pub(crate) fn reason_of(searched: Option<String>, readable: &Readable) -> Option<String> {
     searched
         .filter(|reason| readable.runs_not_played.is_empty() || reason != EVERY_EXPECTED_FOUND)

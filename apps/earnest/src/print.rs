@@ -312,8 +312,6 @@ fn not_played_line(result: &ModelResult) -> Option<String> {
     ))
 }
 
-/// The lines that say what a check read in part left out: a note naming the properties and
-/// runs not judged, then each problem the reader met, as [`problem_lines`] writes them.
 pub(crate) fn not_judged_lines(not_judged: &[String], unread: &[Problem]) -> Vec<String> {
     let mut lines = Vec::new();
     if !not_judged.is_empty() {

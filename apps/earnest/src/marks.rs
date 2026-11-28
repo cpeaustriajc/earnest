@@ -29,9 +29,6 @@ impl Role {
     }
 }
 
-/// An `init = name` or `step = name` of a module's mark: the action the check starts from or
-/// steps with, as Quint's `--init` and `--step` take it. `name` is what follows the `=`, as
-/// written, and may be empty or not a name; the planner refuses those.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Chosen {
     pub(crate) role: Role,
