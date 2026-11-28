@@ -593,7 +593,7 @@ esac
 
 const SKIPPED_RUN_FAILS: &str = "\n  setup\n    1) setup::spec::upTest failed after 1 test(s)\n\n  1 failed\nerror: Tests failed\n";
 
-fn a_setup_that_imports_a_module_both_whole_and_under_a_name(played: &str) -> Sandbox {
+fn a_setup_whose_spec_imports_a_module_with_variables(played: &str) -> Sandbox {
     let sandbox = Sandbox::empty();
     let samples = repository().join("tasks/quint/confirm/fixtures/skipped");
     let read = |name: &str| {
@@ -630,7 +630,7 @@ fn confirm_in(sandbox: &Sandbox, quint: &Path) -> Run {
 
 #[test]
 fn a_run_the_checker_did_not_play_and_quint_test_breaks_is_never_the_same() {
-    let sandbox = a_setup_that_imports_a_module_both_whole_and_under_a_name(SKIPPED_RUN_FAILS);
+    let sandbox = a_setup_whose_spec_imports_a_module_with_variables(SKIPPED_RUN_FAILS);
     let verified = Run::of(
         sandbox
             .command()
@@ -653,7 +653,7 @@ fn a_run_the_checker_did_not_play_and_quint_test_breaks_is_never_the_same() {
 
 #[test]
 fn a_run_only_quint_test_plays_differs_even_when_a_run_the_checker_did_not_play_ends_alike() {
-    let sandbox = a_setup_that_imports_a_module_both_whole_and_under_a_name(
+    let sandbox = a_setup_whose_spec_imports_a_module_with_variables(
         "\n  setup\n    ok setup::spec::upTest passed 1 test(s)\n    1) upTest failed after 1 test(s)\n\n  1 passing (1ms)\n  1 failed\nerror: Tests failed\n",
     );
     let run = confirm_in(&sandbox, &sandbox.path().join("fake/quint"));
@@ -668,9 +668,8 @@ fn a_run_only_quint_test_plays_differs_even_when_a_run_the_checker_did_not_play_
 
 #[test]
 fn quint_given_by_a_relative_path_runs_for_confirm_as_it_runs_for_verify() {
-    let sandbox = a_setup_that_imports_a_module_both_whole_and_under_a_name(
-        "\n  setup\n\n  0 passing (1ms)\n",
-    );
+    let sandbox =
+        a_setup_whose_spec_imports_a_module_with_variables("\n  setup\n\n  0 passing (1ms)\n");
     let run = confirm_in(&sandbox, Path::new("fake/quint"));
     assert!(
         !run.stdout.contains("did not start"),
