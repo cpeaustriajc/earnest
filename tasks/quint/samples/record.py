@@ -15,6 +15,7 @@ SAMPLES = {
     "ledger": ("ledger", ["conserved", "noDebt", "someoneEmpty"], [], True),
     "parts": ("house", ["tickBound", "neverLit"], [], True),
     "pool": ("pool", ["notBoth", "allDone"], [], True),
+    "relay": ("relay", ["counted"], [], True),
     "ring": ("Two", ["mutex"], ["moves"], False),
     "tally": ("tally", [], [], False),
     "tallyfails": ("tallyfails", [], [], False),

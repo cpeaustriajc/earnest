@@ -46,6 +46,20 @@
     },
     "states": 9
   },
+  "relay": {
+    "module": "relay",
+    "rules": {
+      "counted": "holds"
+    },
+    "runs": {
+      "backTest": "holds",
+      "fromTwoTest": "holds",
+      "handedTest": "holds",
+      "shortOrLongTest": "holds",
+      "thriceTest": "holds"
+    },
+    "states": 9
+  },
   "ring": {
     "module": "Two",
     "rules": {
@@ -72,6 +86,6 @@
     "runs": {
       "wrongTest": "fails"
     },
-    "states": null
+    "states": 0
   }
 }

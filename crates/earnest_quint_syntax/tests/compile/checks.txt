@@ -249,6 +249,7 @@ compile	--target	json	--main	reads	--init	init	--step	step	--invariant	natural,b
 compile	--target	json	--main	refused	--init	init	--step	step	--invariant	small	tasks/quint/views/quintrefuses/refused.qnt
 compile	--target	json	--main	refused	--init	init	--step	step	--invariant	small,shown == shown	tasks/quint/views/quintrefuses/refused.qnt
 compile	--target	json	--main	refusedShapes	--init	init	--step	step	tasks/break_it/models/quint_101/refused/refused.qnt
+compile	--target	json	--main	relay	--init	init	--step	step	--invariant	counted	tasks/quint/samples/relay.qnt
 compile	--target	json	--main	repeated	--init	init	--step	step	--invariant	small,listed	--temporal	strong,fairPick	tasks/quint/checks/problems/problems.qnt
 compile	--target	json	--main	reportMarks	--init	init	--step	step	--invariant	belowTwo,belowNine,atFive,atOne	tasks/break_it/models/quint_sixth/report_marks/report_marks.qnt
 compile	--target	json	--main	runplace	--init	init	--step	step	tasks/quint/checks/runplace/runplace.qnt
