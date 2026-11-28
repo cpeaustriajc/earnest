@@ -21,17 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - run: rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy --no-self-update
       - run: rustup default "$RUST_VERSION"
       - run: echo "RUSTC_VERSION=$(rustc --version | cut -d' ' -f2)" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: latest
       - run: sudo npm install --global rust-just@latest bun@latest typescript@latest
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/cargo-tools
           key: cargo-tools-${{ runner.os }}-${{ env.RUSTC_VERSION }}-${{ github.run_id }}
@@ -49,7 +49,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal --no-self-update
           echo "$HOME/verus/verus-x86-linux" >> "$GITHUB_PATH"
           echo "VERUS_VERSION=$version" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry

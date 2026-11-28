@@ -34,7 +34,7 @@ jobs:
       previous_sha: ${{ steps.decide.outputs.previous_sha }}
       dated_tag: ${{ steps.decide.outputs.dated_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           sparse-checkout: |
@@ -101,7 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -180,7 +180,7 @@ jobs:
       BINARY: ${{ matrix.binary }}
       ARCHIVE: ${{ matrix.archive }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - run: rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET" --no-self-update
@@ -219,7 +219,7 @@ jobs:
         run: |
           sh install.sh
           "$EARNEST_INSTALL_DIR/earnest" verify --no-cache "$SMOKE_MODEL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.platform }}
           path: dist/
@@ -234,11 +234,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/dist
           merge-multiple: true
@@ -404,7 +404,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install the published nightly with install.sh
