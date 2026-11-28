@@ -72,6 +72,9 @@ record-counts:
 same-answers commit:
     python3 -I tasks/answers/same.py {{ commit }}
 
+changelog *args:
+    python3 -I .github/scripts/changelog.py {{ args }}
+
 verify:
     cargo verus focus
 
