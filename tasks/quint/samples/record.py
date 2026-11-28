@@ -86,7 +86,7 @@ def main():
             compile_arguments = ["compile", "--target", "json", "--main", module, "--init", "init", "--step", "step"]
             if invariants:
                 compile_arguments += ["--invariant", ",".join(invariants)]
-            target = f"fixtures/compiled/{module}@{','.join(invariants)}@.json"
+            target = f"fixtures/compiled/{module}@{','.join(invariants)}@.json".replace("::", ".")
             os.makedirs(os.path.dirname(target), exist_ok=True)
             with open(target, "w") as out:
                 compiled = subprocess.run([QUINT, *compile_arguments, source], stdout=out, stderr=subprocess.PIPE, text=True)
