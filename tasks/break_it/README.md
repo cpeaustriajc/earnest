@@ -3715,3 +3715,26 @@ refused by this session's permissions. Quint's Rust backend, which could not be 
 and `QUINT_RETRY_NONDET_SMALLER_THAN`, documented as refused and not read; nested `then` inside the first
 part of a `then` beyond what the generator writes; runs in an instance of a module with a
 parameter, beyond the setup of finding 1.
+
+## Quint runs of #101
+
+The models of `models/quint_101/` are the shapes #101 plays: a run that calls a run with a
+`nondet` of its own (first, in the middle, last, nested, under a top `nondet`, over 99 and 100
+values, around `reps`, `expect` and `fail()`), `if`, `and`, `or` and `any` between chains, and
+`reps` of 0 rounds. `tests/break_it/quint_called_runs.rs` compares each run with what `quint
+test --backend typescript` of Quint 0.33.1 printed, and checks that the shapes still refused
+are named as runs. `models/quint_101/compiled/` holds `quint compile --target json` of three of
+them, read by the unit tests of `crates/earnest_quint`.
+
+`models/quint_101/random/gen101.py SEED OUT` writes a module `hSEED` of two runs of those
+shapes and `hSEED.expect`, the verdict of an oracle that transcribes the evaluator with the
+state it carries: a `nondet`, an `any` and an `or` try again from the state the false try left,
+and `any` restores only the next variables. `drive.sh FROM TO OUT` verifies the folder with
+`--jobs 1`, `--jobs 4 --no-cache` and then cached, and prints the runs that differ. Seeds 1 to
+400: 790 runs, 586 played, each the oracle's verdict in all three; the 204 others are in
+modules earnest refuses (most past the 1 000 combinations a run may pick, then `fail()` inside
+a part of an `and`, an `and` whose first part is one action under a top `nondet`, a first action
+that reads a variable, which Quint stops with QNT502, a chain tried again whose first step reads
+the state, and an `and` of two single actions, which `quint test` passes). Five seeds time out in
+the oracle. The oracle agrees with `quint test --max-samples 3000` on the 80 runs of seeds 1 to
+40.

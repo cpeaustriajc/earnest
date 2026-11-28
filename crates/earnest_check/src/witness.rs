@@ -1065,12 +1065,16 @@ impl Search<'_> {
                 NONE_GETS_THROUGH.to_owned(),
             ),
             Some((chosen, retried, within, ordered, (path, why))) => {
-                let mut own = retried
+                let every = retried
                     .iter()
                     .zip(within.iter().chain(std::iter::repeat(&None)))
                     .zip(ordered.iter().chain(std::iter::repeat(&false)))
-                    .filter(|((_, scope), part)| scope.is_none() && !**part);
-                let after = if own.all(|((each, _), _)| *each) {
+                    .filter(|((_, scope), part)| scope.is_none() && !**part)
+                    .all(|((each, _), _)| *each);
+                let after = if why.contains("`fail()`") && !every {
+                    "; the run is false here, and under `fail()` `quint test` fails the run for \
+                     the first value a run it calls, or a branch of an `any`, gets through with"
+                } else if every {
                     "; the run is false for every value its `nondet`s pick, or can be, so \
                      `quint test` fails it"
                 } else {

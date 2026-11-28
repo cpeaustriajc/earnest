@@ -5,6 +5,17 @@ description: What changed in the nightly builds of earnest, newest first.
 
 Earnest ships as a nightly build of `main`. This page lists what changed, newest first.
 
+## November 2026: Quint runs that call runs with a `nondet`, and runs joined by `if`, `and`, `or` and `any`
+
+A `.qnt` file was `unreadable` when a run called a run with a `nondet` of its own (`anyStart.then(step)`, `init.then(threeStart)`), or joined chains with `if`, `and`, `or` or `any`. The problem said ``a chain of steps where one step is wanted … never in `init`, `step` or a property`` and named the run "the definition". `quint test` plays these runs, and earnest now does too, with Quint's verdict:
+
+- **Called runs:** the called run's `nondet` is tried again inside the call while the called run is false, and not for what comes after it. With something after it, a called run false for every value (fewer than 100 values) or for one value (100 or more) breaks the run, as `quint test` stops it (QNT513). A `nondet` in parentheses in a chain, `(nondet n = S.oneOf() A).then(B)`, is played the same way.
+- **`if (c) A else B`** between chains, where `c` is known before the run starts; **`any`** of chains, as a `nondet` over its branches (``with `any` = 2``); **`or`**, whose next part counts only where the one before can be false (``with `or` = 2``); **`and`**, false where its first part is false.
+- **`0.reps(…)`** is no longer refused: it makes no step, so `init.then(0.reps(_ => step))` holds. A step or an `expect` after it that reads a variable breaks the run, as `quint test` stops it there (QNT502).
+- **Still refused**, with a problem that names the shape and the run: a chain that Quint tries again whose first step reads the state, an `if` whose condition reads the state, and the others listed under [Runs](/reference/quint/#runs).
+
+Runs of other shapes, the search and native models are unchanged.
+
 ## November 2026: a Quint run with no state to start from is false, as in `quint test`
 
 Two shapes of run ended neither passed nor failed, and earnest reported them as `holds` where `quint test` fails them:

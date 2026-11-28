@@ -557,15 +557,38 @@ Earnest reads these run operators as `quint test` judges them:
 |---|---|
 | `A.then(B)` | `B` is the next step. A step that can't happen breaks the run, but for the last step after a `nondet` at the top of the run, where the value is skipped |
 | `A.expect(P)` | `P` must be true after the step it follows, or on the start state right after the first action |
-| `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number from 1 to 1000 when the file is read |
+| `n.reps(i => A(i))` | `n` steps, each with its index. `n` must be a number up to 1000 when the file is read. A count of 0 or less makes no step and changes nothing, as in Quint, and Quint then leaves every variable unset: what comes next must read none (`init`), or the run is broken where it reads one, as `quint test` stops it (QNT502) |
 | `A.fail()` | The run's last step must not be able to happen. Around a chain that ends in `reps` or `expect`, the run always breaks, as in Quint. A false `assert` in the run's first action is an error that `fail()` does not turn into a pass |
 | `assert(P)` | At the start of a step's `all { ... }`: `P` must be true before the step. In the run's first action, or as the whole run (`run t = assert(f(1) == 2)`), a false `P` breaks the run, as `quint test` fails it |
 | a condition with no step, such as `run t = f(1) == 1` | The run holds when the condition is true and is broken when it is false |
 | `nondet` and `val` at the top of the run | Each value of the `nondet` is played, and a value the run is false for is skipped, as below; a `val` is a constant |
-| a run's name | That run, played in place |
+| a run's name | That run, played in place. A run with a `nondet` of its own is retried inside the call, as [below](#a-run-that-calls-a-run-with-its-own-nondet) |
 | a definition that chains steps | Played in place, with its arguments put in, such as `action TwoSteps = init.then(step).then(step)` in `TwoSteps.expect(n == 2)` or `init.then(SeeMoney("money"))` |
+| `(nondet n = S.oneOf() A)` written in a chain | Played as a called run with that `nondet`: `n` is tried again while `A` is false, and not for what comes after it |
+| `if (c) A else B` between chains | The branch `c` picks. `c` must be known before the run starts: a constant, or the `nondet`s written above it |
+| `and { A, B }`, `or { A, B }`, `any { A, B }` of chains | As [below](#runs-joined-by-and-or-and-any) |
 
 A step plays every way its action can happen: each branch of an `any` or a `match` and each value of each `nondet` in it. Where `quint test` samples up to 10,000 random choices, earnest tries every choice, depth first, so it finds every failure sampling finds and those it misses. Whether the step can happen at all is judged as `quint test` judges it, below.
+
+### A run that calls a run with its own `nondet`
+
+A run may call a run whose body starts with a `nondet`, such as `run anyStart = nondet n = 0.to(4).oneOf() init.then(x' = n)`, first in a chain, in the middle, last, inside `reps`, before `expect` or under `fail()`; a `nondet` written in parentheses in a chain, `(nondet n = S.oneOf() A).then(B)`, is played the same way. Quint tries the next value of the called run's `nondet` while the called run is false, and not for what comes after the call, so earnest plays each value and judges them as in a step:
+
+- **Fewer than 100 values:** the called run is false only where it is false for every value. `threeStart.then(all { x == 3, x' = x })` holds where `threeStart` needs `n == 3` in its last step; `anyStart.then(all { x == 3, x' = x })` is broken, since `anyStart` is true for `n` = 0, and the step after it is the run's last.
+- **100 values or more:** the called run is false where it is false for one value, since Quint keeps its first pick.
+- **What a false called run does:** with something after it (a `then`, a round of `reps`, an `expect`) it is an error that breaks the run, ``…; the run `threeStart` is false for every value its `nondet`s pick, or can be, and something comes after it, so `quint test` stops the run there with an error``. As the run's last part it makes the run false, and a `nondet` at the top of the run tries its next value. Under `fail()` the run is broken where one value gets the called run through.
+
+A called run nested in another follows the same rule, level by level. Quint plays the next try from the state the false one left, after that try's steps, so earnest plays a called run of two steps or more over fewer than 100 values only where its first step reads no variable, as `init`; one that reads the state is refused (see below). A called run of one action is that action, with its `nondet`, as a step.
+
+### Runs joined by `and`, `or` and `any`
+
+`and`, `or` and `any` of chains are played as Quint plays them, under the `nondet`s and `if`s at the top of a run:
+
+- **`any { A, B }`:** Quint tries its branches in a random order until one is true, so it is played as a `nondet` over the branches: false only where every branch can be, and broken by an error in any branch. A broken run names the branch from 1, ``with `any` = 2: …``. An `any` of chains may also be a step in the middle of a chain, where it is a called run.
+- **`or { A, B }`:** Quint plays `A`, and `B` only where `A` is false, so `B` counts only where `A` can be false: `or { init.then(step), init.then(high).then(step) }` holds though its second part ends in an error. A broken run names the part, ``with `or` = 2: …``.
+- **`and { A, B }`:** where `A` is false the run is false; where it is true `B` is played. Quint gives `B`'s first action the state `A` started its last step from, so that action must read no variable, as `init`.
+
+Quint refuses an `and` or an `or` of chains followed by `then` (`QNT000`, its effect checker), so they are the run's last part.
 
 ### A `nondet` inside a step
 
@@ -613,7 +636,7 @@ A run with no `nondet` at its top is false where `quint test` fails it, so a fal
 
 A run with more than 100,000 branches from one start state is `unknown`, and its model is `unfinished`, with the reason ``the run `name` has more than 100000 branches from one start state``.
 
-The `nondet`s written at the top of a run may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the check is `unreadable`, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
+The `nondet`s written at the top of a run, together with those of the runs it calls and the branches of its `any`s and `or`s of chains, may pick among at most 1,000 combinations, since each one is played as a run of its own. Past that the check is `unreadable`, and the problem says to pick from smaller sets or to pick inside a step, where every value is tried too.
 
 A run that reads a variable its first action gives no value is `unreadable`, with the run, the action and the variable named, where `quint test` stops with `Variable y not set`: a first action that reads a variable (`incX.then(...)`), and one that sets only some of the variables a later step or `expect` reads (`setX.then(xFromY)`).
 
@@ -624,7 +647,17 @@ unreadable  specs/Unset.qnt  Unset
 
 A definition that chains steps may be called at the start of a run, in the middle, inside `reps`, from another such definition, and followed by `expect`, `fail` or `then`. Its arguments must be known before the run starts, such as a constant or the run's own `nondet`. Quint refuses a `def` that chains steps (`Use action instead`), so these are `action`s or `run`s. Used as `init`, `step` or in a property, a chain is refused: it is a run, not one step.
 
-Also refused, each named in the problem and reported at its line in the `.qnt` file: a `reps` count that is not a number from 1 to 1000 when the file is read, a `fail()` that is not the run's last operator, an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
+Also refused, each named in the problem and reported at its line in the `.qnt` file: a `reps` count that is not a number up to 1000 when the file is read, a `fail()` that is not the run's last operator (inside a part of an `and` too), an `assert` after another part of a step, `q::test`, `q::testOnce`, `q::debug`, and an operator defined inside a run.
+
+These shapes of run are refused too, each with a problem that names it, because earnest can't yet mirror Quint's answer for them:
+
+- **A chain that Quint tries again, whose first step reads the state:** a run called after a step with a `nondet` over fewer than 100 values, a branch of an `any` or a part of an `and` after the first, which starts with an action that reads a variable (`step.then(...)`). Quint plays the next try from the state the false one left, which earnest does not follow. Start it with an action that reads no variable, as `init`.
+- **A called run's `nondet` over a set read from the state,** before a chain of steps. Pick inside the step that uses it.
+- **An `if` between chains whose condition reads the state,** such as `init.then(if (x > 0) A else B)`. Quint reads it where the run gets to it; write the condition inside a step.
+- **An `or` of chains after a step or inside a called run**, and an `and` of chains under `fail()` or as the last part of a called run with a `nondet`.
+- **An `and` whose first part is one action, under a `nondet` at the top of the run:** where that action is false the run is false, which earnest does not tell apart from a first action that gives no state. Write it as the first step of a chain.
+- **A `fail()` over a called run whose `nondet` picks from an empty set.**
+- **A chain of steps inside one action**, such as `all { step.then(step) }`: the problem names what holds it, ``a chain of steps (`then`) inside an `all { ... }`, where Quint wants one action``.
 
 The runs of the spec module are played in a setup that earnest builds from the file typechecked as Quint, as `quint test --main Small` plays them: the runs of `Clock` whose name ends in `Test` and those of `Small`, and the marked runs of either (`tickTwice`, or `C::tickTwice` under a name). They are named by their short names, `tickTwice` for `Small::Clock::tickTwice`.
 

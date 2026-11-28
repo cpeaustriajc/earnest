@@ -56,6 +56,7 @@ struct Step {
 enum Place {
     Last,
     Inside,
+    Failing,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -76,7 +77,6 @@ enum Halt {
 struct Pending {
     fresh: bool,
     unset: bool,
-    failing: bool,
 }
 
 #[derive(Clone, Default)]
@@ -259,8 +259,9 @@ impl<'a> Run<'_, 'a> {
             return self.refuse(
                 "`nondet`",
                 &format!(
-                    "the `nondet`s written at the top of the run pick among more than \
-                     {MOST_PLANS} combinations, and each one is played as a run of its own: \
+                    "the `nondet`s written at the top of the run and of the runs it calls pick \
+                     among more than {MOST_PLANS} combinations, and each one is played as a run of \
+                     its own: \
                      pick from smaller sets, or pick inside a step, as in `nondet x = \
                      S.oneOf() act(x)`, where every value is tried too"
                 ),
@@ -345,7 +346,7 @@ impl<'a> Run<'_, 'a> {
                 self.reader.release(opdef.id, was);
                 played
             }
-            Quint::App { opcode, args, .. } if opcode == "ite" && !self.reader.is_action(expr) => {
+            Quint::App { opcode, args, .. } if opcode == "ite" && self.chains(expr, 0) => {
                 let branch = self.branch(expr, args)?;
                 self.plans(branch, chosen)
             }
@@ -502,7 +503,7 @@ impl<'a> Run<'_, 'a> {
                 Ok(())
             }
             ("fail", [first]) => {
-                if place == Place::Inside || self.scope.is_some() {
+                if place != Place::Last || self.scope.is_some() {
                     return self.refuse_at(
                         expr,
                         "`fail`",
@@ -510,10 +511,7 @@ impl<'a> Run<'_, 'a> {
                          the end of the run, as Quint judges it there",
                     );
                 }
-                let failing = std::mem::replace(&mut self.pending.failing, true);
-                let walked = self.walk(first, Place::Inside, drawn);
-                self.pending.failing = failing;
-                walked?;
+                self.walk(first, Place::Failing, drawn)?;
                 for each in live(drawn) {
                     match each.steps.last_mut() {
                         Some(step) if each.last_can_fail => step.refused = true,
@@ -563,7 +561,7 @@ impl<'a> Run<'_, 'a> {
                 self.reader.release(opdef.id, was);
                 Some(walked)
             }
-            Quint::App { opcode, args, .. } if opcode == "ite" && !self.reader.is_action(expr) => {
+            Quint::App { opcode, args, .. } if opcode == "ite" && self.chains(expr, 0) => {
                 let branch = match self.branch(expr, args) {
                     Ok(branch) => branch,
                     Err(refused) => return Some(Err(refused)),
@@ -576,7 +574,7 @@ impl<'a> Run<'_, 'a> {
                     && args.iter().any(|each| self.chains(each, 0)) =>
             {
                 Some(match opcode.as_str() {
-                    "actionAny" => self.any_of_chains(expr, args, place, drawn),
+                    "actionAny" => self.any_of_chains(args, place, drawn),
                     "and" => self.and_of_chains(expr, args, place, drawn),
                     _ => self.refuse_at(
                         expr,
@@ -632,18 +630,6 @@ impl<'a> Run<'_, 'a> {
             },
             |name| format!("the run `{name}`"),
         );
-        if self.pending.failing {
-            return self.refuse_at(
-                &opdef.expr,
-                &feature,
-                &format!(
-                    "a `fail()` over {says}, which picks with a `nondet` of its own before a \
-                     chain of steps: Quint tries the `nondet` again while that run is false, so \
-                     that `fail()` holds only where every value makes it false; write the \
-                     `nondet` at the top of the run instead"
-                ),
-            );
-        }
         let Picked::Listed(_, values) = self.reader.picked_from(opdef)? else {
             return self.refuse_at(
                 &opdef.expr,
@@ -655,7 +641,17 @@ impl<'a> Run<'_, 'a> {
                 ),
             );
         };
-        let retried = values.len() < RETRIED_BELOW;
+        if place == Place::Failing && values.is_empty() {
+            return self.refuse_at(
+                &opdef.expr,
+                &feature,
+                &format!(
+                    "a `fail()` over {says}, which picks from an empty set before a chain of \
+                     steps: pick from a set with a value, or write `fail()` inside it"
+                ),
+            );
+        }
+        let retried = values.len() < RETRIED_BELOW && place != Place::Failing;
         let bodies: Vec<Alternative<'a>> = values
             .into_iter()
             .map(|value| Alternative {
@@ -669,20 +665,10 @@ impl<'a> Run<'_, 'a> {
 
     fn any_of_chains(
         &mut self,
-        expr: &'a Quint,
         args: &'a [Quint],
         place: Place,
         drawn: &mut Vec<Drawn>,
     ) -> Read<()> {
-        if self.pending.failing {
-            return self.refuse_at(
-                expr,
-                "`any`",
-                "a `fail()` over an `any` between chains of steps: Quint tries its branches until \
-                 one is true, so that `fail()` holds only where every branch is false; write \
-                 `fail()` inside each branch instead",
-            );
-        }
         let bodies = args
             .iter()
             .zip(1_i64..)
@@ -693,7 +679,8 @@ impl<'a> Run<'_, 'a> {
             })
             .collect();
         let says = "the `any` between chains of steps".to_owned();
-        self.alternatives(("any", &says), (bodies, true), place, drawn)
+        let retried = place != Place::Failing;
+        self.alternatives(("any", &says), (bodies, retried), place, drawn)
     }
 
     fn and_of_chains(
@@ -704,7 +691,7 @@ impl<'a> Run<'_, 'a> {
         drawn: &mut Vec<Drawn>,
     ) -> Read<()> {
         let ends_the_run = place == Place::Last;
-        if self.pending.failing || (ends_the_run && self.scope.is_some()) {
+        if place == Place::Failing || (ends_the_run && self.scope.is_some()) {
             return self.refuse_at(
                 expr,
                 "`and`",
@@ -797,7 +784,8 @@ impl<'a> Run<'_, 'a> {
                 let was = held.map(|id| (id, self.reader.hold(id, Expr::Const(value.clone()))));
                 let outer = std::mem::replace(&mut self.scope, scope);
                 self.pending.fresh = fresh;
-                let played = self.walk(body, Place::Last, &mut walked);
+                let inner = if opens { Place::Last } else { place };
+                let played = self.walk(body, inner, &mut walked);
                 self.pending.fresh = false;
                 self.scope = outer;
                 if let Some((id, was)) = was {
