@@ -3577,6 +3577,18 @@ An adversarial pass over runs, made on commit ac9a8be1 of the integration branch
 and its files in `models/quint_eighth/`; each `.qnt` file has its recordings under
 `crates/earnest_quint_syntax/tests/quint/`. The tests run the `earnest` binary on the `.qnt` file.
 
+Finding 1 is fixed on the integration branch at dfcb89e6, and its test passes after the merge.
+Attacked after the fix, against `quint test`: the nine shapes of the finding and the seven of a
+check of runs only, again; the empty inner set through an instance (`import Spec(N = 5) as S`), a
+setup that imports a spec whole, and a module whose `init` gives no state imported into a setup;
+a compiled `.json` and the `.qnt` file of ten runs over an `init` that gives no state (`init`,
+`.then(step).fail()`, `.expect`, `2.reps(_ => init)`, `false`, the run's own first action, the
+empty pick over 120 and over 10 values); and nine first actions that can't happen under a top
+`nondet`, from an `init` over an empty filter or written in place, with `then`, `fail()`,
+`expect` and `reps`. Each is as `quint test` says. `gen8.py`, seeds 1 to 400 on the merged build:
+1 496 runs, 1 493 agree, and the other 3 are the cap of 100 000 branches. A run that calls a spec
+run with its own `nondet` is still refused, finding 2.
+
 ### The evaluator's rules, as read
 
 From `runtime/impl/nondet.js`, `builtins.js` and `evaluator.js` of the npm package. "False" is a
