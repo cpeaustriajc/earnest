@@ -26,14 +26,14 @@ Dated releases older than 90 days are removed by the nightly workflow. Pin one t
 
 ## Pin a build
 
-Set `EARNEST_VERSION` to a dated tag, in `install.sh` or `install.ps1`. The script downloads that release's archive for your machine and checks its SHA-256 against the `.sha256` file beside it. Every machine that names the tag gets the same binary.
+Set `EARNEST_VERSION` for `install.sh` or `install.ps1`, putting a dated tag from the [GitHub Releases](https://github.com/cpeaustriajc/earnest/releases) page in place of `v0.1.0-nightly.YYYYMMDD`. The script downloads that release's archive for your machine and checks its SHA-256 against the `.sha256` file beside it. Every machine that names the tag gets the same binary.
 
 ```sh title="macOS and Linux"
-curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | EARNEST_VERSION=v0.1.0-nightly.20261126 sh
+curl -fsSL https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.sh | EARNEST_VERSION=v0.1.0-nightly.YYYYMMDD sh
 ```
 
 ```powershell title="Windows"
-$env:EARNEST_VERSION = 'v0.1.0-nightly.20261126'; irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex
+$env:EARNEST_VERSION = 'v0.1.0-nightly.YYYYMMDD'; irm https://raw.githubusercontent.com/cpeaustriajc/earnest/main/install.ps1 | iex
 ```
 
 To fetch the archive yourself, download it and its `.sha256` file from `https://github.com/cpeaustriajc/earnest/releases/download/<tag>/`, keep both in one folder, and run:
