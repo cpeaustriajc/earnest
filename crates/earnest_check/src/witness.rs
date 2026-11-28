@@ -1221,7 +1221,7 @@ mod tests {
         )
     }
 
-    fn ends(through: bool, fell: bool, called: &[usize]) -> Ends {
+    fn ends((through, fell): (bool, bool), called: &[usize]) -> Ends {
         Ends {
             through,
             fell: fell.then(nowhere),
@@ -1264,7 +1264,7 @@ mod tests {
                 within: &[Some(0)],
                 calls: &calls,
                 ordered: &[false],
-                ends: ends(false, false, &[0]),
+                ends: ends((false, false), &[0]),
             })
             .collect();
         assert_eq!(judged(&all, 0).error, Some((0, Some(0))));
@@ -1281,7 +1281,7 @@ mod tests {
                 within: &[Some(0)],
                 calls: &calls,
                 ordered: &[false],
-                ends: ends(false, false, &[0]),
+                ends: ends((false, false), &[0]),
             },
             Combination {
                 chosen: &picks[1],
@@ -1289,7 +1289,7 @@ mod tests {
                 within: &[Some(0)],
                 calls: &calls,
                 ordered: &[false],
-                ends: ends(true, true, &[]),
+                ends: ends((true, true), &[]),
             },
         ];
         let found = judged(&all, 0);
@@ -1305,7 +1305,7 @@ mod tests {
     #[test]
     fn a_later_part_of_an_or_counts_only_where_the_parts_before_can_be_false() {
         let parts = chosen(&[1, 2]);
-        let mut second = ends(false, false, &[]);
+        let mut second = ends((false, false), &[]);
         second.error = Some(nowhere());
         let all = [
             Combination {
@@ -1314,7 +1314,7 @@ mod tests {
                 within: &[None],
                 calls: &[],
                 ordered: &[true],
-                ends: ends(true, false, &[]),
+                ends: ends((true, false), &[]),
             },
             Combination {
                 chosen: &parts[1],
@@ -1342,7 +1342,7 @@ mod tests {
             within: &[],
             calls: &calls,
             ordered: &[],
-            ends: ends(false, false, &[0]),
+            ends: ends((false, false), &[0]),
         }];
         assert_eq!(judged(&all, 0).fell, Some((0, Some(0))));
     }
