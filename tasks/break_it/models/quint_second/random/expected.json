@@ -1,0 +1,202 @@
+{
+ "H1002": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "holds"
+  },
+  "states": 98,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "H1006": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 105,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "H1010": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "holds",
+   "r2Test": "broken",
+   "repsTest": "holds"
+  },
+  "states": 234,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "holds",
+   "inv2": "broken",
+   "t0": "holds",
+   "t1": "holds",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "H1013": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 168,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "holds",
+   "inv2": "broken",
+   "t0": "broken",
+   "t1": "holds",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "H14": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 130,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "holds",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "H25": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "holds"
+  },
+  "states": 126,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "inv2": "broken",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "H37": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 572,
+  "verdicts": {
+   "inv0": "holds",
+   "inv1": "broken",
+   "inv2": "broken",
+   "t0": "holds",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "H45": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "holds",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 819,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "inv2": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "holds",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ },
+ "H54": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 702,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "broken",
+   "inv2": "holds",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "broken",
+   "t4": "broken"
+  }
+ },
+ "H63": {
+  "prefix": "",
+  "runs": {
+   "r0Test": "broken",
+   "r1Test": "broken",
+   "r2Test": "broken",
+   "repsTest": "broken"
+  },
+  "states": 1560,
+  "verdicts": {
+   "inv0": "broken",
+   "inv1": "holds",
+   "inv2": "broken",
+   "t0": "broken",
+   "t1": "broken",
+   "t2": "broken",
+   "t3": "holds",
+   "t4": "broken"
+  }
+ }
+}

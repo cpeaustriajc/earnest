@@ -1,8 +1,7 @@
 use crate::run::Checked;
 use earnest_tla::{Files, Invariants};
-use std::ffi::OsString;
 use std::fs;
-use std::path::{Path, PathBuf, absolute};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const INVARIANT_ERROR: &str = "Error: Invariant ";
@@ -18,8 +17,22 @@ const LEFT: &str = " states left on queue.";
 const BROKEN: &str = "broken";
 const HOLDS: &str = "holds";
 const UNKNOWN: &str = "unknown";
+const EVENTUALLY: &str = "eventually";
+const TLC_STATES: &str = "states";
+const JAVA_TEMPORARY_FILES: &str = "java";
+const PROPERTIES_BROKEN: &str = "Temporal properties were violated.";
+const PROPERTY_NAMED: &str = "Temporal property ";
+const PROPERTY_NAMED_BROKEN: &str = " was violated.";
+const PROPERTIES_NAMED: &str = "Temporal properties ";
+const PROPERTIES_NAMED_BROKEN: &str = " were violated.";
+const CONSTANT_INVARIANT: &str = "The invariant of ";
+const CONSTANT_FALSE: &str = " is equal to FALSE";
+const CONSTANT_LEVEL_INVARIANT: &str = "The invariant ";
+const CONSTANT_LEVEL: &str = " is a constant-level formula ";
+const CONSTANT_LEVEL_FALSE: &str = "evaluates to FALSE.";
 const OUT_OF_RANGE: &str = "out-of-range";
 const FAULT: &str = "fault";
+const JVM_NOTICE: &str = "Picked up ";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TlcRun {
@@ -50,9 +63,38 @@ fn final_distinct_states(line: &str) -> Option<u64> {
 }
 
 fn violated_invariant(line: &str) -> Option<&str> {
-    let rest = line.strip_prefix(INVARIANT_ERROR)?;
-    let (name, _) = rest.split_once(VIOLATED)?;
-    Some(name)
+    if let Some(rest) = line.strip_prefix(INVARIANT_ERROR) {
+        let (name, _) = rest.split_once(VIOLATED)?;
+        return Some(name);
+    }
+    let error = line.strip_prefix(ERROR)?;
+    if let Some(name) = error
+        .strip_prefix(CONSTANT_INVARIANT)
+        .and_then(|rest| rest.strip_suffix(CONSTANT_FALSE))
+    {
+        return Some(name);
+    }
+    let (name, rest) = error
+        .strip_prefix(CONSTANT_LEVEL_INVARIANT)?
+        .split_once(CONSTANT_LEVEL)?;
+    rest.contains(CONSTANT_LEVEL_FALSE).then_some(name)
+}
+
+fn property_broken(error: &str) -> bool {
+    error == PROPERTIES_BROKEN
+        || error
+            .strip_prefix(PROPERTY_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTY_NAMED_BROKEN))
+        || error
+            .strip_prefix(PROPERTIES_NAMED)
+            .is_some_and(|rest| rest.ends_with(PROPERTIES_NAMED_BROKEN))
+}
+
+fn first_said(errors: &str) -> Option<&str> {
+    errors
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with(JVM_NOTICE))
 }
 
 pub(crate) fn read_tlc(output: &str) -> TlcRun {
@@ -146,7 +188,8 @@ pub(crate) fn differences(
                 .map_or_default(|error| format!(" ({error})"))
         )),
     }
-    for ours in &result.rules {
+    let exported = result.rules.iter().filter(|rule| rule.kind.is_none());
+    for ours in exported {
         let Some(theirs) = rules.iter().find(|rule| rule.id == ours.id) else {
             found.push(format!("rule {}: {name} was not run on it", ours.id));
             continue;
@@ -164,6 +207,54 @@ pub(crate) fn differences(
                     .errors
                     .first()
                     .map_or_default(|error| format!(" ({error})"))
+            ));
+        }
+    }
+    found
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RunsRun {
+    pub(crate) id: String,
+    pub(crate) run: TlcRun,
+}
+
+fn runs_verdict(rule: &RunsRun) -> &'static str {
+    if rule.run.errors.iter().any(|error| property_broken(error)) {
+        BROKEN
+    } else if rule.run.errors.is_empty() && rule.run.distinct_states.is_some() {
+        HOLDS
+    } else {
+        UNKNOWN
+    }
+}
+
+pub(crate) fn runs_differences(checked: &Checked, rules: &[RunsRun], tool: Tool) -> Vec<String> {
+    let name = tool.name();
+    let unseen_by_tlc = cut_short(checked);
+    let about_runs = checked
+        .result
+        .rules
+        .iter()
+        .filter(|rule| rule.kind.as_deref() == Some(EVENTUALLY));
+    let mut found = Vec::new();
+    for ours in about_runs {
+        let Some(theirs) = rules.iter().find(|rule| rule.id == ours.id) else {
+            found.push(format!("rule {}: {name} was not run on it", ours.id));
+            continue;
+        };
+        let verdict = runs_verdict(theirs);
+        let cut_short_where_tlc_sees_nothing = unseen_by_tlc && ours.verdict == UNKNOWN;
+        if verdict != ours.verdict && !cut_short_where_tlc_sees_nothing {
+            let error = theirs
+                .run
+                .errors
+                .iter()
+                .find(|error| !property_broken(error))
+                .map_or_default(|error| format!(" ({error})"));
+            found.push(format!(
+                "rule {}: the checker says {}, {name} says {verdict}{error}",
+                ours.id, ours.verdict
             ));
         }
     }
@@ -190,7 +281,7 @@ pub(crate) fn confirm_lines(
     };
     let mut lines = vec![format!(
         "{word:<7}  {}  {} states  {}{by}",
-        result.name,
+        result.run_name(),
         result.states,
         result.status.word()
     )];
@@ -214,8 +305,6 @@ pub(crate) struct Checker<'a> {
 }
 
 const INVARIANT: &str = "INVARIANT ";
-const TLC_TEMPORARY_FOLDER: &str = "temporary";
-const JAVA_TEMPORARY_FOLDER_IS: &str = "-Djava.io.tmpdir=";
 
 fn merged(runs: Vec<TlcRun>) -> TlcRun {
     let mut merged = TlcRun {
@@ -242,16 +331,16 @@ impl Checker<'_> {
         let workers = self.workers.max(1).to_string();
         match self.tool {
             Tool::Tlc => {
-                let mut own_temporary_folder = OsString::from(JAVA_TEMPORARY_FOLDER_IS);
-                own_temporary_folder.push(self.tlc_temporary_folder());
                 let mut command = Command::new("java");
                 command
-                    .arg(own_temporary_folder)
+                    .arg(format!("-Djava.io.tmpdir={JAVA_TEMPORARY_FILES}"))
                     .arg("-cp")
                     .arg(self.program)
                     .args(["tlc2.TLC", "-continue", "-workers"])
                     .arg(workers)
-                    .args(["-metadir", "states", "-config", config_name])
+                    .arg("-metadir")
+                    .arg(Path::new(TLC_STATES).join(config_name))
+                    .args(["-config", config_name])
                     .arg(module);
                 command
             }
@@ -283,20 +372,11 @@ impl Checker<'_> {
         if run.distinct_states.is_none() && run.errors.is_empty() {
             let said = String::from_utf8_lossy(&output.stderr);
             run.errors.push(
-                said.lines()
-                    .find(|line| !line.trim().is_empty())
-                    .map_or_else(
-                        || format!("{name} printed no state count"),
-                        |line| line.trim().to_owned(),
-                    ),
+                first_said(&said)
+                    .map_or_else(|| format!("{name} printed no state count"), str::to_owned),
             );
         }
         Ok(run)
-    }
-
-    fn tlc_temporary_folder(&self) -> PathBuf {
-        let folder = self.folder.join(TLC_TEMPORARY_FOLDER);
-        absolute(&folder).unwrap_or(folder)
     }
 
     fn program_word(&self) -> String {
@@ -328,7 +408,7 @@ impl Checker<'_> {
     }
 
     pub(crate) fn check(&self, files: &Files) -> Result<(TlcRun, Vec<RuleRun>), String> {
-        fs::create_dir_all(&self.folder).map_err(|error| {
+        fs::create_dir_all(self.folder.join(JAVA_TEMPORARY_FILES)).map_err(|error| {
             format!(
                 "the folder {} can't be made: {error}",
                 self.folder.to_string_lossy()
@@ -344,15 +424,6 @@ impl Checker<'_> {
                 self.folder.to_string_lossy()
             )
         })?;
-        if self.tool == Tool::Tlc {
-            let temporary = self.tlc_temporary_folder();
-            fs::create_dir_all(&temporary).map_err(|error| {
-                format!(
-                    "the folder {} can't be made: {error}",
-                    temporary.to_string_lossy()
-                )
-            })?;
-        }
         let counting = self.run(files, "count.cfg", &files.config_checking(&[]))?;
         let mut rules = Vec::new();
         for (number, exported) in files.rules.iter().enumerate() {
@@ -365,6 +436,20 @@ impl Checker<'_> {
             });
         }
         Ok((counting, rules))
+    }
+
+    pub(crate) fn check_runs(&self, files: &Files) -> Result<Vec<RunsRun>, String> {
+        let mut rules = Vec::new();
+        for (number, property) in files.eventually.iter().enumerate() {
+            let Some(config) = files.config_living(property) else {
+                continue;
+            };
+            rules.push(RunsRun {
+                id: property.rule.clone(),
+                run: self.run(files, &format!("eventually{number}.cfg"), &config)?,
+            });
+        }
+        Ok(rules)
     }
 }
 
@@ -496,6 +581,55 @@ State 1: <Initial predicate>
     }
 
     #[test]
+    fn an_invariant_tlc_finds_false_before_any_state_is_named() {
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_never is equal to FALSE\n").violated,
+            ["Rule_never"]
+        );
+        assert_eq!(
+            read_tlc(
+                "Error: The invariant Rule_never is a constant-level formula (i.e., it contains \
+                 no variables) and evaluates to FALSE. To assert ...\n"
+            )
+            .violated,
+            ["Rule_never"]
+        );
+        assert_eq!(
+            read_tlc("Error: The invariant of Rule_ok is equal to TRUE\n").violated,
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn every_wording_tlc_has_for_a_violated_temporal_property_is_broken() {
+        for line in [
+            "Temporal properties were violated.",
+            "Temporal property Eventually_p0 was violated.",
+            "Temporal properties Eventually_a, Eventually_b were violated.",
+        ] {
+            assert!(super::property_broken(line), "{line}");
+        }
+        assert!(!super::property_broken(
+            "Temporal property Eventually_p0 was not checked."
+        ));
+    }
+
+    #[test]
+    fn the_java_notices_before_tlc_s_error_are_not_its_error() {
+        assert_eq!(
+            super::first_said(
+                "Picked up JAVA_TOOL_OPTIONS: -Dhttps.proxyHost=x\nPicked up _JAVA_OPTIONS: \
+                 -Xmx1g\n\nError: Unable to access jarfile x\n"
+            ),
+            Some("Error: Unable to access jarfile x")
+        );
+        assert_eq!(
+            super::first_said("Picked up JAVA_TOOL_OPTIONS: -Dx=y\n"),
+            None
+        );
+    }
+
+    #[test]
     fn output_that_is_not_from_tlc_gives_nothing() {
         assert_eq!(
             read_tlc("Error: Unable to access jarfile x\n").errors.len(),
@@ -511,8 +645,10 @@ State 1: <Initial predicate>
 
     fn checked(states: usize, rules: &[(&str, &str)]) -> Checked {
         Checked {
+            position: 0,
             result: ModelResult {
                 name: "Oven".to_owned(),
+                setup: None,
                 file: "oven.model.ts".to_owned(),
                 line: 3,
                 status: Status::Fail,
@@ -520,6 +656,7 @@ State 1: <Initial predicate>
                 milliseconds: 1,
                 cached: false,
                 reason: None,
+                runs_not_played: Vec::new(),
                 rules: rules
                     .iter()
                     .map(|(id, verdict)| RuleResult {
@@ -527,6 +664,9 @@ State 1: <Initial predicate>
                         says: String::new(),
                         verdict: (*verdict).to_owned(),
                         path: None,
+                        kind: None,
+                        reason: None,
+                        repeats_from: None,
                     })
                     .collect(),
                 findings: Vec::new(),
@@ -807,6 +947,34 @@ State 1: <Initial predicate>
             merged(Vec::new()),
             TlcRun::default(),
             "no run, nothing found"
+        );
+    }
+
+    #[test]
+    fn a_broken_temporal_property_is_read_in_the_words_of_either_tlc() {
+        use super::{BROKEN, RunsRun, UNKNOWN, runs_verdict};
+        let broken = |error: &str| RunsRun {
+            id: "reach".to_owned(),
+            run: TlcRun {
+                distinct_states: Some(3),
+                violated: Vec::new(),
+                errors: vec![error.to_owned()],
+            },
+        };
+        assert_eq!(
+            runs_verdict(&broken("Temporal properties were violated.")),
+            BROKEN,
+            "the TLC inside Apalache's jar"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property Eventually_reach was violated.")),
+            BROKEN,
+            "tla2tools.jar 1.8 names the property"
+        );
+        assert_eq!(
+            runs_verdict(&broken("Temporal property was violated for some reason.")),
+            UNKNOWN,
+            "any other words are an error"
         );
     }
 }

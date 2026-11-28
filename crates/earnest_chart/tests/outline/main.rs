@@ -9,6 +9,8 @@ use earnest_chart::{
 };
 use earnest_check::{Graph, Limits, Outcome, Outline, explore};
 use earnest_ir::Model;
+use earnest_ir::{Expr, Op};
+use earnest_value::Value;
 use models::{Dice, random_model};
 
 const MODELS: u64 = 600;
@@ -168,4 +170,62 @@ fn an_outline_says_nothing_of_a_box_or_arrow_it_does_not_have() {
     assert_eq!(outline.states(boxes), 0, "no state");
     assert_eq!(outline.ends(arrows), None, "no ends");
     assert_eq!(outline.arrow_labels(arrows).count(), 0, "no label");
+    assert_eq!(
+        outline.holding(outline.premises().len()).count(),
+        0,
+        "no premise"
+    );
+}
+
+fn with_premises(model: &mut Model, dice: &mut Dice) {
+    let fields = model.fields.len();
+    for rule in &mut model.rules {
+        let given = Expr::Apply(
+            Op::Equal,
+            vec![Expr::Field(dice.below(fields)), Expr::Const(Value::Int(1))],
+        );
+        let implied = Expr::Or(
+            Box::new(Expr::Apply(Op::Not, vec![given])),
+            Box::new(rule.holds.expr().clone()),
+        );
+        rule.holds = implied.into();
+    }
+}
+
+#[test]
+fn the_premises_of_an_outline_are_those_of_its_graph_at_every_arrow_limit() {
+    let mut with_a_premise = 0_usize;
+    for seed in 0..MODELS {
+        let mut dice = Dice::new(seed);
+        let mut model = random_model(&mut dice);
+        with_premises(&mut model, &mut dice);
+        let (_, graph, outline) = searched(&model, Limits::default().max_states);
+        assert_eq!(
+            outline.premises(),
+            graph.premises.as_slice(),
+            "model {seed}"
+        );
+        for premise in 0..graph.premises.len() {
+            let nodes: Vec<usize> = (0..graph.nodes.len())
+                .filter(|at| graph.nodes[*at].premises.contains(&premise))
+                .collect();
+            assert_eq!(
+                outline.holding(premise).collect::<Vec<_>>(),
+                nodes,
+                "model {seed}, premise {premise}"
+            );
+            with_a_premise += usize::from(!nodes.is_empty());
+        }
+        for limit in 0..=graph.edges.len().saturating_add(1) {
+            assert_eq!(
+                chart_outline(&outline, limit),
+                chart_with_limit(&graph, limit),
+                "model {seed} at {limit} arrows"
+            );
+        }
+    }
+    assert!(
+        with_a_premise >= FEWEST_OF_EACH_KIND,
+        "only {with_a_premise} premises that hold somewhere"
+    );
 }

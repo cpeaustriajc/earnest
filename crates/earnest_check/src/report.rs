@@ -1,23 +1,26 @@
 use crate::expand::{Whence, chosen};
 use crate::explore::Search;
 use crate::graph::Graph;
+use crate::limits::asked;
 use crate::outcome::{
-    Change, Finding, FindingKind, Named, Outcome, Path, RuleOutcome, Shown, Status, Step, Verdict,
+    Change, Finding, FindingKind, Named, Outcome, Path, RuleKind, RuleOutcome, Shown, Status, Step,
+    Verdict,
 };
 use crate::outline::Outline;
+use crate::picks::{combinations, sets_of};
 use earnest_value::Value;
 
 const STUCK: &str = "no action can happen here, and the model does not mark it as an end";
 
 impl Search<'_> {
-    fn shown(&self, value: &Value) -> Shown {
+    pub(crate) fn shown(&self, value: &Value) -> Shown {
         Shown {
             text: self.model.symbols.show(value),
             json: self.model.symbols.json(value),
         }
     }
 
-    fn named(&self, state: &[Value]) -> Vec<Named> {
+    pub(crate) fn named(&self, state: &[Value]) -> Vec<Named> {
         self.model
             .fields
             .iter()
@@ -29,15 +32,50 @@ impl Search<'_> {
             .collect()
     }
 
+    pub(crate) fn input_values(
+        &self,
+        position: usize,
+        input: usize,
+        before: &[Value],
+    ) -> Option<Vec<Value>> {
+        let action = self.model.actions.get(position)?;
+        match sets_of(self.model, position) {
+            Some(_) => combinations(self.model, position, before)
+                .0
+                .into_iter()
+                .nth(input),
+            None => chosen(action, input)
+                .map(Option::<&Value>::cloned)
+                .collect(),
+        }
+    }
+
     fn step(&self, from: usize, to: usize) -> Option<Step> {
-        let (position, input) = self.choice(from, to)?;
+        self.step_by(from, to, None)
+    }
+
+    pub(crate) fn step_by(&self, from: usize, to: usize, only: Option<usize>) -> Option<Step> {
+        let (position, input) = self.choice_by(from, to, only)?;
         let before = self.store.state(from);
         let after = self.store.state(to);
         let action = self.model.actions.get(position)?;
+        let picked = match sets_of(self.model, position) {
+            Some(_) => Some(
+                combinations(self.model, position, &before)
+                    .0
+                    .into_iter()
+                    .nth(input)?,
+            ),
+            None => None,
+        };
+        let values: Vec<Option<&Value>> = match &picked {
+            Some(found) => found.iter().map(Some).collect(),
+            None => chosen(action, input).collect(),
+        };
         let input = action
             .inputs
             .iter()
-            .zip(chosen(action, input))
+            .zip(values)
             .map(|(each, value)| {
                 Some(Named {
                     name: each.name.clone(),
@@ -104,7 +142,7 @@ impl Search<'_> {
         }
     }
 
-    fn findings(&self) -> Vec<Finding> {
+    fn findings(&self, later: Option<&(usize, String)>) -> Vec<Finding> {
         let mut findings = Vec::new();
         if let Some(id) = self.stuck {
             findings.push(Finding {
@@ -132,12 +170,18 @@ impl Search<'_> {
                 message: format!("{source} {} in this state", fault.describe()),
                 path: self.path_to(id),
             });
+        } else if let Some((id, message)) = later {
+            findings.push(Finding {
+                kind: FindingKind::Fault,
+                message: message.clone(),
+                path: self.path_to(*id),
+            });
         }
         findings
     }
 
     fn graph_or_outline(&self) -> (Option<Graph>, Option<Outline>) {
-        if !self.limits.keep_graph {
+        if !self.gives_graph {
             return (None, None);
         }
         if self.limits.outline
@@ -152,12 +196,12 @@ impl Search<'_> {
         let only_rule = self.limits.only_rule.as_deref();
         let judged_everywhere =
             |unjudged: bool| self.reason.is_none() && !self.cut_short && !unjudged;
-        let rules: Vec<RuleOutcome> = self
+        let mut rules: Vec<RuleOutcome> = self
             .model
             .rules
             .iter()
             .zip(self.first_broken.iter().zip(&self.unjudged))
-            .filter(|(rule, _)| only_rule.is_none_or(|wanted| wanted == rule.id))
+            .filter(|(rule, _)| asked(only_rule, &rule.id))
             .map(|(rule, (first, unjudged))| RuleOutcome {
                 id: rule.id.clone(),
                 says: rule.says.clone(),
@@ -167,13 +211,20 @@ impl Search<'_> {
                     None => Verdict::Unknown,
                 },
                 path: first.map(|id| self.path_to(id)),
+                kind: RuleKind::Always,
+                reason: None,
+                repeats_from: None,
             })
             .collect();
-        let findings = self.findings();
+        let eventual = self.eventually();
+        rules.extend(eventual.rules);
+        rules.extend(self.witnesses());
+        let findings = self.findings(eventual.trouble.as_ref());
         let (graph, outline) = self.graph_or_outline();
         let failed =
             !findings.is_empty() || rules.iter().any(|rule| rule.verdict == Verdict::Broken);
-        let status = match (failed, &self.reason) {
+        let reason = self.reason.clone().or_else(|| Self::unplayed(&rules));
+        let status = match (failed, &reason) {
             (true, _) => Status::Fail,
             (false, Some(_)) => Status::Unfinished,
             (false, None) => Status::Pass,
@@ -183,7 +234,7 @@ impl Search<'_> {
             states: self.store.len(),
             rules,
             findings,
-            reason: self.reason.clone(),
+            reason,
             computes_beyond_32_bits: self.computed_beyond_32_bits,
             graph,
             outline,

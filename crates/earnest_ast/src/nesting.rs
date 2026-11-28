@@ -185,6 +185,46 @@ pub(crate) fn without_comments(source: &str, quoting: Quoting) -> String {
     kept
 }
 
+fn is_word_letter(letter: char) -> bool {
+    letter.is_alphanumeric() || letter == '_' || letter == '$'
+}
+
+fn quoted_end(source: &str, at: usize, quoting: Quoting) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if bytes.get(at) == Some(&b'`') && quoting == Quoting::TypeScript {
+        return Some(skip_escaped(bytes, at.saturating_add(1), b'`', None));
+    }
+    skip_quoted(source, at, quoting).map(|after| after.max(at.saturating_add(1)))
+}
+
+/// `text` with each space dropped that does not stand between two word letters, outside its
+/// quoted text, which is kept as it is.
+pub(crate) fn without_loose_spaces(text: &str, quoting: Quoting) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut at = 0_usize;
+    while let Some(letter) = text.get(at..).and_then(|rest| rest.chars().next()) {
+        if let Some(after) = quoted_end(text, at, quoting) {
+            kept.push_str(text.get(at..after).unwrap_or_default());
+            at = after;
+            continue;
+        }
+        let next = at.saturating_add(letter.len_utf8());
+        if letter.is_whitespace() {
+            let follows = text
+                .get(next..)
+                .and_then(|rest| rest.chars().next())
+                .is_some_and(is_word_letter);
+            if follows && kept.chars().next_back().is_some_and(is_word_letter) {
+                kept.push(' ');
+            }
+        } else {
+            kept.push(letter);
+        }
+        at = next;
+    }
+    kept
+}
+
 #[derive(Default)]
 struct Depth {
     brackets: usize,

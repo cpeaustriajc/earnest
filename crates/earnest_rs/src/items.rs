@@ -1,5 +1,6 @@
 use crate::bodies::Body;
 use crate::reader::{Reader, attribute, name_of, path_text, place_of, why_outside};
+use crate::runs::{ActionShape, Known, input_names};
 use crate::ty::Ty;
 use crate::typing::plain;
 use earnest_ast::{
@@ -11,15 +12,19 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
     Attribute, Block, Expr, Field, Fields, FieldsNamed, FnArg, ImplItem, ImplItemFn, Item,
-    ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemUse, LitStr, Pat, PatType, Path, ReturnType,
-    Signature, Token, Type, UseTree, Visibility,
+    ItemEnum, ItemFn, ItemImpl, ItemStruct, ItemUse, Pat, PatType, Path, ReturnType, Signature,
+    Token, Type, UseTree, Visibility,
 };
 
-const ROLES: [&str; 3] = ["action", "rule", "end"];
+const ROLES: [&str; 6] = ["action", "rule", "end", "eventually", "witness", "setup"];
 const NEEDS_A_START: &str = "write the starting value in the brackets, `#[initial(value)]`, or \
     each value the field starts at, `#[initial(A, B)]`";
 const LIBRARY_NAMES: [&str; 7] = ["forall", "exists", "Some", "None", "Set", "Seq", "Map"];
 const STATE: &str = "self";
+const PLAIN_ROLE: &str = "`#[model]` knows an action, a rule, an end, a rule about runs, a \
+    witness and a setup only by the plain attribute: write `#[action(\"...\")]`, \
+    `#[rule(\"...\")]`, `#[end(\"...\")]`, `#[eventually(\"...\")]`, `#[witness(\"...\")]` or \
+    `#[setup(\"...\")]`";
 const WAIT: &str = "waiting is outside the library: model it with a `Request` or a `Timer`";
 const ONLY_MODELS: &str = "a model file holds only models, the types they use, constants and \
     helper functions: move anything else to another file, which the checker does not read as a \
@@ -491,6 +496,11 @@ impl Reader<'_> {
                 )
             })
             .collect();
+        self.method_texts = own
+            .iter()
+            .filter(|method| role_of(&method.attrs).is_none())
+            .map(|method| (name_of(&method.sig.ident), self.body_text(&method.block)))
+            .collect();
         self.method_types = own
             .iter()
             .filter_map(|method| match &method.sig.output {
@@ -508,16 +518,19 @@ impl Reader<'_> {
             rules: Vec::new(),
             ends: Vec::new(),
             view: ViewDraft::default(),
+            runs: earnest_ast::RunsDraft::default(),
             constants: constants.to_vec(),
             helpers: helpers.to_vec(),
         };
+        let known = self.known(&own);
         for method in own {
-            self.method(method, &mut draft);
+            self.method(method, &mut draft, &known);
         }
         self.view_of(state, found, &mut draft);
         self.methods.clear();
         self.method_types.clear();
         self.method_params.clear();
+        self.method_texts.clear();
         self.model_name = None;
         draft
     }
@@ -604,19 +617,46 @@ impl Reader<'_> {
         methods
     }
 
-    fn method(&mut self, method: &ImplItemFn, draft: &mut Draft) {
+    fn known(&self, own: &[&ImplItemFn]) -> Known {
+        let mut known = Known::default();
+        for method in own {
+            let Some((role, _)) = role_of(&method.attrs) else {
+                continue;
+            };
+            let name = name_of(&method.sig.ident);
+            known.roles.insert(name.clone());
+            if role == "setup" {
+                known.setups.insert(name);
+            } else if role == "action" {
+                let gives = match &method.sig.output {
+                    ReturnType::Type(_, ty) => self.text(ty.span()).replace(' ', ""),
+                    ReturnType::Default => String::new(),
+                };
+                let gives_self = match gives.as_str() {
+                    "Self" => Some(true),
+                    "Option<Self>" => Some(false),
+                    _ => None,
+                };
+                known.actions.insert(
+                    name,
+                    ActionShape {
+                        gives_self,
+                        inputs: input_names(&method.sig),
+                    },
+                );
+            }
+        }
+        known
+    }
+
+    fn method(&mut self, method: &ImplItemFn, draft: &mut Draft, known: &Known) {
         let signature = &method.sig;
         let id = name_of(&signature.ident);
         let place = place_of(signature.fn_token.span);
         self.refuse_conditional(&method.attrs);
         for attribute in method.attrs.iter().filter(|found| names_a_role(found)) {
             let feature = format!("#[{}]", path_text(attribute.path()));
-            self.refuse(
-                attribute.pound_token.span,
-                &feature,
-                "`#[model]` knows an action, a rule and an end only by the plain attribute: \
-                 write `#[action(\"...\")]`, `#[rule(\"...\")]` or `#[end(\"...\")]`",
-            );
+            self.refuse(attribute.pound_token.span, &feature, PLAIN_ROLE);
         }
         let Some((role, sentence)) = role_of(&method.attrs) else {
             self.reads_state(signature);
@@ -624,8 +664,12 @@ impl Reader<'_> {
             draft.helpers.push(helper);
             return;
         };
+        let written = self.written(role, sentence);
+        let Some(written) = self.about_runs(role, method, written, known, &mut draft.runs) else {
+            return;
+        };
         let inputs = self.inputs(signature);
-        let says = self.sentence(role, sentence);
+        let says = written.says;
         let returns = if role == "action" {
             self.returns_of(signature)
         } else {
@@ -673,6 +717,7 @@ impl Reader<'_> {
                 inputs,
                 guard,
                 change,
+                fair: written.fair,
             });
             return;
         }
@@ -706,26 +751,13 @@ impl Reader<'_> {
         }
     }
 
-    fn body_text(&self, block: &Block) -> String {
+    pub(crate) fn body_text(&self, block: &Block) -> String {
         let open = block.brace_token.span.open().byte_range().end;
         let close = block.brace_token.span.close().byte_range().start;
         condition_text(
             self.source.get(open..close).unwrap_or_default(),
             Quoting::Rust,
         )
-    }
-
-    fn sentence(&mut self, role: &str, attribute: &Attribute) -> String {
-        if let Ok(sentence) = attribute.parse_args::<LitStr>() {
-            sentence.value()
-        } else {
-            self.refuse(
-                attribute.span(),
-                &format!("#[{role}]"),
-                &format!("write the sentence in quotes: `#[{role}(\"...\")]`"),
-            );
-            String::new()
-        }
     }
 
     fn action_returns(&mut self, signature: &Signature) -> Option<bool> {

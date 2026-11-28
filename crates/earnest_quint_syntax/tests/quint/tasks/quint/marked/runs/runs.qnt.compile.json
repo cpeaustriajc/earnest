@@ -1,0 +1,1 @@
+{"pool":[],"checks":[{"args":"compile\t--target\tjson\t--main\tPlays\t--init\tinit\t--step\tstep\ttasks/quint/marked/runs/runs.qnt","error":"error: [QNT404] Name 'init' not found"}]}

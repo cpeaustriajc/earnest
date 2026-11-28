@@ -21,19 +21,30 @@
 //!   that every value read is present and every remainder has a value, and takes no step
 //!   otherwise. A rule with no value in a state is left to stop TLC with an error, which is
 //!   what the verdict `unknown` means.
+//! - A model with a rule about runs also gets `Spec`: `Init`, `[][Next]_vars`, weak fairness of
+//!   `Next`, so a run never stops while an action can still change the state, and weak fairness
+//!   of each action the model declares fair. Each such rule is a temporal property: `<>` of
+//!   what it reaches, or `~>` from where it starts to what it reaches. A condition that reads
+//!   no variable is written with `vars = vars` beside it, because TLC misjudges a temporal
+//!   property over a constant.
+//! - When a rule about runs says its own fairness, `Spec` has no fairness: `Init` and
+//!   `[][Next]_vars`. Each rule's property is then `Fairness => Property`, where `Fairness` is
+//!   the rule's own (weak fairness of `Next` when the whole step is fair, and of the disjunction
+//!   of each fair part's actions) or else the model's.
 
+mod faulting;
 mod helper;
 mod kind;
 mod limits;
 mod names;
 mod scribe;
 
-use earnest_ir::{Action, Expr, Model};
-use earnest_value::Value;
+use earnest_ir::{Action, Alone, Expr, Fairness, Model, Pick};
+use earnest_value::{Domain, Value};
 use helper::{EVERY_HELPER, Helper};
 use kind::Kind;
 pub use limits::BEYOND_32_BITS_COMPUTED;
-use names::{EVERY_VARIABLE, IN_RANGE, Names, STARTS, STEPS, STOP};
+use names::{EVERY_VARIABLE, IN_RANGE, Names, SPEC, STARTS, STEPS, STOP};
 use scribe::{Scope, Scribe, Variable, Written, names_written, set_of};
 use std::collections::BTreeSet;
 
@@ -65,6 +76,17 @@ impl Invariants {
     }
 }
 
+/// The temporal property one rule about runs is exported as.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Property {
+    /// The rule's id in the model.
+    pub rule: String,
+    /// The property's name in the module: `Eventually_` followed by the rule's id, respelled
+    /// or numbered as [`write`] says. A behavior of `Spec` that never reaches what the rule
+    /// wants breaks it.
+    pub name: String,
+}
+
 /// The text of the two files TLC reads to check one model.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Files {
@@ -80,9 +102,18 @@ pub struct Files {
     pub config: String,
     /// The invariants each rule is exported as, in the order of the model's rules.
     pub rules: Vec<Invariants>,
+    /// The temporal property each rule about runs is exported as, in the model's order. When
+    /// there is one, `config` names the specification with its fairness in place of `Init`
+    /// and `Next`, and each property after the invariants.
+    pub eventually: Vec<Property>,
+    /// The name of the specification with its fairness, which the module defines only for a
+    /// model with a rule about runs.
+    pub specification: Option<String>,
 }
 
 const INVARIANT: &str = "INVARIANT ";
+const PROPERTY: &str = "PROPERTY ";
+const NO_DEADLOCK_CHECK: &str = "CHECK_DEADLOCK FALSE\n";
 
 impl Files {
     /// The invariants `config` names, one per rule, in the order of the model's rules.
@@ -94,25 +125,37 @@ impl Files {
             .collect()
     }
 
-    /// The text of a configuration that checks only the invariants in `kept`, with everything
-    /// else as in `config`.
+    /// The text of a configuration that checks only the invariants in `kept`, from `Init` by
+    /// `Next` and without the deadlock check, as `config` does for a model with no rule about
+    /// runs.
     ///
     /// TLC reports one broken invariant per state, so a run that checks one rule alone is how
     /// to learn whether that rule is broken whatever the other rules do. An empty `kept` gives
-    /// a run that only counts the states. A name `config` does not have is ignored.
+    /// a run that only counts the states. A name `config` does not have is ignored. No
+    /// temporal property is checked.
     #[must_use]
     pub fn config_checking(&self, kept: &[&str]) -> String {
-        self.config
-            .lines()
-            .filter(|line| {
-                line.strip_prefix(INVARIANT)
-                    .is_none_or(|invariant| kept.contains(&invariant))
-            })
-            .fold(String::new(), |mut text, line| {
-                text.push_str(line);
+        let mut text = head();
+        for invariant in self.invariants() {
+            if kept.contains(&invariant) {
+                text.push_str(INVARIANT);
+                text.push_str(invariant);
                 text.push('\n');
-                text
-            })
+            }
+        }
+        text
+    }
+
+    /// The text of a configuration that checks one rule about runs alone: the specification
+    /// with its fairness and the rule's temporal property. `None` when the module defines no
+    /// specification, as for a model with no rule about runs.
+    #[must_use]
+    pub fn config_living(&self, property: &Property) -> Option<String> {
+        let specification = self.specification.as_deref()?;
+        Some(format!(
+            "SPECIFICATION {specification}\n{NO_DEADLOCK_CHECK}{PROPERTY}{}\n",
+            property.name
+        ))
     }
 }
 
@@ -138,6 +181,9 @@ impl Files {
 const INDENT: &str = "    ";
 const EXTENDED: &str = "EXTENDS Integers, Sequences, FiniteSets, TLC";
 const FILLER: &str = "nothing";
+const VARIANT_TAG: &str = "tag";
+const VARIANT_VALUE: &str = "value";
+const FIELD_ORDER: &str = "TagBeforeValue";
 
 /// Why TLC can't confirm `model`, from what the model declares: a number outside TLC's 32-bit
 /// integers, or a text that is not ASCII, which TLC may count as equal to another. Empty when
@@ -165,12 +211,30 @@ pub fn limits(model: &Model) -> Vec<String> {
 ///   in TLC, and TLC then stops whatever the flags. So is a number beyond 32 bits, which TLC
 ///   can't hold.
 ///
+/// A model in a setup is a module of its own, named after the model and the setup's id, with
+/// the setup's start values in `Init`.
+///
 /// A field, input, action, rule or end keeps its name when TLA+ can spell it and nothing else
 /// has it; otherwise letters TLA+ lacks become `_` and a taken name gets `_2`, `_3` and so on.
 #[must_use]
 pub fn write(model: &Model) -> Files {
+    write_apart_from(model, &[])
+}
+
+/// [`write`], with a module name that is none of `modules`: when the name [`write`] gives is
+/// one of them, it gets `_2`, `_3` and so on, as a taken name does inside a module. Give it the
+/// names of the modules already written, so two runs of one model whose names TLA+ spells
+/// alike get files of their own.
+#[must_use]
+pub fn write_apart_from(model: &Model, modules: &[&str]) -> Files {
     let mut names = Names::of_a_module(EVERY_HELPER.iter().map(|helper| helper.name()));
-    let name = names.claim(&model.name);
+    let name = names.claim_apart_from(
+        &match model.setup() {
+            Some(setup) => format!("{}_{}", model.name, setup.id),
+            None => model.name.clone(),
+        },
+        modules,
+    );
     let variables: Vec<Variable> = model
         .fields
         .iter()
@@ -208,8 +272,8 @@ pub fn write(model: &Model) -> Files {
         filler,
     };
     let mut blocks = vec![writer.in_range(), writer.starts()];
-    for (action, defined) in model.actions.iter().zip(&actions) {
-        blocks.push(writer.action(action, defined));
+    for (position, (action, defined)) in model.actions.iter().zip(&actions).enumerate() {
+        blocks.push(writer.action(position, action, defined));
     }
     for (end, defined) in model.ends.iter().zip(&ends) {
         let when = writer.condition(end.when.expr());
@@ -245,10 +309,14 @@ pub fn write(model: &Model) -> Files {
             judged: judged.map(|(name, _)| name),
         });
     }
+    let (fair_to, subscripts) = writer.fair_steps(&actions, &mut blocks);
+    let (specification, eventually) = writer.runs(&fair_to, &subscripts, &mut blocks);
     Files {
         module: writer.module(&name, &blocks),
-        config: config(&exported),
+        config: config(&exported, specification.as_deref(), &eventually),
         rules: exported,
+        eventually,
+        specification,
         name,
     }
 }
@@ -270,7 +338,7 @@ impl Writer<'_> {
             .collect()
     }
 
-    fn module(&self, name: &str, blocks: &[String]) -> String {
+    fn module(&mut self, name: &str, blocks: &[String]) -> String {
         let every = self.every_variable().join(", ");
         let written: BTreeSet<&str> = blocks
             .iter()
@@ -290,17 +358,128 @@ impl Writer<'_> {
             })
             .map(|helper| helper.definition(&self.names, &texts))
             .collect();
-        let mut sections = vec![
-            format!("---- MODULE {name} ----\n{EXTENDED}"),
+        let mut sections = vec![format!("---- MODULE {name} ----\n{EXTENDED}")];
+        if let (Some(tag), Some(value)) = (
+            self.scribe.label_written(VARIANT_TAG),
+            self.scribe.label_written(VARIANT_VALUE),
+        ) {
+            let order = self.names.claim(FIELD_ORDER);
+            sections.push(format!("{order} == [{tag} |-> TRUE, {value} |-> TRUE]"));
+        }
+        sections.extend([
             format!("VARIABLES {every}"),
             format!("{EVERY_VARIABLE} == <<{every}>>"),
-        ];
+        ]);
         if !helpers.is_empty() {
             sections.push(helpers.join("\n"));
         }
         sections.extend(blocks.iter().cloned());
         sections.push("====\n".to_owned());
         sections.join("\n\n")
+    }
+
+    fn fair_steps(
+        &mut self,
+        actions: &[String],
+        blocks: &mut Vec<String>,
+    ) -> (Vec<String>, Vec<Option<String>>) {
+        let model = self.model;
+        let mut fair_to = actions.to_vec();
+        let mut subscripts = vec![None; actions.len()];
+        for (position, step) in model.runs.fair_steps.iter().enumerate() {
+            let Some(action) = model.actions.get(step.action) else {
+                continue;
+            };
+            let defined = self.names.claim(&format!(
+                "Fair_{}_{}",
+                step.alone.as_ref().map_or(action.id.as_str(), |alone| alone
+                    .actions
+                    .first()
+                    .map_or(action.id.as_str(), |first| first.id.as_str())),
+                position.saturating_add(1)
+            ));
+            if let Some(alone) = &step.alone {
+                self.alone(alone, &defined, blocks);
+                subscripts.push(self.subscript(&step.over));
+                fair_to.push(defined);
+                continue;
+            }
+            let mut narrowed = action.clone();
+            for (at, value) in &step.inputs {
+                if let Some(input) = narrowed.inputs.get_mut(*at) {
+                    input.values = vec![value.clone()];
+                    input.domain = Domain::OneOf(vec![value.clone()]);
+                }
+            }
+            blocks.push(self.action(step.action, &narrowed, &defined));
+            subscripts.push(self.subscript(&step.over));
+            fair_to.push(defined);
+        }
+        (fair_to, subscripts)
+    }
+
+    fn runs(
+        &mut self,
+        actions: &[String],
+        subscripts: &[Option<String>],
+        blocks: &mut Vec<String>,
+    ) -> (Option<String>, Vec<Property>) {
+        let model = self.model;
+        if model.runs.eventually.is_empty() {
+            return (None, Vec::new());
+        }
+        let specification = self.names.claim(SPEC);
+        let own_fairness = model.runs.eventually.iter().any(|rule| rule.fair.is_some());
+        let model_fairness = Fairness {
+            step: true,
+            actions: model.runs.fair.iter().map(|action| vec![*action]).collect(),
+        };
+        let mut parts = vec![STARTS.to_owned(), format!("[][{STEPS}]_{EVERY_VARIABLE}")];
+        if !own_fairness {
+            parts.extend(weak_fairness(&model_fairness, actions, subscripts));
+        }
+        let fairness = parts.join(" /\\ ");
+        blocks.push(definition(&specification, &[fairness]));
+        let mut properties = Vec::with_capacity(model.runs.eventually.len());
+        for rule in &model.runs.eventually {
+            let name = self.names.claim(&format!("Eventually_{}", rule.id));
+            let reaches = self.of_the_state(rule.reaches.expr());
+            let body = match &rule.after {
+                Some(after) => {
+                    let after = self.of_the_state(after.expr());
+                    format!("({after}) ~> ({reaches})")
+                }
+                None => format!("<>({reaches})"),
+            };
+            let body = if own_fairness {
+                let fair = weak_fairness(
+                    rule.fair.as_ref().unwrap_or(&model_fairness),
+                    actions,
+                    subscripts,
+                );
+                if fair.is_empty() {
+                    body
+                } else {
+                    format!("({}) => ({body})", fair.join(" /\\ "))
+                }
+            } else {
+                body
+            };
+            blocks.push(definition(&name, &[body]));
+            properties.push(Property {
+                rule: rule.id.clone(),
+                name,
+            });
+        }
+        (Some(specification), properties)
+    }
+
+    fn of_the_state(&mut self, expr: &Expr) -> String {
+        let text = self.condition(expr).text;
+        if reads_the_state(expr) {
+            return text;
+        }
+        format!("{EVERY_VARIABLE} = {EVERY_VARIABLE} /\\ {text}")
     }
 
     fn in_range(&mut self) -> String {
@@ -316,7 +495,43 @@ impl Writer<'_> {
         definition(IN_RANGE, &lines)
     }
 
+    fn listed_starts(&mut self, listed: &[Vec<Value>]) -> String {
+        let variables = self.scribe.variables().to_vec();
+        let mut states = Vec::with_capacity(listed.len());
+        for state in listed {
+            let parts: Vec<String> = state
+                .iter()
+                .zip(&variables)
+                .map(|(value, variable)| {
+                    format!(
+                        "({} = {})",
+                        variable.name,
+                        self.scribe.value(value, &variable.kind)
+                    )
+                })
+                .collect();
+            states.push(match parts.as_slice() {
+                [] => "TRUE".to_owned(),
+                [only] => only.clone(),
+                many => format!("({})", many.join(" /\\ ")),
+            });
+        }
+        let either = if states.is_empty() {
+            "FALSE".to_owned()
+        } else {
+            states.join(" \\/ ")
+        };
+        let mut lines = vec![format!("/\\ ({either})")];
+        if let Some(filler) = &self.filler {
+            lines.push(format!("/\\ {filler} = 0"));
+        }
+        definition(STARTS, &lines)
+    }
+
     fn starts(&mut self) -> String {
+        if let Some(listed) = self.model.runs.starts.clone() {
+            return self.listed_starts(&listed);
+        }
         let mut lines = Vec::with_capacity(self.model.fields.len());
         let variables = self.scribe.variables().to_vec();
         for (field, variable) in self.model.fields.iter().zip(variables) {
@@ -337,16 +552,71 @@ impl Writer<'_> {
         self.scribe.expr(expr, &mut scope)
     }
 
-    fn action(&mut self, action: &Action, defined: &str) -> String {
+    fn subscript(&self, over: &[usize]) -> Option<String> {
+        let over: Vec<String> = over
+            .iter()
+            .filter_map(|field| self.scribe.variables().get(*field))
+            .map(|variable| variable.name.clone())
+            .collect();
+        (!over.is_empty()).then(|| format!("<<{}>>", over.join(", ")))
+    }
+
+    fn alone(&mut self, alone: &Alone, defined: &str, blocks: &mut Vec<String>) {
+        let mut ways = Vec::with_capacity(alone.actions.len());
+        for (position, action) in alone.actions.iter().enumerate() {
+            let way = self
+                .names
+                .claim(&format!("{defined}_way_{}", position.saturating_add(1)));
+            let picks: Vec<&Pick> = alone
+                .picks
+                .iter()
+                .filter(|pick| pick.action == position)
+                .collect();
+            let written = self.action_with(action, &way, &picks, Rest::Free);
+            blocks.push(written);
+            ways.push(way);
+        }
+        if ways.is_empty() {
+            ways.push("FALSE".to_owned());
+        }
+        blocks.push(definition(defined, &[ways.join(" \\/ ")]));
+    }
+
+    fn action(&mut self, position: usize, action: &Action, defined: &str) -> String {
+        let picks: Vec<&Pick> = self
+            .model
+            .runs
+            .picks
+            .iter()
+            .filter(|pick| pick.script.is_none() && pick.action == position)
+            .collect();
+        self.action_with(action, defined, &picks, Rest::Kept)
+    }
+
+    fn action_with(
+        &mut self,
+        action: &Action,
+        defined: &str,
+        picks: &[&Pick],
+        rest: Rest,
+    ) -> String {
         let mut scope = Scope::new(&self.names);
         let mut choices = Vec::with_capacity(action.inputs.len());
-        for input in &action.inputs {
-            let kind = Kind::of_domain(&input.domain);
-            let values = self.scribe.values(input.values.iter(), &kind);
-            let name = scope.bind(input.slot, &input.name, kind);
-            choices.push(format!("{name} \\in {}", set_of(&values)));
-        }
         let mut needed = vec![IN_RANGE.to_owned()];
+        for (at, input) in action.inputs.iter().enumerate() {
+            let (set, kind) = if let Some(pick) = picks.iter().find(|pick| pick.input == at) {
+                let written = self.scribe.expr(pick.from.expr(), &mut scope);
+                needed.extend(written.sound);
+                (written.text, written.kind.item())
+            } else {
+                let kind = Kind::of_domain(&input.domain);
+                let values = self.scribe.values(input.values.iter(), &kind);
+                (set_of(&values), kind)
+            };
+            let name = scope.bind(input.slot, &input.name, kind);
+            choices.push(format!("{name} \\in {set}"));
+        }
+        let joined = if picks.is_empty() { ", " } else { " : \\E " };
         if !matches!(action.guard.expr(), Expr::Const(Value::Bool(true))) {
             let allowed = self.scribe.expr(action.guard.expr(), &mut scope);
             needed.extend(allowed.sound);
@@ -363,6 +633,9 @@ impl Writer<'_> {
                 kept.push(variable.name.clone());
             }
         }
+        if rest == Rest::Free {
+            kept.clear();
+        }
         kept.extend(self.filler.clone());
         if !kept.is_empty() {
             primed.push(format!("/\\ UNCHANGED <<{}>>", kept.join(", ")));
@@ -376,10 +649,69 @@ impl Writer<'_> {
         if choices.is_empty() {
             return definition(defined, &lines);
         }
-        let mut chosen = vec![format!("\\E {} :", choices.join(", "))];
+        let mut chosen = vec![format!("\\E {} :", choices.join(joined))];
         chosen.extend(lines.iter().map(|line| format!("{INDENT}{line}")));
         definition(defined, &chosen)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rest {
+    Kept,
+    Free,
+}
+
+fn reads_the_state(expr: &Expr) -> bool {
+    let any = |parts: &[Expr]| parts.iter().any(reads_the_state);
+    match expr {
+        Expr::Field(_) => true,
+        Expr::Apply(_, arguments) | Expr::SetOf(arguments) | Expr::SeqOf(arguments) => {
+            any(arguments)
+        }
+        Expr::And(left, right) | Expr::Or(left, right) => {
+            reads_the_state(left) || reads_the_state(right)
+        }
+        Expr::Choose(test, yes, no) => {
+            reads_the_state(test) || reads_the_state(yes) || reads_the_state(no)
+        }
+        Expr::Bind { value, body, .. } => reads_the_state(value) || reads_the_state(body),
+        Expr::Record(fields) => fields.iter().any(|(_, value)| reads_the_state(value)),
+        Expr::Get(record, _) => reads_the_state(record),
+        Expr::With(record, fields) => {
+            reads_the_state(record) || fields.iter().any(|(_, value)| reads_the_state(value))
+        }
+        Expr::MapOf(pairs) => pairs
+            .iter()
+            .any(|(key, value)| reads_the_state(key) || reads_the_state(value)),
+        Expr::Sweep { source, body, .. } => reads_the_state(source) || reads_the_state(body),
+        _ => false,
+    }
+}
+
+fn weak_fairness(
+    fairness: &Fairness,
+    actions: &[String],
+    subscripts: &[Option<String>],
+) -> Vec<String> {
+    let mut parts = Vec::new();
+    if fairness.step {
+        parts.push(format!("WF_{EVERY_VARIABLE}({STEPS})"));
+    }
+    for part in &fairness.actions {
+        let named: Vec<&str> = part
+            .iter()
+            .filter_map(|position| actions.get(*position))
+            .map(String::as_str)
+            .collect();
+        let subscript = part
+            .iter()
+            .find_map(|position| subscripts.get(*position).cloned().flatten())
+            .unwrap_or_else(|| EVERY_VARIABLE.to_owned());
+        if !named.is_empty() {
+            parts.push(format!("WF_{subscript}({})", named.join(" \\/ ")));
+        }
+    }
+    parts
 }
 
 fn definition(name: &str, lines: &[String]) -> String {
@@ -415,11 +747,23 @@ fn steps(actions: &[String]) -> String {
     definition(STEPS, &lines)
 }
 
-fn config(rules: &[Invariants]) -> String {
-    let mut text = format!("INIT {STARTS}\nNEXT {STEPS}\nCHECK_DEADLOCK FALSE\n");
+fn head() -> String {
+    format!("INIT {STARTS}\nNEXT {STEPS}\n{NO_DEADLOCK_CHECK}")
+}
+
+fn config(rules: &[Invariants], specification: Option<&str>, eventually: &[Property]) -> String {
+    let mut text = match specification {
+        Some(specification) => format!("SPECIFICATION {specification}\n{NO_DEADLOCK_CHECK}"),
+        None => head(),
+    };
     for rule in rules {
         text.push_str(INVARIANT);
         text.push_str(&rule.holds);
+        text.push('\n');
+    }
+    for property in eventually {
+        text.push_str(PROPERTY);
+        text.push_str(&property.name);
         text.push('\n');
     }
     text

@@ -3,14 +3,50 @@ use proc_macro2::{Delimiter, Ident, Spacing, TokenStream, TokenTree};
 
 const CRATE: &str = "earnest";
 const RAW: &str = "r#";
-const MODEL_ATTRIBUTES: [&str; 10] = [
-    "model", "view", "action", "rule", "end", "state", "group", "initial", "range", "one_of",
+const MODEL_ATTRIBUTES: [&str; 13] = [
+    "model",
+    "view",
+    "action",
+    "rule",
+    "end",
+    "eventually",
+    "witness",
+    "setup",
+    "state",
+    "group",
+    "initial",
+    "range",
+    "one_of",
 ];
 const MODEL_DERIVES: [&str; 2] = ["Model", "Domain"];
 const LIBRARY_TRAITS: [&str; 5] = ["Model", "Behavior", "Domain", "Start", "View"];
-const LIBRARY_NAMES: [&str; 20] = [
-    "Model", "Behavior", "Domain", "Start", "View", "Claim", "Step", "require", "model", "view",
-    "action", "rule", "end", "state", "group", "initial", "range", "one_of", "self", "earnest",
+const LIBRARY_NAMES: [&str; 26] = [
+    "Model",
+    "Behavior",
+    "Domain",
+    "Start",
+    "View",
+    "Claim",
+    "Step",
+    "Eventually",
+    "Witnessed",
+    "Setup",
+    "require",
+    "model",
+    "view",
+    "action",
+    "rule",
+    "end",
+    "eventually",
+    "witness",
+    "setup",
+    "state",
+    "group",
+    "initial",
+    "range",
+    "one_of",
+    "self",
+    "earnest",
 ];
 const MACROS_THAT_HIDE_A_MODEL: [&str; 2] = ["include", "macro_rules"];
 
@@ -182,8 +218,9 @@ fn declares_in(tokens: TokenStream) -> bool {
 ///
 /// It is true when the file holds, anywhere, also inside a `mod`, a function or a macro, behind
 /// `cfg` or `cfg_attr`, and written with raw identifiers or a path: a `derive` of `Model` or
-/// `Domain`, an attribute `#[model]`, `#[view]`, `#[action]`, `#[rule]`, `#[end]`, `#[state]`,
-/// `#[group]`, `#[initial]`, `#[range]` or `#[one_of]`, a call of `require!`, or an `impl` of
+/// `Domain`, an attribute `#[model]`, `#[view]`, `#[action]`, `#[rule]`, `#[end]`,
+/// `#[eventually]`, `#[witness]`, `#[setup]`, `#[state]`, `#[group]`, `#[initial]`, `#[range]`
+/// or `#[one_of]`, a call of `require!`, or an `impl` of
 /// one of the library's traits. It is also true for an `include!` or a `macro_rules!`, and for a
 /// `use` or `extern crate` that renames, with `as`, the crate or a name of the library, since
 /// a model could be declared through any of them: the reader then reads the file or refuses it.

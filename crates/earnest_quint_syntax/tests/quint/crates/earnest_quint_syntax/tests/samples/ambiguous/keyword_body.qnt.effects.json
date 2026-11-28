@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify bool and list\nTrying to unify bool and List[_t0]\nTrying to unify (bool, bool) => bool and (List[_t0], int) => _t4\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/ambiguous/keyword_body.qnt","start":{"line":2,"col":31,"index":158},"end":{"line":2,"col":63,"index":190}}]}]}

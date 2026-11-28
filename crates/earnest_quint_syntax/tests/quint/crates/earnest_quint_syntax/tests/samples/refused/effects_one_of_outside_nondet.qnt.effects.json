@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT203] 'oneOf' must be used inside a nondet definition","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_one_of_outside_nondet.qnt","start":{"line":1,"col":10,"index":49},"end":{"line":1,"col":26,"index":65}}]}]}

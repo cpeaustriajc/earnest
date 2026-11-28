@@ -6,12 +6,36 @@ pub(crate) struct Target<'a> {
     pub(crate) readable: &'a Readable,
 }
 
-fn has_rule(target: &Target<'_>, id: &str) -> bool {
-    target.readable.model.rules.iter().any(|rule| rule.id == id)
+fn has_the_rule(readable: &Readable, id: &str) -> bool {
+    readable.model.rule_ids().any(|rule| rule == id)
 }
 
-fn listed(targets: &[Target<'_>]) -> String {
+fn has_rule(target: &Target<'_>, id: &str) -> bool {
+    has_the_rule(target.readable, id)
+}
+
+impl Target<'_> {
+    pub(crate) fn is_run_of_one_model_with(&self, other: &Self) -> bool {
+        self.file.path == other.file.path && self.readable.position == other.readable.position
+    }
+}
+
+fn one_run_of_each_model<'a, 't>(targets: &'t [Target<'a>]) -> Vec<&'t Target<'a>> {
     targets
+        .iter()
+        .enumerate()
+        .filter(|(position, target)| {
+            !targets
+                .iter()
+                .take(*position)
+                .any(|earlier| earlier.is_run_of_one_model_with(target))
+        })
+        .map(|(_, target)| target)
+        .collect()
+}
+
+fn listed(models: &[&Target<'_>]) -> String {
+    models
         .iter()
         .map(|target| format!("`{}`", target.readable.model.name))
         .collect::<Vec<_>>()
@@ -82,13 +106,12 @@ pub(crate) fn select_with_removed<'a>(
             unmatched: None,
         }),
         Err(error) => {
-            let has_the_model = |name: &str| {
-                files
-                    .iter()
-                    .flat_map(ModelFile::models)
-                    .any(|readable| readable.model.name == name)
-            };
-            if base.is_some() && model.is_some_and(|name| !has_the_model(name)) {
+            let readables = || files.iter().flat_map(ModelFile::models);
+            let model_gone =
+                model.is_some_and(|name| !readables().any(|readable| readable.model.name == name));
+            let rule_gone =
+                rule.is_some_and(|id| !readables().any(|readable| has_the_rule(readable, id)));
+            if base.is_some() && (model_gone || rule_gone) {
                 Ok(Selected {
                     targets: Vec::new(),
                     unmatched: Some(error),
@@ -129,7 +152,8 @@ pub(crate) fn select<'a>(
         .into_iter()
         .filter(|target| has_rule(target, id))
         .collect();
-    match (with_rule.len(), model) {
+    let models = one_run_of_each_model(&with_rule);
+    match (models.len(), model) {
         (0, Some(name)) => Err(format!("the model `{name}` has no rule `{id}`")),
         (0, None)
             if files
@@ -142,7 +166,7 @@ pub(crate) fn select<'a>(
         (1, _) | (_, Some(_)) => Ok(with_rule),
         (_, None) => Err(format!(
             "the rule `{id}` is in the models {}: name one with `--model`",
-            listed(&with_rule)
+            listed(&models)
         )),
     }
 }
@@ -270,6 +294,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn with_a_base_a_rule_that_is_gone_is_left_for_the_comparison_to_list() {
+        let kept = files();
+        let selected = select_with_removed(&kept, None, Some("missing"), Some("HEAD"))
+            .expect("the base may have the rule");
+        assert!(selected.targets.is_empty(), "nothing is checked");
+        assert_eq!(
+            selected.unmatched.as_deref(),
+            Some("no model has a rule `missing`"),
+            "the error stays for when the base has none either"
+        );
+        assert!(
+            select_with_removed(&kept, None, Some("missing"), None).is_err(),
+            "without a base the id must match a rule"
+        );
+    }
+
     fn unreadable(path: &str, declares: &str) -> ModelFile {
         let source = format!(
             "import {{ m }} from \"@earnestjs/model\";\n\
@@ -328,5 +369,47 @@ mod tests {
     #[test]
     fn no_files_select_nothing() {
         assert!(names(&[], None, None).is_empty(), "nothing to select");
+    }
+
+    fn jar(path: &str, name: &str) -> ModelFile {
+        let source = format!(
+            "import {{ m }} from \"@earnestjs/model\";\n\
+             export const {name} = m.model(\"Jar\", {{ n: m.int(0, 2).initial(0) }});\n\
+             export const low = m.rule({name}, \"low\", (s) => s.n <= 1);\n\
+             export const one = m.setup({name}, \"one\", {{ n: 1 }});\n\
+             export const two = m.setup({name}, \"two\", {{ n: 2 }});\n"
+        );
+        let loaded = load(Found::model(path, Language::TypeScript, &source));
+        assert!(
+            loaded.problems().is_empty(),
+            "the test file is readable: {:?}",
+            loaded.problems()
+        );
+        loaded
+    }
+
+    #[test]
+    fn a_rule_selects_every_run_of_the_one_model_that_has_it() {
+        let files = [jar("jar.model.ts", "Jar")];
+        let runs: Vec<String> = select(&files, None, Some("low"))
+            .expect("one model has the rule")
+            .iter()
+            .map(|target| target.readable.model.run_name())
+            .collect();
+        assert_eq!(
+            runs,
+            ["Jar", "Jar (one)", "Jar (two)"],
+            "the model as declared and in each setup"
+        );
+    }
+
+    #[test]
+    fn a_rule_of_two_models_with_setups_names_each_model_once() {
+        let files = [jar("a.model.ts", "Jar"), jar("b.model.ts", "Jar")];
+        let error = select(&files, None, Some("low")).expect_err("two models have it");
+        assert_eq!(
+            error, "the rule `low` is in the models `Jar`, `Jar`: name one with `--model`",
+            "one name per model, not per run"
+        );
     }
 }

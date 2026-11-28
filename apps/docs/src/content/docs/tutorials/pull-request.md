@@ -40,7 +40,7 @@ The report is Markdown for a pull request body. It has each model's result, its 
 
 ## Run it in CI
 
-`earnest verify` needs no network, no Java and no setup. It exits 0 when every model passes, and 1 when a rule breaks, a model is stuck, a model is unfinished or a file is unreadable.
+`earnest verify` needs no network and no setup. No Java and no Node, except that checking `.qnt` files starts the project's own `quint` (Node), and only then. It exits 0 when every model passes, and 1 when a rule breaks, a model is stuck, a model is unfinished or a file is unreadable.
 
 ```yaml title=".github/workflows/models.yml"
 name: models

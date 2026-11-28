@@ -1,5 +1,5 @@
 use crate::{Expr, MapOp, Math, Op, Order, SeqOp, SetOp, Shelf, Sweep};
-use earnest_value::{IntType, MOST_SAFE_INTEGER, Sym, Value};
+use earnest_value::{BigInt, IntType, MOST_SAFE_INTEGER, Notation, Sym, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -8,6 +8,10 @@ const TICKS_BETWEEN_CLOCK_READS: u32 = 1024;
 const NO_ROUND: u64 = 0;
 const FIRST_ROUND: u64 = 1;
 pub(crate) const NO_UNIT: u64 = 0;
+
+/// The most numbers [`Op::Interval`] and [`Op::Ascending`] build. A wider range is
+/// [`Fault::TooWide`] instead of taking the machine's memory.
+pub const MOST_RANGE_VALUES: u64 = 1_000_000;
 
 /// Why an expression has no value in a state.
 ///
@@ -20,22 +24,47 @@ pub enum Fault {
     /// A value that must be present is `null`.
     NullRead,
     /// A number does not fit in 64 bits, or in a TypeScript model is past what a JavaScript
-    /// number holds exactly.
+    /// number holds exactly. A Quint model's numbers have no size, so it gets this only for a
+    /// power whose exponent is past 32 bits.
     Overflow,
-    /// A remainder with a negative number or a divisor below 1, where languages disagree.
+    /// A remainder of Quint's `imod` with a negative number or a divisor below 1, on the 64-bit
+    /// path. A Quint frame evaluates it again with whole numbers of any size, which take the
+    /// floored remainder and have [`Fault::ByZero`] for zero, so a model never reports it.
     Remainder,
-    /// A division with a negative number or a divisor below 1, where languages disagree on the
-    /// result and Rust panics on a divisor of zero.
+    /// A division of Quint's `idiv` with a negative number or a divisor below 1, on the 64-bit
+    /// path. A Quint frame evaluates it again with whole numbers of any size, which take the
+    /// floor of the exact quotient and have [`Fault::ByZero`] for zero, so a model never
+    /// reports it.
     Division,
+    /// A division or a remainder by zero, which has no value in any of the languages: Rust
+    /// panics, JavaScript gives a number that is not whole, and Quint leaves it undefined.
+    ByZero,
     /// A number is outside the integer type the model file gives it, where Rust stops a test
     /// build and wraps around in a release build.
     Outside(IntType),
+    /// A map has no value for the key read, a sequence no item at the position read, or a
+    /// choice among the tags of a value has no case for its tag.
+    Missing,
+    /// A power with a negative exponent, zero to the power zero, or a run of numbers that
+    /// counts down, which the languages leave undefined.
+    Undefined,
     /// An operation got a value of a kind it has no meaning for, too few arguments, or a field
     /// or slot that does not exist.
     WrongKind,
+    /// A rule gives a value that is not a boolean.
+    NotBoolean,
+    /// `setToMap` of a Quint model met two pairs with one key and different values, which
+    /// Quint's backends turn into different maps.
+    KeyTwice,
+    /// A range of whole numbers, `a.to(b)` or `range(a, b)` in a Quint model, holds more than
+    /// [`MOST_RANGE_VALUES`] numbers.
+    TooWide,
     /// The time limit passed while the expression was being evaluated. It says nothing about
     /// the model: the search drops the state it was evaluating.
     Stopped,
+    /// An `assert` in a Quint action is false: `quint run` stops there with an error, where
+    /// TLC takes it as a guard.
+    Asserted,
 }
 
 impl Fault {
@@ -52,9 +81,26 @@ impl Fault {
             Self::Division => {
                 "takes a division with a negative number or a divisor below 1".to_owned()
             }
+            Self::ByZero => "takes a division or a remainder by zero".to_owned(),
             Self::Outside(ty) => format!("computes a number outside `{}`", ty.name()),
+            Self::Missing => "reads a key, a position or a case that is not there".to_owned(),
+            Self::Undefined => {
+                "computes a power or a run of numbers that is not defined".to_owned()
+            }
             Self::WrongKind => "uses a value of the wrong kind".to_owned(),
+            Self::NotBoolean => "does not give a boolean".to_owned(),
+            Self::KeyTwice => "gives `setToMap` two pairs with one key, which Quint's backends \
+                               keep differently (TLC the first in its order, the evaluator the \
+                               last written)"
+                .to_owned(),
+            Self::TooWide => format!(
+                "builds a range (`a.to(b)` or `range(a, b)`) of more than the \
+                 {MOST_RANGE_VALUES} numbers a range may hold"
+            ),
             Self::Stopped => "was stopped by the time limit".to_owned(),
+            Self::Asserted => "finds an `assert` false, which `quint run` stops on as an error \
+                               and TLC reads as a guard that disables the action"
+                .to_owned(),
         }
     }
 }
@@ -72,6 +118,7 @@ pub struct Frame<'a> {
     ticks: u32,
     expired: bool,
     beyond_32_bits: bool,
+    unbounded: bool,
     round: u64,
     writer: u64,
     kept_in: Vec<u64>,
@@ -90,6 +137,7 @@ impl<'a> Frame<'a> {
             ticks: 0,
             expired: false,
             beyond_32_bits: false,
+            unbounded: false,
             round: FIRST_ROUND,
             writer: NO_UNIT,
             kept_in: Vec::new(),
@@ -102,6 +150,24 @@ impl<'a> Frame<'a> {
     pub fn until(mut self, deadline: Option<Instant>) -> Self {
         self.deadline = deadline;
         self
+    }
+
+    /// Makes the frame evaluate numbers as the language `notation` names has them: in
+    /// [`Notation::Quint`] a whole number has no size, so arithmetic that leaves 64 bits gives
+    /// a [`Value::Big`] where it would give [`Fault::Overflow`]. Pass the notation of the
+    /// model's symbols.
+    #[must_use]
+    pub fn numbers_of(mut self, notation: Notation) -> Self {
+        self.unbounded = matches!(notation, Notation::Quint(_));
+        self
+    }
+
+    pub(crate) fn of_any_size<T>(&mut self, run: impl FnOnce(&mut Self) -> T) -> T {
+        let was = self.unbounded;
+        self.unbounded = true;
+        let answer = run(self);
+        self.unbounded = was;
+        answer
     }
 
     /// Whether the deadline has passed. The clock is read once in every 1024 calls, and the
@@ -126,6 +192,14 @@ impl<'a> Frame<'a> {
 
     pub(crate) fn note_beyond_32_bits(&mut self) {
         self.beyond_32_bits = true;
+    }
+
+    fn note_whole(&mut self, answer: &Evaluated) {
+        self.beyond_32_bits |= match answer {
+            Ok(Value::Int(number)) => i32::try_from(*number).is_err(),
+            Ok(_) => true,
+            Err(fault) => *fault == Fault::Overflow,
+        };
     }
 
     pub(crate) fn note(&mut self, answer: &Result<i64, Fault>) {
@@ -242,6 +316,68 @@ pub fn eval(expr: &Expr, frame: &mut Frame<'_>) -> Result<Value, Fault> {
             };
             test.over(&eval(source, frame)?, frame, truth)
         }
+        Expr::Fold {
+            shelf,
+            source,
+            start,
+            total,
+            item,
+            body,
+        } => {
+            let collection = eval(source, frame)?;
+            let first = eval(start, frame)?;
+            let folding = Folding {
+                shelf: *shelf,
+                total: *total,
+                item: *item,
+                body: &**body,
+                unit: NO_UNIT,
+            };
+            folding.over(&collection, first, frame, eval)
+        }
+    }
+}
+
+pub(crate) struct Folding<'b, B> {
+    pub(crate) shelf: Shelf,
+    pub(crate) total: usize,
+    pub(crate) item: usize,
+    pub(crate) body: &'b B,
+    pub(crate) unit: u64,
+}
+
+impl<B> Folding<'_, B> {
+    pub(crate) fn over(
+        &self,
+        collection: &Value,
+        first: Value,
+        frame: &mut Frame<'_>,
+        step: impl Fn(&B, &mut Frame<'_>) -> Evaluated,
+    ) -> Evaluated {
+        match (self.shelf, collection) {
+            (Shelf::Set, Value::Set(items)) => self.through(items.iter(), first, frame, step),
+            (Shelf::Seq, Value::Seq(items)) => self.through(items.iter(), first, frame, step),
+            (_, other) => Err(wrong_or_null(other)),
+        }
+    }
+
+    fn through<'v>(
+        &self,
+        items: impl Iterator<Item = &'v Value>,
+        first: Value,
+        frame: &mut Frame<'_>,
+        step: impl Fn(&B, &mut Frame<'_>) -> Evaluated,
+    ) -> Evaluated {
+        let mut so_far = first;
+        for item in items {
+            if frame.out_of_time() {
+                return Err(Fault::Stopped);
+            }
+            frame.write(self.unit, self.total, so_far);
+            frame.write(self.unit, self.item, item.clone());
+            so_far = step(self.body, frame)?;
+        }
+        Ok(so_far)
     }
 }
 
@@ -394,32 +530,214 @@ pub(crate) fn applied<T>(
     }
     match op {
         Op::Not => Ok(Value::Bool(!as_bool(&first)?)),
-        Op::Negate => as_int(&first)?
-            .checked_neg()
+        Op::Negate => as_int(&first)
+            .and_then(|number| number.checked_neg().ok_or(Fault::Overflow))
             .map(Value::Int)
-            .ok_or(Fault::Overflow),
+            .or_else(|fault| beyond(op, (&first, None), fault, frame)),
         Op::Unwrap if first == Value::Null => Err(Fault::NullRead),
         Op::SomeOf | Op::Unwrap => Ok(first),
+        Op::Safe | Op::Fit(_) if matches!(first, Value::Big(_)) => Err(bound_fault(op)),
         Op::Safe if is_safe(as_int(&first)?) => Ok(first),
         Op::Safe => Err(Fault::Overflow),
         Op::Fit(ty) if ty.holds(as_int(&first)?) => Ok(first),
         Op::Fit(ty) => Err(Fault::Outside(ty)),
         Op::Equal => Ok(Value::Bool(first == second.ok_or(Fault::WrongKind)?)),
         Op::Differ => Ok(Value::Bool(first != second.ok_or(Fault::WrongKind)?)),
-        Op::Order(order) => {
-            let (left, right) = int_pair(&first, second.as_ref())?;
-            Ok(Value::Bool(compare(order, left, right)))
-        }
+        Op::Order(order) => int_pair(&first, second.as_ref())
+            .map(|(left, right)| Value::Bool(compare(order, left, right)))
+            .or_else(|fault| beyond(op, (&first, second.as_ref()), fault, frame)),
         Op::Math(math) => {
             let answer = int_pair(&first, second.as_ref())
                 .and_then(|(left, right)| arithmetic(math, left, right));
             frame.note(&answer);
-            answer.map(Value::Int)
+            answer
+                .map(Value::Int)
+                .or_else(|fault| beyond(op, (&first, second.as_ref()), fault, frame))
         }
         Op::Set(set_op) => on_set(set_op, first, second),
         Op::Map(map_op) => on_map(map_op, first, second, third),
-        Op::Seq(seq_op) => on_seq(seq_op, first, second),
+        Op::Seq(seq_op) => on_seq(seq_op, first, second, third),
+        Op::Power => {
+            let answer =
+                int_pair(&first, second.as_ref()).and_then(|(base, power)| raised(base, power));
+            frame.note(&answer);
+            answer
+                .map(Value::Int)
+                .or_else(|fault| beyond(op, (&first, second.as_ref()), fault, frame))
+        }
+        Op::Interval => int_pair(&first, second.as_ref())
+            .and_then(|(lo, hi)| {
+                narrow(lo, hi.saturating_add(1))?;
+                Ok(Value::set((lo..=hi).map(Value::Int).collect()))
+            })
+            .or_else(|fault| beyond(op, (&first, second.as_ref()), fault, frame)),
+        Op::Ascending => int_pair(&first, second.as_ref())
+            .and_then(|(lo, hi)| {
+                if lo > hi {
+                    return Err(Fault::Undefined);
+                }
+                narrow(lo, hi)?;
+                Ok(Value::seq((lo..hi).map(Value::Int).collect()))
+            })
+            .or_else(|fault| beyond(op, (&first, second.as_ref()), fault, frame)),
+        Op::InTlcOrder => {
+            let tuple_items: Vec<Sym> = match &second {
+                Some(Value::Seq(items)) => items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Value::Str(name) => Some(*name),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            Ok(Value::seq(crate::tlc_order::listed(
+                set_in(&first)?,
+                &tuple_items,
+            )))
+        }
+        Op::Assert if as_bool(&first)? => Ok(first),
+        Op::Assert => Err(Fault::Asserted),
     }
+}
+
+fn narrow(lo: i64, end: i64) -> Result<(), Fault> {
+    if lo < end && end.abs_diff(lo) > MOST_RANGE_VALUES {
+        return Err(Fault::TooWide);
+    }
+    Ok(())
+}
+
+#[cold]
+#[inline(never)]
+fn beyond(
+    op: Op,
+    (first, second): (&Value, Option<&Value>),
+    fault: Fault,
+    frame: &mut Frame<'_>,
+) -> Evaluated {
+    if !frame.unbounded || !retried(fault) {
+        return Err(fault);
+    }
+    match op {
+        Op::Negate => Ok(Value::whole(-whole_of(first)?)),
+        Op::Order(order) => {
+            let (left, right) = whole_pair(first, second)?;
+            Ok(Value::Bool(ordered(order, left.cmp(&right))))
+        }
+        Op::Math(math) => {
+            let (left, right) = whole_pair(first, second)?;
+            let answer = whole_arithmetic(math, left, right);
+            frame.note_whole(&answer);
+            answer
+        }
+        Op::Power => {
+            let (base, power) = whole_pair(first, second)?;
+            let answer = whole_power(&base, &power);
+            frame.note_whole(&answer);
+            answer
+        }
+        Op::Interval => {
+            let (lo, hi) = whole_pair(first, second)?;
+            let end = &hi + 1;
+            Ok(Value::set(whole_range(lo, &end)?.collect()))
+        }
+        Op::Ascending => {
+            let (lo, hi) = whole_pair(first, second)?;
+            if lo > hi {
+                return Err(Fault::Undefined);
+            }
+            Ok(Value::seq(whole_range(lo, &hi)?.collect()))
+        }
+        _ => Err(fault),
+    }
+}
+
+pub(crate) fn retried(fault: Fault) -> bool {
+    matches!(
+        fault,
+        Fault::Overflow | Fault::WrongKind | Fault::Division | Fault::Remainder
+    )
+}
+
+fn ordered(order: Order, found: std::cmp::Ordering) -> bool {
+    match order {
+        Order::Less => found.is_lt(),
+        Order::LessOrEqual => found.is_le(),
+        Order::Greater => found.is_gt(),
+        Order::GreaterOrEqual => found.is_ge(),
+    }
+}
+
+fn bound_fault(op: Op) -> Fault {
+    match op {
+        Op::Fit(ty) => Fault::Outside(ty),
+        _ => Fault::Overflow,
+    }
+}
+
+fn whole_range(lo: BigInt, end: &BigInt) -> Result<impl Iterator<Item = Value>, Fault> {
+    let count = if lo < *end {
+        u64::try_from(end - &lo).map_err(|_| Fault::TooWide)?
+    } else {
+        0
+    };
+    if count > MOST_RANGE_VALUES {
+        return Err(Fault::TooWide);
+    }
+    Ok((0..count).map(move |step| Value::whole(&lo + step)))
+}
+
+fn whole_of(value: &Value) -> Result<BigInt, Fault> {
+    value.whole_number().ok_or_else(|| wrong_or_null(value))
+}
+
+fn whole_pair(first: &Value, second: Option<&Value>) -> Result<(BigInt, BigInt), Fault> {
+    Ok((whole_of(first)?, whole_of(second.ok_or(Fault::WrongKind)?)?))
+}
+
+fn whole_arithmetic(math: Math, left: BigInt, right: BigInt) -> Evaluated {
+    let answer = match math {
+        Math::Add => left + right,
+        Math::Subtract => left - right,
+        Math::Multiply => left * right,
+        Math::Remainder | Math::Divide | Math::TruncatedDivide | Math::TruncatedRemainder(_)
+            if right == BigInt::ZERO =>
+        {
+            return Err(Fault::ByZero);
+        }
+        Math::Remainder => floored(left, &right).1,
+        Math::Divide => floored(left, &right).0,
+        Math::TruncatedDivide => left / right,
+        Math::TruncatedRemainder(_) => left % right,
+    };
+    Ok(Value::whole(answer))
+}
+
+fn floored(left: BigInt, right: &BigInt) -> (BigInt, BigInt) {
+    let quotient = &left / right;
+    let remainder = left - right * &quotient;
+    if remainder != BigInt::ZERO && (remainder < BigInt::ZERO) != (*right < BigInt::ZERO) {
+        (quotient - 1, remainder + right)
+    } else {
+        (quotient, remainder)
+    }
+}
+
+fn whole_power(base: &BigInt, power: &BigInt) -> Evaluated {
+    if *power < BigInt::ZERO || (*base == BigInt::ZERO && *power == BigInt::ZERO) {
+        return Err(Fault::Undefined);
+    }
+    let power = u32::try_from(power).map_err(|_| Fault::Overflow)?;
+    Ok(Value::whole(base.pow(power)))
+}
+
+fn raised(base: i64, power: i64) -> Result<i64, Fault> {
+    if power < 0 || (base == 0 && power == 0) {
+        return Err(Fault::Undefined);
+    }
+    let power = u32::try_from(power).map_err(|_| Fault::Overflow)?;
+    base.checked_pow(power).ok_or(Fault::Overflow)
 }
 
 pub(crate) fn wrong_or_null(value: &Value) -> Fault {
@@ -520,6 +838,21 @@ pub(crate) fn arithmetic(math: Math, left: i64, right: i64) -> Result<i64, Fault
             }
             left.checked_div(right)
         }
+        Math::TruncatedDivide | Math::TruncatedRemainder(_) if right == 0 => {
+            return Err(Fault::ByZero);
+        }
+        Math::TruncatedDivide => left.checked_div(right),
+        Math::TruncatedRemainder(ty) => {
+            if let Some(ty) = ty
+                && right == -1
+                && left
+                    .checked_neg()
+                    .is_some_and(|quotient| quotient > ty.highest())
+            {
+                return Err(Fault::Outside(ty));
+            }
+            left.checked_rem(right)
+        }
     };
     answer.ok_or(Fault::Overflow)
 }
@@ -597,23 +930,58 @@ fn on_map(op: MapOp, first: Value, second: Option<Value>, third: Option<Value>) 
             entries.insert(key, value);
             Ok(Value::map(entries))
         }
+        MapOp::Once => {
+            let key = needed(second)?;
+            let value = needed(third)?;
+            if entries.get(&key).is_some_and(|kept| *kept != value) {
+                return Err(Fault::KeyTwice);
+            }
+            let mut entries = as_map(first)?;
+            entries.insert(key, value);
+            Ok(Value::map(entries))
+        }
+        MapOp::MustGet => entries.get(&needed(second)?).cloned().ok_or(Fault::Missing),
+        MapOp::Replace => {
+            let key = needed(second)?;
+            let value = needed(third)?;
+            if !entries.contains_key(&key) {
+                return Err(Fault::Missing);
+            }
+            let mut entries = as_map(first)?;
+            entries.insert(key, value);
+            Ok(Value::map(entries))
+        }
     }
 }
 
-fn on_seq(op: SeqOp, first: Value, second: Option<Value>) -> Evaluated {
+fn as_position(value: &Value) -> Result<i64, Fault> {
+    match value {
+        Value::Big(big) if big.number() < &BigInt::ZERO => Ok(i64::MIN),
+        Value::Big(_) => Ok(i64::MAX),
+        other => as_int(other),
+    }
+}
+
+fn position_in(items: &[Value], position: &Value) -> Result<usize, Fault> {
+    usize::try_from(as_position(position)?)
+        .ok()
+        .filter(|index| *index < items.len())
+        .ok_or(Fault::Missing)
+}
+
+fn on_seq(op: SeqOp, first: Value, second: Option<Value>, third: Option<Value>) -> Evaluated {
     let items = seq_in(&first)?;
     match op {
         SeqOp::Size => size_of(items.len()),
         SeqOp::First => Ok(items.first().cloned().unwrap_or(Value::Null)),
         SeqOp::Last => Ok(items.last().cloned().unwrap_or(Value::Null)),
-        SeqOp::Shift => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
         SeqOp::Pop => {
             let mut items = as_seq(first)?;
             items.pop();
             Ok(Value::seq(items))
         }
         SeqOp::Get => {
-            let position = as_int(&needed(second)?)?;
+            let position = as_position(&needed(second)?)?;
             let found = usize::try_from(position)
                 .ok()
                 .and_then(|index| items.get(index));
@@ -626,5 +994,38 @@ fn on_seq(op: SeqOp, first: Value, second: Option<Value>) -> Evaluated {
             Ok(Value::seq(items))
         }
         SeqOp::Includes => Ok(Value::Bool(items.contains(&needed(second)?))),
+        SeqOp::Nth => {
+            let index = position_in(items, &needed(second)?)?;
+            items.get(index).cloned().ok_or(Fault::Missing)
+        }
+        SeqOp::Head => items.first().cloned().ok_or(Fault::Missing),
+        SeqOp::Tail if items.is_empty() => Err(Fault::Missing),
+        SeqOp::Shift | SeqOp::Tail => Ok(Value::seq(items.iter().skip(1).cloned().collect())),
+        SeqOp::Concat => {
+            let other = needed(second)?;
+            let mut items = as_seq(first)?;
+            items.extend(seq_in(&other)?.iter().cloned());
+            Ok(Value::seq(items))
+        }
+        SeqOp::Slice => {
+            let from = as_position(&needed(second)?)?;
+            let to = as_position(&needed(third)?)?;
+            let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else {
+                return Err(Fault::Missing);
+            };
+            items
+                .get(from..to)
+                .map(|part| Value::seq(part.to_vec()))
+                .ok_or(Fault::Missing)
+        }
+        SeqOp::ReplaceAt => {
+            let index = position_in(items, &needed(second)?)?;
+            let item = needed(third)?;
+            let mut items = as_seq(first)?;
+            if let Some(place) = items.get_mut(index) {
+                *place = item;
+            }
+            Ok(Value::seq(items))
+        }
     }
 }

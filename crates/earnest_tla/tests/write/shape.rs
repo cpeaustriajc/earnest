@@ -298,6 +298,7 @@ fn model() -> BoxedStrategy<Model> {
                 })
                 .collect(),
             view: View::default(),
+            runs: earnest_ir::Runs::default(),
         })
         .boxed()
 }

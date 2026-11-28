@@ -8,13 +8,13 @@ mod workers;
 
 use crate::expand::{Asked, Budget, Expand, FromRows, Mark, Move, Whence, Width};
 use crate::helpers::Helpers;
-use crate::limits::{Limits, TIME_LIMIT_REASON};
+use crate::limits::{EVERY_EXPECTED_FOUND, Limits, TIME_LIMIT_REASON, asked};
 use crate::outcome::Outcome;
 use crate::store::{Lookup, Placed, Store};
 use earnest_ir::{Fault, Model};
 use merge::{Full, Judged};
 use part::{Part, Spares};
-use starts::Starts;
+pub(crate) use starts::Starts;
 use std::ops::Range;
 use std::time::{Duration, Instant};
 
@@ -50,6 +50,8 @@ pub(crate) struct Search<'a> {
     pub(crate) reason: Option<String>,
     pub(crate) computed_beyond_32_bits: bool,
     pub(crate) cut_short: bool,
+    pub(crate) gives_graph: bool,
+    stop_once_broken: Vec<usize>,
     judged: usize,
     last_spread_merge: SpreadMerge,
     state_time: Duration,
@@ -105,6 +107,23 @@ struct SpreadMerge {
 /// and no action is tried from them.
 #[must_use]
 pub fn explore(model: &Model, limits: &Limits) -> Outcome {
+    let only_rule = limits.only_rule.as_deref();
+    let judges_runs = model
+        .runs
+        .eventually
+        .iter()
+        .any(|rule| asked(only_rule, &rule.id));
+    if judges_runs && !limits.keep_graph {
+        let keeping = Limits {
+            keep_graph: true,
+            ..limits.clone()
+        };
+        return searched(model, &keeping, limits);
+    }
+    searched(model, limits, limits)
+}
+
+fn searched(model: &Model, limits: &Limits, asked: &Limits) -> Outcome {
     let slots = model
         .actions
         .iter()
@@ -142,6 +161,8 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
         reason: None,
         computed_beyond_32_bits: false,
         cut_short: false,
+        gives_graph: asked.keep_graph,
+        stop_once_broken: positions_of(model, &limits.stop_once_broken),
         judged: 0,
         last_spread_merge: SpreadMerge::default(),
         state_time: Duration::ZERO,
@@ -151,14 +172,34 @@ pub fn explore(model: &Model, limits: &Limits) -> Outcome {
     search.outcome()
 }
 
+fn positions_of(model: &Model, ids: &[String]) -> Vec<usize> {
+    let positions: Vec<usize> = ids
+        .iter()
+        .filter_map(|id| model.rules.iter().position(|rule| rule.id == *id))
+        .collect();
+    if positions.len() == ids.len() {
+        positions
+    } else {
+        Vec::new()
+    }
+}
+
 impl Search<'_> {
+    fn every_wanted_broken(&self) -> bool {
+        !self.stop_once_broken.is_empty()
+            && self
+                .stop_once_broken
+                .iter()
+                .all(|rule| self.first_broken.get(*rule).is_some_and(Option::is_some))
+    }
+
     fn run(&mut self) {
         let began = Instant::now();
         let deadline = self
             .limits
             .time_limit
             .and_then(|limit| began.checked_add(limit));
-        for start in Starts::new(&self.model.fields) {
+        for start in Starts::of(self.model) {
             let placed =
                 self.store
                     .place_values(start.into_boxed_slice(), None, self.limits.max_states);
@@ -176,10 +217,18 @@ impl Search<'_> {
                 break;
             }
             if level.end == Round::Full {
-                self.reason = Some(self.limit_reason());
+                self.reason = Some(if self.every_wanted_broken() {
+                    EVERY_EXPECTED_FOUND.to_owned()
+                } else {
+                    self.limit_reason()
+                });
                 break;
             }
             frontier = found_before..self.store.len();
+            if self.every_wanted_broken() {
+                self.reason = Some(EVERY_EXPECTED_FOUND.to_owned());
+                break;
+            }
         }
         self.judge_the_rest(deadline);
     }

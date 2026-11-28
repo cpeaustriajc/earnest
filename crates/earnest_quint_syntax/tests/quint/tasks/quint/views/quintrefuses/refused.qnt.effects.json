@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT203] 'oneOf' must be used inside a nondet definition","locs":[{"source":"tasks/quint/views/quintrefuses/refused.qnt","start":{"line":11,"col":14,"index":178},"end":{"line":11,"col":30,"index":194}}]}]}

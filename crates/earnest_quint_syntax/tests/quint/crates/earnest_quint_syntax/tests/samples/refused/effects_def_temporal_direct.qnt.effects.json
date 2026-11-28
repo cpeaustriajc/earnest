@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] def operators may only read state variables, but operator `f` performs temporal operations over variables 'x'. Use temporal instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_def_temporal_direct.qnt","start":{"line":2,"col":6,"index":56},"end":{"line":2,"col":6,"index":56}}]}]}

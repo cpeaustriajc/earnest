@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] Using an action as an argument of `igt` is only allowed in temporal definitions, but it is used in pure def `f`.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_pure_def_temporal.qnt","start":{"line":2,"col":25,"index":73},"end":{"line":2,"col":29,"index":77}}]}]}

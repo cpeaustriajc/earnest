@@ -3,15 +3,18 @@ use crate::cache::{Cache, Key};
 use crate::changes::{Compare, check_base, rule_changes};
 use crate::commands::{Exit, Gathered, gather, limits_of, refusing, say_what_is_unread};
 use crate::print::{Since, Verified, to_stderr, to_stdout};
-use crate::run::{Bounds, Checked, Graphs, Search, checked, explore_each};
+use crate::reading::ModelFile;
+use crate::run::{Bounds, Checked, Expecting, Graphs, Search, Stops, checked, explore_expecting};
 use crate::select::{Target, select_with_removed};
 use earnest_check::stopped_by_time_limit;
 use std::path::Path;
+use std::ptr;
 
 const HERE: &str = ".";
 
 #[derive(Debug)]
 struct Entry<'a> {
+    file: &'a ModelFile,
     path: &'a str,
     key: Key,
     stored: Vec<Checked>,
@@ -19,8 +22,7 @@ struct Entry<'a> {
 }
 
 fn is_result_of(stored: &Checked, target: &Target<'_>) -> bool {
-    let model = &target.readable.model;
-    stored.result.name == model.name && stored.result.line == model.line
+    stored.is_of(target.readable)
 }
 
 fn served(stored: &Checked) -> Checked {
@@ -40,12 +42,16 @@ fn entries<'a>(
     let mut entries: Vec<Entry<'a>> = Vec::new();
     for target in targets {
         let path = target.file.path.as_str();
-        if entries.last().is_some_and(|entry| entry.path == path) {
+        if entries
+            .last()
+            .is_some_and(|entry| ptr::eq(entry.file, target.file))
+        {
             continue;
         }
-        let key = Key::new(path, &target.file.source, bounds, rule);
+        let key = Key::new(&cached_as(target.file), &target.file.source, bounds, rule);
         let stored = cache.load(&key);
         entries.push(Entry {
+            file: target.file,
             path,
             key,
             stored,
@@ -53,6 +59,24 @@ fn entries<'a>(
         });
     }
     entries
+}
+
+fn cached_as(file: &ModelFile) -> String {
+    match file.quint_check() {
+        Some(check) => match file.models().first() {
+            Some(readable) => {
+                let judged: Vec<&str> = readable.model.rule_ids().collect();
+                format!(
+                    "{}\n{check}\njudged:{}\nexpected:{}",
+                    file.path,
+                    judged.join(","),
+                    readable.expected.join(",")
+                )
+            }
+            None => format!("{}\n{check}", file.path),
+        },
+        None => file.path.clone(),
+    }
 }
 
 fn keep(entry: &Entry<'_>, cache: &Cache) {
@@ -67,12 +91,7 @@ fn keep(entry: &Entry<'_>, cache: &Cache) {
                 .as_deref()
                 .is_some_and(stopped_by_time_limit))
     };
-    let still_current = |old: &&Checked| {
-        !entry
-            .fresh
-            .iter()
-            .any(|new| new.result.name == old.result.name && new.result.line == old.result.line)
-    };
+    let still_current = |old: &&Checked| !entry.fresh.iter().any(|new| new.is_the_run_of(old));
     let models: Vec<Checked> = entry
         .stored
         .iter()
@@ -98,7 +117,7 @@ fn check_all(
     let entry_of = |entries: &[Entry<'_>], target: &Target<'_>| {
         entries
             .iter()
-            .position(|entry| entry.path == target.file.path)
+            .position(|entry| ptr::eq(entry.file, target.file))
     };
     let mut results: Vec<Option<Checked>> = targets
         .iter()
@@ -116,25 +135,29 @@ fn check_all(
         .filter(|position| results.get(*position).is_some_and(Option::is_none))
         .collect();
     let rule = arguments.selection.rule.as_deref();
-    let searches: Vec<Search<'_>> = missing
+    let searches: Vec<Expecting<'_>> = missing
         .iter()
         .filter_map(|position| targets.get(*position))
-        .map(|target| Search {
-            model: &target.readable.model,
-            only_rule: rule,
+        .map(|target| Expecting {
+            search: Search {
+                model: &target.readable.model,
+                only_rule: rule,
+            },
+            expected: &target.readable.expected,
+            reachable: &target.readable.reachable,
+            stops: Stops::Early,
         })
         .collect();
-    let ran = explore_each(&searches, bounds, Graphs::Dropped);
-    for ((position, search), ran) in missing.iter().zip(&searches).zip(&ran) {
-        let fresh = checked(search.model, ran)?;
-        if let Some(entry) = targets
-            .get(*position)
-            .and_then(|target| entry_of(&entries, target))
-            .and_then(|at| entries.get_mut(at))
-        {
+    let ran = explore_expecting(&searches, bounds, Graphs::Dropped);
+    let checked_targets = missing
+        .iter()
+        .filter_map(|position| Some((*position, targets.get(*position)?)));
+    for ((position, target), ran) in checked_targets.zip(&ran) {
+        let fresh = checked(target.readable, ran)?;
+        if let Some(entry) = entry_of(&entries, target).and_then(|at| entries.get_mut(at)) {
             entry.fresh.push(fresh.clone());
         }
-        if let Some(slot) = results.get_mut(*position) {
+        if let Some(slot) = results.get_mut(position) {
             *slot = Some(fresh);
         }
     }
@@ -153,7 +176,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
         files,
         skipped,
         no_model,
-    } = gather(&arguments.selection.models)?;
+    } = gather(&arguments.selection.models, bounds.jobs)?;
     let model = arguments.selection.models.model.as_deref();
     let rule = arguments.selection.rule.as_deref();
     let selected = select_with_removed(&files, model, rule, arguments.base.as_deref())
@@ -184,7 +207,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
     if let Some(error) = selected.unmatched
         && compared
             .as_ref()
-            .is_none_or(|(_, compared)| compared.changes.is_empty())
+            .is_none_or(|(_, compared)| compared.lists_nothing())
     {
         return Err(refusing(&skipped, &no_model, model, rule, error));
     }
@@ -196,6 +219,7 @@ pub(crate) fn verify(arguments: &Verify) -> Result<Exit, String> {
         since: compared.as_ref().map(|(base, compared)| Since {
             base,
             changes: &compared.changes,
+            not_compared: &compared.not_compared,
         }),
     };
     if arguments.json {

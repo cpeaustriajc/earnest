@@ -139,6 +139,113 @@ fn r09_a_chart_never_has_more_than_twenty_arrows() {
     );
 }
 
+const FAR_CORNER: &str = r#"import { m } from "@earnestjs/model";
+
+export const Square = m.model("Square", {
+	x: m.int(0, 5).initial(0),
+	y: m.int(0, 5).initial(0),
+});
+
+export const east = m.action(Square, "the point moves east", {
+	when: (s) => s.x < 5,
+	changes: (s) => ({ x: s.x + 1 }),
+});
+
+export const north = m.action(Square, "the point moves north", {
+	when: (s) => s.y < 5,
+	changes: (s) => ({ y: s.y + 1 }),
+});
+
+export const cornered = m.rule(
+	Square,
+	"At the far corner the point has gone ten steps",
+	(s) => !(s.x === 5 && s.y === 5) || s.x + s.y === 10,
+);
+
+export const done = m.end(Square, "The point is at the far corner", (s) => s.x === 5 && s.y === 5);
+
+export type State = m.Infer<typeof Square>;
+"#;
+
+#[test]
+fn r09_a_chart_where_every_rule_holds_draws_the_route_to_the_premise_of_a_rule() {
+    let sandbox = Sandbox::empty();
+    sandbox.write("models/square.model.ts", FAR_CORNER);
+    let verified = sandbox.earnest(&["verify", "models/square.model.ts"]);
+    verified.exits(0);
+    let run = sandbox.earnest(&["chart", "models/square.model.ts"]);
+    let block = mermaid_block(&run);
+    assert_eq!(
+        arrows(&block).len(),
+        ARROW_LIMIT,
+        "the model has 60 arrows\n{run}"
+    );
+    assert_has_label(&block, "x = 5, y = 5", &run);
+    assert!(
+        !gives_a_state_the_class_broken(&block),
+        "nothing is broken\n{run}"
+    );
+    let after: Vec<&str> = run
+        .stdout
+        .lines()
+        .skip_while(|line| line.trim() != "```")
+        .skip(1)
+        .collect();
+    assert_eq!(
+        after,
+        [
+            "",
+            "Not shown: 18 of 36 states and 40 of 60 arrows.",
+            "",
+            "The premise of `cornered` first holds in `x = 5, y = 5`.",
+        ],
+        "the note names the box where the rule's premise first holds\n{run}"
+    );
+}
+
+const TWO_SIDES: &str = r#"import { m } from "@earnestjs/model";
+export const T = m.model("T", { side: m.enum(["root", "L", "R"]).initial("root"), d: m.int(0, 8).initial(0), tag: m.boolean().initial(false) });
+export const goL = m.action(T, "go left", { when: (s) => s.side === "root", changes: () => ({ side: "L", d: 1, tag: true }) });
+export const goR = m.action(T, "go right", { when: (s) => s.side === "root", changes: () => ({ side: "R", d: 1 }) });
+export const deeper = m.action(T, "deeper", { when: (s) => s.side === "R" && s.d < 8, changes: (s) => ({ d: s.d + 1, tag: s.d + 1 === 5 }) });
+export const noBoom = m.rule(T, "noBoom", (s) => s.d !== 8);
+export const tagged = m.rule(T, "tagged", (s) => !s.tag || s.d >= 0);
+"#;
+
+const LATE_START: &str = r#"import { m } from "@earnestjs/model";
+export const E = m.model("E", { n: m.int(0, 6).initial(0) });
+export const inc = m.action(E, "inc", { when: (s) => s.n < 6, changes: (s) => ({ n: s.n + 1 }) });
+export const late = m.eventually(E, "late", { after: (s) => s.n === 4, reaches: (s) => s.n === 1 });
+export const never = m.eventually(E, "never", { after: (s) => s.n === 99, reaches: (s) => s.n === 2 });
+export const end = m.end(E, "end", (s) => s.n === 6);
+"#;
+
+fn premise_line(file: &str, text: &str) -> String {
+    let sandbox = Sandbox::empty();
+    sandbox.write(&format!("models/{file}"), text);
+    let run = sandbox.earnest(&["chart", &format!("models/{file}")]);
+    mermaid_block(&run);
+    run.stdout.lines().last().unwrap_or_default().to_owned()
+}
+
+#[test]
+fn r09_the_note_names_the_nearest_box_of_a_premise_although_a_farther_one_is_drawn() {
+    assert_eq!(
+        premise_line("sides.model.ts", TWO_SIDES),
+        "The premise of `tagged` first holds in `side = L, d = 1, tag = true`.",
+        "the broken route to `d = 8` draws `d = 5`, where `tag` is true too, but `side = L` is nearer"
+    );
+}
+
+#[test]
+fn r09_the_note_of_an_eventually_rule_names_only_what_can_follow_its_start() {
+    assert_eq!(
+        premise_line("late.model.ts", LATE_START),
+        "`late` starts in `n = 4`.",
+        "n = 1 can't follow n = 4, and `never` starts nowhere"
+    );
+}
+
 #[test]
 fn r09_a_model_without_a_view_still_has_a_chart() {
     let sandbox = Sandbox::with(&["turnstile.model.ts"]);

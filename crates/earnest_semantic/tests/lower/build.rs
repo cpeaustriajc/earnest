@@ -277,6 +277,7 @@ pub(crate) fn action(id: &str, guard: Option<Term>, change: Term) -> ActionDraft
         inputs: Vec::new(),
         guard: guard.map(body),
         change: body(change),
+        fair: false,
     }
 }
 
@@ -335,6 +336,7 @@ pub(crate) fn draft(fields: Vec<(&str, Shape)>) -> Draft {
         view: ViewDraft::default(),
         constants: Vec::new(),
         helpers: Vec::new(),
+        runs: earnest_ast::RunsDraft::default(),
     }
 }
 

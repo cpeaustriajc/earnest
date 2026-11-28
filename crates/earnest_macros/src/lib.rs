@@ -2,9 +2,9 @@
 //!
 //! `#[derive(Domain)]` lists every value of an enum or a struct, `#[derive(Model)]` lists every
 //! start state of a model struct, and `#[model]` on the model's `impl` block reads the
-//! `#[action]`, `#[rule]` and `#[end]` attributes of its methods, and `#[view(...)]` on a second
-//! `impl` block gives the model's statechart labels. Depend on `earnest`, not on
-//! this crate: the generated code names `::earnest::model`.
+//! `#[action]`, `#[rule]`, `#[end]`, `#[eventually]`, `#[witness]` and `#[setup]` attributes of
+//! its methods, and `#[view(...)]` on a second `impl` block gives the model's statechart labels.
+//! Depend on `earnest`, not on this crate: the generated code names `::earnest::model`.
 
 mod behavior;
 mod choices;
@@ -66,7 +66,8 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
     finish(starts::expand(input.into()))
 }
 
-/// Marks the `impl` block that holds a model's actions, rules and ends.
+/// Marks the `impl` block that holds a model's actions, rules, ends, rules about runs, witnesses
+/// and setups.
 ///
 /// Inside it, `#[action("sentence")]` goes on a method that takes `&self` and its inputs and
 /// returns `Option<Self>`, and `#[rule("sentence")]` or `#[end("sentence")]` on a method that
@@ -77,7 +78,15 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 /// An action that nothing can stop returns `Self` in place of `Option<Self>`, so `clippy`'s
 /// `unnecessary_wraps` has nothing to say about it; it can't use `require!`. An input may be
 /// listed with `#[one_of(a, b)]` in place of `#[range]`.
-/// A method without one of the three attributes is a helper: it is left as it is, takes its
+/// `#[action("sentence", fair)]` says the action is never put off forever.
+/// `#[eventually("sentence")]` and `#[eventually("sentence", after = helper)]` go on a method
+/// that takes `&self` and returns `bool`, `#[witness("sentence")]` and
+/// `#[witness("sentence", setup = name)]` on one that returns `Option<bool>` when a step is
+/// followed by `?` and `bool` when none is, and `#[setup("sentence")]` on one that returns
+/// `Self`; `Behavior::eventually`, `witnesses` and `setups` call them, and the helper and the
+/// setup they name. `Witnessed::played` is `Some` of the result of a witness that returns
+/// `bool`.
+/// A method without one of the six attributes is a helper: it is left as it is, takes its
 /// parameters as plain Rust, and needs no `#[range]`, which Rust would not accept there.
 #[proc_macro_attribute]
 pub fn model(arguments: TokenStream, input: TokenStream) -> TokenStream {

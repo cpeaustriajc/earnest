@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Expected 2 arguments, got 1\nTrying to unify (int, int) => int and (int) => _t1\n","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_arguments_types_first.qnt","start":{"line":2,"col":10,"index":76},"end":{"line":2,"col":13,"index":79}}]}]}

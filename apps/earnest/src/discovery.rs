@@ -1,3 +1,4 @@
+use crate::checks::CHECKS_FILE;
 use earnest_diagnostics::{Place, Problem};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,6 +23,8 @@ const TYPESCRIPT_TEST_FOLDERS: [&str; 3] = ["test", "tests", "__tests__"];
 const RUST_TEST_FOLDERS: [&str; 3] = ["tests", "benches", "examples"];
 const RUST_BUILD_SCRIPT: &str = "build.rs";
 const RUST_EXTENSION: &str = "rs";
+const COMPILED_QUINT_EXTENSION: &str = "json";
+const QUINT_EXTENSION: &str = "qnt";
 const HERE: &str = ".";
 pub(crate) const IN_EVERY_MODEL_FILE: &str = "earnest";
 const UTF16_LITTLE_ENDIAN: [u8; 2] = [0xFF, 0xFE];
@@ -39,6 +42,7 @@ enum Origin {
 pub(crate) enum Language {
     TypeScript,
     Rust,
+    Quint,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,6 +56,14 @@ pub(crate) struct Discovered {
     pub(crate) found: Vec<Found>,
     pub(crate) skipped: Vec<String>,
     pub(crate) no_model: Vec<String>,
+    pub(crate) listed: Vec<Listed>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Listed {
+    pub(crate) checks: PathBuf,
+    pub(crate) only: Option<PathBuf>,
+    pub(crate) named: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +71,7 @@ enum Searched {
     Found(Found),
     Skipped,
     NoModel,
+    Listed(Listed),
 }
 
 #[derive(Debug, Default)]
@@ -67,6 +80,7 @@ struct Walked {
     found: BTreeMap<PathBuf, (usize, Found)>,
     skipped: BTreeMap<PathBuf, usize>,
     no_model: BTreeMap<PathBuf, usize>,
+    listed: Vec<Listed>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +124,7 @@ pub(crate) fn is_model_source(language: Language, path: &str, source: &str) -> b
     let reaches = |text: &str| match language {
         Language::TypeScript => earnest_ts::reaches_library(path, text),
         Language::Rust => earnest_rs::uses_library(text),
+        Language::Quint => earnest_quint::is_compiled_quint(text),
     };
     reaches(source) || (source.contains('\0') && reaches(&source.replace('\0', "")))
 }
@@ -146,6 +161,7 @@ pub(crate) fn is_test_file(language: Language, below: &Path) -> bool {
                 || in_folder(&TYPESCRIPT_TEST_FOLDERS)
         }
         Language::Rust => name == RUST_BUILD_SCRIPT || in_folder(&RUST_TEST_FOLDERS),
+        Language::Quint => false,
     }
 }
 
@@ -153,7 +169,7 @@ pub(crate) fn is_model_file(language: Language, path: &str, source: &str) -> boo
     is_model_name(path) || is_model_source(language, path, source)
 }
 
-fn is_skipped_folder(name: &OsStr) -> bool {
+pub(crate) fn is_skipped_folder(name: &OsStr) -> bool {
     name.to_str()
         .is_none_or(|name| name.starts_with('.') || SKIPPED_FOLDERS.contains(&name))
 }
@@ -253,14 +269,56 @@ fn not_a_known_language(path: &Path) -> Found {
             TOP_OF_FILE,
             &in_backticks(path),
             "the file was named on the command line, but it is not TypeScript (`.ts`, `.mts`, \
-             `.tsx`) or Rust (`.rs`), so the checker does not know how to read it",
+             `.tsx`), Rust (`.rs`), Quint (`.qnt`) or a Quint \
+             module compiled to JSON (`quint compile --target json`), so the checker does not \
+             know how to read it",
         ),
     )
 }
 
+fn compiled_quint(path: &Path) -> Option<Searched> {
+    let named = Path::new(path.file_name()?);
+    if named.extension().and_then(OsStr::to_str) != Some(COMPILED_QUINT_EXTENSION) {
+        return None;
+    }
+    let source = fs::read_to_string(path).ok()?;
+    earnest_quint::is_compiled_quint(&source).then(|| {
+        Searched::Found(Found::model(
+            &path.to_string_lossy(),
+            Language::Quint,
+            &source,
+        ))
+    })
+}
+
+fn quint_checks(path: &Path, origin: Origin) -> Option<Searched> {
+    let name = path.file_name()?;
+    if name == CHECKS_FILE {
+        return Some(Searched::Listed(Listed {
+            checks: path.to_path_buf(),
+            only: None,
+            named: origin == Origin::Named,
+        }));
+    }
+    let is_quint = Path::new(name).extension().and_then(OsStr::to_str) == Some(QUINT_EXTENSION);
+    is_quint.then(|| {
+        Searched::Listed(Listed {
+            checks: path.with_file_name(CHECKS_FILE),
+            only: Some(path.to_path_buf()),
+            named: origin == Origin::Named,
+        })
+    })
+}
+
 fn model_file(path: &Path, origin: Origin, below: &Path) -> Option<Searched> {
     let Some(language) = language_of(path) else {
-        return (origin == Origin::Named).then(|| Searched::Found(not_a_known_language(path)));
+        if let Some(listed) = quint_checks(path, origin) {
+            return Some(listed);
+        }
+        if origin == Origin::Searched {
+            return None;
+        }
+        return compiled_quint(path).or_else(|| Some(Searched::Found(not_a_known_language(path))));
     };
     let shown = path.to_string_lossy();
     let is_test =
@@ -310,6 +368,7 @@ fn keep(walked: &mut Walked, shown: PathBuf, searched: Option<Searched>) {
         Some(Searched::NoModel) => {
             walked.no_model.insert(shown, walked.rank);
         }
+        Some(Searched::Listed(listed)) => walked.listed.push(listed),
         None => {}
     }
 }
@@ -420,6 +479,7 @@ pub(crate) fn discover(roots: &[PathBuf]) -> Result<Discovered, String> {
             }
         }
     }
+    let listed = walked.listed;
     let skipped = left_out(walked.skipped, &once);
     let no_model = left_out(walked.no_model, &once);
     let found: BTreeMap<PathBuf, Found> = once
@@ -430,6 +490,7 @@ pub(crate) fn discover(roots: &[PathBuf]) -> Result<Discovered, String> {
         found: found.into_values().collect(),
         skipped,
         no_model,
+        listed,
     })
 }
 

@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT200] nondet operators [not supported by the mode checker], but operator `n` updates variables 'x'. Use action instead.","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/effects_nondet_updates.qnt","start":{"line":2,"col":22,"index":67},"end":{"line":2,"col":22,"index":67}}]}]}

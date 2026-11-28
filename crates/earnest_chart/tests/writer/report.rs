@@ -219,6 +219,7 @@ fn rewritten<'a>(
         model: "Tank",
         id,
         change,
+        part: earnest_chart::ChangedPart::Rule,
         was,
         now,
     }
@@ -486,6 +487,7 @@ fn text_a_developer_wrote_cannot_open_or_close_a_block_or_a_heading() {
         model: hostile,
         id: hostile,
         change: ChangeKind::Loosened,
+        part: earnest_chart::ChangedPart::Rule,
         was: Some(side(hostile, hostile)),
         now: Some(side(hostile, hostile)),
     }];
@@ -599,5 +601,42 @@ fn a_file_name_cannot_close_the_block_that_names_it() {
     assert!(
         !written.lines().any(|line| line.starts_with("## Injected")),
         "the name stays inside the block:\n{written}"
+    );
+}
+
+#[test]
+fn a_change_of_a_rule_about_runs_a_witness_or_a_setup_names_its_kind_after_the_id() {
+    let parts = [
+        (earnest_chart::ChangedPart::Eventually, ChangeKind::Removed),
+        (earnest_chart::ChangedPart::Witness, ChangeKind::Added),
+        (earnest_chart::ChangedPart::Setup, ChangeKind::Changed),
+    ];
+    let changes: Vec<RuleChange<'_>> = parts
+        .into_iter()
+        .map(|(part, change)| RuleChange {
+            part,
+            ..rewritten(
+                "it",
+                change,
+                Some(side("It was", "reaches: s.level === 3")),
+                Some(side("It is", "{ level: 2 }")),
+            )
+        })
+        .collect();
+    let lines = earnest_chart::rule_change_lines(&RuleChanges {
+        base: "origin/main",
+        changes: &changes,
+    });
+    assert_eq!(
+        lines,
+        [
+            "rule changes since origin/main",
+            "  removed    Tank.it (eventually)  \"It was\"  src/cart.model.ts",
+            "  added      Tank.it (witness)  \"It is\"  src/cart.model.ts",
+            "  changed    Tank.it (setup)  src/cart.model.ts",
+            "    was  \"It was\"  reaches: s.level === 3",
+            "    now  \"It is\"  { level: 2 }",
+        ],
+        "the kind in round brackets after the id, and the rest as for a rule"
     );
 }

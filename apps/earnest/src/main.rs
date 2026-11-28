@@ -1,18 +1,29 @@
-//! The `earnest` command line: checks models written in TypeScript or Rust.
+//! The `earnest` command line: checks models written in TypeScript, Rust or Quint.
 
 mod arguments;
 mod cache;
 mod changes;
+mod changes_quint;
+mod checks;
 mod commands;
 mod confirm;
+mod confirm_quint;
+mod confirm_reach;
 mod discovery;
+mod marks;
+mod migrate;
+mod places;
+mod plan;
 mod print;
+mod quint;
 mod reading;
 mod run;
 mod select;
 #[cfg(test)]
 mod sources;
+mod typecheck;
 mod verify;
+mod view_marks;
 mod workers;
 
 use arguments::{Arguments, Command};

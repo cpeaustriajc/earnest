@@ -1,0 +1,1 @@
+{"stage":"typechecking","errors":[{"explanation":"[QNT000] Couldn't unify bool and str\nTrying to unify bool and str\nTrying to unify (bool, bool, bool, bool) => bool and (bool, bool, str, { retried: int }) => _t158\n","locs":[{"source":"tasks/quint/views/typed/illtyped.qnt","start":{"line":84,"col":20,"index":1929},"end":{"line":84,"col":74,"index":1983}}]}]}

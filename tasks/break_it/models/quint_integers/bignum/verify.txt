@@ -1,0 +1,9 @@
+[TLC] Compiling to TLA+ (via Apalache)...
+[TLC] Running TLC model checker...
+
+Starting... (2026-11-27 03:10:09)
+Error: TLC can't handle a number this big.
+9223372036854775807
+Finished in 00s at (2026-11-27 03:10:09)
+
+[failure] TLC encountered an error (373ms).

@@ -1,0 +1,1 @@
+{"stage":"parsing","errors":[{"explanation":"[QNT101] Conflicting definitions found for name 'shared' in module 'TwiceByImport'","locs":[{"source":"crates/earnest_quint_syntax/tests/samples/refused/names_twice_by_import.qnt","start":{"line":1,"col":6,"index":19},"end":{"line":1,"col":11,"index":24}}]}]}

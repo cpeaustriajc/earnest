@@ -10,7 +10,7 @@ export const drain = m.action(Meter, "the meter drains", {
 });
 
 export const refill = m.action(Meter, "the meter refills on an even level", {
-	when: (s) => m.rem(s.level, 2) === 0,
+	when: (s) => m.rem(s.level, s.level + 1) === 0,
 	changes: () => ({ level: 1 }),
 });
 

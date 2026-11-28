@@ -1,0 +1,97 @@
+[
+  {
+    "seed": 4,
+    "model": "G4",
+    "states": 1860,
+    "rules": {
+      "inv0": "broken",
+      "inv1": "broken",
+      "inv2": "broken"
+    }
+  },
+  {
+    "seed": 6,
+    "model": "G6",
+    "states": 70,
+    "rules": {
+      "inv0": "broken",
+      "inv1": "holds"
+    }
+  },
+  {
+    "seed": 16,
+    "model": "G16",
+    "states": 8,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "holds",
+      "inv2": "broken"
+    }
+  },
+  {
+    "seed": 21,
+    "model": "G21",
+    "states": 1420,
+    "rules": {
+      "inv0": "broken",
+      "inv1": "holds"
+    }
+  },
+  {
+    "seed": 25,
+    "model": "G25",
+    "states": 236,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "broken"
+    }
+  },
+  {
+    "seed": 28,
+    "model": "G28",
+    "states": 42,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "broken",
+      "inv2": "holds"
+    }
+  },
+  {
+    "seed": 29,
+    "model": "G29",
+    "states": 20,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "holds",
+      "inv2": "holds"
+    }
+  },
+  {
+    "seed": 33,
+    "model": "G33",
+    "states": 148,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "broken",
+      "inv2": "holds"
+    }
+  },
+  {
+    "seed": 47,
+    "model": "G47",
+    "states": 2304,
+    "rules": {
+      "inv0": "broken",
+      "inv1": "holds"
+    }
+  },
+  {
+    "seed": 56,
+    "model": "G56",
+    "states": 150,
+    "rules": {
+      "inv0": "holds",
+      "inv1": "holds"
+    }
+  }
+]

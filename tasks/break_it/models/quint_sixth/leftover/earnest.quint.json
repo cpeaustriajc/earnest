@@ -1,0 +1,6 @@
+{
+  "checks": [
+    { "file": "spec.qnt", "main": "Small", "name": "SmallR", "init": "start", "invariants": [{ "name": "atMostTwo", "is": "x <= 2" }] },
+    { "file": "spec.qnt", "main": "Big", "name": "BigR", "step": "stepR", "invariants": ["S::x <= 3"] }
+  ]
+}

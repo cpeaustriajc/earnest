@@ -1,4 +1,4 @@
-use crate::changes::{RuleChanges, rule_change_lines};
+use crate::changes::{NotCompared, RuleChanges, rule_change_lines, rule_change_lines_noting};
 use crate::markdown::{code_span, fenced, one_line, prose};
 use crate::mermaid::chart_with_limit;
 use crate::select::ARROW_LIMIT;
@@ -86,11 +86,24 @@ pub struct Charted<'a> {
     pub chart: Option<&'a str>,
 }
 
-fn model(charted: &Charted<'_>) -> String {
-    let section = &charted.section;
+/// A model's section with the lines of its fenced block written already, for
+/// [`report_with_details`].
+#[derive(Clone, Copy, Debug)]
+pub struct Detailed<'a> {
+    /// The section and its chart.
+    pub charted: Charted<'a>,
+    /// The lines of the fenced block, in place of the path to each broken rule and each
+    /// finding of the outcome. `None` prints those.
+    pub detail: Option<&'a [String]>,
+}
+
+fn model(detailed: &Detailed<'_>) -> String {
+    let section = &detailed.charted.section;
     let mut blocks = vec![format!("## {}", prose(section.name)), result_line(section)];
-    blocks.extend(charted.chart.map(str::to_owned));
-    let detail = detail_lines(section.outcome);
+    blocks.extend(detailed.charted.chart.map(str::to_owned));
+    let detail = detailed
+        .detail
+        .map_or_else(|| detail_lines(section.outcome), <[String]>::to_vec);
     if !detail.is_empty() {
         blocks.push(fenced(&detail));
     }
@@ -157,6 +170,24 @@ pub fn report_with_charts(
     unreadable: &[Unreadable<'_>],
     changes: Option<&RuleChanges<'_>>,
 ) -> String {
+    let detailed: Vec<Detailed<'_>> = sections
+        .iter()
+        .map(|charted| Detailed {
+            charted: *charted,
+            detail: None,
+        })
+        .collect();
+    report_with_details(&detailed, unreadable, changes)
+}
+
+/// [`report_with_charts`] with the fenced block of some models written by the caller, as one
+/// that knows which broken rules were expected to break words them.
+#[must_use]
+pub fn report_with_details(
+    sections: &[Detailed<'_>],
+    unreadable: &[Unreadable<'_>],
+    changes: Option<&RuleChanges<'_>>,
+) -> String {
     let mut blocks: Vec<String> = sections.iter().map(model).collect();
     if !unreadable.is_empty() {
         let lines: Vec<String> = unreadable.iter().flat_map(unread_lines).collect();
@@ -169,4 +200,15 @@ pub fn report_with_charts(
         ));
     }
     blocks.join("\n\n")
+}
+
+/// The `## Rule changes` section that [`report_with_charts`] ends with, with the lines of
+/// [`rule_change_lines_noting`](crate::rule_change_lines_noting), for a caller that passes no
+/// changes to [`report_with_charts`] and appends this section after its output.
+#[must_use]
+pub fn rule_changes_section(changes: &RuleChanges<'_>, not_compared: &[NotCompared<'_>]) -> String {
+    format!(
+        "## Rule changes\n\n{}",
+        fenced(&rule_change_lines_noting(changes, not_compared))
+    )
 }

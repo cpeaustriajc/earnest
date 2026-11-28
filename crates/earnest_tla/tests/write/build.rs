@@ -127,6 +127,7 @@ impl Sketch {
             rules: self.rules,
             ends: self.ends,
             view: View::default(),
+            runs: earnest_ir::Runs::default(),
         }
     }
 

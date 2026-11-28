@@ -1,0 +1,5 @@
+{ "checks": [
+  { "file": "clock.qnt", "main": "Small", "invariants": ["inRange"], "temporal": ["alwaysInRange"], "runs": true },
+  { "file": "clock.qnt", "main": "Small", "name": "SmallBroken", "expectCounterexample": ["belowLimit"] },
+  { "file": "clock.qnt", "main": "Large", "invariants": ["C::inRange"] }
+] }

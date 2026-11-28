@@ -274,6 +274,18 @@ pub enum Language {
     Rust,
 }
 
+impl Language {
+    /// How this language writes comments and quoted text, for [`condition_text`] and
+    /// [`same_condition_text`].
+    #[must_use]
+    pub fn quoting(self) -> Quoting {
+        match self {
+            Self::TypeScript => Quoting::TypeScript,
+            Self::Rust => Quoting::Rust,
+        }
+    }
+}
+
 impl Term {
     /// A term of `kind` that starts at `place`.
     #[must_use]
@@ -403,6 +415,9 @@ pub struct ActionDraft {
     /// The change. Its term is a [`TermKind::Record`] of the fields that change,
     /// possibly inside [`TermKind::Bind`], [`TermKind::Choose`] or [`TermKind::Wrap`].
     pub change: ActionBody,
+    /// Whether the model says the action is not put off forever: a run in which it stays
+    /// possible and never changes the state breaks no [`EventuallyDraft`].
+    pub fair: bool,
 }
 
 /// One rule of a model.
@@ -427,15 +442,117 @@ pub struct RuleDraft {
 /// dropped, each run of white space is one space and there is none at either end.
 ///
 /// A reader passes the source of a rule's condition through this before it stores it in
-/// [`RuleDraft::text`], so an edit that only moves white space does not count as a change of
-/// the rule, and neither does a comment. `quoting` says which language's comments and quoted
-/// text the source has. White space inside a text literal is folded too, so two texts can be
-/// equal when the conditions are not.
+/// [`RuleDraft::text`], the text `--base` shows. `quoting` says which language's comments and
+/// quoted text the source has. White space inside a text literal is folded too, so two texts
+/// can be equal when the conditions are not: tell whether a part changed by what it lowers to.
 #[must_use]
 pub fn condition_text(source: &str, quoting: Quoting) -> String {
     let bare = nesting::without_comments(source, quoting);
     let words: Vec<&str> = bare.split_whitespace().collect();
     words.join(" ")
+}
+
+/// Whether two texts in the normal form of [`condition_text`] are one source apart from white
+/// space: a space counts only between two word letters (letters, digits, `_` and `$`), so
+/// `s.items .size` is `s.items.size` and `return x` is not `returnx`.
+///
+/// Quoted text is kept whole, so `"a b"` is not `"ab"`; but [`condition_text`] has already
+/// folded white space inside it, so `"a  b"` and `"a b"` are the same here. Two texts this
+/// calls the same can mean different things: `--base` compares what parts lower to instead.
+#[must_use]
+pub fn same_condition_text(first: &str, second: &str, quoting: Quoting) -> bool {
+    first == second
+        || nesting::without_loose_spaces(first, quoting)
+            == nesting::without_loose_spaces(second, quoting)
+}
+
+/// A condition on one state, as an [`EventuallyDraft`] holds it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConditionDraft {
+    /// The name the condition gives the state, when it takes it.
+    pub state_name: Option<String>,
+    /// The condition, which gives true or false.
+    pub term: Term,
+    /// The condition's source text in the normal form of [`condition_text`].
+    pub text: String,
+}
+
+/// One rule about whole runs of a model: a state every run reaches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventuallyDraft {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The rule's sentence.
+    pub says: String,
+    /// Where the rule is declared.
+    pub place: Place,
+    /// The states the rule starts from: every reachable state where this is true. `None` is
+    /// every start state.
+    pub after: Option<ConditionDraft>,
+    /// The condition every run must meet in some state, at or after the state it starts from.
+    pub reaches: ConditionDraft,
+}
+
+/// One step of a [`WitnessDraft`]: an action with a value for each of its inputs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StepDraft {
+    /// The id of the action taken.
+    pub action: String,
+    /// Where the step is written.
+    pub place: Place,
+    /// The value given to each input, by the input's name, in the order written.
+    pub inputs: Vec<(String, Term)>,
+}
+
+/// One witness of a model: a path it must be able to take, and what must be true at its end.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WitnessDraft {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The witness's sentence.
+    pub says: String,
+    /// Where the witness is declared.
+    pub place: Place,
+    /// The id of the [`SetupDraft`] whose start states the path is played from, with where it
+    /// is named. `None` is the model's own start states.
+    pub setup: Option<(String, Place)>,
+    /// The actions taken, first to last.
+    pub steps: Vec<StepDraft>,
+    /// The name the condition gives the state after the last step, when it takes it.
+    pub state_name: Option<String>,
+    /// The condition that must be true after the last step.
+    pub expect: Term,
+    /// The source text of its setup, steps and condition in the normal form of
+    /// [`condition_text`], kept to tell whether the witness was rewritten.
+    pub text: String,
+}
+
+/// One setup of a model: other values for some fields to start at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SetupDraft {
+    /// The name of the exported constant or the method.
+    pub id: String,
+    /// The setup's sentence.
+    pub says: String,
+    /// Where the setup is declared.
+    pub place: Place,
+    /// The fields that start elsewhere, each with where it is written and its one start value.
+    /// Every other field starts where the model declares.
+    pub starts: Vec<(String, Place, Term)>,
+    /// The source text of the fields it starts elsewhere in the normal form of
+    /// [`condition_text`], kept to tell whether the setup was rewritten.
+    pub text: String,
+}
+
+/// What a model says about whole runs instead of single states.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RunsDraft {
+    /// The rules about a state every run reaches, in file order.
+    pub eventually: Vec<EventuallyDraft>,
+    /// The witnesses, in file order.
+    pub witnesses: Vec<WitnessDraft>,
+    /// The setups, in file order.
+    pub setups: Vec<SetupDraft>,
 }
 
 /// One end of a model: states where stopping is correct.
@@ -515,11 +632,28 @@ pub struct Draft {
     pub ends: Vec<EndDraft>,
     /// The view, empty when the file declares none.
     pub view: ViewDraft,
+    /// The eventually rules, witnesses and setups, empty when the file declares none.
+    pub runs: RunsDraft,
     /// The file's top-level constants by name. A [`TermKind::Name`] no binding explains is
     /// looked up here.
     pub constants: Vec<(String, Term)>,
     /// The file's helper functions.
     pub helpers: Vec<HelperDraft>,
+}
+
+impl Draft {
+    /// The id of everything the model asks to be checked and reported by its id: each rule,
+    /// then each rule about runs, then each witness.
+    pub fn rule_ids(&self) -> impl Iterator<Item = &str> {
+        let always = self.rules.iter().map(|rule| rule.id.as_str());
+        let eventually = self.runs.eventually.iter().map(|rule| rule.id.as_str());
+        let witnesses = self
+            .runs
+            .witnesses
+            .iter()
+            .map(|witness| witness.id.as_str());
+        always.chain(eventually).chain(witnesses)
+    }
 }
 
 /// Everything a reader got out of one model file.
