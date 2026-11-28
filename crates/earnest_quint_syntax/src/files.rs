@@ -259,7 +259,7 @@ fn raised_at(
 
 fn placed_definition_before(ids: &Ids, modules: &[Json], target: u64) -> Option<u64> {
     fn visit(value: &Json, ids: &Ids, target: u64, last: &mut Option<u64>) -> bool {
-        match value {
+        match value.unshared() {
             Json::Object(fields) => {
                 let id = match value.get("id") {
                     Some(Json::Number(digits)) => digits.parse::<u64>().ok(),

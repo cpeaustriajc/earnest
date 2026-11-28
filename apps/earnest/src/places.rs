@@ -717,20 +717,47 @@ impl Places {
     }
 }
 
+/// Of the JSON the front end wrote for `quint compile`, each module's name and each
+/// declaration's name and qualifier: the rest is skipped as it is read, so the `types` table
+/// and the expressions are never held.
+#[derive(Deserialize)]
+struct CompiledModules {
+    #[serde(default)]
+    modules: Vec<HeldModule>,
+}
+
+#[derive(Deserialize)]
+struct HeldModule {
+    #[serde(default)]
+    name: Value,
+    #[serde(default)]
+    declarations: Vec<HeldDeclaration>,
+}
+
+#[derive(Deserialize)]
+struct HeldDeclaration {
+    #[serde(default)]
+    name: Value,
+    #[serde(default)]
+    qualifier: Value,
+}
+
 fn runs_held(main: &str, compiled: &str) -> Vec<String> {
-    let Some(compiled) = from_front_end(compiled) else {
+    let mut reader = serde_json::Deserializer::from_str(compiled);
+    reader.disable_recursion_limit();
+    let Ok(compiled) = CompiledModules::deserialize(&mut reader) else {
         return Vec::new();
     };
+    if reader.end().is_err() {
+        return Vec::new();
+    }
     compiled
-        .get("modules")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|each| text(each, "name") == Some(main))
-        .filter_map(|each| each.get("declarations")?.as_array())
-        .flatten()
-        .filter(|declaration| text(declaration, "qualifier") == Some(RUN))
-        .filter_map(|declaration| text(declaration, "name"))
+        .modules
+        .iter()
+        .filter(|each| each.name.as_str() == Some(main))
+        .flat_map(|each| &each.declarations)
+        .filter(|declaration| declaration.qualifier.as_str() == Some(RUN))
+        .filter_map(|declaration| declaration.name.as_str())
         .map(str::to_owned)
         .collect()
 }

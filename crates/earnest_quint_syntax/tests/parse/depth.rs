@@ -258,7 +258,7 @@ fn a_match_of_two_thousand_five_hundred_cases_is_refused_before_its_types_fill_t
     assert!(
         problem
             .message
-            .starts_with("the types of this file hold more than 1600000 type nodes")
+            .starts_with("the types of this file hold more than 5000000 type nodes")
             && problem
                 .message
                 .ends_with("this is earnest's guard on memory, not a rule of Quint's"),
@@ -280,4 +280,37 @@ fn a_match_of_two_thousand_five_hundred_cases_is_refused_before_its_types_fill_t
     let peak = peak_resident_kib();
     println!("refused at a peak of {} MiB resident", peak / 1024);
     assert!(peak < 2 * 1024 * 1024, "{peak} KiB");
+}
+
+fn match_of(cases: usize) -> String {
+    let variants: Vec<String> = (0..cases).map(|at| format!("V{at}")).collect();
+    let branches: Vec<String> = (0..cases).map(|at| format!("| V{at} => {at}")).collect();
+    module(&format!(
+        "  type T = {}\n  val v = match V0 {{ {} }}",
+        variants.join(" | "),
+        branches.join(" ")
+    ))
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+#[ignore = "types and compiles a match of 600 cases, 18 s in a release build: cargo test --release -p earnest_quint_syntax --test parse depth::a_match_of_six -- --ignored --exact depth::a_match_of_six_hundred_cases_refused_before_types_were_stored_once_is_read"]
+fn a_match_of_six_hundred_cases_refused_before_types_were_stored_once_is_read() {
+    let parsed = read_text(&match_of(600)).expect("read");
+    let checked = parsed.typecheck();
+    assert!(checked.is_ok(), "{:?}", checked.err());
+    let target = earnest_quint_syntax::Target {
+        main: "deep".to_owned(),
+        init: "init".to_owned(),
+        step: "step".to_owned(),
+        invariant: None,
+        temporal: None,
+    };
+    let compiled = parsed
+        .compile(&target)
+        .map(|compiled| compiled.output().to_string());
+    assert!(compiled.is_ok(), "{:?}", compiled.err());
+    let peak = peak_resident_kib();
+    println!("read at a peak of {} MiB resident", peak / 1024);
+    assert!(peak < 1024 * 1024, "{peak} KiB");
 }

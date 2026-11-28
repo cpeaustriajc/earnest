@@ -18,7 +18,7 @@ use crate::inference::generator::Inferrer;
 use crate::inference::printing::{ErrorTree, error_text, scheme_text};
 use crate::inference::signatures::Scheme;
 use crate::inference::solver::{Context, Table};
-use crate::inference::value::Value;
+use crate::inference::value::{Memo, Value};
 use crate::json::Json;
 use crate::names::{Entry, Raised};
 use crate::problem::Problem;
@@ -69,9 +69,13 @@ pub(crate) struct TypeResults {
     pub(crate) too_large: Option<usize>,
 }
 
-/// The most type nodes the types of one file may hold: earnest's guard on memory, which stops
-/// all type work before the table outgrows a few GiB. Quint 0.33.1 has no such bound.
-pub(crate) const TYPE_NODE_LIMIT: usize = 1_600_000;
+/// The most type nodes the types of one file may hold, counted as the text the types table is
+/// written as (a type held by many ids counts once for each): earnest's guard on memory, not a
+/// rule of Quint's, which Quint 0.33.1 does not have. The front end stores each type once, so its
+/// own memory follows the text it writes; the bound is set by what the CLI's readers need for
+/// that text, the largest round count at which `earnest verify` stays under 4 GiB on a `match` of
+/// n cases (6n² + 25n + 16 nodes): 910 cases are read, 911 refused.
+pub(crate) const TYPE_NODE_LIMIT: usize = 5_000_000;
 
 fn raised(id: u64, error: &ErrorTree) -> Raised {
     Raised {
@@ -81,7 +85,7 @@ fn raised(id: u64, error: &ErrorTree) -> Raised {
     }
 }
 
-fn scheme_of(written: &Json) -> Scheme {
+fn scheme_of(written: &Json, memo: &mut Memo) -> Scheme {
     let names = |key: &str| match written.get(key) {
         Some(Json::List(names)) => names
             .iter()
@@ -95,7 +99,9 @@ fn scheme_of(written: &Json) -> Scheme {
     Scheme {
         types: names("typeVariables"),
         rows: names("rowVariables"),
-        value: written.get("type").map_or(Value::Undefined, Value::of),
+        value: written
+            .get("type")
+            .map_or(Value::Undefined, |written| Value::of_shared(written, memo)),
     }
 }
 
@@ -213,6 +219,7 @@ pub(crate) fn analyze_within(
             )
         })
         .collect();
+    let mut memo = Memo::default();
     results.table = Json::Object(
         inferrer
             .types
@@ -226,7 +233,7 @@ pub(crate) fn analyze_within(
                     Json::object(vec![
                         ("typeVariables", names(&scheme.types)),
                         ("rowVariables", names(&scheme.rows)),
-                        ("type", scheme.value.to_json()),
+                        ("type", scheme.value.to_shared_json(&mut memo)),
                     ]),
                 )
             })
@@ -240,10 +247,11 @@ pub(crate) fn types_of_added(
     types: &Json,
     declarations: &[Json],
 ) -> TypeResults {
+    let mut memo = Memo::default();
     let previous = match types {
         Json::Object(entries) => entries
             .iter()
-            .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme_of(scheme))))
+            .filter_map(|(id, scheme)| id.parse().ok().map(|id| (id, scheme_of(scheme, &mut memo))))
             .collect(),
         _ => BTreeMap::new(),
     };

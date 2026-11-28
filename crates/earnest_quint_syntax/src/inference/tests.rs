@@ -176,3 +176,69 @@ fn type_work_stops_once_the_types_hold_more_type_nodes_than_the_bound() {
         "as a crash, so every pass refuses the file"
     );
 }
+
+fn written_both_ways(file: &str, main: &str) -> (String, String) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let parsed = read(file, |path| fs::read_to_string(root.join(path)).ok()).expect("read");
+    let target = crate::compile::Target {
+        main: main.to_owned(),
+        init: "init".to_owned(),
+        step: "step".to_owned(),
+        invariant: None,
+        temporal: None,
+    };
+    let typecheck = parsed.typecheck().map(|checked| checked.to_string());
+    let compile = parsed
+        .compile(&target)
+        .map(|compiled| compiled.output().to_string());
+    (format!("{typecheck:?}"), format!("{compile:?}"))
+}
+
+#[test]
+fn a_file_is_written_the_same_when_every_object_of_its_types_is_shared() {
+    let files = [
+        ("tasks/quint/samples/ring.qnt", "Two"),
+        ("tasks/quint/setups/shadow.qnt", "S"),
+        ("tasks/quint/imports/star.qnt", "SpecStar"),
+        (
+            "crates/earnest_quint_syntax/tests/samples/compile/fieldnames.qnt",
+            "Main",
+        ),
+    ];
+    let usual: Vec<(String, String)> = files
+        .iter()
+        .map(|(file, main)| written_both_ways(file, main))
+        .collect();
+    crate::json::start_sharing_every_object();
+    let shared: Vec<(String, String)> = files
+        .iter()
+        .map(|(file, main)| written_both_ways(file, main))
+        .collect();
+    crate::json::stop_sharing_every_object();
+    for ((file, _), (usual, shared)) in files.iter().zip(usual.iter().zip(&shared)) {
+        assert!(usual.0.starts_with("Ok("), "{file} typechecks: {}", usual.0);
+        assert!(usual.1.starts_with("Ok("), "{file} compiles: {}", usual.1);
+        assert!(usual == shared, "{file} is written alike");
+    }
+}
+
+#[test]
+fn the_bound_on_type_nodes_reads_a_match_of_910_cases_and_refuses_911() {
+    let nodes = |cases: usize| {
+        let variants: Vec<String> = (0..cases).map(|at| format!("V{at}")).collect();
+        let branches: Vec<String> = (0..cases).map(|at| format!("| V{at} => {at}")).collect();
+        let text = format!(
+            "module deep {{\n  var x: int\n  action init = x' = 0\n  action step = x' = x\n  type T = {}\n  val v = match V0 {{ {} }}\n}}\n",
+            variants.join(" | "),
+            branches.join(" ")
+        );
+        let parsed = read("deep.qnt", |_| Some(text.clone())).expect("read");
+        analyzed_within(&parsed, usize::MAX).nodes
+    };
+    let grown = |cases: usize| 6 * cases * cases + 25 * cases + 16;
+    for cases in [3, 10, 25] {
+        assert_eq!(nodes(cases), grown(cases), "{cases} cases");
+    }
+    assert!(grown(910) <= crate::inference::TYPE_NODE_LIMIT);
+    assert!(grown(911) > crate::inference::TYPE_NODE_LIMIT);
+}

@@ -3,6 +3,7 @@ use crate::json::Json;
 use crate::names::{Entry, Prefix, Raised, Resolution, built_in};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Table {
@@ -47,7 +48,7 @@ pub(crate) const CLEARED: Json = Json::Null;
 pub(crate) fn without_cleared(module: &Json) -> Json {
     let mut module = module.clone();
     for declaration in list_mut(&mut module, "declarations") {
-        if let Json::Object(fields) = declaration {
+        if let Json::Object(fields) = declaration.owned_mut() {
             fields.retain(|(key, value)| !(key == "importedFrom" && *value == CLEARED));
         }
     }
@@ -76,7 +77,7 @@ pub(crate) fn id_of(value: &Json) -> Option<u64> {
 }
 
 pub(crate) fn put(value: &mut Json, key: &str, inner: Json) {
-    if let Json::Object(fields) = value {
+    if let Json::Object(fields) = value.owned_mut() {
         match fields.iter_mut().find(|(name, _)| name == key) {
             Some((_, slot)) => *slot = inner,
             None => fields.push((key.to_owned(), inner)),
@@ -85,7 +86,7 @@ pub(crate) fn put(value: &mut Json, key: &str, inner: Json) {
 }
 
 pub(crate) fn field_mut<'a>(value: &'a mut Json, key: &str) -> Option<&'a mut Json> {
-    match value {
+    match value.owned_mut() {
         Json::Object(fields) => fields
             .iter_mut()
             .find(|(name, _)| name == key)
@@ -253,6 +254,9 @@ fn unshadow(module: &Json, table: &mut Table) -> Json {
 struct Inliner<'a> {
     table: &'a Table,
     resolved: RefCell<HashMap<u64, Json>>,
+    /// Each shared type already inlined, by its address: the type, kept so the address stays
+    /// its own, and what it became.
+    shared: RefCell<HashMap<usize, (Arc<Json>, Json)>>,
 }
 
 impl<'a> Inliner<'a> {
@@ -260,6 +264,7 @@ impl<'a> Inliner<'a> {
         Self {
             table,
             resolved: RefCell::new(HashMap::new()),
+            shared: RefCell::new(HashMap::new()),
         }
     }
 
@@ -290,7 +295,13 @@ impl<'a> Inliner<'a> {
             chain.push(id);
             aliased = next;
         }
-        let found = known.unwrap_or_else(|| aliased.clone());
+        let found = known.unwrap_or_else(|| match aliased {
+            _ if crate::json::sharing_every_object() => {
+                Json::Shared(Arc::new(aliased.with_every_object_shared()))
+            }
+            Json::Shared(_) => aliased.clone(),
+            _ => Json::Shared(Arc::new(aliased.clone())),
+        });
         let mut resolved = self.resolved.borrow_mut();
         for id in chain {
             resolved.insert(id, found.clone());
@@ -306,8 +317,36 @@ fn inline_type(table: &Inliner<'_>, written: &Json) -> Json {
 }
 
 fn inline_in_place(table: &Inliner<'_>, inlined: &mut Json) {
+    if let Json::Shared(shared) = inlined {
+        let address = Arc::as_ptr(shared).addr();
+        let known = table
+            .shared
+            .borrow()
+            .get(&address)
+            .map(|(_, done)| done.clone());
+        let done = known.unwrap_or_else(|| {
+            let mut inner = Json::clone(shared);
+            inline_in_place(table, &mut inner);
+            let done = if inner == **shared {
+                Json::Shared(Arc::clone(shared))
+            } else {
+                Json::Shared(Arc::new(inner))
+            };
+            table
+                .shared
+                .borrow_mut()
+                .insert(address, (Arc::clone(shared), done.clone()));
+            done
+        });
+        *inlined = done;
+        return;
+    }
     if let Some(resolved) = table.resolved(inlined) {
         *inlined = resolved;
+        if matches!(inlined, Json::Shared(_)) {
+            inline_in_place(table, inlined);
+            return;
+        }
     }
     match text(inlined, "kind") {
         "set" | "list" => inline_at(table, inlined, "elem"),

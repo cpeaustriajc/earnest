@@ -412,6 +412,12 @@ A released build of earnest reads files up to these bounds even with 1 MiB of st
 
 These are earnest's bounds, not Quint's. Quint 0.33.1 itself overflows its stack well before them on some shapes, such as a `Set` 1,000 deep or a sum of 1,000 terms; [`confirm --quint`](#confirming-a-check-with-quint) then says `cannot`. A file nested a few hundred deep reads in seconds, but a deep type, such as a `Set` or a record nested 500 deep, can take minutes, as it takes Quint.
 
+### How large a file's types may grow
+
+The types of one file may hold up to 5,000,000 type nodes, each id's type counted whole. Types that many ids share grow fastest: a `match` of n cases over a sum type of n variants holds about 6n² nodes, so earnest reads such a file up to 910 cases and refuses 911. A file past the bound is `unreadable`, and the message ends `more than earnest keeps in memory: this is earnest's guard on memory, not a rule of Quint's`.
+
+This is earnest's guard on memory, not a rule of Quint's. It is set by what `earnest verify` needs for the text Quint's typecheck and compile write, which grows with the square of the cases. At 910 cases a run takes up to 3.8 GB. Quint 0.33.1 itself typechecks a `match` of 2,500 cases.
+
 ## What is read today
 
 The reader takes variables of every type but operators: integers, booleans, text, records, tuples, sets, maps, lists and variants, with their operators (`match` among them). It also takes `if`, `let`, `nondet`, actions with parameters, the listed invariants, and the listed temporal properties with the weak fairness they name.

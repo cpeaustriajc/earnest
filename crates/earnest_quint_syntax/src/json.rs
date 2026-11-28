@@ -1,8 +1,32 @@
 use std::fmt::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+
+/// Set by a test: every object the types table and the alias inliner write is shared, not only
+/// those held twice, so that any reading that does not see through a [`Json::Shared`] shows as
+/// a difference in the output. `EARNEST_QUINT_SHARE_EVERY_OBJECT=1` sets it for a whole run.
+static SHARE_EVERY_OBJECT: AtomicBool = AtomicBool::new(false);
+
+#[cfg(test)]
+pub(crate) fn start_sharing_every_object() {
+    SHARE_EVERY_OBJECT.store(true, Ordering::Relaxed);
+}
+
+#[cfg(test)]
+pub(crate) fn stop_sharing_every_object() {
+    SHARE_EVERY_OBJECT.store(false, Ordering::Relaxed);
+}
+
+pub(crate) fn sharing_every_object() -> bool {
+    static FROM_ENVIRONMENT: OnceLock<bool> = OnceLock::new();
+    SHARE_EVERY_OBJECT.load(Ordering::Relaxed)
+        || *FROM_ENVIRONMENT
+            .get_or_init(|| std::env::var_os("EARNEST_QUINT_SHARE_EVERY_OBJECT").is_some())
+}
 
 /// A JSON value as Quint writes it: numbers keep their digits, so an integer of any size
 /// survives, and an object keeps its keys in the order they were written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Json {
     /// `null`.
@@ -17,7 +41,33 @@ pub enum Json {
     List(Vec<Json>),
     /// An object, its keys in order.
     Object(Vec<(String, Json)>),
+    /// A value held in more than one place, as the types table holds a type that many ids
+    /// have. It is written, compared and read as the value it holds. It holds an object, or
+    /// another `Shared`: a list or a scalar is never shared.
+    Shared(Arc<Json>),
 }
+
+impl PartialEq for Json {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Self::Shared(left), Self::Shared(right)) = (self, other)
+            && Arc::ptr_eq(left, right)
+        {
+            return true;
+        }
+        match (self.unshared(), other.unshared()) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(left), Self::Bool(right)) => left == right,
+            (Self::Number(left), Self::Number(right)) | (Self::Text(left), Self::Text(right)) => {
+                left == right
+            }
+            (Self::List(left), Self::List(right)) => left == right,
+            (Self::Object(left), Self::Object(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Json {}
 
 impl Json {
     pub(crate) fn object(fields: Vec<(&str, Json)>) -> Self {
@@ -41,9 +91,44 @@ impl Json {
         Self::Number(value.to_string())
     }
 
+    /// The value this one holds: itself, or what a [`Json::Shared`] holds.
+    pub fn unshared(&self) -> &Json {
+        let mut value = self;
+        while let Self::Shared(inner) = value {
+            value = inner;
+        }
+        value
+    }
+
+    /// This value with every object in it shared, for [`sharing_every_object`].
+    pub(crate) fn with_every_object_shared(&self) -> Json {
+        match self.unshared() {
+            Self::List(items) => {
+                Self::List(items.iter().map(Self::with_every_object_shared).collect())
+            }
+            Self::Object(fields) => Self::Shared(Arc::new(Self::Object(
+                fields
+                    .iter()
+                    .map(|(key, inner)| (key.clone(), inner.with_every_object_shared()))
+                    .collect(),
+            ))),
+            other => other.clone(),
+        }
+    }
+
+    /// This value to change in place: a [`Json::Shared`] is copied first where another holder
+    /// has it too, so a change is never seen through another holder.
+    pub(crate) fn owned_mut(&mut self) -> &mut Json {
+        let mut value = self;
+        while let Self::Shared(inner) = value {
+            value = Arc::make_mut(inner);
+        }
+        value
+    }
+
     /// The value under `key`, when this is an object that has it.
     pub fn get(&self, key: &str) -> Option<&Json> {
-        match self {
+        match self.unshared() {
             Self::Object(fields) => fields
                 .iter()
                 .find(|(name, _)| name == key)
@@ -75,22 +160,29 @@ impl Json {
 
 impl Drop for Json {
     fn drop(&mut self) {
-        let mut pending: Vec<Json> = match self {
-            Self::List(items) => std::mem::take(items),
-            Self::Object(fields) => std::mem::take(fields)
-                .into_iter()
-                .map(|(_, value)| value)
-                .collect(),
-            _ => return,
-        };
+        let mut pending = Vec::new();
+        self.take_children(&mut pending);
         while let Some(mut value) = pending.pop() {
-            match &mut value {
-                Self::List(items) => pending.append(items),
-                Self::Object(fields) => {
-                    pending.extend(std::mem::take(fields).into_iter().map(|(_, inner)| inner));
-                }
-                _ => {}
+            value.take_children(&mut pending);
+        }
+    }
+}
+
+impl Json {
+    /// Moves what this value holds to `pending`, so that dropping it drops nothing nested: a
+    /// shared value gives up what it holds only when this is its last holder.
+    fn take_children(&mut self, pending: &mut Vec<Json>) {
+        match self {
+            Self::List(items) => pending.append(items),
+            Self::Object(fields) => {
+                pending.extend(std::mem::take(fields).into_iter().map(|(_, inner)| inner));
             }
+            Self::Shared(shared) => {
+                if let Some(inner) = Arc::get_mut(shared) {
+                    pending.push(std::mem::replace(inner, Self::Null));
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -110,6 +202,7 @@ impl fmt::Display for Json {
                     Self::Bool(value) => write!(formatter, "{value}")?,
                     Self::Number(digits) => formatter.write_str(digits)?,
                     Self::Text(value) => quoted(value, formatter)?,
+                    Self::Shared(inner) => pending.push(Step::Value(inner)),
                     Self::List(values) => {
                         formatter.write_char('[')?;
                         pending.push(Step::Mark(']'));

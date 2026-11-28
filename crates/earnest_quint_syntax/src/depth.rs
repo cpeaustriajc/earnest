@@ -11,7 +11,7 @@ pub(crate) fn too_deep(modules: &[Json]) -> Option<&Json> {
     let mut pending: Vec<(&Json, usize, &Json)> =
         modules.iter().map(|module| (module, 0, module)).collect();
     while let Some((value, depth, anchor)) = pending.pop() {
-        match value {
+        match value.unshared() {
             Json::Object(fields) => {
                 let depth = if value.get("kind").is_some() {
                     depth + 1

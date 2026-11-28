@@ -217,18 +217,35 @@ fn kept(changed: Option<Value>, original: &Value, any: &mut bool) -> Value {
     }
 }
 
-fn applied_list(substitutions: &[Substitution], items: &[Value], any: &mut bool) -> Value {
-    Value::list(
-        items
-            .iter()
-            .map(|item| kept(applied(substitutions, item), item, any))
-            .collect(),
-    )
+/// The items with the substitutions applied to each, in order; the list itself, not a copy,
+/// when no item changed.
+fn applied_list(substitutions: &[Substitution], items: &Value, any: &mut bool) -> Value {
+    let mut built: Option<Vec<Value>> = None;
+    for (at, item) in items.as_items().iter().enumerate() {
+        let changed = applied(substitutions, item);
+        match (&mut built, changed) {
+            (Some(built), changed) => built.push(changed.unwrap_or_else(|| item.clone())),
+            (None, Some(changed)) => {
+                let mut started = items.as_items()[..at].to_vec();
+                started.push(changed);
+                built = Some(started);
+            }
+            (None, None) => {}
+        }
+    }
+    match (built, items) {
+        (Some(built), _) => {
+            *any = true;
+            Value::list(built)
+        }
+        (None, Value::List(_)) => items.clone(),
+        (None, _) => Value::list(Vec::new()),
+    }
 }
 
 fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
-    let id = written.get("id").clone();
-    let kind = written.get("kind").clone();
+    let id = || written.get("id").clone();
+    let kind = || written.get("kind").clone();
     let mut any = false;
     match written.kind() {
         "var" => match substitutions
@@ -239,7 +256,7 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
             _ => None,
         },
         "oper" => {
-            let arguments = applied_list(substitutions, written.items("args"), &mut any);
+            let arguments = applied_list(substitutions, written.get("args"), &mut any);
             let result = kept(
                 applied(substitutions, written.get("res")),
                 written.get("res"),
@@ -247,10 +264,10 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
             );
             (any || !has_exactly(written, &["kind", "args", "res", "id"])).then(|| {
                 Value::object(vec![
-                    ("kind", kind),
+                    ("kind", kind()),
                     ("args", arguments),
                     ("res", result),
-                    ("id", id),
+                    ("id", id()),
                 ])
             })
         }
@@ -261,7 +278,7 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 &mut any,
             );
             (any || !has_exactly(written, &["kind", "elem", "id"]))
-                .then(|| Value::object(vec![("kind", kind), ("elem", element), ("id", id)]))
+                .then(|| Value::object(vec![("kind", kind()), ("elem", element), ("id", id())]))
         }
         "fun" => {
             let argument = kept(
@@ -276,10 +293,10 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
             );
             (any || !has_exactly(written, &["kind", "arg", "res", "id"])).then(|| {
                 Value::object(vec![
-                    ("kind", kind),
+                    ("kind", kind()),
                     ("arg", argument),
                     ("res", result),
-                    ("id", id),
+                    ("id", id()),
                 ])
             })
         }
@@ -290,7 +307,7 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
                 &mut any,
             );
             (any || !has_exactly(written, &["kind", "fields", "id"]))
-                .then(|| Value::object(vec![("kind", kind), ("fields", fields), ("id", id)]))
+                .then(|| Value::object(vec![("kind", kind()), ("fields", fields), ("id", id())]))
         }
         "sum" => {
             let fields = kept(
@@ -301,7 +318,7 @@ fn once(substitutions: &[Substitution], written: &Value) -> Option<Value> {
             any.then(|| written.spread(vec![("fields", fields)]))
         }
         "app" => {
-            let arguments = applied_list(substitutions, written.items("args"), &mut any);
+            let arguments = applied_list(substitutions, written.get("args"), &mut any);
             any.then(|| written.spread(vec![("args", arguments)]))
         }
         _ => None,
@@ -316,22 +333,16 @@ fn row_applied(substitutions: &[Substitution], row: &Value) -> Option<Value> {
     match row.kind() {
         "row" => {
             let mut any = !has_exactly(row, &["kind", "fields", "other"]);
-            let fields = row
+            let changed: Vec<Option<Value>> = row
                 .items("fields")
                 .iter()
                 .map(|field| {
                     if !has_exactly(field, &["fieldName", "fieldType"]) {
                         any = true;
                     }
-                    let field_type = kept(
-                        applied(substitutions, field.get("fieldType")),
-                        field.get("fieldType"),
-                        &mut any,
-                    );
-                    Value::object(vec![
-                        ("fieldName", field.get("fieldName").clone()),
-                        ("fieldType", field_type),
-                    ])
+                    let changed = applied(substitutions, field.get("fieldType"));
+                    any |= changed.is_some();
+                    changed
                 })
                 .collect();
             let other = kept(
@@ -340,6 +351,20 @@ fn row_applied(substitutions: &[Substitution], row: &Value) -> Option<Value> {
                 &mut any,
             );
             any.then(|| {
+                let fields = row
+                    .items("fields")
+                    .iter()
+                    .zip(changed)
+                    .map(|(field, changed)| {
+                        Value::object(vec![
+                            ("fieldName", field.get("fieldName").clone()),
+                            (
+                                "fieldType",
+                                changed.unwrap_or_else(|| field.get("fieldType").clone()),
+                            ),
+                        ])
+                    })
+                    .collect();
                 Value::object(vec![
                     ("kind", Value::text("row")),
                     ("fields", Value::list(fields)),
