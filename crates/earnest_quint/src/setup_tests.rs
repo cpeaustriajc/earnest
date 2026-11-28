@@ -30,7 +30,7 @@ const fn shape(
     }
 }
 
-const BUILT: [Shape; 21] = [
+const BUILT: [Shape; 22] = [
     shape(("ints", "Low", "step"), &["below", "small"], &["reaches"]),
     shape(("ints", "High", "step"), &["below", "small"], &["reaches"]),
     shape(
@@ -72,6 +72,7 @@ const BUILT: [Shape; 21] = [
     shape(("more", "Two", "step"), &["V::ok", "V1::fine"], &[]),
     shape(("more", "Pair", "step"), &["ok", "apart"], &[]),
     shape(("compiled", "Renamed", "step"), &["ok"], &[]),
+    shape(("compiled", "Nested", "step"), &["ok"], &[]),
 ];
 
 fn fixture(name: &str) -> String {
@@ -207,7 +208,7 @@ fn the_runs_a_check_plays_are_kept_from_the_spec_module_after_quints_declaration
 fn a_setup_of_any_other_shape_is_left_to_quint_compile() {
     let compiled = typechecked("compiled");
     let ok = owned(&["ok"]);
-    for main in ["Nested", "Single", "Mid", "Base", "Limit", "Nowhere"] {
+    for main in ["Single", "Mid", "Base", "Limit", "Nowhere"] {
         let setup = Setup::new(main, ("init", "step"), (&ok, &[]), &Runs::None);
         assert_eq!(compiled.setup(&setup), None, "{main}");
     }
@@ -290,12 +291,49 @@ fn typechecked_import(file: &str) -> Typechecked {
 }
 
 #[test]
-fn a_spec_that_imports_a_name_alone_or_a_module_with_variables_is_left_to_quint_compile() {
+fn a_module_imported_both_whole_and_under_a_name_is_left_to_quint_compile() {
     let compiled = typechecked_import("compiled");
     let ok = owned(&["ok"]);
-    for main in ["Single", "Stateful", "Twice"] {
+    let setup = Setup::new("Twice", ("init", "step"), (&ok, &[]), &Runs::None);
+    assert_eq!(compiled.setup(&setup), None);
+}
+
+#[test]
+fn a_spec_that_imports_a_name_alone_or_a_module_with_variables_is_built_as_quint_compiles_it() {
+    let compiled = typechecked_import("compiled");
+    let ok = owned(&["ok"]);
+    for main in ["Single", "Stateful"] {
         let setup = Setup::new(main, ("init", "step"), (&ok, &[]), &Runs::None);
-        assert_eq!(compiled.setup(&setup), None, "{main}");
+        let ours = compiled
+            .setup(&setup)
+            .unwrap_or_else(|| panic!("{main}: the setup is built"));
+        let path = format!(
+            "{}/../../tasks/quint/imports/fixtures/compiled.{main}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let theirs =
+            std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+        assert_eq!(declared(&ours), declared(&theirs), "{main}");
+        let (Ok(ours), Ok(theirs)) = (
+            crate::read_located("ours", &ours, &Runs::None),
+            crate::read_located("theirs", &theirs, &Runs::None),
+        ) else {
+            panic!("{main}: both are read");
+        };
+        let fields = |model: &earnest_ir::Model| -> Vec<String> {
+            model
+                .fields
+                .iter()
+                .map(|field| field.name.clone())
+                .collect()
+        };
+        assert_eq!(fields(&ours), fields(&theirs), "{main}");
+        assert_eq!(
+            ours.rule_ids().collect::<Vec<_>>(),
+            theirs.rule_ids().collect::<Vec<_>>(),
+            "{main}"
+        );
+        assert_eq!(ours.runs.starts, theirs.runs.starts, "{main}");
     }
 }
 
