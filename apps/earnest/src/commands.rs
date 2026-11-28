@@ -6,7 +6,8 @@ use crate::confirm::{Checker, Tool, confirm_lines, differences, runs_differences
 use crate::confirm_quint::{Asked, quint_differences, quint_folder, quint_lines};
 use crate::discovery::{discover, language_of};
 use crate::print::{
-    no_model_line, problem_lines, skipped_line, to_stderr, to_stdout, unreadable_lines,
+    no_model_line, not_judged_lines, problem_lines, skipped_line, to_stderr, to_stdout,
+    unreadable_lines,
 };
 use crate::quint;
 use crate::reading::{ModelFile, load, read};
@@ -16,8 +17,8 @@ use crate::run::{
 };
 use crate::select::{Target, held_back, select, select_with_removed};
 use earnest_chart::{
-    Charted, Detailed, RuleChange, RuleChanges, Section, Unreadable, one_line, report_with_details,
-    rule_changes_section, skipped_section,
+    Charted, Detailed, RuleChange, RuleChanges, Section, Unreadable, detail_lines, one_line,
+    report_with_details, rule_changes_section, skipped_section,
 };
 use earnest_check::Status;
 use earnest_tla::{BEYOND_32_BITS_COMPUTED, Files, limits, write, write_apart_from};
@@ -271,22 +272,30 @@ fn with_marked_details(
         .zip(ran)
         .map(|(target, ran)| {
             let readable = target.readable;
-            (!readable.expected.is_empty()).then(|| {
+            let marked = (!readable.expected.is_empty()).then(|| {
                 detail_of(
                     &ran.outcome,
                     (&readable.expected, &readable.reachable),
                     &readable.model,
                     ExpectedPaths::Printed,
                 )
-            })
+            });
+            if !readable.is_read_in_part() {
+                return marked;
+            }
+            let mut lines = not_judged_lines(&readable.not_judged, &readable.unread);
+            lines.extend(marked.unwrap_or_else(|| detail_lines(&ran.outcome)));
+            Some(lines)
         })
         .collect();
     let detailed: Vec<Detailed<'_>> = sections
         .iter()
         .zip(&details)
-        .map(|(charted, detail)| Detailed {
+        .zip(targets)
+        .map(|((charted, detail), target)| Detailed {
             charted: *charted,
             detail: detail.as_deref(),
+            read_in_part: target.readable.is_read_in_part(),
         })
         .collect();
     report_with_details(&detailed, unreadable, None)
@@ -385,7 +394,10 @@ pub(crate) fn report_command(arguments: &Report) -> Result<Exit, String> {
         to_stderr(&compared.warnings(base).join("\n"));
     }
     let unreadable = warn_of_unreadable(&files);
-    Ok(if every_model_passed(&ran) {
+    let all_read = targets
+        .iter()
+        .all(|target| !target.readable.is_read_in_part());
+    Ok(if all_read && every_model_passed(&ran) {
         unreadable
     } else {
         Exit::Failed
@@ -569,11 +581,34 @@ pub(crate) fn confirm_command(arguments: &Confirm) -> Result<Exit, String> {
     }
     say_what_was_skipped(&skipped, &no_model);
     let unreadable = warn_of_unreadable(&files);
-    Ok(if everything_agrees {
+    let all_read = warn_of_read_in_part(&targets);
+    Ok(if everything_agrees && all_read {
         unreadable
     } else {
         Exit::Failed
     })
+}
+
+fn warn_of_read_in_part(targets: &[Target<'_>]) -> bool {
+    let mut lines: Vec<String> = Vec::new();
+    for target in targets {
+        let readable = target.readable;
+        if !readable.is_read_in_part() {
+            continue;
+        }
+        lines.push(format!(
+            "unreadable  {}  {}",
+            one_line(&target.file.path),
+            one_line(&readable.model.name)
+        ));
+        lines.extend(
+            not_judged_lines(&readable.not_judged, &readable.unread)
+                .into_iter()
+                .map(|line| format!("  {line}")),
+        );
+    }
+    to_stderr(&lines.join("\n"));
+    lines.is_empty()
 }
 
 #[cfg(test)]
